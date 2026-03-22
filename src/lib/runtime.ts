@@ -75,11 +75,13 @@ export type TerminalSessionLogs = {
 
 export type AgentProviderId = 'codex' | 'claude'
 export type AgentConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
+export type AgentConnectionKind = 'mock' | 'prototype' | 'real'
 
 export type AgentConnectionSnapshot = {
   provider: AgentProviderId
   displayName: string
   status: AgentConnectionStatus
+  connectionKind: AgentConnectionKind
   accountLabel: string | null
   scopes: string[]
   callbackUrl: string | null
@@ -253,6 +255,7 @@ const createDefaultMockConnections = (): AgentConnectionSnapshot[] =>
     provider,
     displayName: mockProviderLabels[provider],
     status: 'disconnected',
+    connectionKind: 'mock',
     accountLabel: null,
     scopes: [],
     callbackUrl: null,
@@ -560,6 +563,7 @@ export const beginAgentLogin = async (provider: AgentProviderId, requestedScopes
         ? {
             ...entry,
             status: 'pending',
+            connectionKind: 'mock',
             scopes: requestedScopes,
             callbackUrl,
             authUrl,
@@ -585,6 +589,7 @@ export const completeAgentLogin = async (request: CompleteAgentLoginRequest) => 
         ? {
             ...entry,
             status: request.failReason ? 'error' : 'connected',
+            connectionKind: 'mock',
             accountLabel:
               request.failReason ? null : request.accountLabel || `${mockProviderLabels[request.provider]} User`,
             connectedAt: request.failReason ? null : now,
@@ -607,6 +612,7 @@ export const disconnectAgentProvider = async (provider: AgentProviderId) => {
       provider,
       displayName: mockProviderLabels[provider],
       status: 'disconnected',
+      connectionKind: 'mock',
       accountLabel: null,
       scopes: [],
       callbackUrl: null,

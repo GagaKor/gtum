@@ -16,6 +16,7 @@
 - [Sprint 4 작업 로그 / Sprint 4 Worklog](./WORKLOG_2026-03-22_sprint-4-agent-request-flow.md)
 - [Sprint 5 작업 로그 / Sprint 5 Worklog](./WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md)
 - [Sprint 7 작업 로그 / Sprint 7 Worklog](./WORKLOG_2026-03-22_sprint-7-ux-and-project-picker.md)
+- [Sprint 8 작업 로그 / Sprint 8 Worklog](./WORKLOG_2026-03-22_sprint-8-auth-contract.md)
 - [Telegram 프로토타입 작업 로그 / Telegram Prototype Worklog](./WORKLOG_2026-03-22_post-mvp-telegram-prototype.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)

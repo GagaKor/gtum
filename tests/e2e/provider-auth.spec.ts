@@ -9,6 +9,7 @@ test('starts provider login and completes mock callback', async ({ page }) => {
 
   const providerPanel = page.getByTestId('provider-auth-panel')
   await expect(providerPanel).toContainText('Codex')
+  await expect(page.getByTestId('provider-card-codex')).toContainText('Mock')
   await page.getByRole('radio', { name: 'Codex' }).check()
   await expect(page.getByTestId('provider-card-codex')).toContainText(
     'Selected provider for the next auth action.',
@@ -22,6 +23,7 @@ test('starts provider login and completes mock callback', async ({ page }) => {
 
   await expect(providerPanel).toContainText('Connected')
   await expect(providerPanel).toContainText('codex sandbox')
+  await expect(page.getByTestId('provider-card-codex').locator('code').first()).toBeHidden()
   await expect(page.getByTestId('provider-request-preview')).toContainText('workspace')
   await expect(page.getByTestId('provider-request-preview')).toContainText(
     'captured line(s) prepared for provider requests',
@@ -35,6 +37,7 @@ test('shows provider login failure state for Claude mock callback', async ({ pag
 
   const providerPanel = page.getByTestId('provider-auth-panel')
   await page.getByRole('radio', { name: 'Claude' }).check()
+  await expect(page.getByTestId('provider-card-claude')).toContainText('Mock')
   await expect(page.getByTestId('provider-card-claude')).toContainText(
     'Selected provider for the next auth action.',
   )
