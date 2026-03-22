@@ -88,6 +88,16 @@ The MVP is considered complete when all of the following are true:
 11. core user flows are covered by UI end-to-end verification
 12. `aging test` evidence shows that core flows remain stable after sustained runtime or repeated use
 
+## MVP 상태 / MVP Status
+
+### 한국어
+
+현재 저장소 기준으로 MVP는 완료된 상태로 판단한다. 상세 근거는 `docs/MVP_VALIDATION_NOTES.md`와 `docs/WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md`를 따른다.
+
+### English
+
+At the current repository state, the MVP is considered complete. See `docs/MVP_VALIDATION_NOTES.md` and `docs/WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md` for the supporting evidence.
+
 ## MVP 검증 원칙 / MVP Validation Principles
 
 ### 한국어

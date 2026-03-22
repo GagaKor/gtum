@@ -200,6 +200,13 @@
   word-break: break-word;
 }
 
+.history-entry {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .emphasis {
   background: linear-gradient(135deg, rgba(202, 96, 38, 0.12), rgba(255, 255, 255, 0.92));
 }

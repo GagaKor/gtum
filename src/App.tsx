@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import { type AgentContextSnapshot, useWorkspaceStore } from './stores/workspace-store'
 import {
@@ -39,6 +39,47 @@ type AgentSuggestion = {
   attachedLogLines: number
   status: 'pending' | 'approved-current-tab' | 'approved-new-tab'
 }
+
+type ExecutionMode = 'fast' | 'balanced' | 'deep'
+
+type TaskHistoryEntry = {
+  id: string
+  title: string
+  detail: string
+  status: 'done' | 'pending' | 'error'
+  createdAt: string
+}
+
+const UI_STATE_KEY = 'gtum.app-ui-state'
+const TASK_HISTORY_LIMIT = 12
+
+const loadUiState = () => {
+  if (typeof window === 'undefined') {
+    return null as null | {
+      lastProjectPath?: string
+      selectedProvider?: AgentProviderId
+      executionMode?: ExecutionMode
+      taskHistory?: TaskHistoryEntry[]
+    }
+  }
+
+  try {
+    const raw = window.localStorage.getItem(UI_STATE_KEY)
+    return raw
+      ? (JSON.parse(raw) as {
+          lastProjectPath?: string
+          selectedProvider?: AgentProviderId
+          executionMode?: ExecutionMode
+          taskHistory?: TaskHistoryEntry[]
+        })
+      : null
+  } catch {
+    return null
+  }
+}
+
+const formatModeLabel = (mode: ExecutionMode) =>
+  mode === 'fast' ? 'Fast' : mode === 'balanced' ? 'Balanced' : 'Deep'
 
 function TreeNode({ node, depth = 0 }: { node: FileTreeNode; depth?: number }) {
   return (
@@ -88,6 +129,7 @@ function TerminalRenameField({
 }
 
 function App() {
+  const restoredUiState = loadUiState()
   const {
     activeProject,
     activeContext,
@@ -115,10 +157,19 @@ function App() {
   const [terminalError, setTerminalError] = useState<string | null>(null)
   const [agentConnections, setAgentConnections] = useState<AgentConnectionSnapshot[]>([])
   const [authError, setAuthError] = useState<string | null>(null)
-  const [selectedProvider, setSelectedProvider] = useState<AgentProviderId>('codex')
+  const [selectedProvider, setSelectedProvider] = useState<AgentProviderId>(
+    restoredUiState?.selectedProvider ?? 'codex',
+  )
   const [agentRequestInput, setAgentRequestInput] = useState('')
   const [agentRequestError, setAgentRequestError] = useState<string | null>(null)
   const [agentSuggestions, setAgentSuggestions] = useState<AgentSuggestion[]>([])
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(
+    restoredUiState?.executionMode ?? 'balanced',
+  )
+  const [taskHistory, setTaskHistory] = useState<TaskHistoryEntry[]>(
+    restoredUiState?.taskHistory ?? [],
+  )
+  const hasRestoredWorkspace = useRef(false)
 
   const refreshTerminalSessions = useCallback(async () => {
     try {
@@ -151,6 +202,24 @@ function App() {
     }
   }, [])
 
+  const recordTask = useCallback(
+    (title: string, detail: string, status: TaskHistoryEntry['status'] = 'done') => {
+      setTaskHistory((current) =>
+        [
+          {
+            id: `task-${Date.now()}-${current.length}`,
+            title,
+            detail,
+            status,
+            createdAt: new Date().toISOString(),
+          },
+          ...current,
+        ].slice(0, TASK_HISTORY_LIMIT),
+      )
+    },
+    [],
+  )
+
   useEffect(() => {
     getRuntimeInfo()
       .then(setRuntimeInfo)
@@ -161,6 +230,22 @@ function App() {
     void refreshTerminalSessions()
     void refreshAgentConnections()
   }, [refreshAgentConnections, refreshTerminalSessions])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.setItem(
+      UI_STATE_KEY,
+      JSON.stringify({
+        lastProjectPath: activeProjectPath || projectPathInput,
+        selectedProvider,
+        executionMode,
+        taskHistory,
+      }),
+    )
+  }, [activeProjectPath, executionMode, projectPathInput, selectedProvider, taskHistory])
 
   useEffect(() => {
     if (!activeTerminalTabId) {
@@ -211,7 +296,7 @@ function App() {
     })()
   }, [refreshAgentConnections])
 
-  const ensureWorkspaceTerminal = async (cwd: string) => {
+  const ensureWorkspaceTerminal = useCallback(async (cwd: string) => {
     const sessions = await listTerminalSessions()
     if (sessions.length > 0) {
       setTerminalSessions(sessions)
@@ -228,9 +313,9 @@ function App() {
     })
     setTerminalSessions([session])
     selectTerminalTab(String(session.sessionId))
-  }
+  }, [activeTerminalTabId, selectTerminalTab])
 
-  const openProject = async (path: string) => {
+  const openProject = useCallback(async (path: string) => {
     const trimmedPath = path.trim()
 
     if (!trimmedPath) {
@@ -248,16 +333,37 @@ function App() {
       setActiveProject(overview.metadata.name)
       setActiveProjectPath(overview.metadata.path)
       setProjectPathInput(overview.metadata.path)
-      setActiveContext('Sprint 2 Terminal Workspace')
+      setActiveContext('Sprint 5 Workspace Restored')
       rememberProject(overview.metadata.path)
       await ensureWorkspaceTerminal(overview.metadata.path)
+      recordTask('Project opened', overview.metadata.path, 'done')
     } catch (error) {
       setProjectOverview(null)
       setProjectError(error instanceof Error ? error.message : String(error))
     } finally {
       setIsProjectLoading(false)
     }
-  }
+  }, [
+    ensureWorkspaceTerminal,
+    recordTask,
+    rememberProject,
+    setActiveContext,
+    setActiveProject,
+    setActiveProjectPath,
+    setProjectPathInput,
+  ])
+
+  useEffect(() => {
+    if (hasRestoredWorkspace.current) {
+      return
+    }
+
+    hasRestoredWorkspace.current = true
+
+    if (restoredUiState?.lastProjectPath) {
+      void openProject(restoredUiState.lastProjectPath)
+    }
+  }, [openProject, restoredUiState?.lastProjectPath])
 
   const createTab = async () => {
     try {
@@ -364,8 +470,14 @@ function App() {
       )
       setSelectedProvider(provider)
       setActiveContext(`Sprint 4 ${snapshot.displayName} login started`)
+      recordTask(
+        `${snapshot.displayName} login started`,
+        `Requested scopes: ${snapshot.scopes.join(', ') || 'none'}`,
+        'pending',
+      )
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
+      recordTask(`${provider} login failed`, String(error), 'error')
     }
   }
 
@@ -377,8 +489,10 @@ function App() {
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
       setActiveContext(`Sprint 4 ${snapshot.displayName} disconnected`)
+      recordTask(`${snapshot.displayName} disconnected`, 'Provider session cleared.', 'done')
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
+      recordTask(`${provider} disconnect failed`, String(error), 'error')
     }
   }
 
@@ -429,8 +543,16 @@ function App() {
           ? `Sprint 4 ${snapshot.displayName} connected`
           : `Sprint 4 ${snapshot.displayName} login failed`,
       )
+      recordTask(
+        snapshot.status === 'connected'
+          ? `${snapshot.displayName} connected`
+          : `${snapshot.displayName} login failed`,
+        snapshot.lastError ?? 'Mock callback completed.',
+        snapshot.status === 'connected' ? 'done' : 'error',
+      )
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
+      recordTask(`${provider} callback failed`, String(error), 'error')
     } finally {
       params.delete('authProvider')
       params.delete('authCode')
@@ -445,6 +567,8 @@ function App() {
 
   const buildAgentSuggestion = (provider: AgentConnectionSnapshot, request: string): AgentSuggestion => {
     const normalizedRequest = request.trim()
+    const attachedLogLines =
+      executionMode === 'fast' ? Math.min(agentContext?.lines.length ?? 0, 4) : agentContext?.lines.length ?? 0
     const commandBase =
       normalizedRequest.toLowerCase().includes('test')
         ? 'npm run test -- --runInBand'
@@ -461,7 +585,7 @@ function App() {
       command: commandBase,
       projectLabel: projectOverview?.metadata.name ?? activeProject,
       terminalLabel: agentContext?.tabTitle ?? activeSession?.name ?? 'workspace',
-      attachedLogLines: agentContext?.lines.length ?? 0,
+      attachedLogLines,
       status: 'pending',
     }
   }
@@ -486,6 +610,11 @@ function App() {
     const suggestion = buildAgentSuggestion(connectedProvider, normalizedRequest)
     setAgentSuggestions((current) => [suggestion, ...current].slice(0, 6))
     setActiveContext(`Sprint 4 ${connectedProvider.displayName} suggestion ready`)
+    recordTask(
+      `${connectedProvider.displayName} suggestion requested`,
+      `${normalizedRequest} • mode ${formatModeLabel(executionMode)}`,
+      'done',
+    )
   }
 
   const approveSuggestion = async (suggestion: AgentSuggestion, target: AgentSuggestionTarget) => {
@@ -539,8 +668,14 @@ function App() {
           ? `Sprint 4 ${suggestion.providerLabel} approved in current tab`
           : `Sprint 4 ${suggestion.providerLabel} approved in new tab`,
       )
+      recordTask(
+        `${suggestion.providerLabel} suggestion approved`,
+        `${suggestion.command} -> ${target}`,
+        'done',
+      )
     } catch (error) {
       setAgentRequestError(error instanceof Error ? error.message : String(error))
+      recordTask(`${suggestion.providerLabel} approval failed`, String(error), 'error')
     }
   }
 
@@ -629,9 +764,9 @@ function App() {
             <h2>Terminal workspace with active log context</h2>
           </div>
           <div className="pill-row">
-            <span className="pill">Sprint 4</span>
-            <span className="pill">Agent Request</span>
-            <span className="pill">Approval Flow</span>
+            <span className="pill">Sprint 5</span>
+            <span className="pill">Stabilization</span>
+            <span className="pill">Workspace Restore</span>
           </div>
         </header>
 
@@ -756,6 +891,11 @@ function App() {
                   : 'Select a provider to start an agent request.'}
               </p>
             </article>
+            <article className="card">
+              <span className="label">Execution Mode</span>
+              <strong>{formatModeLabel(executionMode)}</strong>
+              <p>Controls how much active log context is attached to agent suggestions.</p>
+            </article>
           </section>
 
           <section className="project-grid">
@@ -812,7 +952,7 @@ function App() {
             <article className="card">
               <span className="label">Orchestrator</span>
               <strong>Active</strong>
-              <p>Tracking Sprint 4 request input, suggestion cards, and approval targets.</p>
+              <p>Tracking Sprint 5 task history, execution mode, and workspace restore state.</p>
             </article>
             <article className="card">
               <span className="label">Agent Context</span>
@@ -895,6 +1035,33 @@ function App() {
               <p>{providerRequestPreview.terminal}</p>
               <p>{providerRequestPreview.lines} captured line(s) prepared for provider requests.</p>
             </article>
+            <article className="card" data-testid="execution-mode-panel">
+              <span className="label">Execution Mode</span>
+              <strong>{formatModeLabel(executionMode)}</strong>
+              <div className="provider-selector" role="radiogroup" aria-label="Execution Mode">
+                {(['fast', 'balanced', 'deep'] as ExecutionMode[]).map((mode) => (
+                  <label key={mode} className="provider-selector-option">
+                    <input
+                      type="radio"
+                      name="execution-mode"
+                      checked={executionMode === mode}
+                      onChange={() => {
+                        setExecutionMode(mode)
+                        setActiveContext(`Sprint 5 ${formatModeLabel(mode)} mode selected`)
+                      }}
+                    />
+                    <span>{formatModeLabel(mode)}</span>
+                  </label>
+                ))}
+              </div>
+              <p>
+                {executionMode === 'fast'
+                  ? 'Attach a compact active-log slice for quick suggestions.'
+                  : executionMode === 'balanced'
+                    ? 'Use the default active-log slice for normal review.'
+                    : 'Keep the fullest active-log context for deeper review.'}
+              </p>
+            </article>
             <article className="card" data-testid="agent-request-panel">
               <span className="label">Agent Request</span>
               <strong>{selectedConnection?.displayName ?? 'No Provider Selected'}</strong>
@@ -951,6 +1118,25 @@ function App() {
                   ))
                 ) : (
                   <p>Connect a provider and submit a task request to generate mock suggestions.</p>
+                )}
+              </div>
+            </article>
+            <article className="card" data-testid="task-history-panel">
+              <span className="label">Task History</span>
+              <strong>{taskHistory.length > 0 ? 'Recent Activity' : 'No Tasks Recorded Yet'}</strong>
+              <div className="stack compact">
+                {taskHistory.length > 0 ? (
+                  taskHistory.map((entry) => (
+                    <div key={entry.id} className="history-entry">
+                      <strong>{entry.title}</strong>
+                      <p>{entry.detail}</p>
+                      <p>
+                        {entry.status} • {entry.createdAt}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p>Open a project or request an agent suggestion to start building history.</p>
                 )}
               </div>
             </article>
