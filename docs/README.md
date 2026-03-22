@@ -8,6 +8,7 @@
 - [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
+- [릴리스 워크플로우 수정 로그 / Release Workflow Fix Worklog](./WORKLOG_2026-03-22_release-workflow-fix.md)
 - [Sprint 1 작업 로그 / Sprint 1 Worklog](./WORKLOG_2026-03-22_sprint-1-project-workspace.md)
 - [Sprint 2 작업 로그 / Sprint 2 Worklog](./WORKLOG_2026-03-22_sprint-2-terminal-workspace.md)
 - [Sprint 3 작업 로그 / Sprint 3 Worklog](./WORKLOG_2026-03-22_sprint-3-provider-auth.md)
