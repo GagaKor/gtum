@@ -34,6 +34,7 @@ Its goals are:
 - 작업 전에 필요한 문서를 먼저 읽고, 추측보다 문서와 코드 근거를 우선한다.
 - 변경이 구조, 흐름, 정책, 권한, 계약에 영향을 주면 관련 문서를 같은 작업 안에서 함께 갱신한다.
 - 브랜치 운영은 `git flow` 개념을 가볍게 적용하는 방향을 기본 협업 원칙으로 삼는다.
+- Codex 컨텍스트가 길어지거나 방향성이 흔들릴 수 있다고 느껴지면 즉시 `docs/` 문서를 다시 읽고 기준을 재정렬한다.
 - 문서와 코드가 다르면 실제 코드와 최신 결정 내용을 기준으로 확인한 뒤 문서를 수정한다.
 - 새로운 규칙을 만들었으면 메모로 흩어두지 말고 적절한 문서에 반영한다.
 - 현재 없는 문서를 전제로 판단하지 말고, 실제 존재하는 문서를 기준으로 작업한다.
@@ -44,6 +45,7 @@ Its goals are:
 - Read the relevant documents before starting, and prefer documented and code-based evidence over guesswork.
 - If a change affects structure, flow, policy, permissions, or contracts, update the related documents in the same task.
 - Branch operations should follow a lightweight interpretation of `git flow` as the default collaboration model.
+- If Codex context becomes long or direction feels unstable, immediately reread the relevant `docs/` files and realign to the documented source of truth.
 - If code and docs differ, verify against the actual code and latest decisions, then update the documentation.
 - When a new rule appears, do not leave it as scattered notes; fold it into the appropriate document.
 - Do not assume documents exist unless they are actually present in the repository.
@@ -92,6 +94,12 @@ Its goals are:
 6. `docs/sprint-plan.md`
 7. `docs/sprint-0-checklist.md`
 
+또한 컨텍스트가 길어질 때마다 아래를 반복한다.
+
+1. `docs/DOCS_READING_ORDER.md`
+2. 현재 스프린트에 해당하는 체크리스트 또는 계획 문서
+3. 관련 구현 문서와 작업 로그
+
 ### English
 
 Given the current state of the repository, the default reading order is:
@@ -133,6 +141,12 @@ Even in a time-constrained situation, read at least:
 5. `docs/mvp-backlog.md`
 6. `docs/sprint-plan.md`
 7. `docs/sprint-0-checklist.md`
+
+When context grows long, repeat this recovery pattern:
+
+1. `docs/DOCS_READING_ORDER.md`
+2. the checklist or sprint plan for the current sprint
+3. the relevant implementation docs and worklog
 
 ## 4. 현재 문서별 역할 / Current Document Roles
 

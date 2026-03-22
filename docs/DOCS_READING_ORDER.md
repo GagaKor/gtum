@@ -22,6 +22,7 @@ This document is a fast recovery guide for deciding which documents to reread, a
 4. `docs/technical-design.md`
 5. `docs/mvp-backlog.md`
 6. `docs/sprint-plan.md`
+7. 현재 스프린트 체크리스트 또는 작업 로그
 
 ### English
 
@@ -33,6 +34,35 @@ If you feel lost, reread documents in this order:
 4. `docs/technical-design.md`
 5. `docs/mvp-backlog.md`
 6. `docs/sprint-plan.md`
+7. the current sprint checklist or worklog
+
+## 컨텍스트 초과 시 규칙 / Rule For Context Overflow
+
+### 한국어
+
+Codex 컨텍스트가 길어져서 앞선 판단 근거를 잊을 수 있다고 느껴지면, 작업을 밀어붙이지 말고 아래 순서로 다시 읽는다.
+
+1. `docs/DOCS_READING_ORDER.md`
+2. `docs/product-plan.md`
+3. `docs/technical-design.md`
+4. `docs/mvp-backlog.md`
+5. 현재 스프린트 문서
+6. 최신 `WORKLOG`
+
+이 규칙의 목적은 기억에 의존하지 않고 문서 기준으로 방향을 복구하는 것이다.
+
+### English
+
+If Codex context grows long enough that earlier reasoning may drift or be forgotten, do not push forward from memory alone. Reread in this order:
+
+1. `docs/DOCS_READING_ORDER.md`
+2. `docs/product-plan.md`
+3. `docs/technical-design.md`
+4. `docs/mvp-backlog.md`
+5. the current sprint document
+6. the latest `WORKLOG`
+
+The purpose of this rule is to restore direction from documentation rather than memory.
 
 ## 상황별 읽기 순서 / Situation-Based Reading Order
 
