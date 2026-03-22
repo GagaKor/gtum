@@ -39,6 +39,8 @@ Its purpose is to:
 - `npm run tauri:bundle`
   - `tauri build`
   - 플랫폼별 설치/배포 산출물을 만든다
+- `npm run tauri`
+  - GitHub Actions의 `tauri-action`이 내부적으로 호출하는 기본 Tauri CLI 진입점이다
 
 릴리스 관점에서는 보통 아래 순서로 간다.
 
@@ -61,6 +63,8 @@ The current build-related commands in `package.json` are:
 - `npm run tauri:bundle`
   - runs `tauri build`
   - creates platform-specific installable/distributable artifacts
+- `npm run tauri`
+  - provides the base Tauri CLI entrypoint expected by GitHub Actions `tauri-action`
 
 For release purposes, the usual order is:
 
