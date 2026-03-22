@@ -3,6 +3,7 @@ mod runtime {
     pub mod filesystem;
     pub mod platform;
     pub mod pty;
+    pub mod workspace;
 }
 
 use runtime::auth::{
@@ -13,6 +14,11 @@ use runtime::filesystem::ProjectOverview;
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
     TerminalSessionManager, TerminalSessionSnapshot,
+};
+use runtime::workspace::{
+    RememberWorkspaceProjectRequest, SaveWorkspaceSnapshotRequest,
+    SetWorkspaceExecutionModeRequest, WorkspaceRuntimeSnapshot, WorkspaceSnapshot,
+    WorkspaceStateManager,
 };
 use tauri::Manager;
 
@@ -141,11 +147,43 @@ fn agent_auth_runtime_snapshot(
     state.runtime_snapshot()
 }
 
+#[tauri::command]
+fn read_workspace_runtime_snapshot(
+    state: tauri::State<'_, WorkspaceStateManager>,
+) -> WorkspaceRuntimeSnapshot {
+    state.runtime_snapshot()
+}
+
+#[tauri::command]
+fn save_workspace_runtime_snapshot(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: SaveWorkspaceSnapshotRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.save_snapshot(request)
+}
+
+#[tauri::command]
+fn remember_workspace_project(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: RememberWorkspaceProjectRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.remember_project(request.path)
+}
+
+#[tauri::command]
+fn set_workspace_execution_mode(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: SetWorkspaceExecutionModeRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.set_execution_mode(request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(AgentAuthManager::new())
         .manage(TerminalSessionManager::new())
+        .manage(WorkspaceStateManager::new())
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             read_project_overview,
@@ -160,10 +198,14 @@ pub fn run() {
             begin_agent_login,
             complete_agent_login,
             disconnect_agent_provider,
-            agent_auth_runtime_snapshot
+            agent_auth_runtime_snapshot,
+            read_workspace_runtime_snapshot,
+            save_workspace_runtime_snapshot,
+            remember_workspace_project,
+            set_workspace_execution_mode
         ])
         .setup(|app| {
-            let storage_path = app
+            let auth_storage_path = app
                 .handle()
                 .path()
                 .app_data_dir()
@@ -174,7 +216,21 @@ pub fn run() {
 
             app.handle()
                 .state::<AgentAuthManager>()
-                .initialize_storage(storage_path)?;
+                .initialize_storage(auth_storage_path)?;
+
+            let workspace_storage_path = app
+                .handle()
+                .path()
+                .app_data_dir()
+                .or_else(|_| {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(".gtum").join("workspace-state.json"))
+                })
+                .map_err(|error| format!("failed to resolve workspace storage path: {error}"))?;
+
+            app.handle()
+                .state::<WorkspaceStateManager>()
+                .initialize_storage(workspace_storage_path)?;
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(

@@ -478,6 +478,14 @@ Risks:
 - platform-specific behavior
 - consistency of execution-mode policy
 
+Sprint 5 completion update:
+
+- task history and recent activity are now visible in the app
+- the workspace restores the last project path, selected provider, execution mode, and recorded task history
+- `Fast`, `Balanced`, and `Deep` modes are now visible and affect suggestion context handling
+- Playwright aging coverage now repeats the core flow across reloads
+- MVP validation notes are documented and the MVP can now be treated as complete
+
 ## Sprint 6
 
 ### 한국어
