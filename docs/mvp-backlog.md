@@ -786,6 +786,331 @@ Acceptance Criteria:
 - only a restricted command set is accepted remotely
 - sensitive commands are protected by additional approval or denial policy
 
+## Post-MVP 현실화 백로그 / Post-MVP Realization Backlog
+
+### 한국어
+
+MVP 이후 `gtum`의 다음 핵심 단계는 두 가지다.
+
+1. `Mock -> Real`
+   현재 mock 또는 prototype으로 남아 있는 provider, agent, channel 영역을 실제 동작으로 전환
+2. `Usability Refinement`
+   실사용 중 바로 걸리는 UX 마찰을 줄여 개발 도구로서의 기본 사용성을 높임
+
+아래 항목은 다음 스프린트 계획의 기준 백로그로 사용한다.
+
+### English
+
+The next key phase after the MVP has two tracks:
+
+1. `Mock -> Real`
+   convert provider, agent, and channel areas that are still mock or prototype into real working integrations
+2. `Usability Refinement`
+   reduce immediate UX friction so the product behaves more like a practical daily-use developer tool
+
+The items below serve as the planning backlog for the next sprint phase.
+
+### 15. Provider Auth 실제 연동 / Real Provider Authentication
+
+#### 한국어
+
+우선순위: `P0`
+
+목표:
+
+- `Codex`, `Claude` provider 연결을 mock foundation에서 실제 로그인 흐름으로 전환한다.
+
+백로그 항목:
+
+- `Codex` 공식 로그인/OAuth 가능성 검토
+- `Claude` 공식 로그인/OAuth 가능성 검토
+- 실제 auth URL, callback, 에러 상태 계약 정의
+- 만료, 취소, scope 부족 상태 처리
+- mock/real provider 상태 표시 분리
+
+완료조건:
+
+- 최소 1개 provider가 실제 로그인 흐름으로 연결된다.
+- callback 실패, 취소, scope 부족을 사용자가 이해 가능한 상태로 본다.
+- UI에서 mock 상태와 real 상태를 혼동하지 않는다.
+
+#### English
+
+Priority: `P0`
+
+Goal:
+
+- move `Codex` and `Claude` provider connection from mock foundation to real login flows
+
+Backlog:
+
+- evaluate official login/OAuth feasibility for `Codex`
+- evaluate official login/OAuth feasibility for `Claude`
+- define contracts for real auth URLs, callbacks, and error states
+- handle expiry, cancellation, and missing-scope states
+- clearly separate mock and real provider status in the UI
+
+Acceptance Criteria:
+
+- at least one provider is connected through a real login flow
+- callback failure, cancellation, and missing-scope states are understandable to users
+- the UI does not confuse mock status with real status
+
+### 16. Agent 응답 실제화 / Real Agent Responses
+
+#### 한국어
+
+우선순위: `P0`
+
+목표:
+
+- agent suggestion을 mock 생성이 아니라 실제 provider adapter 응답으로 전환한다.
+
+백로그 항목:
+
+- provider request envelope 현실화
+- project + active log context를 실제 요청 계약에 연결
+- 실제 suggestion payload 정규화
+- provider 오류 응답과 재시도 흐름 추가
+
+완료조건:
+
+- 최소 1개 provider가 실제 suggestion 응답을 돌려준다.
+- suggestion 카드가 실제 응답과 에러 상태를 모두 보여준다.
+
+#### English
+
+Priority: `P0`
+
+Goal:
+
+- replace mock-generated agent suggestions with real provider-adapter responses
+
+Backlog:
+
+- make the provider request envelope real
+- connect project and active-log context into the actual request contract
+- normalize real suggestion payloads
+- add provider error and retry handling
+
+Acceptance Criteria:
+
+- at least one provider returns real suggestion responses
+- suggestion cards represent both real responses and real error states
+
+### 17. 프로젝트 열기 UX 개선 / Project Open UX Improvement
+
+#### 한국어
+
+우선순위: `P0`
+
+목표:
+
+- 프로젝트 열기 흐름을 경로 수동 입력에서 네이티브 폴더 선택 중심으로 바꾼다.
+
+백로그 항목:
+
+- `Open Project`를 폴더 선택기로 변경
+- 최근 프로젝트 재열기 흐름 유지
+- Windows/macOS/Linux 경로 차이 검증
+- 잘못된 선택, 권한 문제, 취소 상태 처리
+
+완료조건:
+
+- 사용자가 경로를 직접 붙여넣지 않고 프로젝트를 열 수 있다.
+- 세 플랫폼에서 폴더 선택 흐름이 크게 다르지 않다.
+
+#### English
+
+Priority: `P0`
+
+Goal:
+
+- replace manual path entry with a native folder picker for project opening
+
+Backlog:
+
+- change `Open Project` to a folder picker
+- preserve recent-project reopen flows
+- validate path differences across Windows, macOS, and Linux
+- handle invalid selection, permission errors, and cancellation
+
+Acceptance Criteria:
+
+- users can open a project without manually pasting a path
+- the folder-picker flow behaves consistently across the three target platforms
+
+### 18. Provider Auth UX 명확화 / Provider Authentication UX Clarification
+
+#### 한국어
+
+우선순위: `P0`
+
+목표:
+
+- provider auth UI가 실제 연결 상태를 과장하거나 내부 callback 값을 그대로 노출하지 않게 한다.
+
+백로그 항목:
+
+- callback URL 직접 노출 제거 또는 축소
+- `mock`, `prototype`, `real` 상태 뱃지 추가
+- 실패 원인을 사용자 언어로 다시 작성
+- 아직 미구현인 연결은 명시적으로 표시
+
+완료조건:
+
+- 사용자가 현재 auth가 실제 연결인지 mock인지 바로 이해한다.
+- 내부 callback URL이 일반 UX에 그대로 노출되지 않는다.
+
+#### English
+
+Priority: `P0`
+
+Goal:
+
+- ensure the provider-auth UI does not overstate the connection state or expose raw internal callback values as normal UX
+
+Backlog:
+
+- remove or reduce direct callback URL exposure
+- add `mock`, `prototype`, and `real` state badges
+- rewrite failures in user-facing language
+- explicitly mark flows that are not implemented yet
+
+Acceptance Criteria:
+
+- users can immediately tell whether auth is real or mock
+- raw internal callback URLs are not presented as normal user-facing UX
+
+### 19. 로그 컨텍스트 흐름 개선 / Log Context Flow Improvement
+
+#### 한국어
+
+우선순위: `P1`
+
+목표:
+
+- 활성 로그를 agent 맥락으로 붙이는 과정을 더 자연스럽게 만든다.
+
+백로그 항목:
+
+- 자동 로그 캡처 옵션
+- 현재 어떤 탭 로그가 연결되는지 시각 강화
+- suggestion과 attached log 관계 표시 강화
+
+완료조건:
+
+- 사용자가 어떤 로그가 어떤 요청에 붙는지 쉽게 이해한다.
+- 반복 클릭 없이 로그 컨텍스트를 붙이는 기본 흐름이 마련된다.
+
+#### English
+
+Priority: `P1`
+
+Goal:
+
+- make the flow for attaching active logs into agent context feel more natural
+
+Backlog:
+
+- optional automatic log capture
+- clearer visual indication of which tab is being attached
+- stronger display of the relationship between suggestions and attached logs
+
+Acceptance Criteria:
+
+- users can easily understand which logs are attached to which request
+- a lower-friction default flow exists for attaching log context
+
+### 20. UI/UX 정보 구조 재설계 / UI/UX Information Architecture Redesign
+
+#### 한국어
+
+우선순위: `P0`
+
+목표:
+
+- 화면이 기능 목록처럼 보이지 않고, 실제 작업 흐름 중심의 워크스페이스처럼 보이도록 재구성한다.
+
+백로그 항목:
+
+- 프로젝트, 터미널, 에이전트, 작업 이력의 정보 계층 재정렬
+- 핵심 작업 흐름을 기준으로 상단/중앙/보조 패널 역할 재설계
+- `mock`, `prototype`, `debug` 정보의 2선 배치
+- 과도한 status card 축소
+- 현재 사용자가 해야 할 첫 액션을 더 명확히 보이도록 CTA 재정리
+
+완료조건:
+
+- 사용자가 첫 화면에서 무엇을 먼저 해야 하는지 이해할 수 있다.
+- 터미널이 메인 작업 영역으로 명확히 드러난다.
+- 보조 정보가 핵심 작업 흐름을 방해하지 않는다.
+
+#### English
+
+Priority: `P0`
+
+Goal:
+
+- reshape the UI so it feels like a task-oriented workspace instead of a flat list of available features
+
+Backlog:
+
+- reorganize the information hierarchy across projects, terminals, agents, and task history
+- redesign top-level, main, and supporting panels around the core workflow
+- demote `mock`, `prototype`, and `debug` information into secondary presentation
+- reduce excessive status-card density
+- clarify the first-action CTA for the user
+
+Acceptance Criteria:
+
+- users can understand what to do first from the initial screen
+- the terminal is clearly presented as the main work surface
+- supporting information does not overpower the core workflow
+
+### 21. 플랫폼 실사용 검증 / Real Device Platform Validation
+
+#### 한국어
+
+우선순위: `P1`
+
+목표:
+
+- Windows/macOS를 포함한 실기 기준 사용성 검증을 쌓는다.
+
+백로그 항목:
+
+- Windows 실기 로그인/프로젝트 열기 검증
+- macOS 실기 프로젝트/터미널 검증
+- 설치 파일 실행 확인
+- 알려진 제약 정리
+
+완료조건:
+
+- 세 플랫폼의 실사용 이슈가 최소 1회 이상 기록된다.
+- 알려진 문제와 우회 방식이 문서화된다.
+
+#### English
+
+Priority: `P1`
+
+Goal:
+
+- build real-device usability evidence for Windows and macOS in addition to Ubuntu
+
+Backlog:
+
+- verify login/project-open flow on Windows
+- verify project/terminal flow on macOS
+- confirm installable artifact execution
+- document known constraints
+
+Acceptance Criteria:
+
+- real usage issues are recorded for all three platforms at least once
+- known issues and workarounds are documented
+
+
 ## MVP 제외 항목 / Explicitly Out of Scope for MVP
 
 ### 한국어

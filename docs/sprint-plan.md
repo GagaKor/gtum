@@ -553,6 +553,111 @@ Sprint 6 progress update:
 - Playwright coverage now includes both Telegram report drafting and Telegram bridge execution approval
 - the next step is connecting the prototype to a real Telegram transport and trust policy
 
+## Sprint 7
+
+### 한국어
+
+목표:
+
+- mock foundation을 실제 integration 방향으로 전환하면서, Windows 실사용 피드백 기준의 UX 마찰을 줄인다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- `Open Project`를 경로 입력 대신 네이티브 폴더 선택기로 전환
+- 프로젝트, 터미널, 에이전트, 보조 패널의 정보 구조 재설계
+- 핵심 작업 흐름 기준의 데스크톱 와이어프레임 정리
+- provider auth UI에서 `mock`, `prototype`, `real` 상태 구분
+- callback URL 직접 노출 축소 또는 제거
+- 최소 1개 provider에 대한 실제 OAuth/공식 로그인 가능성 검토와 연결 착수
+- agent suggestion의 실제 provider 응답 계약 초안
+- Windows 실사용 기준 UX 이슈 기록
+
+완료조건:
+
+- 사용자가 경로를 수동 입력하지 않고 프로젝트를 열 수 있다.
+- 첫 화면에서 무엇을 먼저 해야 하는지 더 쉽게 이해할 수 있다.
+- 터미널이 메인 작업 영역으로 명확하게 보인다.
+- provider auth가 실제 연결인지 mock인지 UI에서 즉시 구분된다.
+- callback URL 같은 내부 값이 일반 사용자 UX에 그대로 노출되지 않는다.
+- 다음 스프린트에서 실제 provider 연동 구현에 들어갈 수 있는 auth/response 계약이 문서 또는 코드로 정리된다.
+- 정보 구조와 와이어프레임이 문서로 정리되어 구현 기준이 된다.
+
+리스크:
+
+- 공식 OAuth 또는 로그인 플로우가 provider별로 충분히 열려 있지 않을 수 있다.
+- 플랫폼별 폴더 선택기 동작 차이가 프로젝트 열기 UX를 다시 복잡하게 만들 수 있다.
+- mock과 real 흐름이 함께 남아 있는 동안 상태 관리가 더 복잡해질 수 있다.
+
+### English
+
+Goal:
+
+- begin converting mock foundations toward real integrations while reducing UX friction exposed by real Windows usage
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- replace manual path entry with a native folder picker for `Open Project`
+- redesign the information architecture across project, terminal, agent, and supporting panels
+- document desktop wireframes around the core workflow
+- distinguish `mock`, `prototype`, and `real` provider-auth states in the UI
+- reduce or remove direct callback URL exposure
+- begin real OAuth/official-login feasibility work for at least one provider
+- draft a real provider-response contract for agent suggestions
+- record Windows real-usage UX issues as explicit follow-up items
+
+Acceptance Criteria:
+
+- users can open projects without manually typing paths
+- users can understand the first action more easily from the initial screen
+- the terminal is clearly presented as the main working surface
+- the UI clearly distinguishes real provider connections from mock ones
+- internal callback URLs are not exposed as normal end-user UX
+- auth and response contracts are ready in docs or code for the next sprint to start real provider integration work
+- documented information architecture and wireframes exist as implementation references
+
+Risks:
+
+- official OAuth or login flows may not be equally available across providers
+- platform-specific folder-picker behavior may reintroduce UX inconsistency
+- mixed mock and real flows may complicate state management while both coexist
+
+Sprint 7 initial backlog:
+
+- `P0` replace manual project path entry with a native folder picker
+- `P0` redesign the UI information hierarchy around the primary workflow
+- `P0` document desktop wireframes for the main workspace states
+- `P0` add explicit mock/prototype/real auth state labels
+- `P0` remove raw callback URL exposure from normal provider UI
+- `P0` start real `Codex` OAuth or official-login feasibility work
+- `P0` define a real provider request/response contract for agent suggestions
+- `P1` improve active-log attachment ergonomics
+- `P1` rewrite auth and runtime errors in more user-facing language
+- `P1` record Windows real-device validation findings
+- `P2` draft a settings panel for shell, provider, and experimental features
+
+Sprint 7 additional CI/CD requirement:
+
+- add an auto-update specification based on comparing the installed version against GitHub Releases
+- prepare the Tauri updater path, signed updater artifacts, and `latest.json` metadata strategy
+- keep the updater policy aligned with the master-merge release workflow
+
+Sprint 7 completion update:
+
+- the default project-open flow now uses a native folder-picker-first CTA with manual path entry demoted into a fallback disclosure
+- the workspace is reorganized around a clearer hierarchy: left project rail, center terminal focus, right agent panel, and bottom support drawers
+- provider cards now distinguish `Mock`, `Prototype`, and `Real` through explicit badges and friendlier connection wording
+- raw callback URLs are moved out of the default provider UI and exposed only through diagnostics disclosures
+- Playwright coverage is updated for the folder-picker flow and the new Telegram support-panel layout
+- the next sprint should reduce frontend heuristics by adding explicit backend auth-mode metadata and start replacing mock suggestion generation with real provider contracts
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -562,6 +667,7 @@ Sprint 6 progress update:
 - `Sprint 4`는 `Sprint 2`의 활성 로그 읽기와 `Sprint 3`의 provider 연결이 필요하다.
 - `Sprint 5`는 앞선 모든 스프린트 결과를 통합하는 단계다.
 - `Sprint 6`는 `Sprint 4`의 승인 흐름과 `Sprint 5`의 작업 상태 모델이 필요하다.
+- `Sprint 7`은 `Sprint 3`의 provider foundation, `Sprint 4`의 approval flow, `Sprint 5`의 workspace restore, 그리고 실제 Windows 사용 피드백이 필요하다.
 
 ### English
 
@@ -570,6 +676,7 @@ Sprint 6 progress update:
 - `Sprint 4` depends on active log reading from `Sprint 2` and provider connection from `Sprint 3`
 - `Sprint 5` integrates and stabilizes results from all previous sprints
 - `Sprint 6` depends on the approval flow from `Sprint 4` and the task-state model from `Sprint 5`
+- `Sprint 7` depends on the provider foundation from `Sprint 3`, approval flow from `Sprint 4`, workspace restore from `Sprint 5`, and real Windows usage feedback
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -589,6 +696,8 @@ Sprint 6 progress update:
   - MVP 데모에서 `gtum`의 차별점이 분명하게 드러나는가
 - `Sprint 6`
   - 데스크톱 밖에서도 안전하게 상태를 보고 제한된 명령을 보낼 수 있는가
+- `Sprint 7`
+  - 사용자가 mock과 real의 경계를 헷갈리지 않고, 경로 입력 없이 프로젝트를 열며, 실제 provider 연동 다음 단계로 자연스럽게 넘어갈 수 있는가
 
 ### English
 
@@ -606,13 +715,15 @@ Sprint 6 progress update:
   - does the MVP demo clearly show what makes `gtum` different
 - `Sprint 6`
   - can users safely inspect status and send limited commands outside the desktop app
+- `Sprint 7`
+  - can users avoid confusing mock and real flows, open projects without typing paths, and move naturally into the next stage of real provider integration
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 `Sprint 0`를 실제 작업 항목으로 더 세분화한 `implementation checklist` 또는 `worklog` 문서를 만드는 것이 좋다.
+다음 단계로는 `Sprint 7`을 실제 작업 항목으로 더 세분화한 구현 체크리스트 또는 `worklog` 문서를 만드는 것이 좋다.
 
 ### English
 
-The next step should be to break `Sprint 0` into an implementation checklist or worklog-style task document.
+The next step should be to break `Sprint 7` into an implementation checklist or worklog-style task document.

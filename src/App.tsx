@@ -25,6 +25,7 @@ import {
   listTerminalSessions,
   queueTelegramRemoteCommand,
   resolveTelegramRemoteCommand,
+  selectProjectFolder,
   type TelegramRemoteCommandSnapshot,
   type TelegramRuntimeSnapshot,
   type TerminalSessionLogs,
@@ -66,6 +67,8 @@ type TelegramReportState = {
   queuedAt: string | null
 }
 
+type ProviderUxKind = 'mock' | 'prototype' | 'real'
+
 const UI_STATE_KEY = 'gtum.app-ui-state'
 const TASK_HISTORY_LIMIT = 12
 
@@ -98,6 +101,72 @@ const loadUiState = () => {
 
 const formatModeLabel = (mode: ExecutionMode) =>
   mode === 'fast' ? 'Fast' : mode === 'balanced' ? 'Balanced' : 'Deep'
+
+const formatProviderStatusLabel = (status: AgentConnectionSnapshot['status']) =>
+  status === 'connected'
+    ? 'Connected'
+    : status === 'pending'
+      ? 'Needs Approval'
+      : status === 'error'
+        ? 'Attention Needed'
+        : 'Needs Login'
+
+const resolveProviderUxKind = (connection: AgentConnectionSnapshot): ProviderUxKind => {
+  if (usesMockRuntime()) {
+    return 'mock'
+  }
+
+  const authSignals = `${connection.authUrl ?? ''} ${connection.callbackUrl ?? ''}`
+
+  if (
+    authSignals.includes('mock.gtum.local') ||
+    authSignals.includes('auth.gtum.local') ||
+    authSignals.includes('gtum://auth/callback') ||
+    authSignals.includes('gtum://resolved/')
+  ) {
+    return 'prototype'
+  }
+
+  return 'real'
+}
+
+const formatProviderUxKindLabel = (kind: ProviderUxKind) =>
+  kind === 'mock' ? 'Mock' : kind === 'prototype' ? 'Prototype' : 'Real'
+
+const formatProviderHint = (connection: AgentConnectionSnapshot, kind: ProviderUxKind) => {
+  if (connection.lastError) {
+    return connection.lastError
+  }
+
+  if (connection.status === 'connected') {
+    return kind === 'real'
+      ? 'Official provider session is connected.'
+      : `${formatProviderUxKindLabel(kind)} provider session is connected for workspace testing.`
+  }
+
+  if (connection.status === 'pending') {
+    return kind === 'mock'
+      ? 'Mock callback is ready for the next auth step.'
+      : 'Desktop callback flow is ready for the next auth step.'
+  }
+
+  return kind === 'real'
+    ? 'Connect this provider to request live agent suggestions.'
+    : `${formatProviderUxKindLabel(kind)} provider flow is available for testing before real integration.`
+}
+
+const summarizePath = (value: string | null) => {
+  if (!value) {
+    return 'No project selected'
+  }
+
+  const segments = value.split(/[\\/]/).filter(Boolean)
+  if (segments.length <= 3) {
+    return value
+  }
+
+  return ['…', ...segments.slice(-3)].join('/')
+}
 
 function TreeNode({ node, depth = 0 }: { node: FileTreeNode; depth?: number }) {
   return (
@@ -358,7 +427,7 @@ function App() {
     const trimmedPath = path.trim()
 
     if (!trimmedPath) {
-      setProjectError('Enter a local project path to load.')
+      setProjectError('Choose a project folder to continue.')
       return
     }
 
@@ -391,6 +460,17 @@ function App() {
     setActiveProjectPath,
     setProjectPathInput,
   ])
+
+  const chooseProjectFolder = useCallback(async () => {
+    const chosenPath = await selectProjectFolder(projectPathInput || activeProjectPath || recentProjects[0])
+
+    if (!chosenPath) {
+      return
+    }
+
+    setProjectPathInput(chosenPath)
+    await openProject(chosenPath)
+  }, [activeProjectPath, openProject, projectPathInput, recentProjects, setProjectPathInput])
 
   useEffect(() => {
     if (hasRestoredWorkspace.current) {
@@ -986,6 +1066,10 @@ function App() {
     lines: agentContext?.lines.length ?? 0,
   }
   const selectedConnection = agentConnections.find((connection) => connection.provider === selectedProvider)
+  const selectedProviderKind = selectedConnection ? resolveProviderUxKind(selectedConnection) : null
+  const selectedProviderSummary = selectedConnection
+    ? `${selectedConnection.displayName} • ${formatProviderStatusLabel(selectedConnection.status)}`
+    : 'No provider selected'
   const telegramPendingCommands =
     telegramSnapshot?.remoteCommands.filter((entry) => entry.status === 'pending') ?? []
 
@@ -1002,30 +1086,37 @@ function App() {
             Project-centric terminal workspace for agents, code, and live logs.
           </p>
           <div className="stack">
-            <label className="field-block">
-              <span className="label">Project Path</span>
-              <input
-                aria-label="Project Path"
-                value={projectPathInput}
-                onChange={(event) => setProjectPathInput(event.target.value)}
-                placeholder="/home/kwon/project/gtum"
-              />
-            </label>
-            <button onClick={() => void openProject(projectPathInput)}>
-              {isProjectLoading ? 'Opening...' : 'Open Project'}
-            </button>
-            {projectError ? <p className="error-text">{projectError}</p> : null}
-          </div>
-          <div className="stack">
-            <article className="card">
-              <span className="label">Active Project</span>
-              <strong>{activeProject}</strong>
-              <p>{activeProjectPath || 'Open a local path to inspect repository context.'}</p>
-            </article>
-            <article className="card">
-              <span className="label">Sprint Focus</span>
-              <strong>{activeContext}</strong>
-              <p>Agent request input, suggestion approval, and provider-backed execution routing.</p>
+            <article className="card emphasis">
+              <span className="label">Start</span>
+              <strong>{activeProjectPath ? projectOverview?.metadata.name ?? activeProject : 'Open a project'}</strong>
+              <p>
+                {activeProjectPath
+                  ? `${summarizePath(activeProjectPath)} is ready for terminal and agent work.`
+                  : 'Use the folder picker to open a local project without pasting paths manually.'}
+              </p>
+              <div className="button-row">
+                <button onClick={() => void chooseProjectFolder()} disabled={isProjectLoading}>
+                  {isProjectLoading ? 'Opening...' : 'Open Folder'}
+                </button>
+              </div>
+              {projectError ? <p className="error-text">{projectError}</p> : null}
+              <details className="subtle-disclosure">
+                <summary>Manual Path Fallback</summary>
+                <div className="stack compact">
+                  <label className="field-block">
+                    <span className="label">Project Path</span>
+                    <input
+                      aria-label="Project Path"
+                      value={projectPathInput}
+                      onChange={(event) => setProjectPathInput(event.target.value)}
+                      placeholder="/home/kwon/project/gtum"
+                    />
+                  </label>
+                  <button onClick={() => void openProject(projectPathInput)} disabled={isProjectLoading}>
+                    Open Project
+                  </button>
+                </div>
+              </details>
             </article>
             <article className="card">
               <span className="label">Recent Projects</span>
@@ -1045,6 +1136,29 @@ function App() {
                 )}
               </div>
             </article>
+            <article className="card">
+              <span className="label">Repository</span>
+              <strong>{projectOverview?.metadata.name ?? 'No project selected'}</strong>
+              <p>{gitLabel}</p>
+              <div className="meta-strip">
+                <span className="pill soft">
+                  {projectOverview?.metadata.exists ? 'Exists' : 'Missing'}
+                </span>
+                <span className="pill soft">
+                  {projectOverview?.metadata.isDirectory ? 'Directory' : 'Unknown'}
+                </span>
+              </div>
+            </article>
+            <article className="card project-tree-card">
+              <span className="label">File Tree</span>
+              {projectOverview ? (
+                <ul className="tree-list">
+                  <TreeNode node={projectOverview.tree} />
+                </ul>
+              ) : (
+                <p>Open a project to inspect its directory structure.</p>
+              )}
+            </article>
           </div>
         </aside>
       ) : (
@@ -1054,15 +1168,22 @@ function App() {
       )}
 
       <main className="workspace">
-        <header className="workspace-header">
-          <div>
+        <header className="workspace-topbar">
+          <div className="workspace-title-group">
             <span className="eyebrow">Workspace</span>
-            <h2>Terminal workspace with active log context</h2>
+            <h2>Project, terminal, and agent workflow</h2>
+            <p className="workspace-subtitle">
+              Open a project, work in the active terminal, then request and approve agent suggestions.
+            </p>
+            <p className="support-note">Current focus: {activeContext}</p>
           </div>
           <div className="pill-row">
-            <span className="pill">Sprint 5</span>
-            <span className="pill">Stabilization</span>
-            <span className="pill">Workspace Restore</span>
+            <span className="pill">Project: {projectOverview?.metadata.name ?? 'none'}</span>
+            <span className="pill">Active Tab: {activeSession?.name ?? 'none'}</span>
+            <span className="pill">
+              Provider: {selectedConnection ? selectedProviderSummary : 'not selected'}
+            </span>
+            <span className="pill">Mode: {formatModeLabel(executionMode)}</span>
           </div>
         </header>
 
@@ -1149,65 +1270,24 @@ function App() {
             </div>
           </div>
 
-          <section className="status-grid">
-            <article className="card emphasis">
-              <span className="label">Project</span>
-              <strong>{projectOverview?.metadata.name ?? 'Awaiting Selection'}</strong>
-              <p>
-                {projectOverview?.metadata.path ??
-                  'Pick a local project path to populate terminal working directories.'}
-              </p>
-            </article>
-            <article className="card">
-              <span className="label">Git</span>
-              <strong>{gitLabel}</strong>
-              <p>
-                {projectOverview?.git.isRepository
-                  ? `${projectOverview.git.changedFilesCount} changed file(s) • ${
-                      projectOverview.git.branchType ?? 'other'
-                    } branch type`
-                  : 'Branch and dirty state will appear for Git repositories.'}
-              </p>
-            </article>
-            <article className="card">
-              <span className="label">Active Terminal</span>
-              <strong>{activeSession ? activeSession.name : 'No Session'}</strong>
-              <p>
-                {activeSession
-                  ? `${activeSession.logLineCount} line(s) captured • ${activeSession.status}`
-                  : 'Create a terminal to start live log capture.'}
-              </p>
-            </article>
-            <article className="card">
-              <span className="label">Suggestions</span>
-              <strong>{agentSuggestions.length}</strong>
-              <p>
-                {selectedConnection
-                  ? `${selectedConnection.displayName} is ${selectedConnection.status}.`
-                  : 'Select a provider to start an agent request.'}
-              </p>
-            </article>
-            <article className="card">
-              <span className="label">Execution Mode</span>
-              <strong>{formatModeLabel(executionMode)}</strong>
-              <p>Controls how much active log context is attached to agent suggestions.</p>
-            </article>
-          </section>
-
-          <section className="project-grid">
+          <section className="workspace-summary-grid">
             <article className="card project-card">
-              <span className="label">Project Metadata</span>
+              <span className="label">Project Summary</span>
               <strong>{projectOverview?.metadata.name ?? 'No project selected'}</strong>
               <p>{projectOverview?.metadata.path ?? 'Open a project to continue.'}</p>
               <div className="meta-strip">
                 <span className="pill soft">
-                  {projectOverview?.metadata.exists ? 'Exists' : 'Missing'}
+                  {projectOverview?.git.isRepository ? gitLabel : 'No Git repository detected'}
                 </span>
                 <span className="pill soft">
-                  {projectOverview?.metadata.isDirectory ? 'Directory' : 'Unknown'}
+                  {activeSession
+                    ? `${activeSession.logLineCount} line(s) • ${activeSession.status}`
+                    : 'Create a terminal to start live log capture.'}
                 </span>
                 <span className="pill soft">
-                  {projectOverview ? `${projectOverview.tree.children.length} root entries` : '0 entries'}
+                  {selectedConnection
+                    ? selectedProviderSummary
+                    : 'Select a provider to start an agent request.'}
                 </span>
               </div>
             </article>
@@ -1222,17 +1302,197 @@ function App() {
                 ))}
               </div>
             </article>
+          </section>
+          <section className="workspace-support">
+            <details className="support-panel" open>
+              <summary>Task History</summary>
+              <article className="card" data-testid="task-history-panel">
+                <span className="label">Task History</span>
+                <strong>{taskHistory.length > 0 ? 'Recent Activity' : 'No Tasks Recorded Yet'}</strong>
+                <div className="stack compact">
+                  {taskHistory.length > 0 ? (
+                    taskHistory.map((entry) => (
+                      <div key={entry.id} className="history-entry">
+                        <strong>{entry.title}</strong>
+                        <p>{entry.detail}</p>
+                        <p>
+                          {entry.status} • {entry.createdAt}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p>Open a project or request an agent suggestion to start building history.</p>
+                  )}
+                </div>
+              </article>
+            </details>
 
-            <article className="card project-card">
-              <span className="label">File Tree</span>
-              {projectOverview ? (
-                <ul className="tree-list">
-                  <TreeNode node={projectOverview.tree} />
-                </ul>
-              ) : (
-                <p>Load a project to inspect its directory structure.</p>
-              )}
-            </article>
+            <details className="support-panel">
+              <summary>Telegram</summary>
+              <div className="support-grid">
+                <article className="card telegram-card" data-testid="telegram-bridge-panel">
+                  <span className="label">Telegram Bridge</span>
+                  <strong>
+                    {telegramSnapshot?.bridge.chatLabel ??
+                      (telegramSnapshot?.bridge.status === 'connected' ? 'Telegram Connected' : 'Disconnected')}
+                  </strong>
+                  <p>
+                    Queue status reports and remote commands through the same approval model used in
+                    the app.
+                  </p>
+                  <div className="terminal-actions">
+                    {telegramSnapshot?.bridge.status === 'connected' ? (
+                      <button onClick={() => void disconnectTelegram()}>Disconnect Telegram</button>
+                    ) : (
+                      <button onClick={() => void startTelegramLink()}>Connect Telegram</button>
+                    )}
+                    {usesMockRuntime() && telegramSnapshot?.bridge.status === 'pending' ? (
+                      <button onClick={() => void completeTelegramMockLink()}>Complete Telegram Mock Link</button>
+                    ) : null}
+                    <button
+                      onClick={() => void sendTelegramStatusReport()}
+                      disabled={telegramSnapshot?.bridge.status !== 'connected'}
+                    >
+                      Send Status Report
+                    </button>
+                  </div>
+                  <p>
+                    Status: {telegramSnapshot?.bridge.status ?? 'disconnected'} • allowed commands:{' '}
+                    {telegramSnapshot?.bridge.allowedCommands.join(', ') ?? 'none'}
+                  </p>
+                  {telegramError ? <p className="error-text">{telegramError}</p> : null}
+                  <details className="subtle-disclosure">
+                    <summary>Diagnostics</summary>
+                    {telegramSnapshot?.bridge.callbackUrl ? <code>{telegramSnapshot.bridge.callbackUrl}</code> : null}
+                  </details>
+                  <div className="stack compact telegram-list">
+                    {(telegramSnapshot?.reports ?? []).slice(0, 2).map((report) => (
+                      <div key={report.reportId} className="history-entry">
+                        <strong>{report.title}</strong>
+                        <p>{report.status}</p>
+                        <p>{report.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+                <article className="card telegram-card" data-testid="telegram-remote-commands-panel">
+                  <span className="label">Telegram Remote Commands</span>
+                  <strong>
+                    {telegramPendingCommands.length > 0
+                      ? `${telegramPendingCommands.length} pending approval`
+                      : 'No pending remote commands'}
+                  </strong>
+                  <div className="terminal-actions">
+                    <button
+                      onClick={() => void queueTelegramCommand('status')}
+                      disabled={telegramSnapshot?.bridge.status !== 'connected'}
+                    >
+                      Queue /status
+                    </button>
+                    <button
+                      onClick={() => void queueTelegramCommand('rerun')}
+                      disabled={telegramSnapshot?.bridge.status !== 'connected'}
+                    >
+                      Queue /rerun-tests
+                    </button>
+                    <button
+                      onClick={() => void queueTelegramCommand('diff')}
+                      disabled={telegramSnapshot?.bridge.status !== 'connected'}
+                    >
+                      Queue /git-diff
+                    </button>
+                  </div>
+                  <div className="stack compact telegram-list">
+                    {telegramPendingCommands.length > 0 ? (
+                      telegramPendingCommands.map((remoteCommand) => (
+                        <div key={remoteCommand.commandId} className="suggestion-card">
+                          <strong>{remoteCommand.sourceLabel}</strong>
+                          <p>{remoteCommand.summary}</p>
+                          <code>{remoteCommand.command}</code>
+                          <p>
+                            suggested target: {remoteCommand.suggestedTarget} • status:{' '}
+                            {remoteCommand.status}
+                          </p>
+                          <div className="terminal-actions">
+                            <button
+                              onClick={() => void approveTelegramCommand(remoteCommand, 'current-tab')}
+                            >
+                              Approve In Current Tab
+                            </button>
+                            <button onClick={() => void approveTelegramCommand(remoteCommand, 'new-tab')}>
+                              Approve In New Tab
+                            </button>
+                            <button onClick={() => void rejectTelegramCommand(remoteCommand)}>Reject</button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p>Connect Telegram to queue a remote status or rerun command.</p>
+                    )}
+                  </div>
+                </article>
+                <article className="card telegram-card" data-testid="telegram-report-panel">
+                  <span className="label">Telegram Draft</span>
+                  <strong>Post-MVP Reporting Prototype</strong>
+                  <p>
+                    This panel drafts status reports for Telegram without touching the runtime bridge yet.
+                  </p>
+                  <div className="telegram-status-row">
+                    <span className="pill soft">Status: {telegramReport.status}</span>
+                    <span className="pill soft">
+                      Last draft: {telegramReport.generatedAt ? telegramReport.generatedAt : 'not generated'}
+                    </span>
+                  </div>
+                  <div className="terminal-actions">
+                    <button onClick={() => draftTelegramReport()}>Generate Telegram Draft</button>
+                    <button
+                      onClick={() => queueTelegramReport()}
+                      disabled={telegramReport.status === 'idle'}
+                    >
+                      Queue Telegram Draft
+                    </button>
+                  </div>
+                  <div className="telegram-policy">
+                    <span className="label">Command Policy Draft</span>
+                    <p>
+                      Only `status`, `summary`, and `report`-style commands should be allowed through the
+                      future Telegram bridge.
+                    </p>
+                    <ul>
+                      <li>Read-only task and workspace summaries only.</li>
+                      <li>Any destructive action still requires in-app approval.</li>
+                      <li>Queueing the draft does not send a real Telegram message yet.</li>
+                    </ul>
+                  </div>
+                  <div className="telegram-preview" data-testid="telegram-report-preview">
+                    {telegramReport.preview ? (
+                      <pre>{telegramReport.preview}</pre>
+                    ) : (
+                      <p>Generate a draft to inspect the Telegram-ready summary.</p>
+                    )}
+                  </div>
+                  {telegramReport.queuedAt ? (
+                    <p className="provider-selection-note">Queued at {telegramReport.queuedAt}</p>
+                  ) : null}
+                </article>
+              </div>
+            </details>
+
+            <details className="support-panel">
+              <summary>Runtime / Debug</summary>
+              <article className="card">
+                <span className="label">Runtime Probe</span>
+                <strong>{runtimeInfo ? 'Connected' : 'Fallback Mode'}</strong>
+                <p>
+                  {runtimeInfo
+                    ? `${runtimeInfo.app_name} • ${runtimeInfo.platform} • ${runtimeInfo.mode}`
+                    : 'Runtime handshake pending or unavailable in browser-only mode.'}
+                </p>
+                <p className="support-note">
+                  Diagnostics and callback details stay here so they do not compete with the main workflow.
+                </p>
+              </article>
+            </details>
           </section>
           {terminalError ? <p className="error-text terminal-error">{terminalError}</p> : null}
         </section>
@@ -1248,7 +1508,7 @@ function App() {
             <article className="card">
               <span className="label">Orchestrator</span>
               <strong>Active</strong>
-              <p>Tracking Sprint 5 task history, execution mode, and workspace restore state.</p>
+              <p>Tracking Sprint 7 workspace flow, auth clarity, and approval-based execution.</p>
             </article>
             <article className="card">
               <span className="label">Agent Context</span>
@@ -1268,7 +1528,11 @@ function App() {
             </article>
             <article className="card" data-testid="provider-auth-panel">
               <span className="label">Providers</span>
-              <strong>Login Foundation</strong>
+              <strong>
+                {selectedConnection
+                  ? `${selectedConnection.displayName} • ${formatProviderUxKindLabel(selectedProviderKind ?? 'prototype')}`
+                  : 'Select a provider'}
+              </strong>
               <div className="provider-selector" role="radiogroup" aria-label="Provider Selection">
                 {agentConnections.map((connection) => (
                   <label key={`selector-${connection.provider}`} className="provider-selector-option">
@@ -1289,13 +1553,22 @@ function App() {
                     className={`provider-card ${selectedProvider === connection.provider ? 'selected' : ''}`}
                     data-testid={`provider-card-${connection.provider}`}
                   >
-                    <div>
+                    <div className="provider-card-header">
                       <strong>{connection.displayName}</strong>
-                      <p>
-                        {connection.status}
-                        {connection.accountLabel ? ` • ${connection.accountLabel}` : ''}
-                      </p>
+                      <div className="status-pill-row">
+                        <span className={`status-badge kind-${resolveProviderUxKind(connection)}`}>
+                          {formatProviderUxKindLabel(resolveProviderUxKind(connection))}
+                        </span>
+                        <span className={`status-badge state-${connection.status}`}>
+                          {formatProviderStatusLabel(connection.status)}
+                        </span>
+                      </div>
                     </div>
+                    <p>
+                      {connection.accountLabel
+                        ? `${connection.accountLabel} is ready for the next request.`
+                        : formatProviderHint(connection, resolveProviderUxKind(connection))}
+                    </p>
                     <div className="terminal-actions">
                       {connection.status === 'connected' ? (
                         <button onClick={() => void disconnectProvider(connection.provider)}>
@@ -1310,15 +1583,21 @@ function App() {
                         <button onClick={() => void simulateMockCallback(connection.provider)}>
                           Complete Mock Callback
                         </button>
-                      ) : null}
+                        ) : null}
                     </div>
-                    <p>
-                      scopes: {connection.scopes.length > 0 ? connection.scopes.join(', ') : 'none'}
-                    </p>
+                    <div className="status-pill-row">
+                      <span className="status-badge scopes">
+                        scopes: {connection.scopes.length > 0 ? connection.scopes.join(', ') : 'none'}
+                      </span>
+                    </div>
                     {selectedProvider === connection.provider ? (
                       <p className="provider-selection-note">Selected provider for the next auth action.</p>
                     ) : null}
-                    {connection.callbackUrl ? <code>{connection.callbackUrl}</code> : null}
+                    <details className="subtle-disclosure">
+                      <summary>Diagnostics</summary>
+                      {connection.callbackUrl ? <code>{connection.callbackUrl}</code> : null}
+                      {connection.authUrl ? <code>{connection.authUrl}</code> : null}
+                    </details>
                     {connection.lastError ? <p className="error-text">{connection.lastError}</p> : null}
                   </div>
                 ))}
@@ -1357,104 +1636,6 @@ function App() {
                     ? 'Use the default active-log slice for normal review.'
                   : 'Keep the fullest active-log context for deeper review.'}
               </p>
-            </article>
-            <article className="card telegram-card" data-testid="telegram-bridge-panel">
-              <span className="label">Telegram Bridge</span>
-              <strong>
-                {telegramSnapshot?.bridge.chatLabel ??
-                  (telegramSnapshot?.bridge.status === 'connected' ? 'Telegram Connected' : 'Disconnected')}
-              </strong>
-              <p>
-                Queue status reports and remote commands through the same approval model used in
-                the app.
-              </p>
-              <div className="terminal-actions">
-                {telegramSnapshot?.bridge.status === 'connected' ? (
-                  <button onClick={() => void disconnectTelegram()}>Disconnect Telegram</button>
-                ) : (
-                  <button onClick={() => void startTelegramLink()}>Connect Telegram</button>
-                )}
-                {usesMockRuntime() && telegramSnapshot?.bridge.status === 'pending' ? (
-                  <button onClick={() => void completeTelegramMockLink()}>Complete Telegram Mock Link</button>
-                ) : null}
-                <button
-                  onClick={() => void sendTelegramStatusReport()}
-                  disabled={telegramSnapshot?.bridge.status !== 'connected'}
-                >
-                  Send Status Report
-                </button>
-              </div>
-              <p>
-                Status: {telegramSnapshot?.bridge.status ?? 'disconnected'} • allowed commands:{' '}
-                {telegramSnapshot?.bridge.allowedCommands.join(', ') ?? 'none'}
-              </p>
-              {telegramSnapshot?.bridge.callbackUrl ? <code>{telegramSnapshot.bridge.callbackUrl}</code> : null}
-              {telegramError ? <p className="error-text">{telegramError}</p> : null}
-              <div className="stack compact telegram-list">
-                {(telegramSnapshot?.reports ?? []).slice(0, 2).map((report) => (
-                  <div key={report.reportId} className="history-entry">
-                    <strong>{report.title}</strong>
-                    <p>{report.status}</p>
-                    <p>{report.body}</p>
-                  </div>
-                ))}
-              </div>
-            </article>
-            <article className="card telegram-card" data-testid="telegram-remote-commands-panel">
-              <span className="label">Telegram Remote Commands</span>
-              <strong>
-                {telegramPendingCommands.length > 0
-                  ? `${telegramPendingCommands.length} pending approval`
-                  : 'No pending remote commands'}
-              </strong>
-              <div className="terminal-actions">
-                <button
-                  onClick={() => void queueTelegramCommand('status')}
-                  disabled={telegramSnapshot?.bridge.status !== 'connected'}
-                >
-                  Queue /status
-                </button>
-                <button
-                  onClick={() => void queueTelegramCommand('rerun')}
-                  disabled={telegramSnapshot?.bridge.status !== 'connected'}
-                >
-                  Queue /rerun-tests
-                </button>
-                <button
-                  onClick={() => void queueTelegramCommand('diff')}
-                  disabled={telegramSnapshot?.bridge.status !== 'connected'}
-                >
-                  Queue /git-diff
-                </button>
-              </div>
-              <div className="stack compact telegram-list">
-                {telegramPendingCommands.length > 0 ? (
-                  telegramPendingCommands.map((remoteCommand) => (
-                    <div key={remoteCommand.commandId} className="suggestion-card">
-                      <strong>{remoteCommand.sourceLabel}</strong>
-                      <p>{remoteCommand.summary}</p>
-                      <code>{remoteCommand.command}</code>
-                      <p>
-                        suggested target: {remoteCommand.suggestedTarget} • status:{' '}
-                        {remoteCommand.status}
-                      </p>
-                      <div className="terminal-actions">
-                        <button
-                          onClick={() => void approveTelegramCommand(remoteCommand, 'current-tab')}
-                        >
-                          Approve In Current Tab
-                        </button>
-                        <button onClick={() => void approveTelegramCommand(remoteCommand, 'new-tab')}>
-                          Approve In New Tab
-                        </button>
-                        <button onClick={() => void rejectTelegramCommand(remoteCommand)}>Reject</button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p>Connect Telegram to queue a remote status or rerun command.</p>
-                )}
-              </div>
             </article>
             <article className="card" data-testid="agent-request-panel">
               <span className="label">Agent Request</span>
@@ -1514,78 +1695,6 @@ function App() {
                   <p>Connect a provider and submit a task request to generate mock suggestions.</p>
                 )}
               </div>
-            </article>
-            <article className="card" data-testid="task-history-panel">
-              <span className="label">Task History</span>
-              <strong>{taskHistory.length > 0 ? 'Recent Activity' : 'No Tasks Recorded Yet'}</strong>
-              <div className="stack compact">
-                {taskHistory.length > 0 ? (
-                  taskHistory.map((entry) => (
-                    <div key={entry.id} className="history-entry">
-                      <strong>{entry.title}</strong>
-                      <p>{entry.detail}</p>
-                      <p>
-                        {entry.status} • {entry.createdAt}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p>Open a project or request an agent suggestion to start building history.</p>
-                )}
-              </div>
-            </article>
-            <article className="card">
-              <span className="label">Runtime Probe</span>
-              <strong>{runtimeInfo ? 'Connected' : 'Fallback Mode'}</strong>
-              <p>
-                {runtimeInfo
-                  ? `${runtimeInfo.app_name} • ${runtimeInfo.platform} • ${runtimeInfo.mode}`
-                  : 'Runtime handshake pending or unavailable in browser-only mode.'}
-              </p>
-            </article>
-            <article className="card telegram-card" data-testid="telegram-report-panel">
-              <span className="label">Telegram</span>
-              <strong>Post-MVP Reporting Prototype</strong>
-              <p>
-                This panel drafts status reports for Telegram without touching the runtime bridge yet.
-              </p>
-              <div className="telegram-status-row">
-                <span className="pill soft">Status: {telegramReport.status}</span>
-                <span className="pill soft">
-                  Last draft: {telegramReport.generatedAt ? telegramReport.generatedAt : 'not generated'}
-                </span>
-              </div>
-              <div className="terminal-actions">
-                <button onClick={() => draftTelegramReport()}>Generate Telegram Draft</button>
-                <button
-                  onClick={() => queueTelegramReport()}
-                  disabled={telegramReport.status === 'idle'}
-                >
-                  Queue Telegram Draft
-                </button>
-              </div>
-              <div className="telegram-policy">
-                <span className="label">Command Policy Draft</span>
-                <p>
-                  Only `status`, `summary`, and `report`-style commands should be allowed through the
-                  future Telegram bridge.
-                </p>
-                <ul>
-                  <li>Read-only task and workspace summaries only.</li>
-                  <li>Any destructive action still requires in-app approval.</li>
-                  <li>Queueing the draft does not send a real Telegram message yet.</li>
-                </ul>
-              </div>
-              <div className="telegram-preview" data-testid="telegram-report-preview">
-                {telegramReport.preview ? (
-                  <pre>{telegramReport.preview}</pre>
-                ) : (
-                  <p>Generate a draft to inspect the Telegram-ready summary.</p>
-                )}
-              </div>
-              {telegramReport.queuedAt ? (
-                <p className="provider-selection-note">Queued at {telegramReport.queuedAt}</p>
-              ) : null}
             </article>
           </div>
         </aside>

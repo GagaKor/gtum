@@ -1,3 +1,4 @@
+import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 
 export type RuntimeInfo = {
@@ -413,6 +414,25 @@ export const readProjectOverview = async (path: string) => {
   }
 
   return invoke<ProjectOverview>('read_project_overview', { path })
+}
+
+export const selectProjectFolder = async (defaultPath?: string) => {
+  if (isMockRuntime()) {
+    return defaultPath?.trim() || '/mock/demo-project'
+  }
+
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Choose a project folder',
+      defaultPath: defaultPath?.trim() || undefined,
+    })
+
+    return typeof selected === 'string' ? selected : null
+  } catch {
+    return null
+  }
 }
 
 export const createTerminalSession = async (request: CreateTerminalSessionRequest) => {

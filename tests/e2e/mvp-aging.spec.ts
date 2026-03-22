@@ -1,24 +1,9 @@
-import { expect, test, type Page } from '@playwright/test'
-
-async function setProjectPath(page: Page, value: string) {
-  await page.getByLabel('Project Path').evaluate((element, nextValue) => {
-    const input = element as HTMLInputElement
-    const descriptor = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      'value',
-    )
-
-    descriptor?.set?.call(input, nextValue)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-  }, value)
-}
+import { expect, test } from '@playwright/test'
 
 test('repeats the core MVP flow and restores workspace state after reload', async ({ page }) => {
   await page.goto('/?e2eMock=1')
 
-  await setProjectPath(page, '/mock/demo-project')
-  await page.getByRole('button', { name: 'Open Project' }).click()
+  await page.getByRole('button', { name: 'Open Folder' }).click()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
   await page.getByRole('button', { name: 'Complete Mock Callback' }).dispatchEvent('click')
 
@@ -44,7 +29,7 @@ test('repeats the core MVP flow and restores workspace state after reload', asyn
   await page.reload()
 
   await expect(
-    page.getByRole('article').filter({ hasText: 'Project Metadata' }).first(),
+    page.getByRole('article').filter({ hasText: 'Project Summary' }).first(),
   ).toContainText('/mock/demo-project')
   await expect(page.getByRole('radio', { name: 'Deep' })).toBeChecked()
   await expect(page.getByRole('tab', { name: 'workspace' })).toBeVisible()
