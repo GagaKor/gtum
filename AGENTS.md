@@ -55,48 +55,84 @@ Its goals are:
 현재 저장소 기준 기본 시작 순서는 아래와 같다.
 
 1. `AGENTS.md`
-2. `docs/README.md`
-3. `docs/product-plan.md`
-4. `docs/technical-design.md`
+2. `docs/DOCS_READING_ORDER.md`
+3. `docs/README.md`
+4. `docs/product-plan.md`
+5. `docs/technical-design.md`
+6. `docs/mvp-backlog.md`
+7. `docs/sprint-plan.md`
+8. `docs/sprint-0-checklist.md`
 
 각 문서의 역할은 다음과 같다.
 
 - `AGENTS.md`
   - 저장소 운영 규칙, 문서 동기화 원칙, 작업 절차를 안내한다.
+- `docs/DOCS_READING_ORDER.md`
+  - 길을 잃었을 때 어떤 문서를 어떤 순서로 다시 읽을지 안내한다.
 - `docs/README.md`
   - 현재 문서 목록과 핵심 결정 사항을 빠르게 확인하게 해준다.
 - `docs/product-plan.md`
   - 제품 비전, 핵심 기능, 멀티 에이전트 구조, 실행 모드, 기술 방향을 설명한다.
 - `docs/technical-design.md`
   - 앱 구조, 런타임 책임, 크로스 플랫폼 전략, 인증 구조, 구현 순서를 설명한다.
+- `docs/mvp-backlog.md`
+  - MVP 범위, 우선순위, 완료조건, 제외 범위를 정의한다.
+- `docs/sprint-plan.md`
+  - MVP 백로그를 실제 스프린트 단위 실행 계획으로 변환한다.
+- `docs/sprint-0-checklist.md`
+  - 지금 바로 시작할 Sprint 0 실행 체크리스트다.
 
 짧게 확인해야 할 때도 최소한 아래는 먼저 읽는다.
 
 1. `AGENTS.md`
-2. `docs/product-plan.md`
-3. `docs/technical-design.md`
+2. `docs/DOCS_READING_ORDER.md`
+3. `docs/product-plan.md`
+4. `docs/technical-design.md`
+5. `docs/mvp-backlog.md`
+6. `docs/sprint-plan.md`
+7. `docs/sprint-0-checklist.md`
 
 ### English
 
 Given the current state of the repository, the default reading order is:
 
 1. `AGENTS.md`
-2. `docs/README.md`
-3. `docs/product-plan.md`
+2. `docs/DOCS_READING_ORDER.md`
+3. `docs/README.md`
+4. `docs/product-plan.md`
+5. `docs/technical-design.md`
+6. `docs/mvp-backlog.md`
+7. `docs/sprint-plan.md`
+8. `docs/sprint-0-checklist.md`
 
 The role of each document is:
 
 - `AGENTS.md`
   - explains repository operating rules, documentation sync rules, and working procedures
+- `docs/DOCS_READING_ORDER.md`
+  - explains which docs to reread when direction becomes unclear
 - `docs/README.md`
   - gives a quick view of the available docs and current decisions
 - `docs/product-plan.md`
   - explains product vision, core capabilities, multi-agent structure, execution modes, and technical direction
+- `docs/technical-design.md`
+  - explains implementation structure, runtime responsibilities, and platform strategy
+- `docs/mvp-backlog.md`
+  - defines MVP scope, priorities, and acceptance criteria
+- `docs/sprint-plan.md`
+  - turns the MVP backlog into sprint sequencing
+- `docs/sprint-0-checklist.md`
+  - gives the immediate execution checklist for the first sprint
 
 Even in a time-constrained situation, read at least:
 
 1. `AGENTS.md`
-2. `docs/product-plan.md`
+2. `docs/DOCS_READING_ORDER.md`
+3. `docs/product-plan.md`
+4. `docs/technical-design.md`
+5. `docs/mvp-backlog.md`
+6. `docs/sprint-plan.md`
+7. `docs/sprint-0-checklist.md`
 
 ## 4. 현재 문서별 역할 / Current Document Roles
 
@@ -104,12 +140,22 @@ Even in a time-constrained situation, read at least:
 
 - `AGENTS.md`
   - 저장소 운영 원칙과 에이전트 행동 규칙
+- `docs/DOCS_READING_ORDER.md`
+  - 문서 복귀 순서 기준 문서
 - `docs/README.md`
   - 문서 인덱스와 현재 핵심 결정 요약
 - `docs/product-plan.md`
   - 제품 기획의 기준 문서
 - `docs/technical-design.md`
   - 구현 구조의 기준 문서
+- `docs/mvp-backlog.md`
+  - MVP 실행 범위의 기준 문서
+- `docs/sprint-plan.md`
+  - 스프린트 실행 순서의 기준 문서
+- `docs/sprint-0-checklist.md`
+  - 첫 실행 체크리스트 문서
+- `docs/WORKLOG_TEMPLATE.md`
+  - 스프린트 작업 기록 템플릿
 
 향후 구현이 진행되면 아래 문서들을 추가하는 것을 권장한다.
 
@@ -128,12 +174,22 @@ Even in a time-constrained situation, read at least:
 
 - `AGENTS.md`
   - repository operating principles and agent behavior rules
+- `docs/DOCS_READING_ORDER.md`
+  - recovery guide for what to reread when direction is unclear
 - `docs/README.md`
   - document index and summary of current decisions
 - `docs/product-plan.md`
   - canonical product planning document
 - `docs/technical-design.md`
   - canonical implementation structure document
+- `docs/mvp-backlog.md`
+  - canonical MVP scope, priority, and acceptance criteria document
+- `docs/sprint-plan.md`
+  - canonical sprint sequencing and delivery plan document
+- `docs/sprint-0-checklist.md`
+  - canonical immediate execution checklist for Sprint 0
+- `docs/WORKLOG_TEMPLATE.md`
+  - worklog template for sprint progress recording
 
 As implementation grows, the following documents should be added:
 
@@ -159,12 +215,23 @@ As implementation grows, the following documents should be added:
   - `docs/technical-design.md`
 - 제품 비전, 범위, 에이전트 정책, 실행 모드 변경
   - `docs/product-plan.md`
+- MVP 범위, 우선순위, 완료조건 변경
+  - `docs/mvp-backlog.md`
+  - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
+- 스프린트 순서, 산출물, 완료조건 변경
+  - `docs/sprint-plan.md`
+  - `docs/mvp-backlog.md`
+  - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
 - 기술 스택, 런타임 구조, PTY 설계, 상태 모델 확정 또는 변경
   - `docs/product-plan.md`
   - `docs/technical-design.md`가 있으면 함께 갱신
 - 새로운 문서 추가 또는 문서 역할 변경
   - `docs/README.md`
   - 필요 시 `AGENTS.md`
+- 체크리스트나 작업 로그 기준 변경
+  - `docs/sprint-0-checklist.md`
+  - `docs/WORKLOG_TEMPLATE.md`
+  - 필요 시 `docs/sprint-plan.md`
 - 저장소 구조가 커져 주요 경로 설명이 필요해짐
   - `docs/repository-map.md` 추가 검토
 - 구조적 설계나 흐름 설명이 반복적으로 필요해짐
@@ -181,12 +248,23 @@ The following kinds of changes require documentation updates:
   - update `docs/technical-design.md`
 - product vision, scope, agent policy, or execution mode changes
   - update `docs/product-plan.md`
+- MVP scope, backlog priority, or acceptance criteria changes
+  - update `docs/mvp-backlog.md`
+  - update `docs/product-plan.md` and `docs/technical-design.md` when needed
+- sprint order, deliverables, or sprint acceptance criteria changes
+  - update `docs/sprint-plan.md`
+  - update `docs/mvp-backlog.md`
+  - update `docs/product-plan.md` and `docs/technical-design.md` when needed
 - technical stack, runtime structure, PTY design, or state model decisions
   - update `docs/product-plan.md`
   - update `docs/technical-design.md` as well if it exists
 - adding a new document or changing document responsibilities
   - update `docs/README.md`
   - update `AGENTS.md` when needed
+- checklist or worklog baseline changes
+  - update `docs/sprint-0-checklist.md`
+  - update `docs/WORKLOG_TEMPLATE.md`
+  - update `docs/sprint-plan.md` when needed
 - repository growth that requires path-level guidance
   - consider adding `docs/repository-map.md`
 - repeated need for structural or flow explanations

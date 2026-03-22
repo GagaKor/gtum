@@ -2,6 +2,11 @@
 
 - [제품 기획서 / Product Plan](./product-plan.md)
 - [기술 설계서 / Technical Design](./technical-design.md)
+- [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
+- [스프린트 계획 / Sprint Plan](./sprint-plan.md)
+- [문서 읽기 순서 / Docs Reading Order](./DOCS_READING_ORDER.md)
+- [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
+- [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
 
 ## 운영 원칙 / Working Rule

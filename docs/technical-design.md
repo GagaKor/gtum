@@ -608,6 +608,68 @@ Authentication should prefer login-based flows over manual API token entry.
 - do not store sensitive credentials in plain-text config files
 - if the session expires or loses scope, show a clear reconnect state in the UI
 
+## 외부 채널 연동 설계 / External Channel Integration Design
+
+### 한국어
+
+`gtum`은 향후 데스크톱 앱 밖에서도 상태를 확인하고 제한된 명령을 전달할 수 있도록 외부 채널 연동을 확장 가능하게 설계하는 것이 좋다.
+
+초기 후보 채널은 다음과 같다.
+
+- `Telegram`
+
+#### 목표
+
+- 작업 완료, 실패, 승인 필요 이벤트를 외부로 전달
+- 제한된 원격 명령을 수신
+- 데스크톱 앱을 열지 못하는 상황에서도 최소한의 운영 가능성 제공
+
+#### 설계 원칙
+
+- 외부 채널은 기본 에이전트 provider와 분리된 `notification/control adapter` 계층으로 다룬다.
+- 외부 채널에서 허용하는 명령은 강하게 제한한다.
+- 민감한 명령은 여전히 승인 흐름 또는 2차 확인을 요구한다.
+- 로그 전체를 무제한 전송하지 않고, 요약 또는 제한된 발췌를 우선한다.
+
+#### 권장 구성요소
+
+- `ChannelAdapter`
+  - Telegram 같은 외부 채널을 위한 공통 인터페이스
+- `NotificationDispatcher`
+  - 작업 상태에 따라 외부 채널에 리포트 발송
+- `RemoteCommandGate`
+  - 외부 채널에서 들어온 명령을 검증하고 제한
+
+### English
+
+`gtum` should remain extensible for external channels so users can inspect status and send limited commands outside the desktop app.
+
+The initial candidate channel is:
+
+- `Telegram`
+
+#### Goals
+
+- deliver completion, failure, and approval-required events externally
+- receive limited remote commands
+- provide minimal operational visibility when the desktop app is not open
+
+#### Design Principles
+
+- treat external channels as a separate `notification/control adapter` layer, not as part of the core agent-provider layer
+- strictly limit which remote commands are allowed
+- sensitive commands should still require approval or a second confirmation step
+- avoid streaming full logs by default; prefer summaries or bounded excerpts
+
+#### Recommended Components
+
+- `ChannelAdapter`
+  - shared interface for channels such as Telegram
+- `NotificationDispatcher`
+  - sends reports to external channels based on task state
+- `RemoteCommandGate`
+  - validates and constrains commands arriving from external channels
+
 ## 멀티 에이전트 실행 구조 / Multi-Agent Execution Structure
 
 ### 한국어

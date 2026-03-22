@@ -44,6 +44,13 @@ In other words, the Korean and English sections are not treated as a source-and-
 
 즉, 단순한 터미널 에뮬레이터가 아니라 프로젝트 중심으로 작업을 조직하고, 탭 단위로 실행 흐름을 분리하며, 에이전트가 그 맥락을 이해하고 도와주는 작업 환경을 만드는 것이 핵심이다.
 
+이 제품은 개인적인 실제 사용 경험에서 나온 문제를 해결하려는 시도이기도 하다.
+
+- `cmux`는 멀티 터미널 사용감은 좋았지만, IDE 성격이 약해서 코드를 함께 읽고 판단하기에 불편했다.
+- `conductor`는 에이전트 관리, 코드 열람, VS Code 연동은 좋았지만, 터미널 기능이 약해서 실제 테스트 중인 로그를 자연스럽게 공유하고 활용하기 어려웠다.
+
+`gtum`은 이 둘의 장점을 결합하면서, 특히 "코드를 보면서 에이전트를 운영하고, 동시에 현재 테스트 중인 터미널 로그를 바로 공유하고 활용할 수 있는 환경"을 목표로 한다.
+
 ### English
 
 `gtum` is a local desktop workspace for managing projects, terminals, and AI agents together.
@@ -55,6 +62,13 @@ The product combines:
 - an agent collaboration layer that can read both project and terminal state
 
 The goal is not to build another terminal emulator. The goal is to build a project-centric workspace where users organize work by project, separate execution flows by tab, and let agents assist with full context.
+
+This product also comes from direct hands-on frustration with existing tools.
+
+- `cmux` felt strong as a multi-terminal tool, but lacked enough IDE-like affordances to make code reading and inspection comfortable.
+- `conductor` was strong at agent management, code visibility, and VS Code integration, but its terminal capabilities were weak enough that sharing and using live testing logs felt awkward.
+
+`gtum` is intended to combine the strengths of both while specifically solving this gap: operating agents while reading code, and at the same time sharing and using live terminal logs from active testing workflows.
 
 ## 제품 비전 / Product Vision
 
@@ -69,6 +83,7 @@ The goal is not to build another terminal emulator. The goal is to build a proje
 - 프로젝트 파일과 작업 상태를 터미널과 함께 관리하기
 - 에이전트가 프로젝트와 터미널 맥락을 읽도록 하기
 - 에이전트가 제안한 작업을 승인 후 실행하기
+- 현재 테스트 중인 터미널 로그를 에이전트와 자연스럽게 공유하기
 
 ### English
 
@@ -81,6 +96,29 @@ The app should make it easy to:
 - manage project files and task state alongside terminals
 - let agents read project and terminal context
 - approve and execute agent-suggested actions
+- share active testing logs with agents naturally inside the same workspace
+
+## 해결하려는 문제 / Problem Statement
+
+### 한국어
+
+`gtum`이 해결하려는 핵심 문제는 다음과 같다.
+
+1. 좋은 멀티 터미널 경험과 좋은 코드 탐색 경험이 하나의 앱 안에서 잘 결합되지 않는다.
+2. 에이전트 관리가 잘 되는 도구는 있어도, 현재 실행 중인 터미널 로그를 작업 맥락으로 다루는 경험이 약하다.
+3. 테스트와 디버깅 중 생성되는 실시간 로그를 코드, 프로젝트 구조, 에이전트 작업 흐름과 함께 연결하기 어렵다.
+
+즉, `gtum`은 "프로젝트, 코드, 터미널, 에이전트"가 분리된 도구들 사이를 오가는 불편함을 줄이는 것을 목표로 한다.
+
+### English
+
+The core problems `gtum` is trying to solve are:
+
+1. strong multi-terminal workflows and strong code-reading workflows are rarely combined well in a single app
+2. some tools manage agents well, but do not treat live terminal logs as first-class working context
+3. real-time logs produced during testing and debugging are hard to connect with code, project structure, and agent workflows
+
+In short, `gtum` aims to reduce the friction of constantly switching between separate tools for projects, code, terminals, and agents.
 
 ## 핵심 원칙 / Core Principles
 
@@ -260,6 +298,22 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - 장기 API 토큰을 직접 복사해서 붙여넣는 UX는 기본 경로로 채택하지 않는다.
 - 연결된 계정 상태, 권한 범위, 로그인 만료 여부를 앱 안에서 확인할 수 있어야 한다.
 
+#### 6. 원격 명령 및 리포트 채널
+
+사용자는 데스크톱 앱 안에서만 작업하는 것이 아니라, 외부 메시징 채널을 통해서도 상태를 받고 명령을 보낼 수 있으면 좋다.
+
+초기 후보 채널은 다음과 같다.
+
+- `Telegram` 연동
+
+이 기능의 목적은 다음과 같다.
+
+- 현재 실행 중인 작업의 상태를 원격에서 확인
+- 간단한 명령을 원격으로 전달
+- 작업 완료, 실패, 승인 필요 상태를 메시지로 리포트
+
+다만 이 기능은 보안과 인증 경계가 중요하므로, `MVP 완료 후` 다음 단계 확장 기능으로 도입하는 것이 바람직하다.
+
 ### English
 
 #### 1. Project Workspace
@@ -319,6 +373,23 @@ The authentication model follows these rules:
 - users connect accounts through OAuth or an equivalent official login flow
 - manually pasting long-lived API tokens is not the default path
 - the app should show connection state, granted scopes, and token expiration or session validity
+
+#### 6. Remote Command and Report Channels
+
+Users may also want to receive status updates and send commands through external messaging channels, not only from inside the desktop app.
+
+The initial candidate channels are:
+
+- `SMS`
+- `Telegram`
+
+The goals of this feature are:
+
+- check the state of running work remotely
+- send lightweight commands from outside the desktop app
+- receive reports for completion, failure, or approval-required states
+
+Because this adds important security and authentication boundaries, it should be introduced after the base desktop workflow is stable.
 
 ## 정보 구조 / Information Architecture
 
@@ -901,6 +972,7 @@ The first version should focus on the smallest complete experience.
 - 사용자는 `Codex`와 `Claude` 계정을 앱 안에서 로그인 기반으로 연결할 수 있어야 한다.
 - 인증은 API 토큰 수동 입력이 아니라 OAuth 또는 이에 준하는 공식 인증 흐름을 우선해야 한다.
 - 앱은 연결 상태, 세션 만료, 권한 범위를 사용자에게 표시해야 한다.
+- 향후 `SMS`와 `Telegram` 같은 외부 채널을 통해 상태 리포트와 제한된 원격 명령을 지원할 수 있어야 한다.
 
 #### 작업 인식
 
@@ -932,6 +1004,7 @@ The first version should focus on the smallest complete experience.
 - users should be able to connect `Codex` and `Claude` accounts through in-app login flows
 - authentication should prefer OAuth or equivalent official sign-in flows instead of manual API token entry
 - the app should display connection state, session expiration, and granted scopes
+- the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 
 #### Task Awareness
 
