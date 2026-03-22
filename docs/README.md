@@ -10,6 +10,7 @@
 - [Sprint 1 작업 로그 / Sprint 1 Worklog](./WORKLOG_2026-03-22_sprint-1-project-workspace.md)
 - [Sprint 2 작업 로그 / Sprint 2 Worklog](./WORKLOG_2026-03-22_sprint-2-terminal-workspace.md)
 - [Sprint 3 작업 로그 / Sprint 3 Worklog](./WORKLOG_2026-03-22_sprint-3-provider-auth.md)
+- [Sprint 4 작업 로그 / Sprint 4 Worklog](./WORKLOG_2026-03-22_sprint-4-agent-request-flow.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
 
 ## 운영 원칙 / Working Rule
@@ -24,6 +25,6 @@
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`
 - 에이전트 제공자는 우선 `Codex + Claude`, 인증은 `OAuth 기반 로그인`을 우선한다
-- 현재 Sprint 3 기준으로 provider 선택, mock callback 성공/실패, request contract preview가 구현되어 있다
+- 현재 Sprint 4 기준으로 agent request 입력, suggestion 카드, 승인 기반 current/new tab 실행 흐름이 구현되어 있다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 스프린트 종료 시 `Playwright` 기반 UI E2E와 다음 스프린트 작업 추가를 함께 진행한다

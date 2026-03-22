@@ -9,6 +9,7 @@ import {
   type AgentProviderId,
   appendMockTerminalLine,
   createTerminalSession,
+  executeTerminalSessionCommand,
   type FileTreeNode,
   type ProjectOverview,
   readProjectOverview,
@@ -23,6 +24,21 @@ import {
   closeTerminalSession,
   usesMockRuntime,
 } from './lib/runtime'
+
+type AgentSuggestionTarget = 'current-tab' | 'new-tab'
+
+type AgentSuggestion = {
+  id: string
+  provider: AgentProviderId
+  providerLabel: string
+  request: string
+  summary: string
+  command: string
+  projectLabel: string
+  terminalLabel: string
+  attachedLogLines: number
+  status: 'pending' | 'approved-current-tab' | 'approved-new-tab'
+}
 
 function TreeNode({ node, depth = 0 }: { node: FileTreeNode; depth?: number }) {
   return (
@@ -100,6 +116,9 @@ function App() {
   const [agentConnections, setAgentConnections] = useState<AgentConnectionSnapshot[]>([])
   const [authError, setAuthError] = useState<string | null>(null)
   const [selectedProvider, setSelectedProvider] = useState<AgentProviderId>('codex')
+  const [agentRequestInput, setAgentRequestInput] = useState('')
+  const [agentRequestError, setAgentRequestError] = useState<string | null>(null)
+  const [agentSuggestions, setAgentSuggestions] = useState<AgentSuggestion[]>([])
 
   const refreshTerminalSessions = useCallback(async () => {
     try {
@@ -344,7 +363,7 @@ function App() {
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
       setSelectedProvider(provider)
-      setActiveContext(`Sprint 3 ${snapshot.displayName} login started`)
+      setActiveContext(`Sprint 4 ${snapshot.displayName} login started`)
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
     }
@@ -357,7 +376,7 @@ function App() {
       setAgentConnections((current) =>
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
-      setActiveContext(`Sprint 3 ${snapshot.displayName} disconnected`)
+      setActiveContext(`Sprint 4 ${snapshot.displayName} disconnected`)
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
     }
@@ -392,7 +411,7 @@ function App() {
       ),
     )
     setActiveContext(
-      failReason ? `Sprint 3 ${provider} login failed` : `Sprint 3 ${provider} connected`,
+      failReason ? `Sprint 4 ${provider} login failed` : `Sprint 4 ${provider} connected`,
     )
 
     try {
@@ -407,8 +426,8 @@ function App() {
       )
       setActiveContext(
         snapshot.status === 'connected'
-          ? `Sprint 3 ${snapshot.displayName} connected`
-          : `Sprint 3 ${snapshot.displayName} login failed`,
+          ? `Sprint 4 ${snapshot.displayName} connected`
+          : `Sprint 4 ${snapshot.displayName} login failed`,
       )
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
@@ -424,6 +443,107 @@ function App() {
     }
   }
 
+  const buildAgentSuggestion = (provider: AgentConnectionSnapshot, request: string): AgentSuggestion => {
+    const normalizedRequest = request.trim()
+    const commandBase =
+      normalizedRequest.toLowerCase().includes('test')
+        ? 'npm run test -- --runInBand'
+        : normalizedRequest.toLowerCase().includes('lint')
+          ? 'npm run lint'
+          : 'npm run build'
+
+    return {
+      id: `suggestion-${Date.now()}`,
+      provider: provider.provider,
+      providerLabel: provider.displayName,
+      request: normalizedRequest,
+      summary: `${provider.displayName} suggests running "${commandBase}" for "${normalizedRequest}".`,
+      command: commandBase,
+      projectLabel: projectOverview?.metadata.name ?? activeProject,
+      terminalLabel: agentContext?.tabTitle ?? activeSession?.name ?? 'workspace',
+      attachedLogLines: agentContext?.lines.length ?? 0,
+      status: 'pending',
+    }
+  }
+
+  const submitAgentRequest = () => {
+    const normalizedRequest = agentRequestInput.trim()
+    const connectedProvider = agentConnections.find(
+      (connection) => connection.provider === selectedProvider && connection.status === 'connected',
+    )
+
+    if (!normalizedRequest) {
+      setAgentRequestError('Enter an agent request before asking for suggestions.')
+      return
+    }
+
+    if (!connectedProvider) {
+      setAgentRequestError('Connect the selected provider before requesting agent suggestions.')
+      return
+    }
+
+    setAgentRequestError(null)
+    const suggestion = buildAgentSuggestion(connectedProvider, normalizedRequest)
+    setAgentSuggestions((current) => [suggestion, ...current].slice(0, 6))
+    setActiveContext(`Sprint 4 ${connectedProvider.displayName} suggestion ready`)
+  }
+
+  const approveSuggestion = async (suggestion: AgentSuggestion, target: AgentSuggestionTarget) => {
+    try {
+      if (target === 'current-tab' && activeTerminalTabId) {
+        if (usesMockRuntime()) {
+          await appendMockTerminalLine(
+            Number(activeTerminalTabId),
+            `[agent:${suggestion.provider}] ${suggestion.command}`,
+          )
+        } else {
+          await executeTerminalSessionCommand(Number(activeTerminalTabId), suggestion.command)
+        }
+        await refreshActiveTerminalLogs(activeTerminalTabId)
+        await refreshTerminalSessions()
+      }
+
+      if (target === 'new-tab') {
+        const session = await createTerminalSession({
+          name: `agent-${suggestion.provider}-${terminalSessions.length + 1}`,
+          cwd: activeProjectPath || undefined,
+          maxLogEntries: 400,
+        })
+        setTerminalSessions((current) => [...current, session])
+        selectTerminalTab(String(session.sessionId))
+
+        if (usesMockRuntime()) {
+          await appendMockTerminalLine(
+            session.sessionId,
+            `[agent:${suggestion.provider}] ${suggestion.command}`,
+          )
+        } else {
+          await executeTerminalSessionCommand(session.sessionId, suggestion.command)
+        }
+        await refreshActiveTerminalLogs(String(session.sessionId))
+        await refreshTerminalSessions()
+      }
+
+      setAgentSuggestions((current) =>
+        current.map((entry) =>
+          entry.id === suggestion.id
+            ? {
+                ...entry,
+                status: target === 'current-tab' ? 'approved-current-tab' : 'approved-new-tab',
+              }
+            : entry,
+        ),
+      )
+      setActiveContext(
+        target === 'current-tab'
+          ? `Sprint 4 ${suggestion.providerLabel} approved in current tab`
+          : `Sprint 4 ${suggestion.providerLabel} approved in new tab`,
+      )
+    } catch (error) {
+      setAgentRequestError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
   const gitLabel = projectOverview?.git.isRepository
     ? `${projectOverview.git.branch ?? 'detached'} • ${
         projectOverview.git.isDirty ? 'Dirty' : 'Clean'
@@ -436,6 +556,7 @@ function App() {
     terminal: agentContext?.tabTitle ?? activeSession?.name ?? 'No active terminal',
     lines: agentContext?.lines.length ?? 0,
   }
+  const selectedConnection = agentConnections.find((connection) => connection.provider === selectedProvider)
 
   return (
     <div className="app-shell">
@@ -473,7 +594,7 @@ function App() {
             <article className="card">
               <span className="label">Sprint Focus</span>
               <strong>{activeContext}</strong>
-              <p>Provider selection, login state transitions, and provider-request preparation.</p>
+              <p>Agent request input, suggestion approval, and provider-backed execution routing.</p>
             </article>
             <article className="card">
               <span className="label">Recent Projects</span>
@@ -508,9 +629,9 @@ function App() {
             <h2>Terminal workspace with active log context</h2>
           </div>
           <div className="pill-row">
-            <span className="pill">Sprint 3</span>
-            <span className="pill">Provider Auth</span>
-            <span className="pill">Mock Callback</span>
+            <span className="pill">Sprint 4</span>
+            <span className="pill">Agent Request</span>
+            <span className="pill">Approval Flow</span>
           </div>
         </header>
 
@@ -626,6 +747,15 @@ function App() {
                   : 'Create a terminal to start live log capture.'}
               </p>
             </article>
+            <article className="card">
+              <span className="label">Suggestions</span>
+              <strong>{agentSuggestions.length}</strong>
+              <p>
+                {selectedConnection
+                  ? `${selectedConnection.displayName} is ${selectedConnection.status}.`
+                  : 'Select a provider to start an agent request.'}
+              </p>
+            </article>
           </section>
 
           <section className="project-grid">
@@ -682,7 +812,7 @@ function App() {
             <article className="card">
               <span className="label">Orchestrator</span>
               <strong>Active</strong>
-              <p>Tracking Sprint 3 provider selection, callback state, and request contract readiness.</p>
+              <p>Tracking Sprint 4 request input, suggestion cards, and approval targets.</p>
             </article>
             <article className="card">
               <span className="label">Agent Context</span>
@@ -764,6 +894,65 @@ function App() {
               <strong>{providerRequestPreview.project}</strong>
               <p>{providerRequestPreview.terminal}</p>
               <p>{providerRequestPreview.lines} captured line(s) prepared for provider requests.</p>
+            </article>
+            <article className="card" data-testid="agent-request-panel">
+              <span className="label">Agent Request</span>
+              <strong>{selectedConnection?.displayName ?? 'No Provider Selected'}</strong>
+              <p>Submit a task request using the selected provider, project metadata, and active log buffer.</p>
+              <label className="field-block">
+                <span className="label">Task Request</span>
+                <textarea
+                  aria-label="Task Request"
+                  className="request-textarea"
+                  value={agentRequestInput}
+                  onChange={(event) => setAgentRequestInput(event.target.value)}
+                  placeholder="Analyze the failing test logs and suggest the next command."
+                />
+              </label>
+              <div className="terminal-actions">
+                <button onClick={() => submitAgentRequest()}>Request Suggestion</button>
+              </div>
+              {agentRequestError ? <p className="error-text">{agentRequestError}</p> : null}
+            </article>
+            <article className="card" data-testid="agent-suggestions-panel">
+              <span className="label">Suggestion Cards</span>
+              <strong>{agentSuggestions.length > 0 ? 'Pending Review' : 'No Suggestions Yet'}</strong>
+              <div className="stack compact">
+                {agentSuggestions.length > 0 ? (
+                  agentSuggestions.map((suggestion) => (
+                    <div
+                      key={suggestion.id}
+                      className="suggestion-card"
+                      data-testid={`suggestion-card-${suggestion.provider}`}
+                    >
+                      <strong>{suggestion.providerLabel}</strong>
+                      <p>{suggestion.summary}</p>
+                      <code>{suggestion.command}</code>
+                      <p>
+                        {suggestion.projectLabel} • {suggestion.terminalLabel} •{' '}
+                        {suggestion.attachedLogLines} log line(s)
+                      </p>
+                      <p>Status: {suggestion.status}</p>
+                      <div className="terminal-actions">
+                        <button
+                          onClick={() => void approveSuggestion(suggestion, 'current-tab')}
+                          disabled={suggestion.status !== 'pending'}
+                        >
+                          Approve In Current Tab
+                        </button>
+                        <button
+                          onClick={() => void approveSuggestion(suggestion, 'new-tab')}
+                          disabled={suggestion.status !== 'pending'}
+                        >
+                          Approve In New Tab
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p>Connect a provider and submit a task request to generate mock suggestions.</p>
+                )}
+              </div>
             </article>
             <article className="card">
               <span className="label">Runtime Probe</span>

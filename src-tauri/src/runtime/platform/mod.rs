@@ -101,6 +101,24 @@ pub fn terminal_shell_candidates(explicit_shell: Option<&str>) -> Vec<TerminalSh
     }
 }
 
+pub fn terminal_submission_line(command: &str) -> String {
+    let sanitized = command.trim_end_matches(['\r', '\n']);
+
+    #[cfg(target_os = "windows")]
+    {
+        format!("{sanitized}\r\n")
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        format!("{sanitized}\n")
+    }
+}
+
+pub fn normalize_terminal_command(command: &str) -> String {
+    command.trim().to_string()
+}
+
 #[cfg(not(target_os = "windows"))]
 fn interactive_shell_args(program: &str) -> Vec<String> {
     let shell_name = Path::new(program)

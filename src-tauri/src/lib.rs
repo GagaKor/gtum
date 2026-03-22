@@ -11,8 +11,8 @@ use runtime::auth::{
 };
 use runtime::filesystem::ProjectOverview;
 use runtime::pty::{
-    CreateTerminalSessionRequest, TerminalSessionLogs, TerminalSessionManager,
-    TerminalSessionSnapshot,
+    CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
+    TerminalSessionManager, TerminalSessionSnapshot,
 };
 use tauri::Manager;
 
@@ -86,6 +86,23 @@ fn read_terminal_session_logs(
 }
 
 #[tauri::command]
+fn execute_terminal_session_command(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    command: String,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.execute_command(session_id, command)
+}
+
+#[tauri::command]
+fn create_terminal_session_with_command(
+    state: tauri::State<'_, TerminalSessionManager>,
+    request: CreateTerminalSessionWithCommandRequest,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.create_session_with_command(request)
+}
+
+#[tauri::command]
 fn list_agent_connections(
     state: tauri::State<'_, AgentAuthManager>,
 ) -> Vec<AgentConnectionSnapshot> {
@@ -137,6 +154,8 @@ pub fn run() {
             rename_terminal_session,
             close_terminal_session,
             read_terminal_session_logs,
+            execute_terminal_session_command,
+            create_terminal_session_with_command,
             list_agent_connections,
             begin_agent_login,
             complete_agent_login,

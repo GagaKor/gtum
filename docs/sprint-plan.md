@@ -412,6 +412,14 @@ Risks:
 - approval UX design
 - context length limits
 
+Sprint 4 completion update:
+
+- the agent panel now accepts task requests tied to provider state, project context, and active logs
+- suggestion cards can be reviewed and approved into the current tab or a new tab
+- the runtime now supports command submission into an existing PTY session
+- Playwright coverage now includes the request-to-approval agent flow
+- the next sprint should focus on history, restore, execution modes, cross-platform notes, and aging validation
+
 ## Sprint 5
 
 ### 한국어
@@ -427,6 +435,7 @@ Risks:
 - `fast`, `balanced`, `deep` 초기 적용
 - Ubuntu, Windows, macOS 기준 검증
 - 알려진 제약 문서화
+- aging test 초안 추가
 
 완료조건:
 
@@ -454,6 +463,7 @@ Scope:
 - initial `fast`, `balanced`, `deep` mode support
 - Ubuntu, Windows, and macOS validation
 - documentation of known limitations
+- initial aging-test coverage
 
 Acceptance Criteria:
 

@@ -72,19 +72,6 @@ export type TerminalSessionLogs = {
   updatedAt: number
 }
 
-export type ProviderId = 'codex' | 'claude'
-export type ProviderAuthStatus = 'disconnected' | 'authorizing' | 'connected' | 'error'
-
-export type ProviderSessionSummary = {
-  providerId: ProviderId
-  displayName: string
-  status: ProviderAuthStatus
-  accountLabel: string | null
-  scopes: string[]
-  lastError: string | null
-  lastUpdatedAt: number | null
-}
-
 export type AgentProviderId = 'codex' | 'claude'
 export type AgentConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 
@@ -106,6 +93,27 @@ export type CompleteAgentLoginRequest = {
   authorizationCode?: string
   accountLabel?: string
   failReason?: string
+}
+
+export type AgentExecutionTarget = 'current_tab' | 'new_tab'
+
+export type AgentTaskRequest = {
+  provider: AgentProviderId
+  task: string
+  projectName: string
+  projectPath: string
+  activeTabTitle: string | null
+  activeTabId: string | null
+  activeLogLines: string[]
+}
+
+export type AgentSuggestion = {
+  id: string
+  provider: AgentProviderId
+  title: string
+  rationale: string
+  command: string
+  preferredTarget: AgentExecutionTarget
 }
 
 const mockTree: FileTreeNode = {
@@ -224,27 +232,6 @@ const mockTerminalLogs: Record<number, string[]> = {
   ],
 }
 
-let mockProviderSessions: ProviderSessionSummary[] = [
-  {
-    providerId: 'codex',
-    displayName: 'Codex',
-    status: 'disconnected',
-    accountLabel: null,
-    scopes: ['project.read', 'terminal.read', 'task.propose'],
-    lastError: null,
-    lastUpdatedAt: null,
-  },
-  {
-    providerId: 'claude',
-    displayName: 'Claude',
-    status: 'disconnected',
-    accountLabel: null,
-    scopes: ['project.read', 'terminal.read', 'task.propose'],
-    lastError: null,
-    lastUpdatedAt: null,
-  },
-]
-
 const refreshMockSession = (sessionId: number) => {
   const lines = mockTerminalLogs[sessionId] || []
   mockTerminalSessions = mockTerminalSessions.map((session) =>
@@ -265,30 +252,6 @@ if (typeof window !== 'undefined' && isMockRuntime()) {
 }
 
 export const usesMockRuntime = isMockRuntime
-
-const waitForMockAuth = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
-
-const getMockAuthScenario = (providerId: ProviderId) => {
-  if (typeof window === 'undefined') {
-    return 'success'
-  }
-
-  const scenario = new URLSearchParams(window.location.search).get('authMock')
-
-  if (!scenario) {
-    return 'success'
-  }
-
-  if (scenario === 'fail') {
-    return 'failure'
-  }
-
-  if (scenario === `${providerId}-fail`) {
-    return 'failure'
-  }
-
-  return 'success'
-}
 
 export const getRuntimeInfo = async () => {
   if (isMockRuntime()) {
@@ -413,6 +376,17 @@ export const readTerminalSessionLogs = async (sessionId: number, limit = 120) =>
   return invoke<TerminalSessionLogs>('read_terminal_session_logs', { sessionId, limit })
 }
 
+export const executeTerminalSessionCommand = async (sessionId: number, command: string) => {
+  if (isMockRuntime()) {
+    const lines = [...(mockTerminalLogs[sessionId] || []), `$ ${command}`, '[mock] command executed']
+    mockTerminalLogs[sessionId] = lines
+    refreshMockSession(sessionId)
+    return mockTerminalSessions.find((entry) => entry.sessionId === sessionId) ?? null
+  }
+
+  return invoke<TerminalSessionSnapshot>('execute_terminal_session_command', { sessionId, command })
+}
+
 export const appendMockTerminalLine = async (sessionId: number, input: string) => {
   if (!isMockRuntime()) {
     return
@@ -421,71 +395,6 @@ export const appendMockTerminalLine = async (sessionId: number, input: string) =
   const lines = [...(mockTerminalLogs[sessionId] || []), input, '[mock] output received']
   mockTerminalLogs[sessionId] = lines
   refreshMockSession(sessionId)
-}
-
-export const listProviderSessions = async () => {
-  if (isMockRuntime()) {
-    return mockProviderSessions
-  }
-
-  return invoke<ProviderSessionSummary[]>('list_provider_sessions')
-}
-
-export const startProviderLogin = async (providerId: ProviderId) => {
-  if (isMockRuntime()) {
-    const startedAt = Date.now()
-
-    mockProviderSessions = mockProviderSessions.map((session) =>
-      session.providerId === providerId
-        ? {
-            ...session,
-            status: 'authorizing',
-            lastError: null,
-            lastUpdatedAt: startedAt,
-          }
-        : session,
-    )
-
-    await waitForMockAuth(120)
-
-    const shouldFail = getMockAuthScenario(providerId) === 'failure'
-
-    mockProviderSessions = mockProviderSessions.map((session) =>
-      session.providerId === providerId
-        ? {
-            ...session,
-            status: shouldFail ? 'error' : 'connected',
-            accountLabel: shouldFail ? null : `${providerId}@mock.gtum`,
-            lastError: shouldFail ? `${session.displayName} login failed in mock callback.` : null,
-            lastUpdatedAt: Date.now(),
-          }
-        : session,
-    )
-
-    return mockProviderSessions.find((session) => session.providerId === providerId)!
-  }
-
-  return invoke<ProviderSessionSummary>('start_provider_login', { providerId })
-}
-
-export const disconnectProviderSession = async (providerId: ProviderId) => {
-  if (isMockRuntime()) {
-    mockProviderSessions = mockProviderSessions.map((session) =>
-      session.providerId === providerId
-        ? {
-            ...session,
-            status: 'disconnected',
-            accountLabel: null,
-            lastError: null,
-            lastUpdatedAt: Date.now(),
-          }
-        : session,
-    )
-
-    return mockProviderSessions.find((session) => session.providerId === providerId)!
-  }
-
-  return invoke<ProviderSessionSummary>('disconnect_provider_session', { providerId })
 }
 
 export const listAgentConnections = async () => {
@@ -572,4 +481,32 @@ export const disconnectAgentProvider = async (provider: AgentProviderId) => {
   }
 
   return invoke<AgentConnectionSnapshot>('disconnect_agent_provider', { provider })
+}
+
+export const requestAgentSuggestions = async (
+  request: AgentTaskRequest,
+): Promise<AgentSuggestion[]> => {
+  const safeTask = request.task.trim() || 'Investigate the current workspace state'
+  const recentLog = request.activeLogLines.at(-1) ?? 'No recent terminal output'
+  const providerLabel = mockProviderLabels[request.provider]
+
+  return [
+    {
+      id: `${request.provider}-rerun`,
+      provider: request.provider,
+      title: `${providerLabel} suggests a focused rerun`,
+      rationale: `Based on ${request.projectName} and the latest log line "${recentLog}", rerun the current workflow in the active tab to confirm the state.`,
+      command:
+        request.activeLogLines.length > 0 ? 'npm run test -- --runInBand' : 'git status --short',
+      preferredTarget: 'current_tab',
+    },
+    {
+      id: `${request.provider}-inspect`,
+      provider: request.provider,
+      title: `${providerLabel} suggests a fresh inspection tab`,
+      rationale: `Use a separate tab to inspect task "${safeTask}" without disturbing the current terminal session.`,
+      command: 'git status --short && git diff --stat',
+      preferredTarget: 'new_tab',
+    },
+  ]
 }
