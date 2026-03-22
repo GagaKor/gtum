@@ -346,6 +346,14 @@ Risks:
 - desktop callback handling
 - secure session persistence
 
+Sprint 3 completion update:
+
+- provider selection UI and connection cards are now available for Codex and Claude
+- the runtime and frontend share login start, completion, failure, and disconnect interfaces
+- mock callback success and failure are covered by Playwright E2E
+- a request-contract preview now shows how active project and terminal context will be handed to future agent requests
+- the next sprint should connect provider state to agent request input, suggestion cards, and approval-based execution
+
 ## Sprint 4
 
 ### 한국어
@@ -360,6 +368,7 @@ Risks:
 - 작업 요청 입력
 - 프로젝트 컨텍스트 읽기
 - 활성 탭 로그 전달
+- provider 연결 상태 반영
 - 제안 카드 UI
 - 승인 기반 명령 실행
 
@@ -387,6 +396,7 @@ Scope:
 - task request input
 - project context reading
 - active-tab log attachment
+- provider connection-state usage
 - suggestion card UI
 - approval-based command execution
 

@@ -1,14 +1,20 @@
 mod runtime {
+    pub mod auth;
     pub mod filesystem;
     pub mod platform;
     pub mod pty;
 }
 
+use runtime::auth::{
+    AgentAuthManager, AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProvider,
+    CompleteAgentLoginRequest,
+};
 use runtime::filesystem::ProjectOverview;
 use runtime::pty::{
     CreateTerminalSessionRequest, TerminalSessionLogs, TerminalSessionManager,
     TerminalSessionSnapshot,
 };
+use tauri::Manager;
 
 #[derive(serde::Serialize)]
 struct RuntimeInfo {
@@ -79,9 +85,49 @@ fn read_terminal_session_logs(
     state.read_recent_logs(session_id, limit)
 }
 
+#[tauri::command]
+fn list_agent_connections(
+    state: tauri::State<'_, AgentAuthManager>,
+) -> Vec<AgentConnectionSnapshot> {
+    state.list_connections()
+}
+
+#[tauri::command]
+fn begin_agent_login(
+    state: tauri::State<'_, AgentAuthManager>,
+    provider: AgentProvider,
+    requested_scopes: Option<Vec<String>>,
+) -> AgentConnectionSnapshot {
+    state.begin_login(provider, requested_scopes)
+}
+
+#[tauri::command]
+fn complete_agent_login(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: CompleteAgentLoginRequest,
+) -> Result<AgentConnectionSnapshot, String> {
+    state.complete_login(request)
+}
+
+#[tauri::command]
+fn disconnect_agent_provider(
+    state: tauri::State<'_, AgentAuthManager>,
+    provider: AgentProvider,
+) -> AgentConnectionSnapshot {
+    state.disconnect(provider)
+}
+
+#[tauri::command]
+fn agent_auth_runtime_snapshot(
+    state: tauri::State<'_, AgentAuthManager>,
+) -> AgentAuthRuntimeSnapshot {
+    state.runtime_snapshot()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AgentAuthManager::new())
         .manage(TerminalSessionManager::new())
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
@@ -90,9 +136,27 @@ pub fn run() {
             list_terminal_sessions,
             rename_terminal_session,
             close_terminal_session,
-            read_terminal_session_logs
+            read_terminal_session_logs,
+            list_agent_connections,
+            begin_agent_login,
+            complete_agent_login,
+            disconnect_agent_provider,
+            agent_auth_runtime_snapshot
         ])
         .setup(|app| {
+            let storage_path = app
+                .handle()
+                .path()
+                .app_data_dir()
+                .or_else(|_| {
+                    std::env::current_dir().map(|cwd| cwd.join(".gtum").join("agent-auth.json"))
+                })
+                .map_err(|error| format!("failed to resolve auth storage path: {error}"))?;
+
+            app.handle()
+                .state::<AgentAuthManager>()
+                .initialize_storage(storage_path)?;
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

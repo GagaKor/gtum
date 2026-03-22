@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { type AgentContextSnapshot, useWorkspaceStore } from './stores/workspace-store'
 import {
+  beginAgentLogin,
+  completeAgentLogin,
+  disconnectAgentProvider,
+  type AgentConnectionSnapshot,
+  type AgentProviderId,
   appendMockTerminalLine,
   createTerminalSession,
   type FileTreeNode,
@@ -10,6 +15,7 @@ import {
   readTerminalSessionLogs,
   type RuntimeInfo,
   getRuntimeInfo,
+  listAgentConnections,
   listTerminalSessions,
   type TerminalSessionLogs,
   type TerminalSessionSnapshot,
@@ -91,6 +97,9 @@ function App() {
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSnapshot[]>([])
   const [terminalLogs, setTerminalLogs] = useState<TerminalSessionLogs | null>(null)
   const [terminalError, setTerminalError] = useState<string | null>(null)
+  const [agentConnections, setAgentConnections] = useState<AgentConnectionSnapshot[]>([])
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState<AgentProviderId>('codex')
 
   const refreshTerminalSessions = useCallback(async () => {
     try {
@@ -114,6 +123,15 @@ function App() {
     }
   }, [])
 
+  const refreshAgentConnections = useCallback(async () => {
+    try {
+      const connections = await listAgentConnections()
+      setAgentConnections(connections)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
+
   useEffect(() => {
     getRuntimeInfo()
       .then(setRuntimeInfo)
@@ -122,7 +140,8 @@ function App() {
       })
 
     void refreshTerminalSessions()
-  }, [refreshTerminalSessions])
+    void refreshAgentConnections()
+  }, [refreshAgentConnections, refreshTerminalSessions])
 
   useEffect(() => {
     if (!activeTerminalTabId) {
@@ -137,6 +156,41 @@ function App() {
 
     return () => window.clearInterval(timer)
   }, [activeTerminalTabId, refreshActiveTerminalLogs])
+
+  useEffect(() => {
+    if (!usesMockRuntime()) {
+      return
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const provider = params.get('authProvider')
+    const authCode = params.get('authCode')
+
+    if (!provider || !authCode) {
+      return
+    }
+
+    void (async () => {
+      try {
+        const snapshot = await completeAgentLogin({
+          provider: provider as AgentProviderId,
+          authorizationCode: authCode,
+          accountLabel: `${provider} sandbox`,
+        })
+        setAgentConnections((current) =>
+          current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
+        )
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : String(error))
+      } finally {
+        params.delete('authProvider')
+        params.delete('authCode')
+        const nextQuery = params.toString()
+        const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`
+        window.history.replaceState({}, '', nextUrl)
+      }
+    })()
+  }, [refreshAgentConnections])
 
   const ensureWorkspaceTerminal = async (cwd: string) => {
     const sessions = await listTerminalSessions()
@@ -268,6 +322,108 @@ function App() {
     await refreshTerminalSessions()
   }
 
+  const resolveMockCallbackFailure = (provider: AgentProviderId) => {
+    const scenario = new URLSearchParams(window.location.search).get('authMock')
+
+    if (!scenario) {
+      return null
+    }
+
+    if (scenario === 'fail' || scenario === `${provider}-fail`) {
+      return `${provider} mock callback failed.`
+    }
+
+    return null
+  }
+
+  const startProviderLogin = async (provider: AgentProviderId) => {
+    try {
+      setAuthError(null)
+      const snapshot = await beginAgentLogin(provider, ['project:read', 'terminal:read'])
+      setAgentConnections((current) =>
+        current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
+      )
+      setSelectedProvider(provider)
+      setActiveContext(`Sprint 3 ${snapshot.displayName} login started`)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const disconnectProvider = async (provider: AgentProviderId) => {
+    try {
+      setAuthError(null)
+      const snapshot = await disconnectAgentProvider(provider)
+      setAgentConnections((current) =>
+        current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
+      )
+      setActiveContext(`Sprint 3 ${snapshot.displayName} disconnected`)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const simulateMockCallback = async (provider: AgentProviderId) => {
+    const params = new URLSearchParams(window.location.search)
+    params.set('authProvider', provider)
+    const failReason = resolveMockCallbackFailure(provider)
+
+    if (failReason) {
+      params.delete('authCode')
+    } else {
+      params.set('authCode', `mock-${provider}-code`)
+    }
+    const nextQuery = params.toString()
+    window.history.replaceState({}, '', `${window.location.pathname}?${nextQuery}`)
+
+    const optimisticTimestamp = Date.now()
+    setAgentConnections((current) =>
+      current.map((entry) =>
+        entry.provider === provider
+          ? {
+              ...entry,
+              status: failReason ? 'error' : 'connected',
+              accountLabel: failReason ? null : `${provider} sandbox`,
+              connectedAt: failReason ? null : optimisticTimestamp,
+              updatedAt: optimisticTimestamp,
+              lastError: failReason ?? null,
+            }
+          : entry,
+      ),
+    )
+    setActiveContext(
+      failReason ? `Sprint 3 ${provider} login failed` : `Sprint 3 ${provider} connected`,
+    )
+
+    try {
+      const snapshot = await completeAgentLogin({
+        provider,
+        authorizationCode: failReason ? undefined : `mock-${provider}-code`,
+        accountLabel: failReason ? undefined : `${provider} sandbox`,
+        failReason: failReason ?? undefined,
+      })
+      setAgentConnections((current) =>
+        current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
+      )
+      setActiveContext(
+        snapshot.status === 'connected'
+          ? `Sprint 3 ${snapshot.displayName} connected`
+          : `Sprint 3 ${snapshot.displayName} login failed`,
+      )
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error))
+    } finally {
+      params.delete('authProvider')
+      params.delete('authCode')
+      const clearedQuery = params.toString()
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}${clearedQuery ? `?${clearedQuery}` : ''}`,
+      )
+    }
+  }
+
   const gitLabel = projectOverview?.git.isRepository
     ? `${projectOverview.git.branch ?? 'detached'} • ${
         projectOverview.git.isDirty ? 'Dirty' : 'Clean'
@@ -275,6 +431,11 @@ function App() {
     : 'No Git repository detected'
 
   const activeSession = terminalSessions.find((session) => String(session.sessionId) === activeTerminalTabId)
+  const providerRequestPreview = {
+    project: projectOverview?.metadata.name ?? activeProject,
+    terminal: agentContext?.tabTitle ?? activeSession?.name ?? 'No active terminal',
+    lines: agentContext?.lines.length ?? 0,
+  }
 
   return (
     <div className="app-shell">
@@ -312,7 +473,7 @@ function App() {
             <article className="card">
               <span className="label">Sprint Focus</span>
               <strong>{activeContext}</strong>
-              <p>Multi-tab terminals, active logs, and agent-ready context capture.</p>
+              <p>Provider selection, login state transitions, and provider-request preparation.</p>
             </article>
             <article className="card">
               <span className="label">Recent Projects</span>
@@ -347,9 +508,9 @@ function App() {
             <h2>Terminal workspace with active log context</h2>
           </div>
           <div className="pill-row">
-            <span className="pill">Sprint 2</span>
-            <span className="pill">Multi-Tab Terminal</span>
-            <span className="pill">Active Logs</span>
+            <span className="pill">Sprint 3</span>
+            <span className="pill">Provider Auth</span>
+            <span className="pill">Mock Callback</span>
           </div>
         </header>
 
@@ -521,7 +682,7 @@ function App() {
             <article className="card">
               <span className="label">Orchestrator</span>
               <strong>Active</strong>
-              <p>Tracking Sprint 2 progress against runtime sessions and active log context.</p>
+              <p>Tracking Sprint 3 provider selection, callback state, and request contract readiness.</p>
             </article>
             <article className="card">
               <span className="label">Agent Context</span>
@@ -538,6 +699,71 @@ function App() {
                   <p>Capture active terminal logs to hand the latest output to an agent.</p>
                 </div>
               )}
+            </article>
+            <article className="card" data-testid="provider-auth-panel">
+              <span className="label">Providers</span>
+              <strong>Login Foundation</strong>
+              <div className="provider-selector" role="radiogroup" aria-label="Provider Selection">
+                {agentConnections.map((connection) => (
+                  <label key={`selector-${connection.provider}`} className="provider-selector-option">
+                    <input
+                      type="radio"
+                      name="provider-selection"
+                      checked={selectedProvider === connection.provider}
+                      onChange={() => setSelectedProvider(connection.provider)}
+                    />
+                    <span>{connection.displayName}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="stack compact">
+                {agentConnections.map((connection) => (
+                  <div
+                    key={connection.provider}
+                    className={`provider-card ${selectedProvider === connection.provider ? 'selected' : ''}`}
+                    data-testid={`provider-card-${connection.provider}`}
+                  >
+                    <div>
+                      <strong>{connection.displayName}</strong>
+                      <p>
+                        {connection.status}
+                        {connection.accountLabel ? ` • ${connection.accountLabel}` : ''}
+                      </p>
+                    </div>
+                    <div className="terminal-actions">
+                      {connection.status === 'connected' ? (
+                        <button onClick={() => void disconnectProvider(connection.provider)}>
+                          Disconnect {connection.displayName}
+                        </button>
+                      ) : (
+                        <button onClick={() => void startProviderLogin(connection.provider)}>
+                          Connect {connection.displayName}
+                        </button>
+                      )}
+                      {usesMockRuntime() && connection.status === 'pending' ? (
+                        <button onClick={() => void simulateMockCallback(connection.provider)}>
+                          Complete Mock Callback
+                        </button>
+                      ) : null}
+                    </div>
+                    <p>
+                      scopes: {connection.scopes.length > 0 ? connection.scopes.join(', ') : 'none'}
+                    </p>
+                    {selectedProvider === connection.provider ? (
+                      <p className="provider-selection-note">Selected provider for the next auth action.</p>
+                    ) : null}
+                    {connection.callbackUrl ? <code>{connection.callbackUrl}</code> : null}
+                    {connection.lastError ? <p className="error-text">{connection.lastError}</p> : null}
+                  </div>
+                ))}
+                {authError ? <p className="error-text">{authError}</p> : null}
+              </div>
+            </article>
+            <article className="card" data-testid="provider-request-preview">
+              <span className="label">Request Contract Preview</span>
+              <strong>{providerRequestPreview.project}</strong>
+              <p>{providerRequestPreview.terminal}</p>
+              <p>{providerRequestPreview.lines} captured line(s) prepared for provider requests.</p>
             </article>
             <article className="card">
               <span className="label">Runtime Probe</span>
