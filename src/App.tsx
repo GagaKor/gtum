@@ -1,12 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
-import { useWorkspaceStore } from './stores/workspace-store'
+import { type AgentContextSnapshot, useWorkspaceStore } from './stores/workspace-store'
 import {
+  appendMockTerminalLine,
+  createTerminalSession,
   type FileTreeNode,
   type ProjectOverview,
+  readProjectOverview,
+  readTerminalSessionLogs,
   type RuntimeInfo,
   getRuntimeInfo,
-  readProjectOverview,
+  listTerminalSessions,
+  type TerminalSessionLogs,
+  type TerminalSessionSnapshot,
+  renameTerminalSession,
+  closeTerminalSession,
+  usesMockRuntime,
 } from './lib/runtime'
 
 function TreeNode({ node, depth = 0 }: { node: FileTreeNode; depth?: number }) {
@@ -28,6 +37,34 @@ function TreeNode({ node, depth = 0 }: { node: FileTreeNode; depth?: number }) {
   )
 }
 
+function TerminalRenameField({
+  session,
+  onRename,
+}: {
+  session: TerminalSessionSnapshot
+  onRename: (sessionId: number, nextName: string) => Promise<void>
+}) {
+  const [draftName, setDraftName] = useState(session.name)
+
+  return (
+    <label className="field-inline">
+      <span className="label">Active Tab Name</span>
+      <input
+        aria-label="Active Tab Name"
+        value={draftName}
+        onChange={(event) => setDraftName(event.target.value)}
+        onBlur={() => void onRename(session.sessionId, draftName)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            void onRename(session.sessionId, draftName)
+            event.currentTarget.blur()
+          }
+        }}
+      />
+    </label>
+  )
+}
+
 function App() {
   const {
     activeProject,
@@ -36,17 +73,46 @@ function App() {
     projectPathInput,
     recentProjects,
     panels,
+    activeTerminalTabId,
+    agentContext,
     setActiveProject,
     setActiveContext,
     setActiveProjectPath,
     setProjectPathInput,
     rememberProject,
     togglePanel,
+    selectTerminalTab,
+    captureTerminalContext,
   } = useWorkspaceStore()
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
   const [isProjectLoading, setIsProjectLoading] = useState(false)
   const [projectError, setProjectError] = useState<string | null>(null)
+  const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSnapshot[]>([])
+  const [terminalLogs, setTerminalLogs] = useState<TerminalSessionLogs | null>(null)
+  const [terminalError, setTerminalError] = useState<string | null>(null)
+
+  const refreshTerminalSessions = useCallback(async () => {
+    try {
+      const sessions = await listTerminalSessions()
+      setTerminalSessions(sessions)
+
+      if (sessions.length > 0 && !sessions.some((session) => String(session.sessionId) === activeTerminalTabId)) {
+        selectTerminalTab(String(sessions[0].sessionId))
+      }
+    } catch (error) {
+      setTerminalError(error instanceof Error ? error.message : String(error))
+    }
+  }, [activeTerminalTabId, selectTerminalTab])
+
+  const refreshActiveTerminalLogs = useCallback(async (sessionId: string) => {
+    try {
+      const logs = await readTerminalSessionLogs(Number(sessionId), 120)
+      setTerminalLogs(logs)
+    } catch (error) {
+      setTerminalError(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
 
   useEffect(() => {
     getRuntimeInfo()
@@ -54,7 +120,42 @@ function App() {
       .catch(() => {
         setRuntimeInfo(null)
       })
-  }, [])
+
+    void refreshTerminalSessions()
+  }, [refreshTerminalSessions])
+
+  useEffect(() => {
+    if (!activeTerminalTabId) {
+      setTerminalLogs(null)
+      return
+    }
+
+    void refreshActiveTerminalLogs(activeTerminalTabId)
+    const timer = window.setInterval(() => {
+      void refreshActiveTerminalLogs(activeTerminalTabId)
+    }, 1200)
+
+    return () => window.clearInterval(timer)
+  }, [activeTerminalTabId, refreshActiveTerminalLogs])
+
+  const ensureWorkspaceTerminal = async (cwd: string) => {
+    const sessions = await listTerminalSessions()
+    if (sessions.length > 0) {
+      setTerminalSessions(sessions)
+      if (!activeTerminalTabId) {
+        selectTerminalTab(String(sessions[0].sessionId))
+      }
+      return
+    }
+
+    const session = await createTerminalSession({
+      name: 'workspace',
+      cwd,
+      maxLogEntries: 400,
+    })
+    setTerminalSessions([session])
+    selectTerminalTab(String(session.sessionId))
+  }
 
   const openProject = async (path: string) => {
     const trimmedPath = path.trim()
@@ -74,8 +175,9 @@ function App() {
       setActiveProject(overview.metadata.name)
       setActiveProjectPath(overview.metadata.path)
       setProjectPathInput(overview.metadata.path)
-      setActiveContext('Sprint 1 Project Workspace')
+      setActiveContext('Sprint 2 Terminal Workspace')
       rememberProject(overview.metadata.path)
+      await ensureWorkspaceTerminal(overview.metadata.path)
     } catch (error) {
       setProjectOverview(null)
       setProjectError(error instanceof Error ? error.message : String(error))
@@ -84,11 +186,95 @@ function App() {
     }
   }
 
+  const createTab = async () => {
+    try {
+      const session = await createTerminalSession({
+        name: `tab-${terminalSessions.length + 1}`,
+        cwd: activeProjectPath || undefined,
+        maxLogEntries: 400,
+      })
+      const nextSessions = [...terminalSessions, session]
+      setTerminalSessions(nextSessions)
+      selectTerminalTab(String(session.sessionId))
+    } catch (error) {
+      setTerminalError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const renameTab = async (sessionId: number, nextName: string) => {
+    const trimmedName = nextName.trim()
+
+    if (!trimmedName) {
+      return
+    }
+
+    try {
+      const updated = await renameTerminalSession(sessionId, trimmedName)
+      setTerminalSessions((current) =>
+        current.map((entry) => (entry.sessionId === updated.sessionId ? updated : entry)),
+      )
+      if (agentContext?.tabId === String(updated.sessionId)) {
+        captureTerminalContext({
+          ...agentContext,
+          tabTitle: updated.name,
+        })
+      }
+    } catch (error) {
+      setTerminalError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const closeTab = async (sessionId: number) => {
+    try {
+      await closeTerminalSession(sessionId)
+      const nextSessions = terminalSessions.filter((entry) => entry.sessionId !== sessionId)
+      setTerminalSessions(nextSessions)
+      if (String(sessionId) === activeTerminalTabId) {
+        selectTerminalTab(nextSessions[0] ? String(nextSessions[0].sessionId) : '')
+      }
+      if (agentContext?.tabId === String(sessionId)) {
+        captureTerminalContext(null)
+      }
+    } catch (error) {
+      setTerminalError(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const captureAgentContextFromActiveTab = () => {
+    const activeSession = terminalSessions.find((session) => String(session.sessionId) === activeTerminalTabId)
+
+    if (!activeSession || !terminalLogs) {
+      return
+    }
+
+    const snapshot: AgentContextSnapshot = {
+      tabId: String(activeSession.sessionId),
+      tabTitle: activeSession.name,
+      lines: terminalLogs.entries.slice(-8),
+      capturedAt: new Date().toISOString(),
+    }
+
+    captureTerminalContext(snapshot)
+  }
+
+  const simulateMockActivity = async () => {
+    if (!usesMockRuntime() || !activeTerminalTabId) {
+      return
+    }
+
+    const sessionName = activeSession?.name || 'workspace'
+    await appendMockTerminalLine(Number(activeTerminalTabId), `${sessionName}: live log sample`)
+    await refreshActiveTerminalLogs(activeTerminalTabId)
+    await refreshTerminalSessions()
+  }
+
   const gitLabel = projectOverview?.git.isRepository
     ? `${projectOverview.git.branch ?? 'detached'} • ${
         projectOverview.git.isDirty ? 'Dirty' : 'Clean'
       }`
     : 'No Git repository detected'
+
+  const activeSession = terminalSessions.find((session) => String(session.sessionId) === activeTerminalTabId)
 
   return (
     <div className="app-shell">
@@ -106,6 +292,7 @@ function App() {
             <label className="field-block">
               <span className="label">Project Path</span>
               <input
+                aria-label="Project Path"
                 value={projectPathInput}
                 onChange={(event) => setProjectPathInput(event.target.value)}
                 placeholder="/home/kwon/project/gtum"
@@ -125,7 +312,7 @@ function App() {
             <article className="card">
               <span className="label">Sprint Focus</span>
               <strong>{activeContext}</strong>
-              <p>Project open, file exploration, and Git state visibility.</p>
+              <p>Multi-tab terminals, active logs, and agent-ready context capture.</p>
             </article>
             <article className="card">
               <span className="label">Recent Projects</span>
@@ -157,41 +344,95 @@ function App() {
         <header className="workspace-header">
           <div>
             <span className="eyebrow">Workspace</span>
-            <h2>Project workspace with repository context</h2>
+            <h2>Terminal workspace with active log context</h2>
           </div>
           <div className="pill-row">
-            <span className="pill">Sprint 1</span>
-            <span className="pill">Project Open</span>
-            <span className="pill">Git Context</span>
+            <span className="pill">Sprint 2</span>
+            <span className="pill">Multi-Tab Terminal</span>
+            <span className="pill">Active Logs</span>
           </div>
         </header>
 
         <section className="workspace-body">
-          <div className="terminal-stage">
-            <div className="terminal-tabs">
-              <button className="tab active">workspace</button>
-              <button className="tab">agents</button>
-              <button className="tab">tests</button>
+          <div className="terminal-stage" data-testid="terminal-workspace">
+            <div className="terminal-toolbar">
+              <div className="terminal-tabs" role="tablist" aria-label="Terminal Tabs">
+                {terminalSessions.length > 0 ? (
+                  terminalSessions.map((session) => (
+                    <div
+                      key={session.sessionId}
+                      className={`tab-shell ${
+                        String(session.sessionId) === activeTerminalTabId ? 'active' : ''
+                      }`}
+                    >
+                      <button
+                        className={`tab ${
+                          String(session.sessionId) === activeTerminalTabId ? 'active' : ''
+                        }`}
+                        role="tab"
+                        aria-selected={String(session.sessionId) === activeTerminalTabId}
+                        aria-controls={`terminal-panel-${session.sessionId}`}
+                        onClick={() => selectTerminalTab(String(session.sessionId))}
+                      >
+                        {session.name}
+                      </button>
+                      <button
+                        className="tab-action"
+                        aria-label={`Close ${session.name}`}
+                        onClick={() => void closeTab(session.sessionId)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <span className="tab-empty">No terminal sessions yet.</span>
+                )}
+              </div>
+              <div className="terminal-actions">
+                <button onClick={() => void createTab()}>+ New Tab</button>
+                <button onClick={() => captureAgentContextFromActiveTab()}>
+                  Use Active Log As Agent Context
+                </button>
+                {usesMockRuntime() ? (
+                  <button onClick={() => void simulateMockActivity()}>Append Sample Log</button>
+                ) : null}
+              </div>
             </div>
-            <div className="terminal-window">
-              <div className="terminal-line">$ sprint-1:open-project</div>
+            {activeSession ? (
+              <div className="terminal-toolbar terminal-toolbar-secondary">
+                <TerminalRenameField
+                  key={activeSession.sessionId}
+                  session={activeSession}
+                  onRename={renameTab}
+                />
+              </div>
+            ) : null}
+            <div
+              className="terminal-window"
+              id={activeSession ? `terminal-panel-${activeSession.sessionId}` : undefined}
+              role="tabpanel"
+              aria-label={activeSession ? `${activeSession.name} logs` : 'Terminal logs'}
+            >
+              <div className="terminal-line">$ sprint-2:terminal-workspace</div>
               <div className="terminal-line dim">
-                Load a local repository path to inspect files, metadata, and Git state.
+                {activeSession
+                  ? `${activeSession.name} • ${activeSession.status} • ${
+                      activeSession.cwd ?? 'no cwd'
+                    }`
+                  : 'Create or select a terminal tab to inspect live logs.'}
               </div>
-              <div className="terminal-line">$ runtime-info</div>
-              <div className="terminal-line">
-                {runtimeInfo
-                  ? `${runtimeInfo.app_name} • ${runtimeInfo.platform} • ${runtimeInfo.mode}`
-                  : 'Runtime handshake pending or unavailable in browser-only mode.'}
-              </div>
-              <div className="terminal-line">$ project-overview</div>
-              <div className="terminal-line">
-                {projectOverview
-                  ? `${projectOverview.metadata.name} • ${
-                      projectOverview.tree.children.length
-                    } root entries`
-                  : 'No project loaded yet.'}
-              </div>
+              {(terminalLogs?.entries || []).length > 0 ? (
+                terminalLogs?.entries.map((line, index) => (
+                  <div className="terminal-line" key={`${terminalLogs.sessionId}-${index}`}>
+                    {line || ' '}
+                  </div>
+                ))
+              ) : (
+                <div className="terminal-line dim">
+                  No recent lines yet. Interactive shell output will appear here.
+                </div>
+              )}
             </div>
           </div>
 
@@ -201,7 +442,7 @@ function App() {
               <strong>{projectOverview?.metadata.name ?? 'Awaiting Selection'}</strong>
               <p>
                 {projectOverview?.metadata.path ??
-                  'Pick a local project path to populate the workspace.'}
+                  'Pick a local project path to populate terminal working directories.'}
               </p>
             </article>
             <article className="card">
@@ -216,9 +457,13 @@ function App() {
               </p>
             </article>
             <article className="card">
-              <span className="label">Runtime Probe</span>
-              <strong>{runtimeInfo ? 'Connected' : 'Fallback Mode'}</strong>
-              <p>Filesystem and Git reads are now layered on top of the Sprint 0 shell.</p>
+              <span className="label">Active Terminal</span>
+              <strong>{activeSession ? activeSession.name : 'No Session'}</strong>
+              <p>
+                {activeSession
+                  ? `${activeSession.logLineCount} line(s) captured • ${activeSession.status}`
+                  : 'Create a terminal to start live log capture.'}
+              </p>
             </article>
           </section>
 
@@ -241,6 +486,17 @@ function App() {
             </article>
 
             <article className="card project-card">
+              <span className="label">Active Log Buffer</span>
+              <strong>{activeSession ? activeSession.name : 'No Session'}</strong>
+              <p>Recent lines from the selected terminal tab are ready for agent handoff.</p>
+              <div className="context-block" data-testid="active-log-buffer">
+                {(terminalLogs?.entries || []).slice(-8).map((line, index) => (
+                  <code key={`active-log-${index}`}>{line}</code>
+                ))}
+              </div>
+            </article>
+
+            <article className="card project-card">
               <span className="label">File Tree</span>
               {projectOverview ? (
                 <ul className="tree-list">
@@ -251,6 +507,7 @@ function App() {
               )}
             </article>
           </section>
+          {terminalError ? <p className="error-text terminal-error">{terminalError}</p> : null}
         </section>
       </main>
 
@@ -264,17 +521,32 @@ function App() {
             <article className="card">
               <span className="label">Orchestrator</span>
               <strong>Active</strong>
-              <p>Tracking Sprint 1 progress against docs, PR flow, and repository state.</p>
+              <p>Tracking Sprint 2 progress against runtime sessions and active log context.</p>
             </article>
             <article className="card">
-              <span className="label">Context</span>
-              <strong>Project + Git</strong>
-              <p>Agent context can soon inherit file tree and repository summaries from here.</p>
+              <span className="label">Agent Context</span>
+              <strong>{agentContext ? agentContext.tabTitle : 'No Captured Logs'}</strong>
+              {agentContext ? (
+                <div className="context-block" data-testid="agent-context-buffer">
+                  <span className="context-meta">{agentContext.capturedAt}</span>
+                  {agentContext.lines.map((line, index) => (
+                    <code key={`${agentContext.tabId}-${index}`}>{line}</code>
+                  ))}
+                </div>
+              ) : (
+                <div className="context-block" data-testid="agent-context-buffer">
+                  <p>Capture active terminal logs to hand the latest output to an agent.</p>
+                </div>
+              )}
             </article>
             <article className="card">
-              <span className="label">Policy</span>
-              <strong>feature → dev → master</strong>
-              <p>Each sprint closes with docs sync, UI E2E, and next-sprint backlog updates.</p>
+              <span className="label">Runtime Probe</span>
+              <strong>{runtimeInfo ? 'Connected' : 'Fallback Mode'}</strong>
+              <p>
+                {runtimeInfo
+                  ? `${runtimeInfo.app_name} • ${runtimeInfo.platform} • ${runtimeInfo.mode}`
+                  : 'Runtime handshake pending or unavailable in browser-only mode.'}
+              </p>
             </article>
           </div>
         </aside>
