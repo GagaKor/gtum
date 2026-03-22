@@ -3,6 +3,7 @@ mod runtime {
     pub mod filesystem;
     pub mod platform;
     pub mod pty;
+    pub mod telegram;
     pub mod workspace;
 }
 
@@ -14,6 +15,11 @@ use runtime::filesystem::ProjectOverview;
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
     TerminalSessionManager, TerminalSessionSnapshot,
+};
+use runtime::telegram::{
+    CompleteTelegramLinkRequest, CreateTelegramReportRequest, QueueTelegramRemoteCommandRequest,
+    ResolveTelegramRemoteCommandRequest, TelegramBridgeManager, TelegramBridgeSnapshot,
+    TelegramRemoteCommandSnapshot, TelegramReportSnapshot, TelegramRuntimeSnapshot,
 };
 use runtime::workspace::{
     RememberWorkspaceProjectRequest, SaveWorkspaceSnapshotRequest,
@@ -178,11 +184,65 @@ fn set_workspace_execution_mode(
     state.set_execution_mode(request)
 }
 
+#[tauri::command]
+fn read_telegram_runtime_snapshot(
+    state: tauri::State<'_, TelegramBridgeManager>,
+) -> TelegramRuntimeSnapshot {
+    state.runtime_snapshot()
+}
+
+#[tauri::command]
+fn begin_telegram_link(
+    state: tauri::State<'_, TelegramBridgeManager>,
+) -> Result<TelegramBridgeSnapshot, String> {
+    state.begin_link()
+}
+
+#[tauri::command]
+fn complete_telegram_link(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: CompleteTelegramLinkRequest,
+) -> Result<TelegramBridgeSnapshot, String> {
+    state.complete_link(request)
+}
+
+#[tauri::command]
+fn disconnect_telegram_bridge(
+    state: tauri::State<'_, TelegramBridgeManager>,
+) -> Result<TelegramBridgeSnapshot, String> {
+    state.disconnect()
+}
+
+#[tauri::command]
+fn create_telegram_report(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: CreateTelegramReportRequest,
+) -> Result<TelegramReportSnapshot, String> {
+    state.create_report(request)
+}
+
+#[tauri::command]
+fn queue_telegram_remote_command(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: QueueTelegramRemoteCommandRequest,
+) -> Result<TelegramRemoteCommandSnapshot, String> {
+    state.queue_remote_command(request)
+}
+
+#[tauri::command]
+fn resolve_telegram_remote_command(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: ResolveTelegramRemoteCommandRequest,
+) -> Result<TelegramRemoteCommandSnapshot, String> {
+    state.resolve_remote_command(request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(AgentAuthManager::new())
         .manage(TerminalSessionManager::new())
+        .manage(TelegramBridgeManager::new())
         .manage(WorkspaceStateManager::new())
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
@@ -202,7 +262,14 @@ pub fn run() {
             read_workspace_runtime_snapshot,
             save_workspace_runtime_snapshot,
             remember_workspace_project,
-            set_workspace_execution_mode
+            set_workspace_execution_mode,
+            read_telegram_runtime_snapshot,
+            begin_telegram_link,
+            complete_telegram_link,
+            disconnect_telegram_bridge,
+            create_telegram_report,
+            queue_telegram_remote_command,
+            resolve_telegram_remote_command
         ])
         .setup(|app| {
             let auth_storage_path = app
@@ -231,6 +298,20 @@ pub fn run() {
             app.handle()
                 .state::<WorkspaceStateManager>()
                 .initialize_storage(workspace_storage_path)?;
+
+            let telegram_storage_path = app
+                .handle()
+                .path()
+                .app_data_dir()
+                .or_else(|_| {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(".gtum").join("telegram-state.json"))
+                })
+                .map_err(|error| format!("failed to resolve telegram storage path: {error}"))?;
+
+            app.handle()
+                .state::<TelegramBridgeManager>()
+                .initialize_storage(telegram_storage_path)?;
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(
