@@ -98,19 +98,16 @@ The most likely blockers are:
 
 다른 워커가 바로 손댈 수 있는 항목은 다음과 같다.
 
-- `pkg-config` 설치
-- GTK 관련 시스템 패키지 설치
-- WebKit 관련 시스템 패키지 설치
-- Linux Tauri 실행 전제 조건 정리
-- `cargo check` 실패 메시지와 재현 절차 문서화
+- Linux GUI 창을 실제로 띄워 시각적으로 확인
+- `AppImage` 번들 실패 재현 및 환경 차이 기록
+- Linux 패키징 정책에서 `AppImage`를 기본 대상으로 유지할지 결정
 - `docs/technical-design.md`와 실제 폴더 구조 차이 점검
-- Sprint 0 체크리스트의 각 항목을 구현 순서로 분해
+- Sprint 1 프로젝트 열기 범위를 구현 순서로 분해
 
 각 항목의 처리 방향:
 
-- 시스템 패키지 설치가 가능하면 먼저 Linux 빌드 전제를 복구한다.
-- 설치가 불가능하면 이 문서에 플랫폼/권한 블로커로 기록한다.
-- 프론트엔드 스캐폴딩은 이미 통과했으므로, 남은 것은 Rust/Tauri 네이티브 의존성이다.
+- 시스템 패키지 설치와 기본 빌드 검증은 이미 끝났으므로 같은 이슈를 다시 열지 않는다.
+- 남은 것은 GUI 시각 확인과 `AppImage` 번들 환경 차이 정리다.
 - 실제 폴더 구조가 문서와 다르면 문서를 먼저 맞춘다.
 - 해결된 이슈는 닫고, 남은 것은 다른 워커가 바로 이어받을 수 있게 유지한다.
 
@@ -118,18 +115,16 @@ The most likely blockers are:
 
 The following items are immediately actionable by other workers:
 
-- confirm Rust toolchain installation
-- verify whether `cargo` and `rustc` are installed
-- document the Tauri execution prerequisites
-- prepare `npm`-based frontend scaffolding
+- visually confirm the Linux GUI window in a real desktop session
+- reproduce and document the `AppImage` failure with environment details
+- decide whether Linux packaging should keep `AppImage` as a default target
 - compare the actual folder structure with `docs/technical-design.md`
-- break the Sprint 0 checklist into implementation steps
+- break Sprint 1 project-open work into implementation steps
 
 Suggested handling:
 
-- if Rust toolchain installation is possible, restore the environment first
-- if installation is not possible, record it here as a platform or permission blocker
-- if frontend scaffolding already exists, verify Tauri command wiring first
+- do not reopen resolved native dependency issues unless they regress
+- treat GUI visual confirmation and `AppImage` packaging as the remaining environment-specific follow-up
 - if the actual folder structure differs from docs, align the docs first
 
 ## 실패 및 이슈 기록 / Failures and Issues
@@ -244,6 +239,7 @@ This section is for recording issues so other workers can fix them.
 - `npm run tauri:bundle`는 바이너리와 `deb`/`rpm` 번들 생성까지 성공했다.
 - `AppImage` 번들은 현재 환경의 read-only filesystem 제약으로 실패했다.
 - Sprint 0의 프론트엔드 및 Rust/Tauri 기초 검증은 완료되었다.
+- GUI 창 자체를 눈으로 본 시각 검증은 아직 이 세션에서 완료하지 못했다.
 
 ### English
 
@@ -259,6 +255,7 @@ This section is for recording issues so other workers can fix them.
 - `npm run tauri:bundle` succeeded through binary plus `deb`/`rpm` bundle generation.
 - the `AppImage` bundle failed because of a read-only filesystem restriction in the current environment.
 - the Sprint 0 frontend and Rust/Tauri baseline verification is complete.
+- direct visual confirmation of the GUI window itself was not completed inside this session.
 
 ## 다음 작업 / Next Step
 
