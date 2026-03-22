@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag to publish, for example `v0.1.0`
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Publish (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-latest
+            args: ''
+          - platform: windows-latest
+            args: ''
+          - platform: macos-latest
+            args: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and upload release artifacts
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: gtum ${{ env.RELEASE_TAG }}
+          releaseBody: |
+            Automated GitHub Release for gtum.
+
+            Built from tag `${{ env.RELEASE_TAG }}` on `${{ github.workflow }}`.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
