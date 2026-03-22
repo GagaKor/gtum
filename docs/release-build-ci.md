@@ -189,6 +189,76 @@ Suggested workflow split:
   - cross-platform builds on `master` push
   - GitHub Release asset upload
 
+## 자동 업데이트 사양 / Auto Update Specification
+
+### 한국어
+
+`gtum`의 CI/CD는 릴리즈 업로드에서 끝나지 않고, 설치된 앱이 GitHub Release를 기준으로 더 높은 버전이 있는지 확인하고 자동 업데이트할 수 있어야 한다. 목표 동작은 Electron의 auto update와 유사하게 본다.
+
+자동 업데이트 기준은 다음과 같다.
+
+1. 앱은 현재 버전보다 높은 버전이 GitHub Release에 존재하는지 확인한다.
+2. 새 버전이 있으면 사용자에게 업데이트 가능 상태를 보여준다.
+3. 사용자가 승인하면 업데이트 아티팩트를 다운로드하고 설치한다.
+4. 설치 전에는 서명 검증이 통과해야 한다.
+5. 설치 후에는 재시작 또는 재시작 유도 흐름을 제공한다.
+
+Tauri updater 기준으로 필요한 기술 항목:
+
+- `tauri-plugin-updater` 도입
+- `src-tauri/tauri.conf.json`에 updater endpoint 설정
+- `bundle.createUpdaterArtifacts = true`
+- updater public key 설정
+- private key 기반 서명
+- GitHub Release 자산과 `latest.json` 또는 동등한 updater metadata 유지
+- `src-tauri/capabilities/default.json`에 `updater:default` 권한 추가
+
+현재 저장소 기준으로 권장 endpoint 전략:
+
+- GitHub Release 기반 static updater metadata 사용
+- release asset으로 `latest.json`을 함께 업로드
+- 앱은 현재 버전과 `latest.json`의 버전을 비교해 더 높은 버전이 있으면 업데이트를 제안
+
+중요 운영 규칙:
+
+- 자동 업데이트는 항상 서명된 업데이트 아티팩트를 전제로 한다.
+- `master` 머지 기반 자동 릴리즈 정책과 updater metadata 생성 정책이 항상 함께 움직여야 한다.
+- 버전을 올리지 않은 `master` 머지는 릴리즈 충돌뿐 아니라 updater 채널 혼란도 만들 수 있다.
+
+### English
+
+`gtum` CI/CD should not stop at uploading release assets. The installed app should also be able to compare its current version against GitHub Releases and update automatically when a newer version is available. The intended behavior is similar to Electron-style auto update.
+
+The auto-update contract is:
+
+1. the app checks whether a GitHub Release exists with a version higher than the current one
+2. when a newer version exists, the app shows that an update is available
+3. after user approval, the app downloads and installs the update artifact
+4. signature verification must succeed before installation
+5. the app should support restart or restart-prompt behavior after installation
+
+Required technical items based on the Tauri updater model:
+
+- add `tauri-plugin-updater`
+- configure updater endpoints in `src-tauri/tauri.conf.json`
+- set `bundle.createUpdaterArtifacts = true`
+- configure the updater public key
+- sign release artifacts with the private key
+- keep GitHub Release assets and `latest.json` or equivalent updater metadata available
+- add `updater:default` permission to `src-tauri/capabilities/default.json`
+
+Recommended endpoint strategy for the current repository:
+
+- use static updater metadata backed by GitHub Releases
+- upload `latest.json` as a release asset
+- let the app compare its current version with the version described in `latest.json` and prompt for update when the remote version is higher
+
+Important operating rules:
+
+- automatic updates require signed release artifacts at all times
+- the master-merge auto-release policy and updater-metadata generation policy must stay aligned
+- merging to `master` without a version bump can create not only release collisions but also updater-channel confusion
+
 ## 플랫폼 주의점 / Platform Caveats
 
 ### 한국어

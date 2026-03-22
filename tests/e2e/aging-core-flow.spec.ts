@@ -1,19 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
 
-async function setProjectPath(page: Page, value: string) {
-  await page.getByLabel('Project Path').evaluate((element, nextValue) => {
-    const input = element as HTMLInputElement
-    const descriptor = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      'value',
-    )
-
-    descriptor?.set?.call(input, nextValue)
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-  }, value)
-}
-
 async function ensureCodexConnected(page: Page) {
   const disconnectButton = page.getByRole('button', { name: 'Disconnect Codex' })
 
@@ -24,7 +10,7 @@ async function ensureCodexConnected(page: Page) {
   await page.getByRole('radio', { name: 'Codex' }).check()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
   await page.getByRole('button', { name: 'Complete Mock Callback' }).dispatchEvent('click')
-  await expect(page.getByTestId('provider-card-codex')).toContainText('connected')
+  await expect(page.getByTestId('provider-card-codex')).toContainText('Connected')
 }
 
 async function runCoreFlow(page: Page, iteration: number) {
@@ -44,8 +30,7 @@ test('repeats the core workspace flow across reloads with restored state', async
   await page.goto('/?e2eMock=1')
 
   await page.getByRole('radio', { name: 'Deep' }).check()
-  await setProjectPath(page, '/mock/demo-project')
-  await page.getByRole('button', { name: 'Open Project' }).click()
+  await page.getByRole('button', { name: 'Open Folder' }).click()
   await ensureCodexConnected(page)
 
   for (const iteration of [1, 2, 3]) {
@@ -53,7 +38,7 @@ test('repeats the core workspace flow across reloads with restored state', async
       await page.reload()
       await expect(page.getByTestId('execution-mode-panel')).toContainText('Deep')
       await expect(
-        page.getByRole('article').filter({ hasText: 'Project Metadata' }).first(),
+        page.getByRole('article').filter({ hasText: 'Project Summary' }).first(),
       ).toContainText('/mock/demo-project')
       await ensureCodexConnected(page)
     }

@@ -240,6 +240,7 @@ fn resolve_telegram_remote_command(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AgentAuthManager::new())
         .manage(TerminalSessionManager::new())
         .manage(TelegramBridgeManager::new())
