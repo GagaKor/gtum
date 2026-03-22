@@ -204,7 +204,7 @@ The architecture and implementation should be cross-platform from the start.
 
 - `master`
   - 안정 기준 브랜치
-- `develop`
+- `dev`
   - 통합 개발 브랜치
 - `feature/*`
   - 기능 개발, 문서 작업, 기술 실험
@@ -213,7 +213,7 @@ The architecture and implementation should be cross-platform from the start.
 - `hotfix/*`
   - 긴급 수정
 
-초기에는 `master`만 있어도 괜찮지만, 실제 구현이 시작되면 최소한 `develop`과 `feature/*` 운영을 도입하는 것이 바람직하다.
+초기에는 `master`만 있어도 괜찮지만, 실제 구현이 시작되면 최소한 `dev`와 `feature/*` 운영을 도입하는 것이 바람직하다.
 
 ### English
 
@@ -225,7 +225,7 @@ The recommended branch roles are:
 
 - `master`
   - stable baseline branch
-- `develop`
+- `dev`
   - integration branch
 - `feature/*`
   - feature work, documentation work, and technical experiments
@@ -234,7 +234,7 @@ The recommended branch roles are:
 - `hotfix/*`
   - urgent fixes
 
-It is acceptable to start with only `master`, but once implementation begins, introducing at least `develop` and `feature/*` is recommended.
+It is acceptable to start with only `master`, but once implementation begins, introducing at least `dev` and `feature/*` is recommended.
 
 ## 주요 사용 시나리오 / Main Use Cases
 

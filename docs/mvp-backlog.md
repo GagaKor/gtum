@@ -219,7 +219,7 @@ Acceptance Criteria:
 
 - 현재 브랜치명이 UI에 보인다.
 - 변경 여부가 UI에 표시된다.
-- 최소한 `master`, `develop`, `feature/*`, `release/*`, `hotfix/*`를 구분 가능한 내부 구조가 있다.
+- 최소한 `master`, `dev`, `feature/*`, `release/*`, `hotfix/*`를 구분 가능한 내부 구조가 있다.
 
 #### English
 
@@ -240,7 +240,7 @@ Acceptance Criteria:
 
 - current branch name is visible in the UI
 - working tree status is visible
-- the internal model can distinguish at least `master`, `develop`, `feature/*`, `release/*`, and `hotfix/*`
+- the internal model can distinguish at least `master`, `dev`, `feature/*`, `release/*`, and `hotfix/*`
 
 ### 4. 멀티 탭 터미널 / Multi-Tab Terminal
 

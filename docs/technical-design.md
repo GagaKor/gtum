@@ -402,7 +402,7 @@ Because `gtum` supports `Ubuntu`, `Windows`, and `macOS`, OS differences need ex
 
 - `master`
   - 안정 기준 브랜치
-- `develop`
+- `dev`
   - 통합 개발 브랜치
 - `feature/*`
   - 기능 개발과 문서 작업
@@ -432,7 +432,7 @@ The repository currently only has `master`, but once implementation begins, the 
 
 - `master`
   - stable baseline branch
-- `develop`
+- `dev`
   - integration branch
 - `feature/*`
   - feature and documentation work
@@ -470,7 +470,7 @@ The repository currently only has `master`, but once implementation begins, the 
 `branchType`은 아래 값으로 정규화할 수 있다.
 
 - `master`
-- `develop`
+- `dev`
 - `feature`
 - `release`
 - `hotfix`
@@ -490,7 +490,7 @@ Project state should include at least the following Git metadata:
 `branchType` may be normalized into:
 
 - `master`
-- `develop`
+- `dev`
 - `feature`
 - `release`
 - `hotfix`
