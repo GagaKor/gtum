@@ -282,6 +282,14 @@ Risks:
 - Windows shell handling
 - log buffer performance
 
+Sprint 2 completion update:
+
+- runtime commands for PTY-backed terminal session lifecycle are now implemented
+- the frontend can create, rename, close, and inspect terminal sessions
+- active terminal logs can be captured into agent context
+- a Playwright E2E scenario now covers the multi-tab terminal flow in mock runtime
+- the next sprint should focus on provider login, callback state, and request contracts that can consume the captured terminal context
+
 ## Sprint 3
 
 ### 한국어
@@ -297,6 +305,7 @@ Risks:
 - OAuth 또는 공식 로그인 콜백 구조
 - 세션 저장 기본 구조
 - provider 공통 인터페이스 초안
+- 프로젝트 컨텍스트와 활성 로그 컨텍스트를 provider 요청 계약에 연결할 준비
 
 완료조건:
 
@@ -323,6 +332,7 @@ Scope:
 - OAuth or official sign-in callback structure
 - base session persistence structure
 - first shared provider interface
+- preparation for attaching project context and active-log context into provider request contracts
 
 Acceptance Criteria:
 

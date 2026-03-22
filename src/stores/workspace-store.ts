@@ -25,6 +25,13 @@ const saveRecentProjects = (projects: string[]) => {
   window.localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(projects))
 }
 
+export type AgentContextSnapshot = {
+  tabId: string
+  tabTitle: string
+  lines: string[]
+  capturedAt: string
+}
+
 type WorkspaceState = {
   activeProject: string
   activeContext: string
@@ -32,17 +39,21 @@ type WorkspaceState = {
   projectPathInput: string
   recentProjects: string[]
   panels: Record<PanelKey, boolean>
+  activeTerminalTabId: string
+  agentContext: AgentContextSnapshot | null
   setActiveProject: (project: string) => void
   setActiveContext: (context: string) => void
   setActiveProjectPath: (path: string) => void
   setProjectPathInput: (path: string) => void
   rememberProject: (path: string) => void
   togglePanel: (panel: PanelKey) => void
+  selectTerminalTab: (id: string) => void
+  captureTerminalContext: (snapshot: AgentContextSnapshot | null) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   activeProject: 'gtum',
-  activeContext: 'Sprint 1 Project Workspace',
+  activeContext: 'Sprint 2 Terminal Workspace',
   activeProjectPath: '',
   projectPathInput: '',
   recentProjects: loadRecentProjects(),
@@ -50,6 +61,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
     projects: true,
     agents: true,
   },
+  activeTerminalTabId: '',
+  agentContext: null,
   setActiveProject: (activeProject) => set({ activeProject }),
   setActiveContext: (activeContext) => set({ activeContext }),
   setActiveProjectPath: (activeProjectPath) => set({ activeProjectPath }),
@@ -72,4 +85,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
         [panel]: !state.panels[panel],
       },
     })),
+  selectTerminalTab: (activeTerminalTabId) => set({ activeTerminalTabId }),
+  captureTerminalContext: (agentContext) =>
+    set({
+      activeContext: agentContext ? 'Sprint 2 Agent Context Ready' : 'Sprint 2 Terminal Workspace',
+      agentContext,
+    }),
 }))

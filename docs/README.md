@@ -8,6 +8,7 @@
 - [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [Sprint 1 작업 로그 / Sprint 1 Worklog](./WORKLOG_2026-03-22_sprint-1-project-workspace.md)
+- [Sprint 2 작업 로그 / Sprint 2 Worklog](./WORKLOG_2026-03-22_sprint-2-terminal-workspace.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
 
 ## 운영 원칙 / Working Rule
@@ -22,5 +23,5 @@
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`
 - 에이전트 제공자는 우선 `Codex + Claude`, 인증은 `OAuth 기반 로그인`을 우선한다
-- 브랜치 전략은 현재 `master`에서 시작하지만 운영 개념은 `git flow` 기반으로 확장한다
+- 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 스프린트 종료 시 `Playwright` 기반 UI E2E와 다음 스프린트 작업 추가를 함께 진행한다
