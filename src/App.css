@@ -112,6 +112,18 @@
   background: rgba(255, 255, 255, 0.92);
 }
 
+.field-block textarea {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.92);
+  font: inherit;
+}
+
 .error-text {
   color: #9d3318;
   font-size: 13px;
@@ -172,6 +184,20 @@
   color: var(--accent-strong);
   font-size: 12px;
   font-weight: 600;
+}
+
+.suggestion-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.suggestion-card code {
+  display: block;
+  margin: 8px 0;
+  color: var(--accent-strong);
+  word-break: break-word;
 }
 
 .emphasis {

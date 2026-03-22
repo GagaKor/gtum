@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    io::Read,
+    io::{Read, Write},
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -136,6 +136,39 @@ impl TerminalSessionManager {
         Ok(session.recent_logs(limit.unwrap_or(100)))
     }
 
+    pub fn execute_command(
+        &self,
+        session_id: u64,
+        command: String,
+    ) -> Result<TerminalSessionSnapshot, String> {
+        let session = self.get_session(session_id)?;
+        let mut session = session.lock().unwrap();
+        session.execute_command(command)?;
+        Ok(session.snapshot())
+    }
+
+    pub fn create_session_with_command(
+        &self,
+        request: CreateTerminalSessionWithCommandRequest,
+    ) -> Result<TerminalSessionSnapshot, String> {
+        let command = platform::normalize_terminal_command(&request.command);
+        if command.is_empty() {
+            return Err("terminal command cannot be empty".into());
+        }
+
+        let snapshot = self.create_session(request.session)?;
+        let session = self.get_session(snapshot.session_id)?;
+        let mut session = session.lock().unwrap();
+
+        if let Err(error) = session.execute_command(command) {
+            let _ = session.close();
+            drop(session);
+            return Err(error);
+        }
+
+        Ok(snapshot)
+    }
+
     fn finish_session_spawn(
         &self,
         session_id: u64,
@@ -149,6 +182,9 @@ impl TerminalSessionManager {
     ) -> Result<TerminalSessionSnapshot, String> {
         let process_id = child.process_id();
         let child_killer = child.clone_killer();
+        let writer = master
+            .take_writer()
+            .map_err(|error| format!("failed to create terminal writer: {error}"))?;
         let initial_snapshot = TerminalSessionSnapshot::new(
             session_id,
             name,
@@ -161,6 +197,7 @@ impl TerminalSessionManager {
         let session = Arc::new(Mutex::new(TerminalSession::new(
             initial_snapshot.clone(),
             child_killer,
+            writer,
         )));
 
         self.sessions
@@ -264,6 +301,13 @@ pub struct CreateTerminalSessionRequest {
     pub max_log_entries: Option<usize>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTerminalSessionWithCommandRequest {
+    pub session: CreateTerminalSessionRequest,
+    pub command: String,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSessionSnapshot {
@@ -338,15 +382,21 @@ struct TerminalSession {
     logs: VecDeque<String>,
     pending_output: String,
     child_killer: Option<Box<dyn ChildKiller + Send>>,
+    writer: Box<dyn Write + Send>,
 }
 
 impl TerminalSession {
-    fn new(snapshot: TerminalSessionSnapshot, child_killer: Box<dyn ChildKiller + Send>) -> Self {
+    fn new(
+        snapshot: TerminalSessionSnapshot,
+        child_killer: Box<dyn ChildKiller + Send>,
+        writer: Box<dyn Write + Send>,
+    ) -> Self {
         Self {
             snapshot,
             logs: VecDeque::new(),
             pending_output: String::new(),
             child_killer: Some(child_killer),
+            writer,
         }
     }
 
@@ -381,6 +431,23 @@ impl TerminalSession {
             let _ = killer.kill();
         }
 
+        Ok(())
+    }
+
+    fn execute_command(&mut self, command: String) -> Result<(), String> {
+        let trimmed = command.trim();
+        if trimmed.is_empty() {
+            return Err("terminal command cannot be empty".into());
+        }
+
+        let submission = platform::terminal_submission_line(trimmed);
+        self.writer
+            .write_all(submission.as_bytes())
+            .map_err(|error| format!("failed to write terminal command: {error}"))?;
+        self.writer
+            .flush()
+            .map_err(|error| format!("failed to flush terminal command: {error}"))?;
+        self.touch(format!("command queued: {trimmed}"));
         Ok(())
     }
 

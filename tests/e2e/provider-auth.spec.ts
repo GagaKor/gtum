@@ -64,5 +64,5 @@ test('shows provider login failure state for Claude mock callback', async ({ pag
   await expect(page.getByTestId('provider-card-claude')).toContainText(
     'claude mock callback failed.',
   )
-  await expect(page.getByText('Sprint 3 Claude login failed')).toBeVisible()
+  await expect(page.getByText('Sprint 4 Claude login failed')).toBeVisible()
 })
