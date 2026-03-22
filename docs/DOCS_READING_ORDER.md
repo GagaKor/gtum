@@ -22,7 +22,8 @@ This document is a fast recovery guide for deciding which documents to reread, a
 4. `docs/technical-design.md`
 5. `docs/mvp-backlog.md`
 6. `docs/sprint-plan.md`
-7. 현재 스프린트 체크리스트 또는 작업 로그
+7. `docs/release-build-ci.md`
+8. 현재 스프린트 체크리스트 또는 작업 로그
 
 ### English
 
@@ -34,7 +35,8 @@ If you feel lost, reread documents in this order:
 4. `docs/technical-design.md`
 5. `docs/mvp-backlog.md`
 6. `docs/sprint-plan.md`
-7. the current sprint checklist or worklog
+7. `docs/release-build-ci.md`
+8. the current sprint checklist or worklog
 
 ## 컨텍스트 초과 시 규칙 / Rule For Context Overflow
 
@@ -91,6 +93,12 @@ The purpose of this rule is to restore direction from documentation rather than 
 3. `docs/technical-design.md`
 4. 관련 구현 파일
 
+### 릴리스/빌드/CI가 헷갈릴 때
+
+1. `docs/release-build-ci.md`
+2. `docs/technical-design.md`
+3. `docs/README.md`
+
 ### English
 
 ### When product direction feels unclear
@@ -115,6 +123,12 @@ The purpose of this rule is to restore direction from documentation rather than 
 2. `docs/product-plan.md`
 3. `docs/technical-design.md`
 4. related implementation files
+
+### When release, build, or CI flow feels unclear
+
+1. `docs/release-build-ci.md`
+2. `docs/technical-design.md`
+3. `docs/README.md`
 
 ## 짧은 복귀 질문 / Quick Recovery Questions
 

@@ -174,6 +174,8 @@ When context grows long, repeat this recovery pattern:
   - 스프린트 실행 순서의 기준 문서
 - `docs/sprint-0-checklist.md`
   - 첫 실행 체크리스트 문서
+- `docs/release-build-ci.md`
+  - 빌드, 번들, GitHub Release, CI/CD 기준 문서
 - `docs/WORKLOG_TEMPLATE.md`
   - 스프린트 작업 기록 템플릿
 
@@ -252,6 +254,9 @@ As implementation grows, the following documents should be added:
   - `docs/sprint-0-checklist.md`
   - `docs/WORKLOG_TEMPLATE.md`
   - 필요 시 `docs/sprint-plan.md`
+- 릴리스 빌드, 배포, CI/CD 흐름 변경
+  - `docs/release-build-ci.md`
+  - 필요 시 `docs/README.md`, `docs/technical-design.md`
 - 저장소 구조가 커져 주요 경로 설명이 필요해짐
   - `docs/repository-map.md` 추가 검토
 - 구조적 설계나 흐름 설명이 반복적으로 필요해짐
