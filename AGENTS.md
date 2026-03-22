@@ -35,6 +35,9 @@ Its goals are:
 - 변경이 구조, 흐름, 정책, 권한, 계약에 영향을 주면 관련 문서를 같은 작업 안에서 함께 갱신한다.
 - 브랜치 운영은 `git flow` 개념을 가볍게 적용하는 방향을 기본 협업 원칙으로 삼는다.
 - Codex 컨텍스트가 길어지거나 방향성이 흔들릴 수 있다고 느껴지면 즉시 `docs/` 문서를 다시 읽고 기준을 재정렬한다.
+- 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신하고, 결과를 확인한다.
+- 각 스프린트의 마지막에는 다음 스프린트에 추가되어야 할 작업을 백로그나 스프린트 문서에 반영한다.
+- MVP 검증 단계에는 단발성 확인만이 아니라 `aging test`를 포함해 시간 경과 후 안정성도 확인한다.
 - 문서와 코드가 다르면 실제 코드와 최신 결정 내용을 기준으로 확인한 뒤 문서를 수정한다.
 - 새로운 규칙을 만들었으면 메모로 흩어두지 말고 적절한 문서에 반영한다.
 - 현재 없는 문서를 전제로 판단하지 말고, 실제 존재하는 문서를 기준으로 작업한다.
@@ -46,6 +49,9 @@ Its goals are:
 - If a change affects structure, flow, policy, permissions, or contracts, update the related documents in the same task.
 - Branch operations should follow a lightweight interpretation of `git flow` as the default collaboration model.
 - If Codex context becomes long or direction feels unstable, immediately reread the relevant `docs/` files and realign to the documented source of truth.
+- End each sprint by adding or updating practical UI E2E coverage where possible, and verify the result.
+- End each sprint by adding the newly discovered next-sprint work into the backlog or sprint documents.
+- Include `aging test` coverage in MVP validation so stability is checked over time, not only in a one-off pass.
 - If code and docs differ, verify against the actual code and latest decisions, then update the documentation.
 - When a new rule appears, do not leave it as scattered notes; fold it into the appropriate document.
 - Do not assume documents exist unless they are actually present in the repository.

@@ -183,6 +183,13 @@ docs/
 - `settings`
   - 플랫폼 설정, 단축키, 셸 설정, 실험 기능
 
+#### UI 검증 원칙
+
+- UI 핵심 흐름은 `Playwright` 같은 브라우저/앱 자동화 도구로 E2E 검증한다.
+- 각 스프린트에서 사용자에게 새로 드러나는 흐름은 최소 1개 이상의 E2E 시나리오로 남긴다.
+- smoke test와 기능별 시나리오를 구분하고, 스프린트 종료 시 smoke test는 항상 통과 상태를 목표로 한다.
+- Tauri 데스크톱 런타임과 웹 프론트엔드 검증을 분리하되, 가능한 한 같은 사용자 흐름 이름을 유지한다.
+
 #### 상태 관리 원칙
 
 - 전역 상태는 `Zustand` 스토어로 관리한다.
@@ -210,6 +217,83 @@ The frontend should be organized by feature domain.
   - task queue, execution history, status updates
 - `settings`
   - platform settings, shortcuts, shell settings, experimental features
+
+#### UI Verification Principles
+
+- validate core UI flows with an E2E automation tool such as `Playwright`
+- each sprint should leave behind at least one E2E scenario for the new user-facing flow it delivers
+- separate smoke tests from feature-specific scenarios, and aim to keep smoke tests green at the end of every sprint
+- separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
+
+## 테스트 전략 / Testing Strategy
+
+### 한국어
+
+`gtum`은 최소한 아래 세 층의 검증을 가진다.
+
+1. `Unit / Module`
+   상태 스토어, 유틸리티, 런타임 헬퍼
+2. `Integration`
+   Tauri command와 프론트 연결, 파일 시스템 및 Git 읽기
+3. `UI E2E`
+   Playwright 기반 주요 사용자 흐름 검증
+
+초기 E2E 기준은 다음을 권장한다.
+
+- Sprint 0: 앱 셸 smoke test
+- Sprint 1: 프로젝트 열기, 파일 트리, Git 상태 표시
+- Sprint 2: 멀티 탭 터미널 생성과 활성 탭 전환
+- 이후 스프린트: 로그인, 제안 확인, 승인 기반 실행, 작업 이력
+
+### English
+
+`gtum` should keep at least the following three testing layers:
+
+1. `Unit / Module`
+   state stores, utilities, and runtime helpers
+2. `Integration`
+   Tauri command-to-frontend wiring plus filesystem and Git reads
+3. `UI E2E`
+   major user-flow verification with Playwright
+
+Recommended initial E2E coverage:
+
+- Sprint 0: app-shell smoke test
+- Sprint 1: project open, file tree, and Git status visibility
+- Sprint 2: multi-tab terminal creation and active-tab switching
+- later sprints: login, suggestion review, approval-based execution, and task history
+
+### Aging Test Strategy
+
+### 한국어
+
+MVP 최종 검증에는 `aging test`를 포함한다. 목적은 짧은 데모에서는 보이지 않는 상태 누수, UI 누적 문제, 세션 불안정성을 드러내는 것이다.
+
+초기 aging test 기준:
+
+- 일정 시간 이상 앱을 유지 실행한다.
+- 프로젝트 열기, 재진입, 탭 전환, 로그 확인을 반복한다.
+- 메모리, 상태 꼬임, 패널 렌더링 이상, 세션 끊김 여부를 확인한다.
+
+권장 위치:
+
+- Sprint 5에서 크로스 플랫폼 검증과 함께 수행
+- 필요 시 Sprint 2 이후 터미널 안정성에 대해 부분 aging test를 먼저 도입
+
+### English
+
+Final MVP validation should include an `aging test`. Its purpose is to reveal state leaks, UI accumulation issues, and session instability that may not appear in short demos.
+
+Initial aging-test baseline:
+
+- keep the app running for an extended period
+- repeat project-open, re-entry, tab switching, and log inspection flows
+- watch for memory growth, broken state, panel rendering issues, and session drops
+
+Recommended placement:
+
+- run it together with cross-platform validation in Sprint 5
+- introduce partial aging coverage earlier after Sprint 2 if terminal stability needs earlier proof
 
 #### State Management Principles
 

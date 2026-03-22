@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "preview:e2e": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "test:e2e": "playwright test",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --no-bundle",
     "tauri:bundle": "tauri build"
@@ -20,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.58.2",
     "@tauri-apps/cli": "^2.10.1",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
