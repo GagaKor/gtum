@@ -1,3 +1,10 @@
+mod runtime {
+  pub mod filesystem;
+  pub mod platform;
+}
+
+use runtime::filesystem::ProjectOverview;
+
 #[derive(serde::Serialize)]
 struct RuntimeInfo {
   app_name: String,
@@ -18,10 +25,21 @@ fn get_runtime_info(app: tauri::AppHandle) -> RuntimeInfo {
   }
 }
 
+#[tauri::command]
+fn read_project_overview(
+  path: String,
+  max_depth: Option<usize>,
+) -> Result<ProjectOverview, String> {
+  runtime::filesystem::read_project_overview(path, max_depth)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![get_runtime_info])
+    .invoke_handler(tauri::generate_handler![
+      get_runtime_info,
+      read_project_overview
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

@@ -68,6 +68,8 @@ The MVP is not successful merely by being "an agent app with terminals." It must
 8. 작업 이력과 기본적인 에이전트 상태를 UI에서 확인할 수 있다.
 9. 앱이 Ubuntu, Windows, macOS를 지원하는 구조로 동작한다.
 10. 현재 테스트 중인 터미널 로그를 에이전트 제안 흐름에 연결할 수 있다.
+11. 핵심 사용자 흐름이 UI E2E 검증으로 확인된다.
+12. 일정 시간 이상 지속 실행 또는 반복 사용 후에도 핵심 흐름이 깨지지 않는 `aging test` 결과가 확보된다.
 
 ### English
 
@@ -83,6 +85,44 @@ The MVP is considered complete when all of the following are true:
 8. task history and basic agent state are visible in the UI
 9. the app works within a cross-platform architecture targeting Ubuntu, Windows, and macOS
 10. live logs from active testing terminals can be attached to agent suggestion flows
+11. core user flows are covered by UI end-to-end verification
+12. `aging test` evidence shows that core flows remain stable after sustained runtime or repeated use
+
+## MVP 검증 원칙 / MVP Validation Principles
+
+### 한국어
+
+MVP 검증은 한 번 성공했다고 끝나지 않는다. 아래 기준을 함께 본다.
+
+- 기능 검증
+  - 각 핵심 흐름이 요구사항대로 동작하는지 확인
+- UI E2E 검증
+  - 사용자 기준 시나리오가 자동화로 재현되는지 확인
+- Aging Test
+  - 일정 시간 유지 실행, 반복 탭 전환, 반복 프로젝트 열기, 반복 로그 확인 같은 흐름에서 상태가 무너지지 않는지 확인
+
+`aging test`의 초기 예시는 다음과 같다.
+
+- 앱을 일정 시간 켜둔 뒤 기본 패널 상태가 유지되는지 확인
+- 프로젝트 열기와 재진입을 여러 번 반복해 상태가 꼬이지 않는지 확인
+- 터미널 탭 전환과 로그 업데이트가 반복되어도 UI가 무너지지 않는지 확인
+
+### English
+
+MVP validation is not complete after a single success. It should include:
+
+- feature validation
+  - confirm that each core flow behaves as required
+- UI E2E validation
+  - confirm that user-facing scenarios are reproducible through automation
+- aging test
+  - confirm that state does not degrade during sustained runtime, repeated tab switching, repeated project-open flows, or repeated log inspection
+
+Recommended initial `aging test` examples:
+
+- keep the app running for a sustained period and verify that the base panels remain stable
+- repeat project-open and re-entry flows multiple times without state corruption
+- repeat terminal tab switching and log updates without UI degradation
 
 ## 우선순위 기준 / Priority Framework
 
@@ -153,6 +193,7 @@ Acceptance Criteria:
 - the app runs locally
 - the UI shows a left, center, and right panel shell
 - frontend and Tauri runtime communicate successfully
+- the shell can be smoke-tested by a UI E2E runner
 
 ### 2. 프로젝트 열기와 파일 탐색 / Project Open and File Exploration
 
@@ -197,6 +238,7 @@ Acceptance Criteria:
 - users can add and reopen local projects
 - the file tree renders correctly
 - project name and path are visible in the UI
+- the project-open flow is covered by a UI E2E scenario
 
 ### 3. Git 상태 표시 / Git State Visibility
 

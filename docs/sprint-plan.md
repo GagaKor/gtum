@@ -33,6 +33,8 @@ Its purpose is to:
 - "에이전트 UI"보다 "활성 터미널 로그를 읽고 연결하는 흐름"을 더 우선한다.
 - 스프린트마다 사용자에게 보이는 가치가 하나 이상 있어야 한다.
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
+- 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
+- 각 스프린트의 마지막에는 새로 발견된 후속 작업을 다음 스프린트 문서나 백로그에 추가한다.
 
 ### English
 
@@ -41,6 +43,42 @@ Its purpose is to:
 - prioritize "reading and attaching live terminal logs" above superficial agent UI polish
 - each sprint should deliver at least one visible user-facing value
 - each sprint should leave a clean foundation for the next one
+- finish each sprint with a practical UI E2E pass added or updated for the delivered flow
+- finish each sprint by adding newly discovered follow-up work into the next sprint plan or backlog
+
+## 스프린트 종료 규칙 / Sprint Closing Rules
+
+### 한국어
+
+각 스프린트는 아래를 만족해야 닫힌다.
+
+1. 현재 스프린트 목표 구현 또는 명시적 블로커 기록
+2. 관련 문서와 작업 로그 동기화
+3. 해당 스프린트 UI E2E 검증 추가 또는 갱신
+4. 다음 스프린트에 들어가야 할 작업 항목 추가
+
+이때 다음 스프린트 작업은 아래 중 한 곳 이상에 반영한다.
+
+- `docs/mvp-backlog.md`
+- `docs/sprint-plan.md`
+- 해당 스프린트 체크리스트
+- 최신 `WORKLOG`
+
+### English
+
+Each sprint should be considered closed only when it includes:
+
+1. implementation of the sprint goal or an explicit blocker record
+2. synchronized docs and worklog updates
+3. added or updated UI E2E coverage for that sprint
+4. newly discovered work items added for the next sprint
+
+Those next-sprint items should be written into at least one of:
+
+- `docs/mvp-backlog.md`
+- `docs/sprint-plan.md`
+- the relevant sprint checklist
+- the latest `WORKLOG`
 
 ## MVP 스프린트 개요 / MVP Sprint Overview
 
@@ -57,7 +95,7 @@ Its purpose is to:
 - `Sprint 4`
   - 에이전트 패널, 컨텍스트 읽기, 승인 기반 실행
 - `Sprint 5`
-  - 작업 이력, 워크스페이스 저장, 실행 모드, 크로스 플랫폼 검증
+  - 작업 이력, 워크스페이스 저장, 실행 모드, 크로스 플랫폼 검증, aging test
 - `Sprint 6`
   - Post-MVP: Telegram 리포트와 제한된 원격 명령
 
@@ -74,7 +112,7 @@ Its purpose is to:
 - `Sprint 4`
   - agent panel, context reading, and approval-based execution
 - `Sprint 5`
-  - task history, workspace persistence, execution modes, and cross-platform validation
+  - task history, workspace persistence, execution modes, cross-platform validation, and aging test
 - `Sprint 6`
   - Post-MVP: Telegram reporting and limited remote commands
 
@@ -99,6 +137,7 @@ Its purpose is to:
 - 앱이 로컬에서 실행된다.
 - 좌측, 중앙, 우측 패널 레이아웃이 뜬다.
 - 프론트엔드와 Tauri 런타임 간 기본 통신이 된다.
+- 기본 앱 셸 smoke test를 E2E 기준으로 실행할 수 있다.
 
 리스크:
 
@@ -124,6 +163,7 @@ Acceptance Criteria:
 - the app runs locally
 - left, center, and right panel layout is visible
 - basic frontend-to-runtime communication works
+- a basic app-shell smoke test can run as E2E coverage
 
 Risks:
 
@@ -151,6 +191,7 @@ Risks:
 - 사용자가 로컬 프로젝트를 열고 다시 진입할 수 있다.
 - 파일 트리가 정상적으로 표시된다.
 - 현재 브랜치와 변경 상태가 UI에서 보인다.
+- 프로젝트 열기와 Git 상태 표시 흐름이 UI E2E로 검증된다.
 
 리스크:
 
@@ -177,6 +218,7 @@ Acceptance Criteria:
 - users can open and re-enter local projects
 - the file tree renders correctly
 - current branch and working-tree state are visible in the UI
+- the project-open and Git-status flow is covered by UI E2E verification
 
 Risks:
 
