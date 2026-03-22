@@ -1,0 +1,819 @@
+# gtum 기술 설계서 / Technical Design
+
+## 문서 목적 / Document Purpose
+
+### 한국어
+
+이 문서는 `gtum`의 1차 구현을 위한 기술 설계 기준 문서다.
+
+이 문서의 목적은 다음과 같다.
+
+- 제품 기획을 실제 구현 구조로 구체화한다.
+- 프론트엔드와 런타임의 책임을 나눈다.
+- 크로스 플랫폼 대응 방식을 미리 정의한다.
+- 에이전트 실행, 인증, 터미널 세션 관리의 경계를 정한다.
+
+### English
+
+This document is the technical design reference for the first implementation of `gtum`.
+
+Its purpose is to:
+
+- translate the product plan into implementation structure
+- divide responsibility between frontend and runtime layers
+- define cross-platform handling up front
+- establish boundaries for agent execution, authentication, and terminal session management
+
+## 설계 기준 / Design Constraints
+
+### 한국어
+
+이 문서는 아래 결정을 전제로 한다.
+
+- 데스크톱 런타임은 `Tauri`
+- 시스템 레이어는 `Rust`
+- UI 레이어는 `React + TypeScript + Vite`
+- 터미널 렌더링은 `xterm.js`
+- 상태 관리는 `Zustand`
+- 지원 플랫폼은 `Ubuntu`, `Windows`, `macOS`
+- 에이전트 제공자는 초기 기준 `Codex`, `Claude`
+- 인증 방식은 API 토큰 수동 입력이 아니라 OAuth 또는 공식 로그인 흐름 우선
+
+### English
+
+This document assumes the following decisions:
+
+- desktop runtime: `Tauri`
+- system layer: `Rust`
+- UI layer: `React + TypeScript + Vite`
+- terminal rendering: `xterm.js`
+- state management: `Zustand`
+- supported platforms: `Ubuntu`, `Windows`, `macOS`
+- initial agent providers: `Codex`, `Claude`
+- authentication should prefer OAuth or official sign-in flows over manual API token entry
+
+## 전체 아키텍처 / High-Level Architecture
+
+### 한국어
+
+`gtum`은 크게 네 계층으로 나눈다.
+
+1. `UI Layer`
+   React 기반 화면, 탭, 패널, 승인 UI
+2. `Application Layer`
+   프로젝트 상태, 워크스페이스 상태, 작업 큐, 에이전트 오케스트레이션
+3. `Runtime Layer`
+   PTY 세션, 프로세스 실행, 파일 시스템, OS 차이 흡수
+4. `Provider Layer`
+   `Codex`, `Claude` 로그인 세션과 요청 어댑터
+
+### English
+
+`gtum` is divided into four major layers:
+
+1. `UI Layer`
+   React-based screens, tabs, panels, and approval UI
+2. `Application Layer`
+   project state, workspace state, task queue, and agent orchestration
+3. `Runtime Layer`
+   PTY sessions, process execution, filesystem access, and OS abstraction
+4. `Provider Layer`
+   `Codex` and `Claude` login sessions and request adapters
+
+## 권장 폴더 구조 / Recommended Folder Structure
+
+### 한국어
+
+초기 구조는 아래와 같이 시작하는 것을 권장한다.
+
+```text
+src/
+  app/
+    providers/
+    router/
+    layout/
+  features/
+    projects/
+    workspace/
+    terminals/
+    agents/
+    auth/
+    tasks/
+    settings/
+  components/
+  hooks/
+  stores/
+  lib/
+src-tauri/
+  src/
+    commands/
+    runtime/
+      pty/
+      process/
+      filesystem/
+      platform/
+    providers/
+      auth/
+      codex/
+      claude/
+    state/
+  tauri.conf.json
+docs/
+```
+
+### English
+
+The recommended initial structure is:
+
+```text
+src/
+  app/
+    providers/
+    router/
+    layout/
+  features/
+    projects/
+    workspace/
+    terminals/
+    agents/
+    auth/
+    tasks/
+    settings/
+  components/
+  hooks/
+  stores/
+  lib/
+src-tauri/
+  src/
+    commands/
+    runtime/
+      pty/
+      process/
+      filesystem/
+      platform/
+    providers/
+      auth/
+      codex/
+      claude/
+    state/
+  tauri.conf.json
+docs/
+```
+
+## 프론트엔드 구조 / Frontend Structure
+
+### 한국어
+
+프론트엔드는 기능 단위로 나누는 것이 좋다.
+
+#### 주요 기능 모듈
+
+- `projects`
+  - 프로젝트 목록, 최근 프로젝트, Git 상태 요약, 브랜치 정보 표시
+- `workspace`
+  - 레이아웃, 패널 열기/닫기, 활성 컨텍스트
+- `terminals`
+  - 탭 바, 터미널 뷰, 세션 상태 표시
+- `agents`
+  - 에이전트 패널, 제안 카드, 실행 승인 UI
+- `auth`
+  - 제공자 로그인, 세션 상태, 권한 범위 표시
+- `tasks`
+  - 작업 큐, 실행 이력, 상태 업데이트
+- `settings`
+  - 플랫폼 설정, 단축키, 셸 설정, 실험 기능
+
+#### 상태 관리 원칙
+
+- 전역 상태는 `Zustand` 스토어로 관리한다.
+- UI 일시 상태와 장기 워크스페이스 상태를 구분한다.
+- 터미널 출력 전체를 React state에 직접 쌓지 않고, 버퍼 참조와 뷰 상태를 분리한다.
+- 에이전트 응답 스트림과 작업 상태는 이벤트 기반으로 업데이트한다.
+
+### English
+
+The frontend should be organized by feature domain.
+
+#### Main Feature Modules
+
+- `projects`
+  - project list, recent projects, Git status summary, branch visibility
+- `workspace`
+  - layout, panel visibility, active context
+- `terminals`
+  - tab bar, terminal view, session status
+- `agents`
+  - agent panel, suggestion cards, execution approval UI
+- `auth`
+  - provider login, session state, granted scope visibility
+- `tasks`
+  - task queue, execution history, status updates
+- `settings`
+  - platform settings, shortcuts, shell settings, experimental features
+
+#### State Management Principles
+
+- manage shared app state with `Zustand`
+- separate transient UI state from durable workspace state
+- do not push full terminal output directly into React state; separate buffer ownership from view state
+- update agent streams and task state through event-driven flows
+
+## 런타임 구조 / Runtime Structure
+
+### 한국어
+
+Rust 런타임은 아래 책임을 가진다.
+
+- PTY 생성과 종료
+- 셸 프로세스 실행과 제어
+- 파일 시스템 접근
+- 크로스 플랫폼 차이 추상화
+- 로그인 세션 저장과 보안 처리
+- 프론트엔드에 안전한 Tauri command 제공
+
+#### 권장 모듈
+
+- `runtime/pty`
+  - PTY 생성, 입출력 연결, resize, 종료 처리
+- `runtime/process`
+  - 일반 프로세스 실행, 권한 분기, 백그라운드 작업
+- `runtime/filesystem`
+  - 프로젝트 탐색, 파일 읽기, 메타데이터 수집
+- `runtime/platform`
+  - OS별 셸, 경로, 환경 변수, 권한 처리
+- `providers/auth`
+  - OAuth 리디렉션, 토큰 교환, 세션 저장
+- `providers/codex`
+  - Codex provider adapter
+- `providers/claude`
+  - Claude provider adapter
+
+### English
+
+The Rust runtime is responsible for:
+
+- PTY creation and teardown
+- shell process execution and control
+- filesystem access
+- cross-platform abstraction
+- login session storage and security handling
+- exposing safe Tauri commands to the frontend
+
+#### Recommended Modules
+
+- `runtime/pty`
+  - PTY creation, IO wiring, resize, termination
+- `runtime/process`
+  - generic process execution, permission routing, background jobs
+- `runtime/filesystem`
+  - project scanning, file reads, metadata collection
+- `runtime/platform`
+  - OS-specific shell, path, env, and permission handling
+- `providers/auth`
+  - OAuth redirect handling, token exchange, session storage
+- `providers/codex`
+  - Codex provider adapter
+- `providers/claude`
+  - Claude provider adapter
+
+## 터미널 세션 설계 / Terminal Session Design
+
+### 한국어
+
+터미널은 단순 텍스트 뷰가 아니라 장기 세션 객체로 다뤄야 한다.
+
+#### 핵심 요구사항
+
+- 탭마다 독립적인 PTY 세션
+- 탭 이름, 현재 경로, 상태 유지
+- 스크롤백 유지
+- resize 이벤트 반영
+- 세션 종료 감지
+- 재연결 또는 세션 복원 전략
+
+#### 권장 데이터 모델
+
+- `TerminalSession`
+  - `id`
+  - `projectId`
+  - `tabId`
+  - `shell`
+  - `cwd`
+  - `status`
+  - `pid`
+  - `platform`
+- `TerminalBufferRef`
+  - `sessionId`
+  - `bufferKey`
+  - `lineCount`
+  - `lastUpdatedAt`
+
+#### 구현 메모
+
+- Ubuntu와 macOS는 POSIX 셸 기반 흐름을 공통화할 수 있다.
+- Windows는 `powershell`, `pwsh`, `cmd` 차이를 흡수하는 별도 셸 전략이 필요하다.
+- 운영체제마다 기본 셸 탐지 로직을 두고, 사용자가 설정에서 재정의할 수 있게 한다.
+
+### English
+
+The terminal should be treated as a long-lived session object, not just a text view.
+
+#### Core Requirements
+
+- one isolated PTY session per tab
+- preserved tab title, cwd, and status
+- scrollback retention
+- resize handling
+- session termination detection
+- reconnection or restoration strategy
+
+#### Recommended Data Model
+
+- `TerminalSession`
+  - `id`
+  - `projectId`
+  - `tabId`
+  - `shell`
+  - `cwd`
+  - `status`
+  - `pid`
+  - `platform`
+- `TerminalBufferRef`
+  - `sessionId`
+  - `bufferKey`
+  - `lineCount`
+  - `lastUpdatedAt`
+
+#### Implementation Notes
+
+- Ubuntu and macOS can share a common POSIX shell flow
+- Windows needs a dedicated shell strategy that abstracts `powershell`, `pwsh`, and `cmd`
+- detect default shells per OS and allow users to override them in settings
+
+## 크로스 플랫폼 전략 / Cross-Platform Strategy
+
+### 한국어
+
+지원 플랫폼이 `Ubuntu`, `Windows`, `macOS`인 만큼 OS 차이를 분리하는 추상화가 필요하다.
+
+#### 추상화 대상
+
+- 기본 셸 탐지
+- 경로 구분자와 홈 디렉토리 해석
+- PTY 라이브러리 차이
+- 환경 변수 접근 방식
+- 단축키와 시스템 메뉴 동작
+- 파일 열기, URL 열기, 브라우저 로그인 리디렉션 처리
+
+#### 설계 원칙
+
+- UI는 가능한 한 OS 세부사항을 직접 알지 않게 한다.
+- 플랫폼 분기는 Rust 런타임 계층에 최대한 모은다.
+- 프론트엔드에는 정규화된 정보만 전달한다.
+- OS별 예외 처리는 기능 구현 시점이 아니라 기본 인프라 단계에서 정의한다.
+
+### English
+
+Because `gtum` supports `Ubuntu`, `Windows`, and `macOS`, OS differences need explicit abstraction.
+
+#### What Must Be Abstracted
+
+- default shell detection
+- path separators and home directory resolution
+- PTY library differences
+- environment variable access
+- shortcuts and system menu behavior
+- opening files, opening URLs, and browser login redirect handling
+
+#### Design Principles
+
+- the UI should avoid knowing OS-specific details directly
+- platform branching should live primarily in the Rust runtime layer
+- only normalized information should be exposed to the frontend
+- OS-specific exception handling should be designed into the infrastructure layer early
+
+## Git 워크플로우 설계 / Git Workflow Design
+
+### 한국어
+
+현재 저장소는 `master`만 존재하지만, 구현이 시작되면 `git flow` 개념을 반영한 브랜치 운영을 도입하는 것을 권장한다.
+
+#### 권장 브랜치 역할
+
+- `master`
+  - 안정 기준 브랜치
+- `develop`
+  - 통합 개발 브랜치
+- `feature/*`
+  - 기능 개발과 문서 작업
+- `release/*`
+  - 릴리즈 안정화
+- `hotfix/*`
+  - 긴급 수정
+
+#### 애플리케이션 관점 요구사항
+
+- 프로젝트 패널은 현재 브랜치와 dirty state를 표시해야 한다.
+- 에이전트 제안은 현재 브랜치 컨텍스트를 함께 참조해야 한다.
+- 작업 이력과 제안 로그는 가능하면 브랜치 맥락과 연결되는 것이 좋다.
+- 브랜치 전환과 생성은 초기에는 필수 기능이 아니지만, 후속 확장 가능성을 열어둔다.
+
+#### 구현 메모
+
+- MVP에서는 읽기 중심 Git 상태 표시를 우선한다.
+- 브랜치 생성, 머지, 릴리즈 보조 UI는 후속 단계로 미룬다.
+- 내부 상태 모델은 처음부터 `feature/*`, `release/*`, `hotfix/*` 같은 패턴을 수용할 수 있어야 한다.
+
+### English
+
+The repository currently only has `master`, but once implementation begins, the product should adopt a workflow compatible with lightweight `git flow` concepts.
+
+#### Recommended Branch Roles
+
+- `master`
+  - stable baseline branch
+- `develop`
+  - integration branch
+- `feature/*`
+  - feature and documentation work
+- `release/*`
+  - release stabilization
+- `hotfix/*`
+  - urgent fixes
+
+#### Application-Level Requirements
+
+- the project panel should show current branch and dirty state
+- agent suggestions should include current branch context
+- task history and suggestion logs should ideally be tied to branch context
+- branch switching and creation are not required for MVP, but should remain future-compatible
+
+#### Implementation Notes
+
+- for MVP, prioritize read-only Git status visibility
+- branch creation, merge support, and release helper UI can come later
+- internal state models should support patterns such as `feature/*`, `release/*`, and `hotfix/*` from the start
+
+## Git 상태 모델 / Git State Model
+
+### 한국어
+
+프로젝트 상태에는 최소한 아래 Git 정보를 포함하는 것이 좋다.
+
+- `currentBranch`
+- `isDirty`
+- `changedFilesCount`
+- `aheadCount`
+- `behindCount`
+- `branchType`
+
+`branchType`은 아래 값으로 정규화할 수 있다.
+
+- `master`
+- `develop`
+- `feature`
+- `release`
+- `hotfix`
+- `other`
+
+### English
+
+Project state should include at least the following Git metadata:
+
+- `currentBranch`
+- `isDirty`
+- `changedFilesCount`
+- `aheadCount`
+- `behindCount`
+- `branchType`
+
+`branchType` may be normalized into:
+
+- `master`
+- `develop`
+- `feature`
+- `release`
+- `hotfix`
+- `other`
+
+## 에이전트 제공자 구조 / Agent Provider Architecture
+
+### 한국어
+
+초기 제공자는 `Codex`와 `Claude` 두 가지다.
+
+#### 핵심 원칙
+
+- UI는 provider-specific API를 직접 다루지 않는다.
+- 애플리케이션 레이어는 공통 인터페이스만 사용한다.
+- 실제 로그인, 세션 확인, 요청 전송은 provider adapter가 담당한다.
+
+#### 공통 인터페이스 예시
+
+- `connect()`
+- `disconnect()`
+- `getSession()`
+- `sendTask()`
+- `streamResponse()`
+- `listCapabilities()`
+
+#### provider별 책임
+
+- `CodexAdapter`
+  - Codex 로그인 세션 확인
+  - 작업 요청 전송
+  - 응답 스트리밍 정규화
+- `ClaudeAdapter`
+  - Claude 로그인 세션 확인
+  - 작업 요청 전송
+  - 응답 스트리밍 정규화
+
+### English
+
+The initial providers are `Codex` and `Claude`.
+
+#### Core Principles
+
+- the UI should not deal with provider-specific APIs directly
+- the application layer should depend on a shared interface only
+- actual login, session validation, and request transport belong to provider adapters
+
+#### Example Shared Interface
+
+- `connect()`
+- `disconnect()`
+- `getSession()`
+- `sendTask()`
+- `streamResponse()`
+- `listCapabilities()`
+
+#### Per-Provider Responsibilities
+
+- `CodexAdapter`
+  - validate Codex login session
+  - send task requests
+  - normalize response streaming
+- `ClaudeAdapter`
+  - validate Claude login session
+  - send task requests
+  - normalize response streaming
+
+## 로그인 및 세션 설계 / Login and Session Design
+
+### 한국어
+
+인증은 API 토큰 입력보다 로그인 기반 흐름을 우선한다.
+
+#### 목표
+
+- 사용자가 앱 안에서 제공자 계정을 연결할 수 있어야 한다.
+- 장기 API 토큰을 노출하지 않는 UX를 기본으로 한다.
+- 세션 상태를 안전하게 저장하고, 만료를 감지해야 한다.
+
+#### 권장 흐름
+
+1. 사용자가 `Codex` 또는 `Claude` 연결 버튼을 누른다.
+2. 앱이 시스템 브라우저 또는 내장 브라우저로 공식 로그인 페이지를 연다.
+3. OAuth 또는 공식 로그인 완료 후 앱이 콜백을 수신한다.
+4. 런타임이 세션 정보를 안전하게 저장한다.
+5. UI는 연결 상태와 권한 범위를 표시한다.
+
+#### 세션 저장 원칙
+
+- 가능하면 운영체제의 보안 저장소를 우선 사용한다.
+- 민감한 인증 정보는 평문 설정 파일에 저장하지 않는다.
+- 세션 만료 또는 권한 오류를 감지하면 재로그인 상태를 UI에 명확히 표시한다.
+
+### English
+
+Authentication should prefer login-based flows over manual API token entry.
+
+#### Goals
+
+- users should be able to connect provider accounts from within the app
+- avoid making exposed long-lived API tokens the default user experience
+- store session state securely and detect expiration
+
+#### Recommended Flow
+
+1. the user clicks connect for `Codex` or `Claude`
+2. the app opens an official login page in a system or embedded browser
+3. after OAuth or official sign-in, the app receives the callback
+4. the runtime stores the session securely
+5. the UI shows connection state and granted scopes
+
+#### Session Storage Rules
+
+- prefer OS-level secure storage when available
+- do not store sensitive credentials in plain-text config files
+- if the session expires or loses scope, show a clear reconnect state in the UI
+
+## 멀티 에이전트 실행 구조 / Multi-Agent Execution Structure
+
+### 한국어
+
+멀티 에이전트 실행은 애플리케이션 레이어에서 오케스트레이션한다.
+
+#### 핵심 구성요소
+
+- `Conductor`
+  - 사용자 요청을 작업 그래프로 분해
+- `Task Scheduler`
+  - 실행 모드에 따라 워커 수와 우선순위 결정
+- `Agent Worker`
+  - provider와 연결된 실제 작업 실행 단위
+- `Context Store`
+  - 프로젝트, 파일, 터미널, 작업 상태 공유
+- `Approval Gate`
+  - 명령 실행과 파일 수정 전 사용자 승인 요구
+
+#### 실행 흐름
+
+1. 사용자가 작업을 요청한다.
+2. `Conductor`가 계획을 세운다.
+3. `Task Scheduler`가 `fast`, `balanced`, `deep` 정책을 적용한다.
+4. 각 워커가 provider adapter를 통해 요청을 수행한다.
+5. 결과는 공통 이벤트 형식으로 정규화되어 UI로 전달된다.
+
+### English
+
+Multi-agent execution should be orchestrated in the application layer.
+
+#### Core Components
+
+- `Conductor`
+  - decomposes user requests into task graphs
+- `Task Scheduler`
+  - decides worker count and priority based on execution mode
+- `Agent Worker`
+  - execution unit connected to a provider
+- `Context Store`
+  - shared state for project, file, terminal, and task context
+- `Approval Gate`
+  - requires user approval before command execution or file edits
+
+#### Execution Flow
+
+1. the user submits a task
+2. the `Conductor` builds a plan
+3. the `Task Scheduler` applies `fast`, `balanced`, or `deep` policy
+4. workers execute through provider adapters
+5. results are normalized into a shared event format and sent to the UI
+
+## 실행 모드 정책 / Execution Mode Policy
+
+### 한국어
+
+실행 모드는 UI 옵션이 아니라 스케줄링 정책이다.
+
+#### Fast
+
+- 더 작은 모델 우선
+- 적은 파일과 짧은 로그 사용
+- 제한된 병렬 워커
+- 교차 리뷰 생략 가능
+
+#### Balanced
+
+- 기본 모드
+- 적절한 컨텍스트 범위
+- 제한적인 병렬 작업
+- 경량 검토 포함 가능
+
+#### Deep
+
+- 더 넓은 컨텍스트 사용
+- 더 많은 워커 사용 가능
+- 테스트, 리뷰, 교차 확인 포함
+
+### English
+
+Execution mode is a scheduling policy, not just a UI option.
+
+#### Fast
+
+- prefer smaller models
+- use fewer files and shorter logs
+- limited parallel workers
+- cross-review may be skipped
+
+#### Balanced
+
+- default mode
+- practical context scope
+- limited parallel work
+- lightweight review can be included
+
+#### Deep
+
+- broader context
+- more workers allowed
+- includes testing, review, and cross-checking
+
+## 상태 모델 / State Model
+
+### 한국어
+
+최소한 아래 상태 단위를 분리해야 한다.
+
+- `ProjectState`
+- `WorkspaceState`
+- `TerminalState`
+- `AgentSessionState`
+- `TaskState`
+- `AuthState`
+- `SettingsState`
+
+#### 상태 분리 원칙
+
+- 인증 상태와 작업 상태를 분리한다.
+- 터미널 버퍼 자체와 터미널 UI 상태를 분리한다.
+- 프로젝트 메타데이터와 현재 활성 워크스페이스 상태를 분리한다.
+- provider 세션 상태는 공통 타입으로 정규화한다.
+
+### English
+
+At minimum, the following state domains should be separated:
+
+- `ProjectState`
+- `WorkspaceState`
+- `TerminalState`
+- `AgentSessionState`
+- `TaskState`
+- `AuthState`
+- `SettingsState`
+
+#### Separation Rules
+
+- separate auth state from task state
+- separate terminal buffers from terminal UI state
+- separate project metadata from active workspace state
+- normalize provider session state into shared types
+- include normalized Git branch metadata in project state
+
+## 보안 경계 / Security Boundaries
+
+### 한국어
+
+`gtum`은 로컬 파일과 셸 실행을 다루기 때문에 보안 경계를 분명히 해야 한다.
+
+#### 원칙
+
+- 명령 실행은 항상 사용자 승인 경로를 거친다.
+- 파일 수정은 승인 또는 명시적 작업 흐름 안에서만 허용한다.
+- 로그인 세션과 민감 정보는 안전한 저장 계층을 사용한다.
+- provider 응답은 공통 내부 포맷으로 정규화한 뒤 UI에 노출한다.
+
+### English
+
+Because `gtum` interacts with local files and shell execution, security boundaries must be explicit.
+
+#### Principles
+
+- command execution always passes through an approval path
+- file edits are allowed only through approval or explicit editing flows
+- login sessions and sensitive data must use secure storage
+- provider responses should be normalized into shared internal formats before being exposed to the UI
+
+## MVP 구현 순서 / MVP Implementation Order
+
+### 한국어
+
+1. Tauri + React + Vite 앱 셸 초기화
+2. 프로젝트 열기와 파일 트리 기본 UI
+3. PTY 기반 터미널 탭
+4. 워크스페이스 상태 저장
+5. 에이전트 패널 UI
+6. OAuth 기반 provider 연결 구조
+7. provider adapter 공통 인터페이스
+8. 멀티 에이전트 오케스트레이션 초안
+9. 실행 모드 정책 적용
+
+### English
+
+1. bootstrap the Tauri + React + Vite app shell
+2. build project open flow and basic file tree UI
+3. add PTY-backed terminal tabs
+4. persist workspace state
+5. add the agent panel UI
+6. implement login-based provider connection structure
+7. add a shared provider adapter interface
+8. implement read-only Git branch and dirty-state visibility
+9. implement a first multi-agent orchestration layer
+10. apply execution mode policies
+
+## 오픈 질문 / Open Questions
+
+### 한국어
+
+- `Codex`와 `Claude`의 실제 공식 로그인 통합 방식이 데스크톱 앱에서 어떤 제약을 가지는가
+- provider별 세션 저장 전략을 어느 수준까지 공통화할 수 있는가
+- Windows PTY 계층에서 어떤 라이브러리 조합이 가장 안정적인가
+- 터미널 세션 복원을 어디까지 완전 복원으로 볼 것인가
+
+### English
+
+- what constraints apply to the official desktop login integration paths for `Codex` and `Claude`
+- how far provider session storage can be unified across providers
+- which Windows PTY stack is most stable for the runtime layer
+- how far terminal restoration should aim for full restoration versus partial recovery
