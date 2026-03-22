@@ -115,24 +115,32 @@ The exact packaging format can vary by Tauri version and runner setup, but the d
 권장 릴리스 흐름은 다음과 같다.
 
 1. `feature/*` 작업이 `dev`로 머지된다.
-2. 릴리스 후보가 안정화되면 `dev`에서 릴리스 태그를 만든다.
-3. CI/CD가 태그를 감지해 플랫폼별 빌드를 수행한다.
+2. 릴리스 후보가 안정화되면 `dev`를 `master`로 머지한다.
+3. `master` push를 감지한 CI/CD가 플랫폼별 빌드를 수행한다.
 4. 생성된 아티팩트를 GitHub Release의 첨부 파일로 업로드한다.
 5. 릴리스 노트에는 변경 요약, 검증 결과, 플랫폼별 주의점을 적는다.
 
-릴리스 태그 예시는 `v0.1.0`, `v0.1.1`처럼 의미 있는 SemVer 형식을 권장한다.
+중요한 운영 규칙:
+
+- `master`에 머지되기 전에 `src-tauri/tauri.conf.json`의 버전을 올려야 한다.
+- 현재 release workflow는 `v__VERSION__` 태그와 릴리스를 사용하므로, 같은 버전으로 다시 `master`에 머지하면 릴리스 충돌이 날 수 있다.
+- 즉, `master` 머지는 사실상 새 릴리스 버전을 동반하는 변경이어야 한다.
 
 ### English
 
 The recommended release flow is:
 
 1. merge `feature/*` work into `dev`
-2. once the release candidate is stable, create a release tag from `dev`
-3. CI/CD detects the tag and runs platform builds
+2. once the release candidate is stable, merge `dev` into `master`
+3. CI/CD detects the push to `master` and runs platform builds
 4. upload generated artifacts as GitHub Release assets
 5. include a change summary, verification results, and platform notes in the release notes
 
-Recommended tag examples follow a meaningful SemVer format such as `v0.1.0` or `v0.1.1`.
+Important operating rules:
+
+- bump the version in `src-tauri/tauri.conf.json` before merging to `master`
+- the current release workflow uses `v__VERSION__` as the release tag, so merging to `master` without a version bump can collide with an existing release
+- in practice, a merge to `master` should represent a new release version
 
 ## CI/CD 설계 원칙 / CI/CD Design Principles
 
@@ -143,7 +151,8 @@ Recommended tag examples follow a meaningful SemVer format such as `v0.1.0` or `
 - PR 검증과 릴리스 배포를 분리한다.
 - PR에서는 lint, build, cargo check, Playwright E2E를 우선 검증한다.
 - 릴리스 단계에서는 가능하면 각 플랫폼 빌드와 산출물 업로드를 수행한다.
-- 릴리스 워크플로우는 tag push 또는 manual dispatch를 기준으로 시작한다.
+- 릴리스 워크플로우는 `master` push를 기준으로 자동 시작한다.
+- 필요하면 `workflow_dispatch`로 수동 재실행할 수 있다.
 - `GITHUB_TOKEN` 기반 업로드를 기본으로 생각하고, 별도 토큰이 필요할 때만 명시한다.
 
 권장 워크플로우 분리 예시는 다음과 같다.
@@ -151,7 +160,7 @@ Recommended tag examples follow a meaningful SemVer format such as `v0.1.0` or `
 - `ci.yml`
   - lint, build, cargo check, E2E
 - `release.yml`
-  - tag push 기반 cross-platform build
+  - `master` push 기반 cross-platform build
   - GitHub Release asset upload
 
 현재 저장소에는 아래 워크플로우가 추가되어 있다.
@@ -159,7 +168,7 @@ Recommended tag examples follow a meaningful SemVer format such as `v0.1.0` or `
 - [`.github/workflows/ci.yml`](/home/kwon/project/gtum/.github/workflows/ci.yml)
   - PR 및 `dev`/`master` 푸시에서 lint, build, cargo check, Playwright E2E 실행
 - [`.github/workflows/release.yml`](/home/kwon/project/gtum/.github/workflows/release.yml)
-  - `v*` 태그 push 및 manual dispatch에서 cross-platform Tauri bundle 생성과 GitHub Release 업로드
+  - `master` push 및 manual dispatch에서 cross-platform Tauri bundle 생성과 GitHub Release 업로드
 
 ### English
 
@@ -168,7 +177,8 @@ The repository should follow these CI/CD principles:
 - separate PR verification from release publishing
 - use lint, build, cargo check, and Playwright E2E for PR validation
 - perform per-platform builds and artifact upload during the release stage when possible
-- trigger release workflows from tag pushes or manual dispatch
+- trigger release workflows from pushes to `master`
+- allow manual reruns through `workflow_dispatch` when needed
 - treat `GITHUB_TOKEN` as the default upload credential and document any additional secret only if it is required
 
 Suggested workflow split:
@@ -176,7 +186,7 @@ Suggested workflow split:
 - `ci.yml`
   - lint, build, cargo check, E2E
 - `release.yml`
-  - cross-platform builds on tag push
+  - cross-platform builds on `master` push
   - GitHub Release asset upload
 
 ## 플랫폼 주의점 / Platform Caveats
