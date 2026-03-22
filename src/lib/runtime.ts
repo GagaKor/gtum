@@ -116,6 +116,75 @@ export type AgentSuggestion = {
   preferredTarget: AgentExecutionTarget
 }
 
+export type TelegramLinkStatus = 'disconnected' | 'pending' | 'connected' | 'error'
+export type TelegramReportStatus = 'queued' | 'sent' | 'failed'
+export type TelegramRemoteCommandStatus = 'pending' | 'approved' | 'rejected' | 'executed'
+
+export type TelegramBridgeSnapshot = {
+  status: TelegramLinkStatus
+  chatLabel: string | null
+  callbackUrl: string | null
+  authUrl: string | null
+  allowedCommands: string[]
+  connectedAt: number | null
+  updatedAt: number
+  lastError: string | null
+}
+
+export type TelegramReportSnapshot = {
+  reportId: string
+  title: string
+  body: string
+  status: TelegramReportStatus
+  createdAt: number
+  deliveredAt: number | null
+}
+
+export type TelegramRemoteCommandTarget = 'current_tab' | 'new_tab'
+
+export type TelegramRemoteCommandSnapshot = {
+  commandId: string
+  sourceLabel: string
+  summary: string
+  command: string
+  suggestedTarget: TelegramRemoteCommandTarget
+  status: TelegramRemoteCommandStatus
+  createdAt: number
+  resolvedAt: number | null
+  resolutionNote: string | null
+}
+
+export type TelegramRuntimeSnapshot = {
+  storagePath: string | null
+  bridge: TelegramBridgeSnapshot
+  reports: TelegramReportSnapshot[]
+  remoteCommands: TelegramRemoteCommandSnapshot[]
+}
+
+export type CompleteTelegramLinkRequest = {
+  authorizationCode?: string
+  chatLabel?: string
+  failReason?: string
+}
+
+export type CreateTelegramReportRequest = {
+  title: string
+  body: string
+}
+
+export type QueueTelegramRemoteCommandRequest = {
+  sourceLabel?: string
+  summary: string
+  command: string
+  suggestedTarget?: TelegramRemoteCommandTarget
+}
+
+export type ResolveTelegramRemoteCommandRequest = {
+  commandId: string
+  status: Exclude<TelegramRemoteCommandStatus, 'pending'>
+  resolutionNote?: string
+}
+
 const mockTree: FileTreeNode = {
   name: 'demo-project',
   path: '/mock/demo-project',
@@ -148,10 +217,27 @@ const mockTree: FileTreeNode = {
 }
 
 const MOCK_AGENT_CONNECTIONS_KEY = 'gtum.mock-agent-connections'
+const MOCK_TELEGRAM_STATE_KEY = 'gtum.mock-telegram-state'
 const mockProviderLabels: Record<AgentProviderId, string> = {
   codex: 'Codex',
   claude: 'Claude',
 }
+
+const createDefaultMockTelegramState = (): TelegramRuntimeSnapshot => ({
+  storagePath: null,
+  bridge: {
+    status: 'disconnected',
+    chatLabel: null,
+    callbackUrl: null,
+    authUrl: null,
+    allowedCommands: ['/status', '/rerun-tests', '/git-diff'],
+    connectedAt: null,
+    updatedAt: Date.now(),
+    lastError: null,
+  },
+  reports: [],
+  remoteCommands: [],
+})
 
 const isMockRuntime = () => {
   if (typeof window === 'undefined') {
@@ -204,6 +290,41 @@ const persistMockConnections = (connections: AgentConnectionSnapshot[]) => {
   window.localStorage.setItem(MOCK_AGENT_CONNECTIONS_KEY, JSON.stringify(connections))
 }
 
+const loadMockTelegramState = () => {
+  if (typeof window === 'undefined') {
+    return createDefaultMockTelegramState()
+  }
+
+  try {
+    const saved = window.localStorage.getItem(MOCK_TELEGRAM_STATE_KEY)
+    if (!saved) {
+      return createDefaultMockTelegramState()
+    }
+
+    const parsed = JSON.parse(saved) as TelegramRuntimeSnapshot
+    return {
+      ...createDefaultMockTelegramState(),
+      ...parsed,
+      bridge: {
+        ...createDefaultMockTelegramState().bridge,
+        ...parsed.bridge,
+      },
+      reports: parsed.reports ?? [],
+      remoteCommands: parsed.remoteCommands ?? [],
+    }
+  } catch {
+    return createDefaultMockTelegramState()
+  }
+}
+
+const persistMockTelegramState = (snapshot: TelegramRuntimeSnapshot) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(MOCK_TELEGRAM_STATE_KEY, JSON.stringify(snapshot))
+}
+
 let nextMockTerminalId = 2
 let mockTerminalSessions: TerminalSessionSnapshot[] = [
   {
@@ -246,9 +367,11 @@ const refreshMockSession = (sessionId: number) => {
 }
 
 let mockAgentConnections = createDefaultMockConnections()
+let mockTelegramState = createDefaultMockTelegramState()
 
 if (typeof window !== 'undefined' && isMockRuntime()) {
   mockAgentConnections = loadMockConnections()
+  mockTelegramState = loadMockTelegramState()
 }
 
 export const usesMockRuntime = isMockRuntime
@@ -509,4 +632,152 @@ export const requestAgentSuggestions = async (
       preferredTarget: 'new_tab',
     },
   ]
+}
+
+export const readTelegramRuntimeSnapshot = async () => {
+  if (isMockRuntime()) {
+    mockTelegramState = loadMockTelegramState()
+    return mockTelegramState
+  }
+
+  return invoke<TelegramRuntimeSnapshot>('read_telegram_runtime_snapshot')
+}
+
+export const beginTelegramLink = async () => {
+  if (isMockRuntime()) {
+    const nextSnapshot: TelegramRuntimeSnapshot = {
+      ...loadMockTelegramState(),
+      bridge: {
+        ...loadMockTelegramState().bridge,
+        status: 'pending',
+        callbackUrl: 'gtum://telegram/callback',
+        authUrl: 'https://mock.telegram.local/gtum/connect',
+        updatedAt: Date.now(),
+        lastError: null,
+      },
+    }
+
+    mockTelegramState = nextSnapshot
+    persistMockTelegramState(nextSnapshot)
+    return nextSnapshot.bridge
+  }
+
+  return invoke<TelegramBridgeSnapshot>('begin_telegram_link')
+}
+
+export const completeTelegramLink = async (request: CompleteTelegramLinkRequest) => {
+  if (isMockRuntime()) {
+    const now = Date.now()
+    const state = loadMockTelegramState()
+    const nextBridge: TelegramBridgeSnapshot = {
+      ...state.bridge,
+      status: request.failReason ? 'error' : 'connected',
+      chatLabel: request.failReason ? null : request.chatLabel || '@gtum_ops',
+      connectedAt: request.failReason ? null : now,
+      updatedAt: now,
+      lastError: request.failReason || null,
+    }
+
+    mockTelegramState = {
+      ...state,
+      bridge: nextBridge,
+    }
+    persistMockTelegramState(mockTelegramState)
+    return nextBridge
+  }
+
+  return invoke<TelegramBridgeSnapshot>('complete_telegram_link', { request })
+}
+
+export const disconnectTelegramBridge = async () => {
+  if (isMockRuntime()) {
+    const nextSnapshot = {
+      ...loadMockTelegramState(),
+      bridge: {
+        ...createDefaultMockTelegramState().bridge,
+        updatedAt: Date.now(),
+      },
+    }
+
+    mockTelegramState = nextSnapshot
+    persistMockTelegramState(nextSnapshot)
+    return nextSnapshot.bridge
+  }
+
+  return invoke<TelegramBridgeSnapshot>('disconnect_telegram_bridge')
+}
+
+export const createTelegramReport = async (request: CreateTelegramReportRequest) => {
+  if (isMockRuntime()) {
+    const now = Date.now()
+    const report: TelegramReportSnapshot = {
+      reportId: `telegram-report-${now}`,
+      title: request.title.trim(),
+      body: request.body.trim(),
+      status: 'sent',
+      createdAt: now,
+      deliveredAt: now,
+    }
+    const state = loadMockTelegramState()
+    mockTelegramState = {
+      ...state,
+      reports: [report, ...state.reports].slice(0, 8),
+    }
+    persistMockTelegramState(mockTelegramState)
+    return report
+  }
+
+  return invoke<TelegramReportSnapshot>('create_telegram_report', { request })
+}
+
+export const queueTelegramRemoteCommand = async (request: QueueTelegramRemoteCommandRequest) => {
+  if (isMockRuntime()) {
+    const now = Date.now()
+    const remoteCommand: TelegramRemoteCommandSnapshot = {
+      commandId: `telegram-command-${now}`,
+      sourceLabel: request.sourceLabel?.trim() || '@gtum_ops',
+      summary: request.summary.trim(),
+      command: request.command.trim(),
+      suggestedTarget: request.suggestedTarget ?? 'current_tab',
+      status: 'pending',
+      createdAt: now,
+      resolvedAt: null,
+      resolutionNote: null,
+    }
+    const state = loadMockTelegramState()
+    mockTelegramState = {
+      ...state,
+      remoteCommands: [remoteCommand, ...state.remoteCommands].slice(0, 12),
+    }
+    persistMockTelegramState(mockTelegramState)
+    return remoteCommand
+  }
+
+  return invoke<TelegramRemoteCommandSnapshot>('queue_telegram_remote_command', { request })
+}
+
+export const resolveTelegramRemoteCommand = async (request: ResolveTelegramRemoteCommandRequest) => {
+  if (isMockRuntime()) {
+    const now = Date.now()
+    const state = loadMockTelegramState()
+    const remoteCommands = state.remoteCommands.map((entry) =>
+      entry.commandId === request.commandId
+        ? {
+            ...entry,
+            status: request.status,
+            resolvedAt: now,
+            resolutionNote: request.resolutionNote?.trim() || null,
+          }
+        : entry,
+    )
+
+    mockTelegramState = {
+      ...state,
+      remoteCommands,
+    }
+    persistMockTelegramState(mockTelegramState)
+    return remoteCommands.find((entry) => entry.commandId === request.commandId)!
+  }
+
+  return invoke<TelegramRemoteCommandSnapshot>('resolve_telegram_remote_command', { request })
 }

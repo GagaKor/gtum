@@ -546,6 +546,13 @@ Risks:
 - misuse risk for message-based commands
 - consistency between Telegram command policy and app approval flow
 
+Sprint 6 progress update:
+
+- a Telegram bridge prototype now exposes runtime state, report creation, and restricted remote-command approval flows
+- the UI now supports Telegram draft reporting plus bridge connect/disconnect, report delivery, and pending remote-command review
+- Playwright coverage now includes both Telegram report drafting and Telegram bridge execution approval
+- the next step is connecting the prototype to a real Telegram transport and trust policy
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
