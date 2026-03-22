@@ -325,12 +325,21 @@ pub enum AgentConnectionStatus {
     Error,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentConnectionKind {
+    Mock,
+    Prototype,
+    Real,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConnectionSnapshot {
     pub provider: AgentProvider,
     pub display_name: String,
     pub status: AgentConnectionStatus,
+    pub connection_kind: AgentConnectionKind,
     pub account_label: Option<String>,
     pub account_email: Option<String>,
     pub scopes: Vec<String>,
@@ -350,6 +359,7 @@ impl AgentConnectionSnapshot {
             provider,
             display_name: provider.display_name().into(),
             status: AgentConnectionStatus::Disconnected,
+            connection_kind: AgentConnectionKind::Prototype,
             account_label: None,
             account_email: None,
             scopes: Vec::new(),

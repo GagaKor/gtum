@@ -658,6 +658,54 @@ Sprint 7 completion update:
 - Playwright coverage is updated for the folder-picker flow and the new Telegram support-panel layout
 - the next sprint should reduce frontend heuristics by adding explicit backend auth-mode metadata and start replacing mock suggestion generation with real provider contracts
 
+## Sprint 8
+
+### 한국어
+
+목표:
+
+- provider auth 상태를 frontend 추측이 아니라 명시 계약으로 바꾸고, 실제 provider 연동을 위한 다음 단계를 준비한다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- auth snapshot에 `connectionKind` 같은 명시 필드 추가
+- frontend provider badge가 해당 필드를 기준으로 동작하도록 정리
+- raw callback URL은 기본 UI가 아니라 diagnostics에만 남기기
+- mock suggestion 대체를 위한 실제 provider request/response contract 준비 착수
+
+완료조건:
+
+- provider UI가 URL heuristic 없이 `mock`, `prototype`, `real`을 구분한다.
+- 관련 E2E가 새 계약을 기준으로 통과한다.
+- 다음 단계의 실제 provider contract 작업을 이어갈 기준 worklog가 남는다.
+
+### English
+
+Goal:
+
+- replace frontend auth guessing with an explicit provider-auth contract and prepare the next step toward real provider integration
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- add an explicit auth field such as `connectionKind` to the auth snapshot
+- make frontend provider badges use that field as the source of truth
+- keep raw callback URLs only in diagnostics instead of default UI
+- begin preparation for replacing mock suggestions with a real provider request/response contract
+
+Acceptance Criteria:
+
+- the provider UI distinguishes `mock`, `prototype`, and `real` without URL heuristics
+- the relevant E2E coverage passes against the new contract
+- a worklog exists to hand off the next real-provider contract step
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어

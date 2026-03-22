@@ -67,8 +67,6 @@ type TelegramReportState = {
   queuedAt: string | null
 }
 
-type ProviderUxKind = 'mock' | 'prototype' | 'real'
-
 const UI_STATE_KEY = 'gtum.app-ui-state'
 const TASK_HISTORY_LIMIT = 12
 
@@ -111,29 +109,13 @@ const formatProviderStatusLabel = (status: AgentConnectionSnapshot['status']) =>
         ? 'Attention Needed'
         : 'Needs Login'
 
-const resolveProviderUxKind = (connection: AgentConnectionSnapshot): ProviderUxKind => {
-  if (usesMockRuntime()) {
-    return 'mock'
-  }
-
-  const authSignals = `${connection.authUrl ?? ''} ${connection.callbackUrl ?? ''}`
-
-  if (
-    authSignals.includes('mock.gtum.local') ||
-    authSignals.includes('auth.gtum.local') ||
-    authSignals.includes('gtum://auth/callback') ||
-    authSignals.includes('gtum://resolved/')
-  ) {
-    return 'prototype'
-  }
-
-  return 'real'
-}
-
-const formatProviderUxKindLabel = (kind: ProviderUxKind) =>
+const formatProviderUxKindLabel = (kind: AgentConnectionSnapshot['connectionKind']) =>
   kind === 'mock' ? 'Mock' : kind === 'prototype' ? 'Prototype' : 'Real'
 
-const formatProviderHint = (connection: AgentConnectionSnapshot, kind: ProviderUxKind) => {
+const formatProviderHint = (
+  connection: AgentConnectionSnapshot,
+  kind: AgentConnectionSnapshot['connectionKind'],
+) => {
   if (connection.lastError) {
     return connection.lastError
   }
@@ -1066,7 +1048,7 @@ function App() {
     lines: agentContext?.lines.length ?? 0,
   }
   const selectedConnection = agentConnections.find((connection) => connection.provider === selectedProvider)
-  const selectedProviderKind = selectedConnection ? resolveProviderUxKind(selectedConnection) : null
+  const selectedProviderKind = selectedConnection?.connectionKind ?? null
   const selectedProviderSummary = selectedConnection
     ? `${selectedConnection.displayName} • ${formatProviderStatusLabel(selectedConnection.status)}`
     : 'No provider selected'
@@ -1528,8 +1510,8 @@ function App() {
             </article>
             <article className="card" data-testid="provider-auth-panel">
               <span className="label">Providers</span>
-              <strong>
-                {selectedConnection
+                  <strong>
+                    {selectedConnection
                   ? `${selectedConnection.displayName} • ${formatProviderUxKindLabel(selectedProviderKind ?? 'prototype')}`
                   : 'Select a provider'}
               </strong>
@@ -1556,8 +1538,8 @@ function App() {
                     <div className="provider-card-header">
                       <strong>{connection.displayName}</strong>
                       <div className="status-pill-row">
-                        <span className={`status-badge kind-${resolveProviderUxKind(connection)}`}>
-                          {formatProviderUxKindLabel(resolveProviderUxKind(connection))}
+                        <span className={`status-badge kind-${connection.connectionKind}`}>
+                          {formatProviderUxKindLabel(connection.connectionKind)}
                         </span>
                         <span className={`status-badge state-${connection.status}`}>
                           {formatProviderStatusLabel(connection.status)}
@@ -1567,7 +1549,7 @@ function App() {
                     <p>
                       {connection.accountLabel
                         ? `${connection.accountLabel} is ready for the next request.`
-                        : formatProviderHint(connection, resolveProviderUxKind(connection))}
+                        : formatProviderHint(connection, connection.connectionKind)}
                     </p>
                     <div className="terminal-actions">
                       {connection.status === 'connected' ? (
