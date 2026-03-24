@@ -1110,6 +1110,62 @@ Acceptance Criteria:
 - real usage issues are recorded for all three platforms at least once
 - known issues and workarounds are documented
 
+### 22. 워크스페이스 리디자인 실행 / Workspace Redesign Execution
+
+#### 한국어
+
+우선순위: `P0`
+
+목표:
+
+- `VS Code`, `conductor`, `cmux` 레퍼런스를 실제 화면 구현에 반영해 현재 워크스페이스를 다시 짠다.
+
+백로그 항목:
+
+- 상단 바, 좌측 프로젝트 레일, 중앙 터미널 스테이지, 우측 에이전트 패널 구조 재구성
+- 요약 카드 중심 레이아웃을 패널 중심 레이아웃으로 축소 또는 대체
+- Task History, Telegram, Runtime/Debug를 기본 2선 영역으로 재배치
+- 에이전트 요청, 컨텍스트, 승인 흐름을 더 단계적으로 보이게 재구성
+- 터미널 탭과 활성 로그 연결 상태를 더 강하게 시각화
+- backend snapshot, status field, action availability와 frontend UI 동작을 같은 display contract로 정렬
+- `docs/frontend-design-benchmarks.md` 기준 디자인 리뷰와 `Playwright` 회귀 갱신
+
+완료조건:
+
+- 첫 화면 정보 계층이 현재보다 명확하다.
+- 터미널이 가장 강한 1차 작업 표면으로 보인다.
+- 우측 에이전트 패널이 요청, 컨텍스트, 제안, 승인 순서를 자연스럽게 보여준다.
+- Task History, Telegram, Runtime/Debug가 기본 작업 흐름을 방해하지 않는다.
+- backend 상태와 frontend 버튼/뱃지/패널 동작이 서로 모순되지 않는다.
+- 관련 UI E2E가 새 구조 기준으로 갱신된다.
+
+#### English
+
+Priority: `P0`
+
+Goal:
+
+- apply the `VS Code`, `conductor`, and `cmux` references to a real workspace redesign instead of leaving them as documentation only
+
+Backlog:
+
+- rebuild the top bar, left project rail, center terminal stage, and right agent panel structure
+- reduce or replace summary-card-heavy layout with a panel-first workspace layout
+- move Task History, Telegram, and Runtime/Debug into clearly secondary areas by default
+- make the agent request, context, suggestion, and approval flow read more step-by-step
+- strengthen the visual relationship between terminal tabs and active-log attachment
+- align backend snapshots, status fields, and action availability with the frontend display contract
+- run design review against `docs/frontend-design-benchmarks.md` and update `Playwright` regression coverage
+
+Acceptance Criteria:
+
+- the first-screen information hierarchy is clearly stronger than the current UI
+- the terminal is visibly the strongest primary work surface
+- the right agent panel presents request, context, suggestion, and approval in a natural order
+- Task History, Telegram, and Runtime/Debug no longer interrupt the default workflow
+- backend state and frontend button, badge, and panel behavior do not contradict each other
+- related UI E2E coverage is updated for the new structure
+
 
 ## MVP 제외 항목 / Explicitly Out of Scope for MVP
 

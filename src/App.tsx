@@ -29,6 +29,7 @@ import {
   type TelegramRemoteCommandSnapshot,
   type TelegramRuntimeSnapshot,
   type TerminalSessionLogs,
+  type TerminalSessionStatus,
   type TerminalSessionSnapshot,
   renameTerminalSession,
   closeTerminalSession,
@@ -65,6 +66,16 @@ type TelegramReportState = {
   preview: string
   generatedAt: string | null
   queuedAt: string | null
+}
+
+type ProviderUiContract = {
+  statusLabel: string
+  guidance: string
+  canStartLogin: boolean
+  canDisconnect: boolean
+  canCompleteMock: boolean
+  canRequestSuggestion: boolean
+  primaryActionLabel: string
 }
 
 const UI_STATE_KEY = 'gtum.app-ui-state'
@@ -136,6 +147,34 @@ const formatProviderHint = (
     ? 'Connect this provider to request live agent suggestions.'
     : `${formatProviderUxKindLabel(kind)} provider flow is available for testing before real integration.`
 }
+
+const buildProviderUiContract = (connection: AgentConnectionSnapshot): ProviderUiContract => {
+  const kind = connection.connectionKind
+  const statusLabel = `${formatProviderUxKindLabel(kind)} • ${formatProviderStatusLabel(connection.status)}`
+  const guidance = formatProviderHint(connection, kind)
+
+  return {
+    statusLabel,
+    guidance,
+    canStartLogin: connection.status === 'disconnected' || connection.status === 'error',
+    canDisconnect: connection.status === 'connected',
+    canCompleteMock: usesMockRuntime() && connection.status === 'pending',
+    canRequestSuggestion: connection.status === 'connected',
+    primaryActionLabel:
+      connection.status === 'connected'
+        ? `Disconnect ${connection.displayName}`
+        : `Connect ${connection.displayName}`,
+  }
+}
+
+const formatTerminalStatusLabel = (status: TerminalSessionStatus) =>
+  status === 'running'
+    ? 'Live'
+    : status === 'exited'
+      ? 'Exited'
+      : status === 'terminated'
+        ? 'Terminated'
+        : 'Attention'
 
 const summarizePath = (value: string | null) => {
   if (!value) {
@@ -949,7 +988,8 @@ function App() {
   const submitAgentRequest = () => {
     const normalizedRequest = agentRequestInput.trim()
     const connectedProvider = agentConnections.find(
-      (connection) => connection.provider === selectedProvider && connection.status === 'connected',
+      (connection) =>
+        connection.provider === selectedProvider && buildProviderUiContract(connection).canRequestSuggestion,
     )
 
     if (!normalizedRequest) {
@@ -1048,12 +1088,22 @@ function App() {
     lines: agentContext?.lines.length ?? 0,
   }
   const selectedConnection = agentConnections.find((connection) => connection.provider === selectedProvider)
-  const selectedProviderKind = selectedConnection?.connectionKind ?? null
   const selectedProviderSummary = selectedConnection
     ? `${selectedConnection.displayName} • ${formatProviderStatusLabel(selectedConnection.status)}`
     : 'No provider selected'
+  const selectedProviderContract = selectedConnection ? buildProviderUiContract(selectedConnection) : null
   const telegramPendingCommands =
     telegramSnapshot?.remoteCommands.filter((entry) => entry.status === 'pending') ?? []
+  const attachedLogCount = agentContext?.lines.length ?? 0
+  const canCaptureActiveLog = Boolean(activeSession && terminalLogs)
+  const canSubmitAgentSuggestion =
+    Boolean(selectedProviderContract?.canRequestSuggestion) && agentRequestInput.trim().length > 0
+  const workspaceHeroTitle = activeProjectPath
+    ? projectOverview?.metadata.name ?? activeProject
+    : 'Open a project to start'
+  const workspaceHeroDetail = activeProjectPath
+    ? `${summarizePath(activeProjectPath)} • ${gitLabel}`
+    : 'Choose a project, open a terminal tab, capture active logs, then request agent help.'
 
   return (
     <div className="app-shell">
@@ -1077,7 +1127,11 @@ function App() {
                   : 'Use the folder picker to open a local project without pasting paths manually.'}
               </p>
               <div className="button-row">
-                <button onClick={() => void chooseProjectFolder()} disabled={isProjectLoading}>
+                <button
+                  data-testid="start-open-project-button"
+                  onClick={() => void chooseProjectFolder()}
+                  disabled={isProjectLoading}
+                >
                   {isProjectLoading ? 'Opening...' : 'Open Folder'}
                 </button>
               </div>
@@ -1152,24 +1206,47 @@ function App() {
       <main className="workspace">
         <header className="workspace-topbar">
           <div className="workspace-title-group">
-            <span className="eyebrow">Workspace</span>
-            <h2>Project, terminal, and agent workflow</h2>
+            <span className="eyebrow">Sprint 9 Workspace</span>
+            <h2>{workspaceHeroTitle}</h2>
             <p className="workspace-subtitle">
-              Open a project, work in the active terminal, then request and approve agent suggestions.
+              {workspaceHeroDetail}
             </p>
             <p className="support-note">Current focus: {activeContext}</p>
           </div>
-          <div className="pill-row">
-            <span className="pill">Project: {projectOverview?.metadata.name ?? 'none'}</span>
-            <span className="pill">Active Tab: {activeSession?.name ?? 'none'}</span>
-            <span className="pill">
-              Provider: {selectedConnection ? selectedProviderSummary : 'not selected'}
-            </span>
-            <span className="pill">Mode: {formatModeLabel(executionMode)}</span>
+          <div className="workspace-command-bar">
+            <button
+              className="accent-button"
+              data-testid="workspace-open-project-button"
+              onClick={() => void chooseProjectFolder()}
+              disabled={isProjectLoading}
+            >
+              {isProjectLoading ? 'Opening...' : activeProjectPath ? 'Switch Project' : 'Open Folder'}
+            </button>
+            <button onClick={() => void createTab()} disabled={!activeProjectPath}>
+              + New Tab
+            </button>
+            <button onClick={() => captureAgentContextFromActiveTab()} disabled={!canCaptureActiveLog}>
+              {attachedLogCount > 0 ? 'Refresh Active Log Context' : 'Capture Active Log'}
+            </button>
           </div>
         </header>
 
         <section className="workspace-body">
+          <section className="workspace-status-strip">
+            <span className="pill">Project: {projectOverview?.metadata.name ?? 'none'}</span>
+            <span className="pill">Tab: {activeSession?.name ?? 'none'}</span>
+            <span className="pill">
+              Terminal: {activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Not Ready'}
+            </span>
+            <span className="pill">
+              Provider: {selectedConnection ? selectedProviderSummary : 'Not Selected'}
+            </span>
+            <span className="pill">Mode: {formatModeLabel(executionMode)}</span>
+            <span className={`pill ${attachedLogCount > 0 ? 'soft success' : 'soft'}`}>
+              Log Context: {attachedLogCount > 0 ? `${attachedLogCount} lines attached` : 'Not Attached'}
+            </span>
+          </section>
+
           <div className="terminal-stage" data-testid="terminal-workspace">
             <div className="terminal-toolbar">
               <div className="terminal-tabs" role="tablist" aria-label="Terminal Tabs">
@@ -1206,9 +1283,9 @@ function App() {
                 )}
               </div>
               <div className="terminal-actions">
-                <button onClick={() => void createTab()}>+ New Tab</button>
-                <button onClick={() => captureAgentContextFromActiveTab()}>
-                  Use Active Log As Agent Context
+                <button onClick={() => void createTab()} disabled={!activeProjectPath}>+ New Tab</button>
+                <button onClick={() => captureAgentContextFromActiveTab()} disabled={!canCaptureActiveLog}>
+                  {attachedLogCount > 0 ? 'Refresh Agent Context' : 'Use Active Log'}
                 </button>
                 {usesMockRuntime() ? (
                   <button onClick={() => void simulateMockActivity()}>Append Sample Log</button>
@@ -1230,14 +1307,13 @@ function App() {
               role="tabpanel"
               aria-label={activeSession ? `${activeSession.name} logs` : 'Terminal logs'}
             >
-              <div className="terminal-line">$ sprint-2:terminal-workspace</div>
-              <div className="terminal-line dim">
-                {activeSession
-                  ? `${activeSession.name} • ${activeSession.status} • ${
-                      activeSession.cwd ?? 'no cwd'
-                    }`
-                  : 'Create or select a terminal tab to inspect live logs.'}
+              <div className="terminal-meta">
+                <span>{activeSession ? activeSession.name : 'No active tab'}</span>
+                <span>{activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Idle'}</span>
+                <span>{activeSession?.cwd ?? 'no cwd'}</span>
+                <span>{attachedLogCount > 0 ? `${attachedLogCount} context line(s)` : 'context pending'}</span>
               </div>
+              <div className="terminal-line">$ sprint-9:workspace-redesign</div>
               {(terminalLogs?.entries || []).length > 0 ? (
                 terminalLogs?.entries.map((line, index) => (
                   <div className="terminal-line" key={`${terminalLogs.sessionId}-${index}`}>
@@ -1252,41 +1328,68 @@ function App() {
             </div>
           </div>
 
-          <section className="workspace-summary-grid">
-            <article className="card project-card">
-              <span className="label">Project Summary</span>
-              <strong>{projectOverview?.metadata.name ?? 'No project selected'}</strong>
-              <p>{projectOverview?.metadata.path ?? 'Open a project to continue.'}</p>
-              <div className="meta-strip">
-                <span className="pill soft">
-                  {projectOverview?.git.isRepository ? gitLabel : 'No Git repository detected'}
-                </span>
-                <span className="pill soft">
-                  {activeSession
-                    ? `${activeSession.logLineCount} line(s) • ${activeSession.status}`
-                    : 'Create a terminal to start live log capture.'}
-                </span>
-                <span className="pill soft">
-                  {selectedConnection
-                    ? selectedProviderSummary
-                    : 'Select a provider to start an agent request.'}
-                </span>
+          <section className="workspace-flow-grid">
+            <article className="card workspace-flow-card">
+              <span className="label">Workspace Flow</span>
+              <strong>Project / Terminal / Agent</strong>
+              <div className="flow-steps">
+                <div className={`flow-step ${activeProjectPath ? 'done' : 'current'}`}>
+                  <span className="flow-step-index">1</span>
+                  <div>
+                    <strong>Project</strong>
+                    <p>{activeProjectPath ? summarizePath(activeProjectPath) : 'Open a project folder first.'}</p>
+                  </div>
+                </div>
+                <div className={`flow-step ${activeSession ? 'done' : activeProjectPath ? 'current' : ''}`}>
+                  <span className="flow-step-index">2</span>
+                  <div>
+                    <strong>Terminal</strong>
+                    <p>{activeSession ? `${activeSession.name} is active.` : 'Create or select a terminal tab.'}</p>
+                  </div>
+                </div>
+                <div className={`flow-step ${attachedLogCount > 0 ? 'done' : activeSession ? 'current' : ''}`}>
+                  <span className="flow-step-index">3</span>
+                  <div>
+                    <strong>Context</strong>
+                    <p>
+                      {attachedLogCount > 0
+                        ? `${attachedLogCount} active log line(s) attached from ${agentContext?.tabTitle ?? activeSession?.name}.`
+                        : 'Capture active terminal logs for the next agent request.'}
+                    </p>
+                  </div>
+                </div>
+                <div className={`flow-step ${agentSuggestions.length > 0 ? 'done' : canSubmitAgentSuggestion ? 'current' : ''}`}>
+                  <span className="flow-step-index">4</span>
+                  <div>
+                    <strong>Approval</strong>
+                    <p>
+                      {agentSuggestions.length > 0
+                        ? `${agentSuggestions.length} suggestion(s) ready for review.`
+                        : 'Submit a provider-backed request from the right agent panel.'}
+                    </p>
+                  </div>
+                </div>
               </div>
             </article>
 
-            <article className="card project-card">
+            <article className="card workspace-flow-card" data-testid="active-log-buffer">
               <span className="label">Active Log Buffer</span>
-              <strong>{activeSession ? activeSession.name : 'No Session'}</strong>
-              <p>Recent lines from the selected terminal tab are ready for agent handoff.</p>
-              <div className="context-block" data-testid="active-log-buffer">
-                {(terminalLogs?.entries || []).slice(-8).map((line, index) => (
+              <strong>{agentContext?.tabTitle ?? activeSession?.name ?? 'No Session'}</strong>
+              <p>
+                The selected terminal tab should explain exactly what the next agent request will read.
+              </p>
+              <div className="context-block">
+                {(agentContext?.lines ?? (terminalLogs?.entries || []).slice(-8)).map((line, index) => (
                   <code key={`active-log-${index}`}>{line}</code>
                 ))}
+                {(agentContext?.lines ?? (terminalLogs?.entries || []).slice(-8)).length === 0 ? (
+                  <p>No captured lines yet. Use the active terminal toolbar action to attach context.</p>
+                ) : null}
               </div>
             </article>
           </section>
           <section className="workspace-support">
-            <details className="support-panel" open>
+            <details className="support-panel">
               <summary>Task History</summary>
               <article className="card" data-testid="task-history-panel">
                 <span className="label">Task History</span>
@@ -1483,38 +1586,18 @@ function App() {
       {panels.agents ? (
         <aside className="panel inspector">
           <div className="panel-header">
-            <span className="eyebrow">Agents</span>
+            <span className="eyebrow">Agent Panel</span>
             <button onClick={() => togglePanel('agents')}>Hide</button>
           </div>
-          <div className="stack">
-            <article className="card">
-              <span className="label">Orchestrator</span>
-              <strong>Active</strong>
-              <p>Tracking Sprint 7 workspace flow, auth clarity, and approval-based execution.</p>
-            </article>
-            <article className="card">
-              <span className="label">Agent Context</span>
-              <strong>{agentContext ? agentContext.tabTitle : 'No Captured Logs'}</strong>
-              {agentContext ? (
-                <div className="context-block" data-testid="agent-context-buffer">
-                  <span className="context-meta">{agentContext.capturedAt}</span>
-                  {agentContext.lines.map((line, index) => (
-                    <code key={`${agentContext.tabId}-${index}`}>{line}</code>
-                  ))}
-                </div>
-              ) : (
-                <div className="context-block" data-testid="agent-context-buffer">
-                  <p>Capture active terminal logs to hand the latest output to an agent.</p>
-                </div>
-              )}
-            </article>
-            <article className="card" data-testid="provider-auth-panel">
-              <span className="label">Providers</span>
-                  <strong>
-                    {selectedConnection
-                  ? `${selectedConnection.displayName} • ${formatProviderUxKindLabel(selectedProviderKind ?? 'prototype')}`
-                  : 'Select a provider'}
-              </strong>
+          <div className="stack agent-panel-stack">
+            <article className="card agent-stage-card" data-testid="provider-auth-panel">
+              <span className="label">Step 1 · Provider</span>
+              <strong>{selectedConnection ? selectedProviderContract?.statusLabel : 'No provider selected'}</strong>
+              <p>
+                {selectedConnection
+                  ? selectedProviderContract?.guidance
+                  : 'Choose a provider, then use the matching contract state to unlock the request flow.'}
+              </p>
               <div className="provider-selector" role="radiogroup" aria-label="Provider Selection">
                 {agentConnections.map((connection) => (
                   <label key={`selector-${connection.provider}`} className="provider-selector-option">
@@ -1529,70 +1612,95 @@ function App() {
                 ))}
               </div>
               <div className="stack compact">
-                {agentConnections.map((connection) => (
-                  <div
-                    key={connection.provider}
-                    className={`provider-card ${selectedProvider === connection.provider ? 'selected' : ''}`}
-                    data-testid={`provider-card-${connection.provider}`}
-                  >
-                    <div className="provider-card-header">
-                      <strong>{connection.displayName}</strong>
+                {agentConnections.map((connection) => {
+                  const contract = buildProviderUiContract(connection)
+
+                  return (
+                    <div
+                      key={connection.provider}
+                      className={`provider-card ${selectedProvider === connection.provider ? 'selected' : ''}`}
+                      data-testid={`provider-card-${connection.provider}`}
+                    >
+                      <div className="provider-card-header">
+                        <strong>{connection.displayName}</strong>
+                        <div className="status-pill-row">
+                          <span className={`status-badge kind-${connection.connectionKind}`}>
+                            {formatProviderUxKindLabel(connection.connectionKind)}
+                          </span>
+                          <span className={`status-badge state-${connection.status}`}>
+                            {formatProviderStatusLabel(connection.status)}
+                          </span>
+                        </div>
+                      </div>
+                      <p>{connection.accountLabel ? `${connection.accountLabel} is ready for requests.` : contract.guidance}</p>
+                      <div className="terminal-actions">
+                        {contract.canDisconnect ? (
+                          <button onClick={() => void disconnectProvider(connection.provider)}>
+                            {contract.primaryActionLabel}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => void startProviderLogin(connection.provider)}
+                            disabled={!contract.canStartLogin}
+                          >
+                            {contract.primaryActionLabel}
+                          </button>
+                        )}
+                        {contract.canCompleteMock ? (
+                          <button onClick={() => void simulateMockCallback(connection.provider)}>
+                            Complete Mock Callback
+                          </button>
+                        ) : null}
+                      </div>
                       <div className="status-pill-row">
-                        <span className={`status-badge kind-${connection.connectionKind}`}>
-                          {formatProviderUxKindLabel(connection.connectionKind)}
-                        </span>
-                        <span className={`status-badge state-${connection.status}`}>
-                          {formatProviderStatusLabel(connection.status)}
+                        <span className="status-badge scopes">
+                          scopes: {connection.scopes.length > 0 ? connection.scopes.join(', ') : 'none'}
                         </span>
                       </div>
+                      {selectedProvider === connection.provider ? (
+                        <p className="provider-selection-note">Selected provider for the next request.</p>
+                      ) : null}
+                      <details className="subtle-disclosure">
+                        <summary>Diagnostics</summary>
+                        {connection.callbackUrl ? <code>{connection.callbackUrl}</code> : null}
+                        {connection.authUrl ? <code>{connection.authUrl}</code> : null}
+                      </details>
+                      {connection.lastError ? <p className="error-text">{connection.lastError}</p> : null}
                     </div>
-                    <p>
-                      {connection.accountLabel
-                        ? `${connection.accountLabel} is ready for the next request.`
-                        : formatProviderHint(connection, connection.connectionKind)}
-                    </p>
-                    <div className="terminal-actions">
-                      {connection.status === 'connected' ? (
-                        <button onClick={() => void disconnectProvider(connection.provider)}>
-                          Disconnect {connection.displayName}
-                        </button>
-                      ) : (
-                        <button onClick={() => void startProviderLogin(connection.provider)}>
-                          Connect {connection.displayName}
-                        </button>
-                      )}
-                      {usesMockRuntime() && connection.status === 'pending' ? (
-                        <button onClick={() => void simulateMockCallback(connection.provider)}>
-                          Complete Mock Callback
-                        </button>
-                        ) : null}
-                    </div>
-                    <div className="status-pill-row">
-                      <span className="status-badge scopes">
-                        scopes: {connection.scopes.length > 0 ? connection.scopes.join(', ') : 'none'}
-                      </span>
-                    </div>
-                    {selectedProvider === connection.provider ? (
-                      <p className="provider-selection-note">Selected provider for the next auth action.</p>
-                    ) : null}
-                    <details className="subtle-disclosure">
-                      <summary>Diagnostics</summary>
-                      {connection.callbackUrl ? <code>{connection.callbackUrl}</code> : null}
-                      {connection.authUrl ? <code>{connection.authUrl}</code> : null}
-                    </details>
-                    {connection.lastError ? <p className="error-text">{connection.lastError}</p> : null}
-                  </div>
-                ))}
+                  )
+                })}
                 {authError ? <p className="error-text">{authError}</p> : null}
               </div>
             </article>
-            <article className="card" data-testid="provider-request-preview">
-              <span className="label">Request Contract Preview</span>
+
+            <article className="card agent-stage-card">
+              <span className="label">Step 2 · Context</span>
+              <strong>{agentContext ? agentContext.tabTitle : 'No Captured Logs'}</strong>
+              <p>
+                UI behavior should match backend state: captured logs unlock richer request context, missing logs keep the request lighter.
+              </p>
+              {agentContext ? (
+                <div className="context-block" data-testid="agent-context-buffer">
+                  <span className="context-meta">{agentContext.capturedAt}</span>
+                  {agentContext.lines.map((line, index) => (
+                    <code key={`${agentContext.tabId}-${index}`}>{line}</code>
+                  ))}
+                </div>
+              ) : (
+                <div className="context-block" data-testid="agent-context-buffer">
+                  <p>Capture active terminal logs to hand the latest output to an agent.</p>
+                </div>
+              )}
+            </article>
+
+            <article className="card agent-stage-card" data-testid="provider-request-preview">
+              <span className="label">Step 3 · Request Contract</span>
               <strong>{providerRequestPreview.project}</strong>
               <p>{providerRequestPreview.terminal}</p>
               <p>{providerRequestPreview.lines} captured line(s) prepared for provider requests.</p>
             </article>
-            <article className="card" data-testid="execution-mode-panel">
+
+            <article className="card agent-stage-card" data-testid="execution-mode-panel">
               <span className="label">Execution Mode</span>
               <strong>{formatModeLabel(executionMode)}</strong>
               <div className="provider-selector" role="radiogroup" aria-label="Execution Mode">
@@ -1619,8 +1727,9 @@ function App() {
                   : 'Keep the fullest active-log context for deeper review.'}
               </p>
             </article>
-            <article className="card" data-testid="agent-request-panel">
-              <span className="label">Agent Request</span>
+
+            <article className="card agent-stage-card" data-testid="agent-request-panel">
+              <span className="label">Step 4 · Request</span>
               <strong>{selectedConnection?.displayName ?? 'No Provider Selected'}</strong>
               <p>Submit a task request using the selected provider, project metadata, and active log buffer.</p>
               <label className="field-block">
@@ -1634,12 +1743,20 @@ function App() {
                 />
               </label>
               <div className="terminal-actions">
-                <button onClick={() => submitAgentRequest()}>Request Suggestion</button>
+                <button onClick={() => submitAgentRequest()} disabled={!canSubmitAgentSuggestion}>
+                  Request Suggestion
+                </button>
               </div>
+              {!selectedProviderContract?.canRequestSuggestion ? (
+                <p className="provider-selection-note">
+                  Connect the selected provider before the request step becomes active.
+                </p>
+              ) : null}
               {agentRequestError ? <p className="error-text">{agentRequestError}</p> : null}
             </article>
-            <article className="card" data-testid="agent-suggestions-panel">
-              <span className="label">Suggestion Cards</span>
+
+            <article className="card agent-stage-card" data-testid="agent-suggestions-panel">
+              <span className="label">Step 5 · Review And Approve</span>
               <strong>{agentSuggestions.length > 0 ? 'Pending Review' : 'No Suggestions Yet'}</strong>
               <div className="stack compact">
                 {agentSuggestions.length > 0 ? (

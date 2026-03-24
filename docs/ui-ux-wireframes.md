@@ -35,6 +35,7 @@ Its purpose is to:
 - 사용자가 지금 무엇을 먼저 해야 하는지 바로 알기 어렵다.
 - 프로젝트, 터미널, 에이전트, Telegram, debug 정보가 동시에 경쟁한다.
 - `mock`, `prototype`, 내부 callback 같은 개발용 정보가 일반 사용자 영역에 너무 가깝다.
+- 결과적으로 `VS Code` 같은 구조적 안정감, `conductor` 같은 작업 흐름 가시성, `cmux` 같은 터미널 중심성이 모두 약하다.
 
 ### English
 
@@ -45,26 +46,31 @@ The current UI contains many capabilities, but the workflow is not visually clea
 - the first user action is not obvious
 - project, terminal, agent, Telegram, and debug information compete at once
 - development-facing details such as `mock`, `prototype`, and raw callbacks sit too close to normal user-facing areas
+- the screen falls short of the structural clarity of `VS Code`, the workflow readability of `conductor`, and the terminal-first focus of `cmux`
 
 ## 설계 원칙 / Design Principles
 
 ### 한국어
 
+- `VS Code`의 구조적 정보 계층, `conductor`의 에이전트 흐름, `cmux`의 터미널 중심성을 함께 참고한다.
 - 터미널을 메인 작업 영역으로 둔다.
 - 프로젝트 열기, 터미널 작업, 에이전트 요청 순서가 화면 구조에서 드러나야 한다.
 - 사용자가 지금 해야 할 첫 액션을 항상 쉽게 찾을 수 있어야 한다.
 - 보조 정보는 접거나 2선으로 내린다.
 - `mock`, `prototype`, `real`은 상태 뱃지로 명확히 구분하되, mock 정보가 화면 전체를 점유하지 않게 한다.
 - 디버그 정보와 내부 callback 값은 기본 화면이 아니라 보조 영역에 둔다.
+- 카드 나열형 대시보드보다 패널 기반 워크스페이스를 우선한다.
 
 ### English
 
+- reference the structural hierarchy of `VS Code`, the agent workflow of `conductor`, and the terminal-first feel of `cmux`
 - make the terminal the main working surface
 - let the structure visually express the order of project open, terminal work, and agent request
 - keep the first action easy to discover at all times
 - collapse or demote supporting information
 - distinguish `mock`, `prototype`, and `real` with explicit badges without letting mock states dominate the screen
 - keep debug information and raw callback values out of the default primary UI
+- prefer a panel-based workspace over a card-dashboard layout
 
 ## 핵심 사용자 흐름 / Core User Flow
 
@@ -255,6 +261,9 @@ The default workflow should follow this order:
 - provider 카드에 `mock`, `prototype`, `real` 상태를 분명하게 표시한다.
 - callback URL과 내부 상태 문자열을 기본 화면에서 숨긴다.
 - 어떤 탭의 로그가 에이전트 요청에 연결되는지 더 분명하게 보이게 한다.
+- 큰 카드 묶음을 줄이고, `VS Code` 스타일의 패널 구조와 상태바 감각을 강화한다.
+- 에이전트 요청과 승인 흐름은 `conductor`처럼 단계가 읽히게 만든다.
+- 탭 전환과 터미널 집중도는 `cmux`처럼 가볍고 빠르게 유지한다.
 
 ### English
 

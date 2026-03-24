@@ -189,6 +189,9 @@ docs/
 - 각 스프린트에서 사용자에게 새로 드러나는 흐름은 최소 1개 이상의 E2E 시나리오로 남긴다.
 - smoke test와 기능별 시나리오를 구분하고, 스프린트 종료 시 smoke test는 항상 통과 상태를 목표로 한다.
 - Tauri 데스크톱 런타임과 웹 프론트엔드 검증을 분리하되, 가능한 한 같은 사용자 흐름 이름을 유지한다.
+- 프론트엔드 레이아웃과 상호작용은 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
+- 디자인 검토 시 `VS Code`, `conductor`, `cmux` 대비 정보 계층과 터미널 중심성이 유지되는지 확인한다.
+- 프론트엔드 구현은 프레임워크 관용성보다 에이전트가 수정하기 쉬운 단순한 `TypeScript` 구조를 우선할 수 있다.
 
 #### 상태 관리 원칙
 
@@ -224,6 +227,9 @@ The frontend should be organized by feature domain.
 - each sprint should leave behind at least one E2E scenario for the new user-facing flow it delivers
 - separate smoke tests from feature-specific scenarios, and aim to keep smoke tests green at the end of every sprint
 - separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
+- review frontend layout and interaction quality against `docs/frontend-design-benchmarks.md`
+- check whether the UI still preserves the hierarchy of `VS Code`, the workflow clarity of `conductor`, and the terminal-first emphasis of `cmux`
+- prefer frontend implementation patterns that are easy for agents to edit, even if that means reducing framework-heavy abstractions in favor of simpler `TypeScript` structures
 
 ## 테스트 전략 / Testing Strategy
 
@@ -773,6 +779,19 @@ The initial candidate channel is:
 - `Approval Gate`
   - 명령 실행과 파일 수정 전 사용자 승인 요구
 
+#### 기본 워커 역할
+
+- `Orchestrator Worker`
+  - 문서/코드 기준선 확인, 작업 분해, 통합 담당
+- `Frontend Worker`
+  - `src/` 범위 UI와 상태 변경 담당
+- `Backend Worker`
+  - `src-tauri/` 범위 runtime과 contract 변경 담당
+- `Tester Worker`
+  - `tests/` 범위 E2E, 회귀, repro 정리 담당
+
+기본 스케줄링은 위 네 역할을 우선으로 하고, 필요한 경우에만 탐색 전용 워커나 리뷰 전용 워커를 추가한다.
+
 #### 실행 흐름
 
 1. 사용자가 작업을 요청한다.
@@ -780,6 +799,22 @@ The initial candidate channel is:
 3. `Task Scheduler`가 `fast`, `balanced`, `deep` 정책을 적용한다.
 4. 각 워커가 provider adapter를 통해 요청을 수행한다.
 5. 결과는 공통 이벤트 형식으로 정규화되어 UI로 전달된다.
+
+#### 소유권 경계
+
+- `Frontend Worker`는 기본적으로 `src-tauri/`를 수정하지 않는다.
+- `Backend Worker`는 기본적으로 `src/`를 수정하지 않는다.
+- `Tester Worker`는 `tests/`와 검증 산출물에 집중한다.
+- `Orchestrator Worker`는 문서, 통합, 충돌 조정을 맡는다.
+
+병렬성은 위 소유권 경계가 선명할 때만 늘린다.
+
+#### UI Behavior Contract Alignment
+
+- backend status fields, snapshot meaning, and action availability must map cleanly to frontend buttons, badges, disclosures, and disabled states
+- frontend should not invent UI-only heuristics when backend can expose the contract explicitly
+- when UI behavior changes, confirm whether the runtime contract or snapshot schema must also change
+- treat display semantics as a shared contract, not as separate frontend and backend interpretations
 
 ### English
 
@@ -798,6 +833,19 @@ Multi-agent execution should be orchestrated in the application layer.
 - `Approval Gate`
   - requires user approval before command execution or file edits
 
+#### Default Worker Roles
+
+- `Orchestrator Worker`
+  - checks the doc and code baseline, decomposes work, and integrates results
+- `Frontend Worker`
+  - owns UI and state changes inside `src/`
+- `Backend Worker`
+  - owns runtime and contract changes inside `src-tauri/`
+- `Tester Worker`
+  - owns E2E, regression, and repro work inside `tests/`
+
+Default scheduling should start from these four roles and add exploration-only or review-only workers only when needed.
+
 #### Execution Flow
 
 1. the user submits a task
@@ -805,6 +853,22 @@ Multi-agent execution should be orchestrated in the application layer.
 3. the `Task Scheduler` applies `fast`, `balanced`, or `deep` policy
 4. workers execute through provider adapters
 5. results are normalized into a shared event format and sent to the UI
+
+#### Ownership Boundary
+
+- `Frontend Worker` should avoid editing `src-tauri/` by default.
+- `Backend Worker` should avoid editing `src/` by default.
+- `Tester Worker` should focus on `tests/` and validation artifacts.
+- `Orchestrator Worker` owns docs, integration, and conflict resolution.
+
+Parallelism should be increased only when these ownership boundaries stay clear.
+
+#### UI Behavior Contract Alignment
+
+- backend status fields, snapshot meaning, and action availability must map cleanly to frontend buttons, badges, disclosures, and disabled states
+- frontend should not rely on UI-only heuristics when backend can expose the contract explicitly
+- when UI behavior changes, verify whether the runtime contract or snapshot schema must change too
+- treat display semantics as a shared contract rather than separate frontend and backend interpretations
 
 ## 실행 모드 정책 / Execution Mode Policy
 
