@@ -3,9 +3,9 @@ import { expect, test } from '@playwright/test'
 test('connects telegram, sends a report, and approves a remote command', async ({ page }) => {
   await page.goto('/?e2eMock=1')
 
-  await page.getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
   await page.getByRole('button', { name: 'Append Sample Log' }).click()
-  await page.getByRole('button', { name: 'Use Active Log As Agent Context' }).click()
+  await page.getByRole('button', { name: 'Use Active Log' }).click()
   await page.locator('summary', { hasText: 'Telegram' }).click()
 
   const telegramPanel = page.getByTestId('telegram-bridge-panel')
@@ -25,5 +25,6 @@ test('connects telegram, sends a report, and approves a remote command', async (
 
   await expect(page.getByRole('tab', { name: 'telegram-2' })).toBeVisible()
   await expect(page.getByRole('tabpanel')).toContainText('[telegram] git status --short')
+  await page.locator('summary', { hasText: 'Task History' }).click()
   await expect(page.getByTestId('task-history-panel')).toContainText('Telegram command executed')
 })

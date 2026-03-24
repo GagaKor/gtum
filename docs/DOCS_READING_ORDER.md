@@ -20,10 +20,12 @@ This document is a fast recovery guide for deciding which documents to reread, a
 2. `docs/README.md`
 3. `docs/product-plan.md`
 4. `docs/technical-design.md`
-5. `docs/mvp-backlog.md`
-6. `docs/sprint-plan.md`
-7. `docs/release-build-ci.md`
-8. 현재 스프린트 체크리스트 또는 작업 로그
+5. `docs/frontend-design-benchmarks.md`
+6. `docs/agent-team-topology.md`
+7. `docs/mvp-backlog.md`
+8. `docs/sprint-plan.md`
+9. `docs/release-build-ci.md`
+10. 현재 스프린트 체크리스트 또는 작업 로그
 
 ### English
 
@@ -33,10 +35,12 @@ If you feel lost, reread documents in this order:
 2. `docs/README.md`
 3. `docs/product-plan.md`
 4. `docs/technical-design.md`
-5. `docs/mvp-backlog.md`
-6. `docs/sprint-plan.md`
-7. `docs/release-build-ci.md`
-8. the current sprint checklist or worklog
+5. `docs/frontend-design-benchmarks.md`
+6. `docs/agent-team-topology.md`
+7. `docs/mvp-backlog.md`
+8. `docs/sprint-plan.md`
+9. `docs/release-build-ci.md`
+10. the current sprint checklist or worklog
 
 ## 컨텍스트 초과 시 규칙 / Rule For Context Overflow
 
@@ -47,9 +51,11 @@ Codex 컨텍스트가 길어져서 앞선 판단 근거를 잊을 수 있다고 
 1. `docs/DOCS_READING_ORDER.md`
 2. `docs/product-plan.md`
 3. `docs/technical-design.md`
-4. `docs/mvp-backlog.md`
-5. 현재 스프린트 문서
-6. 최신 `WORKLOG`
+4. `docs/frontend-design-benchmarks.md`
+5. `docs/agent-team-topology.md`
+6. `docs/mvp-backlog.md`
+7. 현재 스프린트 문서
+8. 최신 `WORKLOG`
 
 이 규칙의 목적은 기억에 의존하지 않고 문서 기준으로 방향을 복구하는 것이다.
 
@@ -60,9 +66,11 @@ If Codex context grows long enough that earlier reasoning may drift or be forgot
 1. `docs/DOCS_READING_ORDER.md`
 2. `docs/product-plan.md`
 3. `docs/technical-design.md`
-4. `docs/mvp-backlog.md`
-5. the current sprint document
-6. the latest `WORKLOG`
+4. `docs/frontend-design-benchmarks.md`
+5. `docs/agent-team-topology.md`
+6. `docs/mvp-backlog.md`
+7. the current sprint document
+8. the latest `WORKLOG`
 
 The purpose of this rule is to restore direction from documentation rather than memory.
 
@@ -78,7 +86,16 @@ The purpose of this rule is to restore direction from documentation rather than 
 ### 구현 구조가 헷갈릴 때
 
 1. `docs/technical-design.md`
-2. `docs/sprint-plan.md`
+2. `docs/frontend-design-benchmarks.md`
+3. `docs/agent-team-topology.md`
+4. `docs/sprint-plan.md`
+
+### 역할 분담이 헷갈릴 때
+
+1. `docs/agent-team-topology.md`
+2. `docs/frontend-design-benchmarks.md`
+3. `docs/technical-design.md`
+4. `AGENTS.md`
 
 ### 지금 무엇부터 만들어야 할지 헷갈릴 때
 
@@ -109,7 +126,16 @@ The purpose of this rule is to restore direction from documentation rather than 
 ### When implementation structure feels unclear
 
 1. `docs/technical-design.md`
-2. `docs/sprint-plan.md`
+2. `docs/frontend-design-benchmarks.md`
+3. `docs/agent-team-topology.md`
+4. `docs/sprint-plan.md`
+
+### When role ownership feels unclear
+
+1. `docs/agent-team-topology.md`
+2. `docs/frontend-design-benchmarks.md`
+3. `docs/technical-design.md`
+4. `AGENTS.md`
 
 ### When it is unclear what to build next
 

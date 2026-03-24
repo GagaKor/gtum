@@ -15,7 +15,10 @@ async function ensureCodexConnected(page: Page) {
 
 async function runCoreFlow(page: Page, iteration: number) {
   await page.getByRole('button', { name: 'Append Sample Log' }).click()
-  await page.getByRole('button', { name: 'Use Active Log As Agent Context' }).click()
+  await page
+    .getByTestId('terminal-workspace')
+    .getByRole('button', { name: /Use Active Log|Refresh Agent Context/ })
+    .click()
   await page.getByLabel('Task Request').fill(`repeat sprint flow iteration ${iteration}`)
   await page.getByRole('button', { name: 'Request Suggestion' }).click()
 
@@ -23,23 +26,21 @@ async function runCoreFlow(page: Page, iteration: number) {
   await suggestion.getByRole('button', { name: 'Approve In Current Tab' }).click()
 
   await expect(suggestion).toContainText('approved-current-tab')
-  await expect(page.getByTestId('active-log-buffer')).toContainText('[agent:codex] npm run build')
+  await expect(page.getByRole('tabpanel')).toContainText('[agent:codex] npm run build')
 }
 
 test('repeats the core workspace flow across reloads with restored state', async ({ page }) => {
   await page.goto('/?e2eMock=1')
 
   await page.getByRole('radio', { name: 'Deep' }).check()
-  await page.getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
   await ensureCodexConnected(page)
 
   for (const iteration of [1, 2, 3]) {
     if (iteration > 1) {
       await page.reload()
       await expect(page.getByTestId('execution-mode-panel')).toContainText('Deep')
-      await expect(
-        page.getByRole('article').filter({ hasText: 'Project Summary' }).first(),
-      ).toContainText('/mock/demo-project')
+      await expect(page.getByText('/mock/demo-project', { exact: true }).first()).toBeVisible()
       await ensureCodexConnected(page)
     }
 
@@ -47,6 +48,7 @@ test('repeats the core workspace flow across reloads with restored state', async
   }
 
   const historyPanel = page.getByTestId('task-history-panel')
+  await page.locator('summary', { hasText: 'Task History' }).click()
   await expect(historyPanel).toContainText('Project opened')
   await expect(historyPanel).toContainText('Codex connected')
   await expect(historyPanel).toContainText('Codex suggestion approved')

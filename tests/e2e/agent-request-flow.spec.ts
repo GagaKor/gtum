@@ -3,12 +3,12 @@ import { expect, test } from '@playwright/test'
 test('requests an agent suggestion and approves it in a new terminal tab', async ({ page }) => {
   await page.goto('/?e2eMock=1')
 
-  await page.getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
   await page.getByRole('button', { name: 'Complete Mock Callback' }).dispatchEvent('click')
 
   await page.getByRole('button', { name: 'Append Sample Log' }).click()
-  await page.getByRole('button', { name: 'Use Active Log As Agent Context' }).click()
+  await page.getByRole('button', { name: 'Use Active Log' }).click()
 
   await page.getByLabel('Task Request').fill('rerun tests with a focused command')
   await page.getByRole('button', { name: 'Request Suggestion' }).click()

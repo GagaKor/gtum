@@ -35,6 +35,9 @@ Its purpose is to:
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
 - 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
 - 각 스프린트의 마지막에는 새로 발견된 후속 작업을 다음 스프린트 문서나 백로그에 추가한다.
+- 프론트엔드, 런타임, 검증이 함께 변하는 작업은 기본적으로 `orchestrator + frontend + backend + tester` 편성으로 나눈다.
+- 프론트엔드 개편은 `VS Code`, `conductor`, `cmux` 레퍼런스와 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
+- 프론트엔드 구조는 사람이 아니라 에이전트가 지속적으로 수정하기 쉬운지까지 기준으로 본다.
 
 ### English
 
@@ -45,6 +48,9 @@ Its purpose is to:
 - each sprint should leave a clean foundation for the next one
 - finish each sprint with a practical UI E2E pass added or updated for the delivered flow
 - finish each sprint by adding newly discovered follow-up work into the next sprint plan or backlog
+- when frontend, runtime, and validation all change together, default the team split to `orchestrator + frontend + backend + tester`
+- review frontend redesign work against `VS Code`, `conductor`, `cmux`, and `docs/frontend-design-benchmarks.md`
+- treat agent editability as a first-class frontend design and implementation constraint
 
 ## 스프린트 종료 규칙 / Sprint Closing Rules
 
@@ -64,6 +70,13 @@ Its purpose is to:
 - 해당 스프린트 체크리스트
 - 최신 `WORKLOG`
 
+추가로 UI와 runtime이 함께 바뀌는 스프린트라면 아래 산출물도 남겨야 한다.
+
+- 명확한 frontend 소유 범위
+- 명확한 backend 소유 범위
+- tester 검증 메모
+- 문서나 계약이 바뀐 경우 orchestrator 통합 메모
+
 ### English
 
 Each sprint should be considered closed only when it includes:
@@ -79,6 +92,13 @@ Those next-sprint items should be written into at least one of:
 - `docs/sprint-plan.md`
 - the relevant sprint checklist
 - the latest `WORKLOG`
+
+When a sprint changes both UI and runtime behavior, it should also leave behind:
+
+- clear frontend ownership
+- clear backend ownership
+- explicit tester verification notes
+- orchestrator-level integration notes when docs or contracts changed
 
 ## MVP 스프린트 개요 / MVP Sprint Overview
 
@@ -706,6 +726,132 @@ Acceptance Criteria:
 - the relevant E2E coverage passes against the new contract
 - a worklog exists to hand off the next real-provider contract step
 
+Sprint 8 completion update:
+
+- auth snapshots now expose explicit provider connection-kind metadata instead of leaving frontend to infer it from URLs
+- provider badges render from the contract field rather than frontend heuristics
+- the next sprint should stop treating the current workspace layout as good enough and execute the documented redesign against the new frontend design benchmarks
+
+## Sprint 9
+
+### 한국어
+
+목표:
+
+- 현재 카드 중심 UI를 실제 작업용 워크스페이스 구조로 다시 짜서, `VS Code`, `conductor`, `cmux` 레퍼런스를 구현으로 옮긴다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- 상단 바, 좌측 프로젝트 레일, 중앙 터미널 스테이지, 우측 에이전트 패널 구조 재구성
+- 요약 카드 축소 또는 제거
+- Task History, Telegram, Runtime/Debug를 기본 2선 영역으로 재배치
+- 에이전트 요청, 컨텍스트, 제안, 승인 흐름을 단계형 UI로 재구성
+- 활성 로그가 어떤 요청에 붙는지 더 분명하게 보이도록 개선
+- backend snapshot, status field, action gating과 frontend UI 동작을 같은 계약으로 정렬
+- 새 레이아웃 기준으로 UI E2E 갱신
+
+권장 역할 분리:
+
+- `Orchestrator`
+  - 범위 고정, 문서 동기화, 통합 판단
+- `Frontend`
+  - 레이아웃 재구성, 스타일 시스템 정리, 인터랙션 정리
+- `Backend`
+  - 새 UI가 요구하는 context/snapshot 표시 필드 보강과 display contract 정렬
+- `Tester`
+  - 핵심 사용자 흐름 회귀와 레이아웃 전환 후 E2E 갱신
+
+완료조건:
+
+- 첫 화면에서 사용자가 프로젝트 열기, 터미널 작업, 에이전트 요청 순서를 바로 읽을 수 있다.
+- 터미널이 가장 강한 1차 작업 영역으로 보인다.
+- 에이전트 패널이 요청, 컨텍스트, 제안, 승인 순서를 자연스럽게 보여준다.
+- Task History, Telegram, Runtime/Debug가 기본 화면을 어지럽히지 않는다.
+- backend 상태와 frontend 버튼, 뱃지, 패널 동작이 같은 조건으로 설명된다.
+- `docs/frontend-design-benchmarks.md` 기준 리뷰와 관련 UI E2E 갱신이 남는다.
+
+리스크:
+
+- 레이아웃 재구성이 크면 기존 테스트 셀렉터와 상호작용 흐름이 많이 깨질 수 있다.
+- 시각 개선만 하고 실제 작업 흐름은 그대로 두는 반쪽짜리 개편으로 끝날 수 있다.
+- frontend만 바꾸고 backend 표시 계약이 따라오지 않으면 UX 설명력이 약해질 수 있다.
+- 화면은 좋아졌지만 action gating과 status semantics가 여전히 어긋날 수 있다.
+
+Sprint 9 initial backlog:
+
+- `P0` rebuild the workspace into top bar, left rail, terminal-first center stage, and right agent panel
+- `P0` reduce summary-card density and demote support surfaces by default
+- `P0` make active-log attachment state clearer inside the agent flow
+- `P0` align backend snapshot semantics with frontend UI behavior and action gating
+- `P0` update Playwright coverage for the redesigned main workspace
+- `P1` add a status-bar-like summary strip inspired by `VS Code`
+- `P1` improve approval-card readability inspired by `conductor`
+- `P1` make terminal tab switching feel lighter and more focused, inspired by `cmux`
+- `P2` refine visual polish after the workflow hierarchy is stable
+
+### English
+
+Goal:
+
+- replace the current card-heavy UI with a real working workspace and turn the `VS Code`, `conductor`, and `cmux` references into implementation
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- rebuild the top bar, left project rail, center terminal stage, and right agent panel structure
+- reduce or remove summary-heavy cards
+- move Task History, Telegram, and Runtime/Debug into secondary areas by default
+- restructure the agent request, context, suggestion, and approval flow into a more staged UI
+- make it much clearer which active logs are attached to which request
+- align backend snapshots, status fields, and action gating with the frontend UI contract
+- update UI E2E coverage against the new layout
+
+Recommended Role Split:
+
+- `Orchestrator`
+  - locks scope, synchronizes docs, and makes integration calls
+- `Frontend`
+  - rebuilds layout, styling system, and interactions
+- `Backend`
+  - strengthens any context or snapshot fields needed by the redesigned UI and aligns the display contract
+- `Tester`
+  - updates regression coverage and verifies the new workspace flow
+
+Acceptance Criteria:
+
+- users can immediately read the order of project open, terminal work, and agent request from the first screen
+- the terminal is clearly the strongest primary work surface
+- the agent panel presents request, context, suggestion, and approval in a natural order
+- Task History, Telegram, and Runtime/Debug no longer clutter the default screen
+- backend state is reflected consistently in frontend buttons, badges, panel visibility, and action gating
+- review against `docs/frontend-design-benchmarks.md` and updated UI E2E coverage are left behind
+
+Risks:
+
+- a large layout refactor may break existing test selectors and interaction paths
+- the work may drift into visual polish without materially improving workflow clarity
+- frontend-only changes may still feel weak if backend display contracts do not support the new UX
+- visual redesign alone may hide unresolved mismatch between backend semantics and frontend behavior
+
+Sprint 9 initial backlog:
+
+- `P0` rebuild the workspace into top bar, left rail, terminal-first center stage, and right agent panel
+- `P0` reduce summary-card density and demote support surfaces by default
+- `P0` make active-log attachment state clearer inside the agent flow
+- `P0` align backend snapshot semantics with frontend UI behavior and action gating
+- `P0` update Playwright coverage for the redesigned main workspace
+- `P1` add a status-bar-like summary strip inspired by `VS Code`
+- `P1` improve approval-card readability inspired by `conductor`
+- `P1` make terminal tab switching feel lighter and more focused, inspired by `cmux`
+- `P2` refine visual polish after the workflow hierarchy is stable
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -716,6 +862,8 @@ Acceptance Criteria:
 - `Sprint 5`는 앞선 모든 스프린트 결과를 통합하는 단계다.
 - `Sprint 6`는 `Sprint 4`의 승인 흐름과 `Sprint 5`의 작업 상태 모델이 필요하다.
 - `Sprint 7`은 `Sprint 3`의 provider foundation, `Sprint 4`의 approval flow, `Sprint 5`의 workspace restore, 그리고 실제 Windows 사용 피드백이 필요하다.
+- `Sprint 8`은 `Sprint 7`의 UX 재정리 결과를 바탕으로 auth contract를 heuristic 없는 명시 계약으로 바꾸는 단계다.
+- `Sprint 9`는 `Sprint 7`의 와이어프레임과 `Sprint 8`의 auth contract 명시화를 바탕으로 실제 워크스페이스 리디자인을 구현하는 단계다.
 
 ### English
 
@@ -746,6 +894,10 @@ Acceptance Criteria:
   - 데스크톱 밖에서도 안전하게 상태를 보고 제한된 명령을 보낼 수 있는가
 - `Sprint 7`
   - 사용자가 mock과 real의 경계를 헷갈리지 않고, 경로 입력 없이 프로젝트를 열며, 실제 provider 연동 다음 단계로 자연스럽게 넘어갈 수 있는가
+- `Sprint 8`
+  - provider auth 상태가 frontend 추측이 아니라 backend 계약으로 설명되는가
+- `Sprint 9`
+  - 현재 UI가 정말 작업용 워크스페이스처럼 느껴지고, 터미널과 에이전트 흐름이 한 화면에서 자연스럽게 읽히는가
 
 ### English
 
@@ -770,8 +922,8 @@ Acceptance Criteria:
 
 ### 한국어
 
-다음 단계로는 `Sprint 7`을 실제 작업 항목으로 더 세분화한 구현 체크리스트 또는 `worklog` 문서를 만드는 것이 좋다.
+다음 단계로는 `Sprint 9`를 프론트/백엔드/테스터 역할로 더 세분화한 구현 체크리스트 또는 `worklog` 문서를 만드는 것이 좋다.
 
 ### English
 
-The next step should be to break `Sprint 7` into an implementation checklist or worklog-style task document.
+The next step should be to break `Sprint 9` into a role-based implementation checklist or worklog-style task document.

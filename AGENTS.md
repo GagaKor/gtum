@@ -34,9 +34,11 @@
 3. `docs/README.md`
 4. `docs/product-plan.md`
 5. `docs/technical-design.md`
-6. `docs/mvp-backlog.md`
-7. `docs/sprint-plan.md`
-8. 현재 스프린트 체크리스트 또는 최신 `WORKLOG`
+6. `docs/frontend-design-benchmarks.md`
+7. `docs/agent-team-topology.md`
+8. `docs/mvp-backlog.md`
+9. `docs/sprint-plan.md`
+10. 현재 스프린트 체크리스트 또는 최신 `WORKLOG`
 
 각 문서의 역할은 다음과 같다.
 
@@ -50,6 +52,10 @@
   - 제품 비전, 핵심 기능, 멀티 에이전트 구조, 실행 모드, 기술 방향을 설명한다.
 - `docs/technical-design.md`
   - 앱 구조, 런타임 책임, 크로스 플랫폼 전략, 인증 구조, 구현 순서를 설명한다.
+- `docs/frontend-design-benchmarks.md`
+  - 프론트엔드가 참고해야 할 UI 레퍼런스와 금지 패턴을 설명한다.
+- `docs/agent-team-topology.md`
+  - 오케스트레이터, 프론트엔드, 백엔드, 테스터 역할 분리와 handoff 기준을 설명한다.
 - `docs/mvp-backlog.md`
   - MVP 범위, 우선순위, 완료조건, 제외 범위를 정의한다.
 - `docs/sprint-plan.md`
@@ -61,8 +67,10 @@
 2. `docs/DOCS_READING_ORDER.md`
 3. `docs/product-plan.md`
 4. `docs/technical-design.md`
-5. `docs/mvp-backlog.md`
-6. `docs/sprint-plan.md`
+5. `docs/frontend-design-benchmarks.md`
+6. `docs/agent-team-topology.md`
+7. `docs/mvp-backlog.md`
+8. `docs/sprint-plan.md`
 
 또한 컨텍스트가 길어질 때마다 아래를 반복한다.
 
@@ -82,6 +90,10 @@
   - 제품 기획의 기준 문서
 - `docs/technical-design.md`
   - 구현 구조의 기준 문서
+- `docs/frontend-design-benchmarks.md`
+  - 프론트엔드 디자인 레퍼런스와 UX 품질 기준 문서
+- `docs/agent-team-topology.md`
+  - 멀티 에이전트 역할 분리와 작업 handoff 기준 문서
 - `docs/mvp-backlog.md`
   - MVP 실행 범위의 기준 문서
 - `docs/sprint-plan.md`
@@ -124,6 +136,11 @@
 - 새로운 문서 추가 또는 문서 역할 변경
   - `docs/README.md`
   - 필요 시 `AGENTS.md`
+- 에이전트 역할 분리 또는 멀티 에이전트 운영 모델 변경
+  - `docs/agent-team-topology.md`
+  - `docs/product-plan.md`
+  - `docs/technical-design.md`
+  - 필요 시 `docs/sprint-plan.md`
 - 체크리스트나 작업 로그 기준 변경
   - 해당 스프린트 문서
   - `docs/WORKLOG_TEMPLATE.md`
@@ -144,6 +161,7 @@
 - `docs/technical-design.md`
 - `docs/mvp-backlog.md`
 - `docs/sprint-plan.md`
+- `docs/agent-team-topology.md`
 - 필요 시 다른 source of truth 문서
 
 원칙은 다음과 같다.
@@ -176,6 +194,8 @@
 - 어떤 문서를 갱신해야 할지 애매하면 `docs/README.md`와 이 파일의 문서 역할 정의를 기준으로 판단한다.
 - 문서 간 충돌이 보이면 조용히 지나가지 말고 코드와 최신 결정 근거를 바탕으로 정리한다.
 - 큰 변경을 했으면 필요 시 새 문서를 추가하거나 문서 구조 개편을 제안한다.
+- 멀티 에이전트 작업은 기본적으로 `orchestrator`, `frontend`, `backend`, `tester` 역할 분리를 먼저 검토한다.
+- 프론트엔드 작업은 `VS Code`, `conductor`, `cmux`를 참고하고 카드형 대시보드 남발을 피한다.
 
 ## 9. 새 문서 추가 규칙
 

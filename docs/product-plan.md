@@ -655,18 +655,16 @@ In the MVP, command execution and file edits should both require user approval.
 
 #### 추천 역할 분리
 
-- `Conductor`
-  - 전체 작업 분해, 우선순위 설정, 결과 통합
-- `Explorer`
-  - 코드베이스 탐색, 영향 범위 파악, 관련 파일 식별
-- `Coder`
-  - 특정 범위의 구현 수행
-- `Terminal Operator`
-  - 승인된 명령 실행과 로그 수집
+- `Orchestrator`
+  - 전체 작업 분해, 우선순위 설정, 문서 기준선 정렬, 결과 통합
+- `Frontend`
+  - `src/` 중심 UI, 상태, 사용자 흐름 구현
+- `Backend`
+  - `src-tauri/` 중심 runtime, contract, provider, 시스템 로직 구현
 - `Tester`
-  - 테스트 실행, 실패 분석, 재현 절차 정리
-- `Reviewer`
-  - 변경 위험, 회귀 가능성, 누락된 검증 확인
+  - E2E, 회귀, 재현 절차, aging 관점 검증
+
+기본 운영 모델은 위 네 역할을 우선으로 사용하고, 필요할 때만 탐색 전용 또는 리뷰 전용 역할을 추가한다.
 
 #### 설계 원칙
 
@@ -709,18 +707,16 @@ The core idea is:
 
 #### Suggested Role Split
 
-- `Conductor`
-  - decomposes work, prioritizes tasks, and integrates results
-- `Explorer`
-  - explores the codebase, maps impact, and identifies relevant files
-- `Coder`
-  - implements within an assigned scope
-- `Terminal Operator`
-  - executes approved commands and collects logs
+- `Orchestrator`
+  - decomposes work, prioritizes tasks, aligns the doc baseline, and integrates results
+- `Frontend`
+  - implements UI, state, and user-facing flow changes around `src/`
+- `Backend`
+  - implements runtime, contract, provider, and system logic around `src-tauri/`
 - `Tester`
-  - runs tests, analyzes failures, and documents repro steps
-- `Reviewer`
-  - checks risks, regressions, and missing validation
+  - validates E2E behavior, regressions, repro steps, and aging-sensitive areas
+
+The default operating model should use these four roles first, and only add read-only exploration or review specialists when needed.
 
 #### Design Principles
 
@@ -729,6 +725,7 @@ The core idea is:
 - share the same project context, but limit write permissions by role
 - testing and review can run in parallel with implementation, but final integration should remain centralized
 - increasing the number of agents matters less than improving task decomposition quality
+- default the implementation team to `orchestrator + frontend + backend + tester` before adding more specialized roles
 
 #### Example Project Context
 

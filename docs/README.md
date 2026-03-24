@@ -5,8 +5,11 @@
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
 - [UI/UX 개선안과 와이어프레임 / UI/UX Improvements and Wireframes](./ui-ux-wireframes.md)
+- [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
 - [문서 읽기 순서 / Docs Reading Order](./DOCS_READING_ORDER.md)
+- [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
 - [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
+- [Sprint 9 체크리스트 / Sprint 9 Checklist](./sprint-9-checklist.md)
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [릴리스 워크플로우 수정 로그 / Release Workflow Fix Worklog](./WORKLOG_2026-03-22_release-workflow-fix.md)
@@ -17,6 +20,7 @@
 - [Sprint 5 작업 로그 / Sprint 5 Worklog](./WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md)
 - [Sprint 7 작업 로그 / Sprint 7 Worklog](./WORKLOG_2026-03-22_sprint-7-ux-and-project-picker.md)
 - [Sprint 8 작업 로그 / Sprint 8 Worklog](./WORKLOG_2026-03-22_sprint-8-auth-contract.md)
+- [Sprint 9 작업 로그 / Sprint 9 Worklog](./WORKLOG_2026-03-24_sprint-9-workspace-redesign.md)
 - [Telegram 프로토타입 작업 로그 / Telegram Prototype Worklog](./WORKLOG_2026-03-22_post-mvp-telegram-prototype.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
@@ -27,10 +31,12 @@
 - 한국어와 영어는 항상 같은 의미와 최신 상태를 유지해야 한다.
 - 한국어는 사람 중심, 영어는 에이전트 중심 참조 문서로 사용한다.
 - 컨텍스트가 길어질 때마다 `docs/DOCS_READING_ORDER.md`를 기준으로 다시 문서를 읽는다.
+- 멀티 에이전트 작업은 기본적으로 `orchestrator + frontend + backend + tester` 팀 편성을 따른다.
 
 ## 현재 결정 / Current Decisions
 
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
+- 기본 개발 운영 모델은 `orchestrator`, `frontend`, `backend`, `tester` 역할 분리다
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`
 - 에이전트 제공자는 우선 `Codex + Claude`, 인증은 `OAuth 기반 로그인`을 우선한다
 - 현재 Sprint 5 기준으로 task history, workspace restore, execution mode, aging test까지 포함한 MVP 흐름이 구현되어 있다

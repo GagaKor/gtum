@@ -2,9 +2,11 @@
 
 `gtum`은 프로젝트 중심의 멀티 탭 터미널과 에이전트 워크플로우를 하나의 데스크톱 앱 안에서 다루기 위한 Tauri 기반 워크스페이스입니다.
 `cmux`의 멀티 터미널 감각과 `conductor`의 에이전트 오케스트레이션 감각을 함께 가져오되, 특히 현재 테스트 중인 터미널 로그를 에이전트 맥락으로 바로 연결하는 흐름에 초점을 둡니다.
+기본 개발 운영 모델은 `orchestrator`, `frontend`, `backend`, `tester`로 역할을 나눠 병렬 작업 후 통합하는 방식입니다.
 
 `gtum` is a Tauri-based desktop workspace for managing project-centric multi-tab terminal workflows and agent workflows in one application.
 It aims to combine the multi-terminal feel of `cmux` with the orchestration feel of `conductor`, with a strong focus on turning live terminal logs into immediate agent context.
+The default development operating model splits work into `orchestrator`, `frontend`, `backend`, and `tester` roles for parallel delivery and controlled integration.
 
 ## 주요 기능 / Core Capabilities
 
@@ -91,6 +93,8 @@ The current release policy is to build and publish automatically to GitHub Relea
 상세 기획, 기술 설계, 스프린트, 릴리즈 정책은 아래 문서를 기준으로 합니다.
 
 - [문서 인덱스 / Docs Index](./docs/README.md)
+- [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./docs/frontend-design-benchmarks.md)
+- [에이전트 팀 토폴로지 / Agent Team Topology](./docs/agent-team-topology.md)
 - [제품 기획서 / Product Plan](./docs/product-plan.md)
 - [기술 설계서 / Technical Design](./docs/technical-design.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./docs/release-build-ci.md)
