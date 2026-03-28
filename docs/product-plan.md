@@ -97,6 +97,7 @@ This product also comes from direct hands-on frustration with existing tools.
 - 로컬 프로젝트 열기
 - 작업 목적에 따라 터미널 탭 분리하기
 - 프로젝트 파일과 작업 상태를 터미널과 함께 관리하기
+- 코드를 읽고 흐름을 추적할 수 있는 editor-like surface를 확보하기
 - 에이전트가 프로젝트와 터미널 맥락을 읽도록 하기
 - 에이전트가 제안한 작업을 승인 후 실행하기
 - 현재 테스트 중인 터미널 로그를 에이전트와 자연스럽게 공유하기
@@ -110,6 +111,7 @@ The app should make it easy to:
 - open a local project
 - split terminal tabs by task
 - manage project files and task state alongside terminals
+- keep an editor-like surface where users can read code and trace flow comfortably
 - let agents read project and terminal context
 - approve and execute agent-suggested actions
 - share active testing logs with agents naturally inside the same workspace
@@ -123,6 +125,7 @@ The app should make it easy to:
 1. 좋은 멀티 터미널 경험과 좋은 코드 탐색 경험이 하나의 앱 안에서 잘 결합되지 않는다.
 2. 에이전트 관리가 잘 되는 도구는 있어도, 현재 실행 중인 터미널 로그를 작업 맥락으로 다루는 경험이 약하다.
 3. 테스트와 디버깅 중 생성되는 실시간 로그를 코드, 프로젝트 구조, 에이전트 작업 흐름과 함께 연결하기 어렵다.
+4. 에이전트에 일을 전임해도 사용자는 결국 코드를 읽고 흐름을 따라가야 하는데, 기존 도구는 코드 보기 surface나 대화 가시성이 불편한 경우가 많다.
 
 즉, `gtum`은 "프로젝트, 코드, 터미널, 에이전트"가 분리된 도구들 사이를 오가는 불편함을 줄이는 것을 목표로 한다.
 
@@ -133,6 +136,7 @@ The core problems `gtum` is trying to solve are:
 1. strong multi-terminal workflows and strong code-reading workflows are rarely combined well in a single app
 2. some tools manage agents well, but do not treat live terminal logs as first-class working context
 3. real-time logs produced during testing and debugging are hard to connect with code, project structure, and agent workflows
+4. even when work is delegated to agents, users still need to read code and trace flow, but existing tools often make code-viewing surfaces or agent conversations uncomfortable
 
 In short, `gtum` aims to reduce the friction of constantly switching between separate tools for projects, code, terminals, and agents.
 
@@ -151,7 +155,9 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 5. 안전한 자동화
    읽기는 쉽게, 실행은 통제 가능하게 설계한다.
 6. 팀빌딩 우선
-   의미 있는 작업은 단일 에이전트보다 서브에이전트를 포함한 멀티 에이전트 팀빌딩을 기본값으로 삼고, `orchestrator + frontend + backend + QA + tester` 분업을 먼저 적용한다.
+   의미 있는 작업은 단일 에이전트보다 서브에이전트를 포함한 멀티 에이전트 팀빌딩을 기본값으로 삼고, `planner + orchestrator + designer + frontend + backend + QA + tester` 분업을 먼저 적용한다.
+7. 코드 읽기 우선
+   에이전트 위임이 있더라도 사용자가 코드를 읽고 흐름을 따라갈 수 있는 surface는 1급 작업 영역이어야 하며, 단순 사이드바나 하단 채팅 패널로 밀어넣지 않는다.
 
 ### English
 
@@ -166,7 +172,9 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 5. Safe automation
    Reading should be easy, execution should remain controlled.
 6. Team-building first
-   Non-trivial work should default to multi-agent team formation with sub-agents, starting from the `orchestrator + frontend + backend + QA + tester` split before any narrower path.
+   Non-trivial work should default to multi-agent team formation with sub-agents, starting from the `planner + orchestrator + designer + frontend + backend + QA + tester` split before any narrower path.
+7. Code-reading first
+   Even with agent delegation, the surface for reading code and tracing flow should remain first-class rather than collapsing into a sidebar-only or bottom-panel chat model.
 
 ## 대상 사용자 / Target Users
 
@@ -681,8 +689,12 @@ In the MVP, command execution and file edits should both require user approval.
 
 #### 기본 역할 분리
 
+- `Planner`
+  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 기획 문서화
 - `Orchestrator`
   - 전체 작업 분해, 우선순위 설정, 문서 기준선 정렬, 결과 통합
+- `Designer`
+  - `VS Code`, `conductor`, `cmux` 분석을 바탕으로 정보 계층, 코드 읽기 surface, 인터랙션, 와이어프레임 설계
 - `Frontend`
   - `src/` 중심 UI, 상태, 사용자 흐름 구현
 - `Backend`
@@ -692,7 +704,7 @@ In the MVP, command execution and file edits should both require user approval.
 - `Tester`
   - E2E, 회귀, 재현 절차, aging 관점 검증
 
-기본 운영 모델은 위 다섯 역할로 항상 먼저 팀빌딩하고, 필요할 때만 탐색 전용 또는 리뷰 전용 역할을 추가한다.
+기본 운영 모델은 위 일곱 역할로 항상 먼저 팀빌딩하고, 필요할 때만 탐색 전용 또는 리뷰 전용 역할을 추가한다.
 
 #### 설계 원칙
 
@@ -701,7 +713,7 @@ In the MVP, command execution and file edits should both require user approval.
 - 공유 프로젝트 컨텍스트는 동일하게 보되, 쓰기 권한은 역할마다 제한한다.
 - 테스트와 리뷰는 구현과 병렬로 수행할 수 있지만, 최종 병합 판단은 중앙에서 수행한다.
 - 에이전트 수를 늘리는 것보다 작업 분해 품질이 더 중요하다.
-- 작은 작업이라도 먼저 `orchestrator + frontend + backend + QA + tester` 기준으로 분해를 시도한다.
+- 작은 작업이라도 먼저 `planner + orchestrator + designer + frontend + backend + QA + tester` 기준으로 분해를 시도한다.
 
 #### 프로젝트 컨텍스트 예시
 
@@ -736,8 +748,12 @@ The core idea is:
 
 #### Default Role Split
 
+- `Planner`
+  - frames the current sprint goal, drafts the next sprint, analyzes references, and updates planning docs
 - `Orchestrator`
   - decomposes work, prioritizes tasks, aligns the doc baseline, and integrates results
+- `Designer`
+  - uses `VS Code`, `conductor`, and `cmux` to design hierarchy, code-reading surfaces, interactions, and wireframes
 - `Frontend`
   - implements UI, state, and user-facing flow changes around `src/`
 - `Backend`
@@ -747,7 +763,7 @@ The core idea is:
 - `Tester`
   - validates E2E behavior, regressions, repro steps, and aging-sensitive areas
 
-The default operating model should always build the team from these five roles first, and only add read-only exploration or review specialists when needed.
+The default operating model should always build the team from these seven roles first, and only add read-only exploration or review specialists when needed.
 
 #### Design Principles
 
@@ -756,7 +772,7 @@ The default operating model should always build the team from these five roles f
 - share the same project context, but limit write permissions by role
 - testing and review can run in parallel with implementation, but final integration should remain centralized
 - increasing the number of agents matters less than improving task decomposition quality
-- attempt decomposition with `orchestrator + frontend + backend + QA + tester` before adding more specialized roles
+- attempt decomposition with `planner + orchestrator + designer + frontend + backend + QA + tester` before adding more specialized roles
 
 #### Example Project Context
 

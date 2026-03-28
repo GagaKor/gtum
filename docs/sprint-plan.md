@@ -51,7 +51,8 @@ Read this document when:
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
 - 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
 - 각 스프린트의 마지막에는 새로 발견된 후속 작업을 다음 스프린트 문서나 백로그에 추가한다.
-- 모든 작업은 먼저 서브에이전트를 포함한 `orchestrator + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 예외가 있으면 `WORKLOG`에 남긴다.
+- 모든 작업은 먼저 서브에이전트를 포함한 `planner + orchestrator + designer + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 예외가 있으면 `WORKLOG`에 남긴다.
+- 각 스프린트 동안 `planner`와 `designer`는 다음 스프린트 초안, 레퍼런스 분석, 디자인 문서도 병렬로 남긴다.
 - 프론트엔드 개편은 `VS Code`, `conductor`, `cmux` 레퍼런스와 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
 - 프론트엔드 구조는 사람이 아니라 에이전트가 지속적으로 수정하기 쉬운지까지 기준으로 본다.
 
@@ -64,7 +65,8 @@ Read this document when:
 - each sprint should leave a clean foundation for the next one
 - finish each sprint with a practical UI E2E pass added or updated for the delivered flow
 - finish each sprint by adding newly discovered follow-up work into the next sprint plan or backlog
-- first decompose every task into the sub-agent split `orchestrator + frontend + backend + QA + tester`, record any exception in the `WORKLOG`, and keep that split whenever frontend, runtime, and validation change together
+- first decompose every task into the sub-agent split `planner + orchestrator + designer + frontend + backend + QA + tester`, record any exception in the `WORKLOG`, and keep that split whenever frontend, runtime, and validation change together
+- during each sprint, `planner` and `designer` should also leave behind the next-sprint draft, reference analysis, and design documentation in parallel
 - review frontend redesign work against `VS Code`, `conductor`, `cmux`, and `docs/frontend-design-benchmarks.md`
 - treat agent editability as a first-class frontend design and implementation constraint
 
@@ -90,6 +92,8 @@ Read this document when:
 
 - 명확한 frontend 소유 범위
 - 명확한 backend 소유 범위
+- planner 다음 스프린트 메모
+- designer 레퍼런스/와이어프레임 메모
 - QA acceptance 메모
 - tester 검증 메모
 - 문서나 계약이 바뀐 경우 orchestrator 통합 메모
@@ -114,6 +118,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
 
 - clear frontend ownership
 - clear backend ownership
+- planner next-sprint notes
+- designer reference or wireframe notes
 - explicit QA acceptance notes
 - explicit tester verification notes
 - orchestrator-level integration notes when docs or contracts changed
@@ -893,8 +899,12 @@ Sprint 9 initial backlog:
 
 권장 역할 분리:
 
+- `Planner`
+  - Sprint 10 결과를 다음 스프린트 기획 메모와 fallback 정책으로 정리
 - `Orchestrator`
   - 범위 고정, 역할 분리, 문서 동기화, 최종 통합
+- `Designer`
+  - diagnostics UI와 active-log preview가 다음 editor/design 방향과 어떻게 연결될지 정리
 - `Frontend`
   - diagnostics UI, 연결 안내 문구, active-log preview 정리
 - `Backend`
@@ -954,8 +964,12 @@ Scope:
 
 Recommended Role Split:
 
+- `Planner`
+  - turns Sprint 10 outputs into next-sprint planning notes and fallback-policy guidance
 - `Orchestrator`
   - locks scope, splits roles, syncs docs, and integrates the final slice
+- `Designer`
+  - explains how diagnostics UI and active-log preview feed the next editor and design direction
 - `Frontend`
   - refines diagnostics UI, connection guidance, and active-log preview
 - `Backend`
@@ -1017,8 +1031,12 @@ Note:
 
 권장 역할 분리:
 
+- `Planner`
+  - provider 정책, 다음 스프린트 backlog, Windows login 검증 계획 정리
 - `Orchestrator`
   - 범위 고정, provider 정책 정리, 문서 동기화, 최종 통합
+- `Designer`
+  - 로그인 시작 UX, 코드 읽기 surface, agent interaction 배치, 다음 디자인 문서 정리
 - `Frontend`
   - 로그인 시작 UX, reconnect/expiry/cancel 상태, account/session 표시 정리
 - `Backend`
@@ -1071,8 +1089,12 @@ Scope:
 
 Recommended Role Split:
 
+- `Planner`
+  - aligns provider policy, next-sprint backlog, and the Windows login-validation plan
 - `Orchestrator`
   - locks scope, aligns provider policy, syncs docs, and integrates the final slice
+- `Designer`
+  - shapes login start UX, code-reading surfaces, agent interaction layout, and follow-up design docs
 - `Frontend`
   - refines login start UX, reconnect/expiry/cancel state, and account/session display
 - `Backend`

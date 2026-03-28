@@ -30,7 +30,7 @@
 
 - 시작 순서는 `AGENTS.md -> docs/README.md -> docs/DOCS_READING_ORDER.md`다.
 - 그 다음에는 모든 문서를 펼쳐 읽지 말고, 현재 작업에 필요한 문서만 라우팅해서 읽는다.
-- 의미 있는 작업은 항상 `orchestrator + frontend + backend + QA + tester` 기준으로 먼저 팀빌딩한다.
+- 의미 있는 작업은 항상 `planner + orchestrator + designer + frontend + backend + QA + tester` 기준으로 먼저 팀빌딩한다.
 
 ## 빠른 라우팅 / Quick Routes
 
@@ -38,7 +38,7 @@
   - [제품 기획서 / Product Plan](./product-plan.md)
 - 아키텍처, 런타임 책임, 플랫폼 전략, auth와 contract
   - [기술 설계서 / Technical Design](./technical-design.md)
-- 역할 분리, 서브에이전트 팀빌딩, handoff, `QA`와 `tester` 분리
+- 역할 분리, 서브에이전트 팀빌딩, handoff, `planner`, `designer`, `QA`, `tester` 분리
   - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
 - 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 종료 기준
   - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
@@ -63,7 +63,7 @@
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
   - 다음 작업 순서, 현재 스프린트 목표, 종료 조건을 정할 때 읽는다.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
-  - 서브에이전트 팀빌딩, 역할 소유권, handoff, `QA`와 `tester` 책임을 정할 때 읽는다.
+  - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester` 책임을 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
   - UI 구조, 정보 계층, 인터랙션, 금지 패턴을 검토할 때 읽는다.
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
@@ -95,12 +95,12 @@
 - 한국어는 사람 중심, 영어는 에이전트 중심 참조 문서로 사용한다.
 - 컨텍스트가 길어질 때마다 `docs/DOCS_READING_ORDER.md`를 기준으로 다시 문서를 읽는다.
 - 기본값은 전체 문서 재독이 아니라 `AGENTS.md + docs/README.md + docs/DOCS_READING_ORDER.md`를 먼저 읽고 필요한 문서만 추가로 읽는 것이다.
-- 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `orchestrator + frontend + backend + QA + tester`다.
+- 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
 
 ## 현재 결정 / Current Decisions
 
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
-- 기본 개발 운영 모델은 서브에이전트 기반 멀티 에이전트 구조이며, `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할 분리를 우선 사용한다
+- 기본 개발 운영 모델은 서브에이전트 기반 멀티 에이전트 구조이며, `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할 분리를 우선 사용한다
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
 - 에이전트 제공자는 우선 `Codex + Claude`이며, 첫 실사용 `Codex` 경로의 source of truth는 `OAuth/session login`이다
 - 현재 저장소의 `OPENAI_API_KEY` 기반 bridge는 개발용 임시 브리지로만 취급하며, 최종 사용자 기본 경로로 간주하지 않는다

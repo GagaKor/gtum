@@ -16,7 +16,7 @@
 
 - 이 프로젝트의 진입점은 항상 `docs/`다.
 - 기본값은 `전체 문서 재독`이 아니라 `최소 읽기 팩 + 필요한 문서만 추가 읽기`다.
-- 의미 있는 작업은 먼저 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할로 팀빌딩한다.
+- 의미 있는 작업은 먼저 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할로 팀빌딩한다.
 - 구조, 흐름, 정책, 권한, 계약이 바뀌면 관련 문서를 같은 작업 안에서 함께 갱신한다.
 - 문서와 코드가 다르면 실제 코드와 최신 결정을 기준으로 문서를 수정한다.
 - 브랜치 운영 기본값은 `feature/* -> dev -> master`다.
@@ -37,7 +37,7 @@
   - `docs/product-plan.md`
 - 아키텍처, 런타임 책임, 플랫폼 전략, auth 구조, contract 변경
   - `docs/technical-design.md`
-- 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff, `QA`와 `tester` 분리
+- 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff, `planner`, `designer`, `QA`, `tester` 분리
   - `docs/agent-team-topology.md`
 - 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 산출물과 종료 기준
   - `docs/sprint-plan.md`
@@ -80,8 +80,10 @@
 
 ## 6. 멀티에이전트 기본값
 
-- 기본 역할은 `orchestrator + frontend + backend + QA + tester`다.
+- 기본 역할은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
+- `planner`는 제품 목표, 다음 스프린트 범위, 레퍼런스 분석, source of truth 기획 문서 정리를 맡는다.
 - `orchestrator`는 역할 분리, 파일 소유권, handoff, 최종 통합을 맡는다.
+- `designer`는 `VS Code`, `conductor`, `cmux` 레퍼런스를 바탕으로 정보 계층, 코드 읽기 surface, 상호작용 디자인, 와이어프레임 정리를 맡는다.
 - `QA`는 완료조건, 품질 게이트, 회귀 체크리스트를 맡는다.
 - `tester`는 E2E, 재현 절차, aging 관점 검증을 맡는다.
 - 같은 파일을 여러 역할이 동시에 수정하지 않도록 먼저 분해한다.
@@ -91,7 +93,7 @@
 
 1. 최소 읽기 팩을 읽는다.
 2. 라우팅 표를 보고 필요한 문서만 추가로 읽는다.
-3. `orchestrator` 기준으로 역할과 파일 소유권을 먼저 정한다.
+3. `planner`와 `orchestrator` 기준으로 역할과 파일 소유권을 먼저 정한다.
 4. 현재 코드와 문서 기준선이 맞는지 빠르게 확인한다.
 5. 변경 대상을 수정한다.
 6. 영향받는 문서를 함께 갱신한다.

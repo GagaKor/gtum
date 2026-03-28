@@ -811,8 +811,12 @@ The initial candidate channel is:
 
 #### 기본 워커 역할
 
+- `Planner Worker`
+  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 기획 문서 담당
 - `Orchestrator Worker`
   - 문서/코드 기준선 확인, 작업 분해, 통합 담당
+- `Designer Worker`
+  - `VS Code`, `conductor`, `cmux` 기준의 정보 계층, 코드 읽기 surface, 상호작용, 와이어프레임 담당
 - `Frontend Worker`
   - `src/` 범위 UI와 상태 변경 담당
 - `Backend Worker`
@@ -822,18 +826,20 @@ The initial candidate channel is:
 - `Tester Worker`
   - `tests/` 범위 E2E, 회귀, repro 정리 담당
 
-기본 스케줄링은 위 다섯 역할을 서브에이전트 기준으로 먼저 편성하고, 필요한 경우에만 탐색 전용 워커나 리뷰 전용 워커를 추가한다.
+기본 스케줄링은 위 일곱 역할을 서브에이전트 기준으로 먼저 편성하고, 필요한 경우에만 탐색 전용 워커나 리뷰 전용 워커를 추가한다.
 
 #### 실행 흐름
 
 1. 사용자가 작업을 요청한다.
-2. `Conductor`가 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할 기준으로 먼저 팀을 구성하며 계획을 세운다.
+2. `Conductor`가 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할 기준으로 먼저 팀을 구성하며 계획을 세운다.
 3. `Task Scheduler`가 `fast`, `balanced`, `deep` 정책을 적용한다.
 4. 각 워커가 provider adapter를 통해 요청을 수행한다.
 5. 결과는 공통 이벤트 형식으로 정규화되어 UI로 전달된다.
 
 #### 소유권 경계
 
+- `Planner Worker`는 기본적으로 제품/스프린트 문서와 레퍼런스 분석 메모를 맡는다.
+- `Designer Worker`는 기본적으로 디자인 기준 문서와 와이어프레임 메모를 맡는다.
 - `Frontend Worker`는 기본적으로 `src-tauri/`를 수정하지 않는다.
 - `Backend Worker`는 기본적으로 `src/`를 수정하지 않는다.
 - `QA Worker`는 기본적으로 acceptance 문서, 체크리스트, 검증 메모를 맡는다.
@@ -868,8 +874,12 @@ Multi-agent execution should be orchestrated in the application layer.
 
 #### Default Worker Roles
 
+- `Planner Worker`
+  - owns sprint framing, next-sprint planning, reference analysis, and planning docs
 - `Orchestrator Worker`
   - checks the doc and code baseline, decomposes work, and integrates results
+- `Designer Worker`
+  - owns hierarchy, code-reading surfaces, interactions, and wireframes using `VS Code`, `conductor`, and `cmux` as references
 - `Frontend Worker`
   - owns UI and state changes inside `src/`
 - `Backend Worker`
@@ -879,18 +889,20 @@ Multi-agent execution should be orchestrated in the application layer.
 - `Tester Worker`
   - owns E2E, regression, and repro work inside `tests/`
 
-Default scheduling should start from these five sub-agent roles and add exploration-only or review-only workers only when needed.
+Default scheduling should start from these seven sub-agent roles and add exploration-only or review-only workers only when needed.
 
 #### Execution Flow
 
 1. the user submits a task
-2. the `Conductor` builds a plan by first forming `orchestrator`, `frontend`, `backend`, `QA`, and `tester` roles
+2. the `Conductor` builds a plan by first forming `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester` roles
 3. the `Task Scheduler` applies `fast`, `balanced`, or `deep` policy
 4. workers execute through provider adapters
 5. results are normalized into a shared event format and sent to the UI
 
 #### Ownership Boundary
 
+- `Planner Worker` should focus on product docs, sprint docs, and reference-analysis notes by default.
+- `Designer Worker` should focus on design-guideline docs, wireframes, and interaction notes by default.
 - `Frontend Worker` should avoid editing `src-tauri/` by default.
 - `Backend Worker` should avoid editing `src/` by default.
 - `QA Worker` should focus on acceptance docs, checklists, and validation notes.

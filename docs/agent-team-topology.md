@@ -8,7 +8,7 @@
 
 목적은 다음과 같다.
 
-- 에이전트 역할을 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 다섯 축으로 고정한다.
+- 에이전트 역할을 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 일곱 축으로 고정한다.
 - 큰 작업을 병렬로 나누되, 충돌 없이 다시 통합하는 기준을 제공한다.
 - 각 역할이 무엇을 읽고, 무엇을 수정하고, 무엇을 검증하는지 명확히 한다.
 - 문서와 코드, 테스트가 같이 움직이도록 기본 handoff 규칙을 남긴다.
@@ -19,7 +19,7 @@ This document defines the default multi-agent team topology for development work
 
 Its goals are:
 
-- fix the default role split to `orchestrator`, `frontend`, `backend`, `QA`, and `tester`
+- fix the default role split to `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`
 - provide a way to parallelize larger tasks without integration chaos
 - make it explicit what each role reads, edits, and validates
 - keep code, docs, and tests moving together through clear handoff rules
@@ -31,23 +31,27 @@ Its goals are:
 아래 상황이면 이 문서를 읽는다.
 
 - 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff 규칙을 정해야 할 때
-- `QA`와 `tester` 책임을 어디서 나눌지, 어떤 역할을 축소할지 판단해야 할 때
+- `planner`, `designer`, `QA`, `tester` 책임을 어디서 나눌지, 어떤 역할을 축소할지 판단해야 할 때
 
 ### English
 
 Read this document when:
 
 - you need to define role split, sub-agent team formation, file ownership, or handoff rules
-- you need to decide how `QA` and `tester` responsibilities are separated or when roles can be collapsed
+- you need to decide how `planner`, `designer`, `QA`, and `tester` responsibilities are separated or when roles can be collapsed
 
 ## 기본 팀 편성 / Default Team Shape
 
 ### 한국어
 
-기본 팀은 아래 다섯 역할로 구성한다.
+기본 팀은 아래 일곱 역할로 구성한다.
 
+- `Planner`
+  - 제품 목표, 현재 스프린트와 다음 스프린트 연결, 레퍼런스 분석, 기획 문서 갱신을 담당한다.
 - `Orchestrator`
   - 작업 목표를 해석하고, 문서와 코드 기준선을 맞추고, 역할별 작업을 분해한다.
+- `Designer`
+  - `VS Code`, `conductor`, `cmux` 레퍼런스를 바탕으로 정보 계층, 코드 읽기 surface, 상호작용, 와이어프레임을 담당한다.
 - `Frontend`
   - `src/` 중심 UI, 상태, 사용자 흐름, 프론트 검증을 담당한다.
 - `Backend`
@@ -57,14 +61,18 @@ Read this document when:
 - `Tester`
   - `tests/`, 재현 절차, 회귀 확인, E2E와 aging 관점의 검증을 담당한다.
 
-모든 작업은 먼저 이 다섯 역할 기준으로 서브에이전트 팀빌딩한다. 작업이 작을 때는 한 에이전트가 여러 역할을 겸할 수 있지만, 그 경우에도 누가 `QA` 판단을 하고 누가 `Tester` 검증을 맡는지는 명시해야 한다.
+모든 작업은 먼저 이 일곱 역할 기준으로 서브에이전트 팀빌딩한다. 작업이 작을 때는 한 에이전트가 여러 역할을 겸할 수 있지만, 그 경우에도 누가 `Planner` 판단을 하고 누가 `Designer`, `QA`, `Tester` 책임을 맡는지는 명시해야 한다.
 
 ### English
 
-The default team has five roles:
+The default team has seven roles:
 
+- `Planner`
+  - owns product intent, current-to-next sprint continuity, reference analysis, and planning-document updates
 - `Orchestrator`
   - interprets the goal, aligns docs and code, and decomposes the work
+- `Designer`
+  - owns information hierarchy, code-reading surface design, interactions, and wireframes using `VS Code`, `conductor`, and `cmux` as references
 - `Frontend`
   - owns UI, state, user flows, and frontend validation around `src/`
 - `Backend`
@@ -74,11 +82,26 @@ The default team has five roles:
 - `Tester`
   - owns `tests/`, repro steps, regression checks, and E2E plus aging-style validation
 
-Every task should first be decomposed into these five sub-agent roles. For very small tasks, one agent may cover multiple roles, but the QA decision and tester validation responsibilities should still be assigned explicitly.
+Every task should first be decomposed into these seven sub-agent roles. For very small tasks, one agent may cover multiple roles, but planner judgment plus designer, QA, and tester responsibilities should still be assigned explicitly.
 
 ## 역할별 책임 / Role Responsibilities
 
 ### 한국어
+
+#### `Planner`
+
+- 먼저 읽는다:
+  - `docs/product-plan.md`
+  - `docs/mvp-backlog.md`
+  - `docs/sprint-plan.md`
+- 결정한다:
+  - 현재 작업의 제품 목적
+  - 다음 스프린트로 넘길 기획 항목
+  - 레퍼런스 분석 결과를 어디에 반영할지
+- 직접 맡는다:
+  - 제품 범위와 우선순위 정리
+  - 다음 스프린트 초안과 후속 작업 문서화
+  - `VS Code`, `conductor`, `cmux` 분석을 backlog와 계획으로 연결
 
 #### `Orchestrator`
 
@@ -96,6 +119,18 @@ Every task should first be decomposed into these five sub-agent roles. For very 
   - 파일 소유권 충돌 방지
   - 문서 동기화 판단
   - 최종 통합과 결과 보고
+
+#### `Designer`
+
+- 주 소유 범위:
+  - `docs/frontend-design-benchmarks.md`
+  - `docs/ui-ux-wireframes.md`
+  - UI 구조와 상호작용 설계 메모
+- 직접 맡는다:
+  - 코드 읽기 surface와 작업 흐름 설계
+  - `VS Code`, `conductor`, `cmux` 레퍼런스 분석
+  - 사용자 가시성과 테스트 용이성을 기준으로 디자인 정리
+  - 다음 스프린트에서 구현해야 할 디자인 문서화
 
 #### `Frontend`
 
@@ -146,6 +181,21 @@ Every task should first be decomposed into these five sub-agent roles. For very 
 
 ### English
 
+#### `Planner`
+
+- reads first:
+  - `docs/product-plan.md`
+  - `docs/mvp-backlog.md`
+  - `docs/sprint-plan.md`
+- decides:
+  - the product intent of the current task
+  - what should be handed into the next sprint
+  - where reference analysis must be reflected
+- owns directly:
+  - product scope and priority framing
+  - drafting the next sprint and follow-up planning notes
+  - turning `VS Code`, `conductor`, and `cmux` analysis into backlog and planning updates
+
 #### `Orchestrator`
 
 - reads first:
@@ -162,6 +212,18 @@ Every task should first be decomposed into these five sub-agent roles. For very 
   - file-ownership conflict prevention
   - document-sync decisions
   - final integration and reporting
+
+#### `Designer`
+
+- primary ownership:
+  - `docs/frontend-design-benchmarks.md`
+  - `docs/ui-ux-wireframes.md`
+  - UI-structure and interaction-design notes
+- owns directly:
+  - code-reading surface and workflow design
+  - reference analysis across `VS Code`, `conductor`, and `cmux`
+  - designing for user visibility and testing comfort
+  - documenting the design inputs for the next sprint
 
 #### `Frontend`
 
@@ -214,28 +276,34 @@ Every task should first be decomposed into these five sub-agent roles. For very 
 
 ### 한국어
 
-1. `Orchestrator`가 요청을 읽고 관련 문서와 코드 기준선을 확인한다.
-2. `Orchestrator`가 작업을 `frontend`, `backend`, `QA`, `tester` 단위로 나누고 파일 소유권을 먼저 정한다.
-3. `QA`는 구현과 병렬로 완료조건, acceptance 기준, handoff 체크포인트를 정리한다.
-4. `Frontend`와 `Backend`는 서로 다른 파일 소유권으로 병렬 작업한다.
-5. `Tester`는 `QA` 기준을 바탕으로 검증 시나리오, 회귀 포인트, 필요한 재현 절차를 준비하고 실행한다.
-6. `QA`가 결과를 acceptance 기준에 대조해 남은 리스크와 release readiness를 정리한다.
-7. `Orchestrator`가 결과를 통합하고, 문서 갱신 여부와 남은 리스크를 정리한다.
+1. `Planner`와 `Orchestrator`가 요청을 읽고 제품 문서, 관련 코드, 현재 스프린트 기준선을 확인한다.
+2. `Planner`는 다음 스프린트로 이어질 기획 항목을 정리하고, `Designer`는 필요한 레퍼런스와 디자인 포인트를 고정한다.
+3. `Orchestrator`가 작업을 `designer`, `frontend`, `backend`, `QA`, `tester` 단위로 나누고 파일 소유권을 먼저 정한다.
+4. `QA`는 구현과 병렬로 완료조건, acceptance 기준, handoff 체크포인트를 정리한다.
+5. `Designer`, `Frontend`, `Backend`는 서로 다른 파일 소유권으로 병렬 작업한다.
+6. `Tester`는 `QA` 기준을 바탕으로 검증 시나리오, 회귀 포인트, 필요한 재현 절차를 준비하고 실행한다.
+7. `QA`가 결과를 acceptance 기준에 대조해 남은 리스크와 release readiness를 정리한다.
+8. `Orchestrator`가 결과를 통합하고, `Planner`와 `Designer` 산출물을 포함해 문서 갱신 여부와 남은 리스크를 정리한다.
 
 ### English
 
-1. The `Orchestrator` reads the request and checks the relevant doc and code baseline.
-2. The `Orchestrator` splits the work into `frontend`, `backend`, `QA`, and `tester` slices and locks file ownership first.
-3. `QA` defines acceptance criteria and handoff checkpoints in parallel with implementation.
-4. `Frontend` and `Backend` work in parallel with separate file ownership.
-5. `Tester` prepares and executes validation scenarios, regression focus, and repro steps from the QA criteria.
-6. `QA` reviews the result against acceptance criteria and summarizes release readiness plus residual risk.
-7. The `Orchestrator` integrates outcomes and closes the loop on docs and remaining risks.
+1. The `Planner` and `Orchestrator` read the request and check the product docs, relevant code, and sprint baseline.
+2. The `Planner` frames next-sprint implications, while the `Designer` locks the needed references and design direction.
+3. The `Orchestrator` splits the work into `designer`, `frontend`, `backend`, `QA`, and `tester` slices and locks file ownership first.
+4. `QA` defines acceptance criteria and handoff checkpoints in parallel with implementation.
+5. `Designer`, `Frontend`, and `Backend` work in parallel with separate file ownership.
+6. `Tester` prepares and executes validation scenarios, regression focus, and repro steps from the QA criteria.
+7. `QA` reviews the result against acceptance criteria and summarizes release readiness plus residual risk.
+8. The `Orchestrator` integrates outcomes and closes the loop on docs, including planner and designer outputs.
 
 ## 파일 소유권 규칙 / File Ownership Rules
 
 ### 한국어
 
+- `Planner`
+  - 기본적으로 `docs/product-plan.md`, `docs/mvp-backlog.md`, `docs/sprint-plan.md`, 기획 메모를 수정한다.
+- `Designer`
+  - 기본적으로 `docs/frontend-design-benchmarks.md`, `docs/ui-ux-wireframes.md`, 디자인 메모를 수정한다.
 - `Frontend`
   - 기본적으로 `src/`만 수정한다.
 - `Backend`
@@ -251,6 +319,10 @@ Every task should first be decomposed into these five sub-agent roles. For very 
 
 ### English
 
+- `Planner`
+  - should edit `docs/product-plan.md`, `docs/mvp-backlog.md`, `docs/sprint-plan.md`, and planning notes by default
+- `Designer`
+  - should edit `docs/frontend-design-benchmarks.md`, `docs/ui-ux-wireframes.md`, and design notes by default
 - `Frontend`
   - should edit `src/` by default
 - `Backend`
@@ -268,6 +340,10 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 
 ### 한국어
 
+- `Planner -> Designer`
+  - 다음 스프린트에서 구현해야 할 제품 목표와 레퍼런스 분석 포인트를 짧게 넘긴다.
+- `Designer -> Frontend`
+  - 코드 읽기 surface, 정보 계층, 인터랙션 의도를 짧게 넘긴다.
 - `Backend -> Frontend`
   - 새 command, snapshot, enum, status field, contract 변화가 있으면 이름과 의미를 먼저 고정한다.
 - `Frontend -> QA`
@@ -285,6 +361,10 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 
 ### English
 
+- `Planner -> Designer`
+  - hand off next-sprint product goals and reference-analysis points in short form
+- `Designer -> Frontend`
+  - hand off the intended code-reading surface, hierarchy, and interaction direction in short form
 - `Backend -> Frontend`
   - lock the names and meanings of any new command, snapshot, enum, status field, or contract change first
 - `Frontend -> QA`
@@ -306,10 +386,16 @@ The goal is not long prose. The goal is to pass along reproducible contracts and
 
 작업이 들어오면 기본적으로 아래 형태를 먼저 검토한다.
 
+- `Planner`
+  - 관련 제품 문서 확인
+  - 현재 작업 목적과 다음 스프린트 carry-over 정리
 - `Orchestrator`
   - 관련 문서 확인
   - 현재 코드 기준선 확인
   - 역할별 소유 파일 지정
+- `Designer`
+  - `VS Code`, `conductor`, `cmux` 분석
+  - 코드 읽기와 테스트 가시성 기준 UI 설계 정리
 - `Frontend`
   - UI 변경점 구현
   - 프론트 상태 및 표시 로직 정리
@@ -327,10 +413,16 @@ The goal is not long prose. The goal is to pass along reproducible contracts and
 
 When a new task arrives, start by checking this decomposition:
 
+- `Planner`
+  - verify relevant product docs
+  - define the current-task purpose and next-sprint carryover
 - `Orchestrator`
   - verify relevant docs
   - verify the current code baseline
   - assign per-role file ownership
+- `Designer`
+  - analyze `VS Code`, `conductor`, and `cmux`
+  - document UI hierarchy and code-reading design points
 - `Frontend`
   - implement UI changes
   - align frontend state and rendering logic
@@ -344,11 +436,11 @@ When a new task arrives, start by checking this decomposition:
   - add E2E or regression coverage
   - summarize validation results and repro steps
 
-## 언제 다섯 역할을 유지하는가 / When To Keep All Five Roles
+## 언제 일곱 역할을 유지하는가 / When To Keep All Seven Roles
 
 ### 한국어
 
-모든 작업은 먼저 다섯 역할 편성으로 분해한다. 아래 중 하나라도 해당하면 다섯 역할을 유지한다.
+모든 작업은 먼저 일곱 역할 편성으로 분해한다. 아래 중 하나라도 해당하면 일곱 역할을 유지한다.
 
 - UI와 런타임 계약이 함께 바뀐다.
 - `src/`와 `src-tauri/`를 동시에 수정해야 한다.
@@ -356,10 +448,11 @@ When a new task arrives, start by checking this decomposition:
 - 회귀 위험이 높다.
 - 문서 source of truth도 같이 갱신해야 한다.
 - acceptance 기준과 실제 검증을 분리해야 한다.
+- 다음 스프린트 기획이나 디자인 문서도 같이 남겨야 한다.
 
 ### English
 
-Start from all five roles for every task. Keep all five roles when any of the following are true:
+Start from all seven roles for every task. Keep all seven roles when any of the following are true:
 
 - UI and runtime contracts both change
 - both `src/` and `src-tauri/` need edits
@@ -367,34 +460,35 @@ Start from all five roles for every task. Keep all five roles when any of the fo
 - regression risk is high
 - source-of-truth docs also need updates
 - acceptance review should stay separate from test execution
+- next-sprint planning or design documentation should also be left behind
 
 ## 예외적으로 축소하는가 / When To Collapse Roles Exceptionally
 
 ### 한국어
 
-기본값은 다섯 역할 유지이며, 아래는 예외적으로 역할을 줄일 때의 기준이다.
+기본값은 일곱 역할 유지이며, 아래는 예외적으로 역할을 줄일 때의 기준이다.
 
 - 문서만 수정하는 작업
-  - `Orchestrator + QA` 또는 `Orchestrator + QA + Tester`
+  - `Planner + Orchestrator + QA` 또는 `Planner + Orchestrator + QA + Tester`
 - 순수 프론트 작업
-  - `Orchestrator + Frontend + QA + Tester`
+  - `Orchestrator + Designer + Frontend + QA + Tester`
 - 순수 런타임 작업
-  - `Orchestrator + Backend + QA + Tester`
+  - `Planner + Orchestrator + Backend + QA + Tester`
 - 아주 작은 수정
-  - 한 에이전트가 구현할 수 있지만, `QA` 판단과 `Tester` 검증 책임은 분리해 명시한다.
+  - 한 에이전트가 구현할 수 있지만, `Planner`, `Designer`, `QA`, `Tester` 책임 중 생략된 것이 무엇인지 명시한다.
 
 ### English
 
-The default is to keep all five roles. The following cases describe exceptional role collapse only.
+The default is to keep all seven roles. The following cases describe exceptional role collapse only.
 
 - docs-only work
-  - `Orchestrator + QA` or `Orchestrator + QA + Tester`
+  - `Planner + Orchestrator + QA` or `Planner + Orchestrator + QA + Tester`
 - frontend-only work
-  - `Orchestrator + Frontend + QA + Tester`
+  - `Orchestrator + Designer + Frontend + QA + Tester`
 - runtime-only work
-  - `Orchestrator + Backend + QA + Tester`
+  - `Planner + Orchestrator + Backend + QA + Tester`
 - very small fixes
-  - one agent may implement, but QA judgment and tester validation should still be assigned separately
+  - one agent may implement, but skipped planner, designer, QA, and tester responsibilities should still be acknowledged explicitly
 
 ## 검증 원칙 / Validation Rules
 

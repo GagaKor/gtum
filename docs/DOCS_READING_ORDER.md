@@ -32,7 +32,7 @@ Its goals are:
 2. `docs/README.md`
 3. 현재 작업 유형에 맞는 문서만 아래 라우트에서 고른다.
 
-문서를 고른 뒤에는 바로 수정하지 말고, 먼저 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 기준으로 역할을 나누고 파일 소유권과 handoff를 정한다.
+문서를 고른 뒤에는 바로 수정하지 말고, 먼저 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 기준으로 역할을 나누고 파일 소유권과 handoff를 정한다.
 
 ### English
 
@@ -42,7 +42,7 @@ When starting a new task, read only this first:
 2. `docs/README.md`
 3. only the task-specific docs selected from the routes below
 
-After choosing the docs, do not edit immediately. First split the work into `orchestrator`, `frontend`, `backend`, `QA`, and `tester`, then lock file ownership and handoff expectations.
+After choosing the docs, do not edit immediately. First split the work into `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`, then lock file ownership and handoff expectations.
 
 ## 작업별 라우팅 / Task-Based Routing
 
@@ -52,6 +52,13 @@ After choosing the docs, do not edit immediately. First split the work into `orc
 
 1. `docs/product-plan.md`
 2. `docs/mvp-backlog.md`
+
+### 다음 스프린트 기획이나 디자인 방향이 문제일 때
+
+1. `docs/sprint-plan.md`
+2. `docs/product-plan.md`
+3. `docs/frontend-design-benchmarks.md`
+4. `docs/agent-team-topology.md`
 
 ### 런타임 구조, provider/auth, contract가 문제일 때
 
@@ -97,6 +104,13 @@ After choosing the docs, do not edit immediately. First split the work into `orc
 
 1. `docs/product-plan.md`
 2. `docs/mvp-backlog.md`
+
+### When the issue is next-sprint planning or design direction
+
+1. `docs/sprint-plan.md`
+2. `docs/product-plan.md`
+3. `docs/frontend-design-benchmarks.md`
+4. `docs/agent-team-topology.md`
 
 ### When the issue is runtime structure, provider/auth, or contracts
 
@@ -196,7 +210,7 @@ Only when direction is still unclear should you widen out and reread in this ord
 
 - 지금 문제는 제품, 구현, 우선순위, 릴리스 중 무엇인가
 - 지금 필요한 source of truth는 1개인가 2개인가
-- 이 작업은 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 중 어떻게 나눌 것인가
+- 이 작업은 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 중 어떻게 나눌 것인가
 - 지금 당장 최신 `WORKLOG`나 체크리스트도 같이 봐야 하는가
 
 ### English
@@ -205,5 +219,5 @@ Before rereading, ask:
 
 - is the issue about product, implementation, priority, or release
 - do I need one source of truth, or two
-- how should this task be split across `orchestrator`, `frontend`, `backend`, `QA`, and `tester`
+- how should this task be split across `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`
 - do I also need the latest `WORKLOG` or checklist right now

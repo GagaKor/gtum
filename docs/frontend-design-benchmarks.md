@@ -11,6 +11,7 @@
 - 프론트엔드가 임의의 카드형 대시보드 UI로 흐르지 않게 한다.
 - `VS Code`, `conductor`, `cmux`에서 배워야 할 지점을 명확히 고정한다.
 - 디자인 완성도와 UX 기준을 구현 전에 합의된 문서로 남긴다.
+- 코드 읽기와 흐름 추적이 AI 대화보다 뒤로 밀리지 않게 한다.
 
 ### English
 
@@ -21,6 +22,7 @@ Its goals are:
 - prevent the frontend from drifting into an arbitrary card-dashboard UI
 - make the useful lessons from `VS Code`, `conductor`, and `cmux` explicit
 - keep design quality and UX expectations documented before implementation
+- keep code reading and flow tracing from being demoted behind the AI conversation surface
 
 ## 언제 읽는 문서인가 / When To Read This Document
 
@@ -76,18 +78,21 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 많은 정보를 보여줘도 우선순위가 흐려지지 않는 정보 계층
 - 사이드바, 메인, 패널, 상태바가 각자 역할이 분명한 구조
 - 자주 쓰는 액션이 과도한 카드 없이 가까운 곳에 배치되는 방식
+- 코드를 읽고 흐름을 따라가기 편한 editor 중심성
 
 #### `conductor`에서 배울 점
 
 - 에이전트 상태와 작업 상태를 UI에서 한눈에 읽게 하는 구성
 - 계획, 실행, 승인, 결과가 이어지는 흐름형 UX
 - 무엇이 자동이고 무엇이 승인 필요인지 분명하게 보이는 표현
+- 에이전트 orchestration은 강하지만 코드 읽기 surface 불편함은 반복하지 않는 기준
 
 #### `cmux`에서 배울 점
 
 - 터미널이 주변 장식이 아니라 메인 작업 표면인 점
 - 탭 단위 작업 전환이 빠르고 가벼운 점
 - 로그와 실행 상태를 읽는 경험이 끊기지 않는 점
+- 멀티 터미널은 좋더라도 코드 보기 불편함은 그대로 가져오지 않는 기준
 
 ### English
 
@@ -97,18 +102,21 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - strong information hierarchy even when the screen is dense
 - sidebars, main surface, panels, and status areas with distinct roles
 - frequent actions placed close to use instead of hidden inside decorative cards
+- editor-centered code reading and flow tracing
 
 #### What to borrow from `conductor`
 
 - a UI that makes agent and task state scannable at a glance
 - flow-oriented UX across planning, execution, approval, and result
 - explicit distinction between what is automatic and what requires approval
+- keep the orchestration strengths without inheriting uncomfortable code-reading surfaces
 
 #### What to borrow from `cmux`
 
 - terminal as the main working surface rather than a supporting widget
 - lightweight tab-based task switching
 - uninterrupted reading of logs and execution state
+- keep the strong multi-terminal workflow without inheriting weak code-view affordances
 
 ## 반드시 지켜야 할 UI 원칙 / Non-Negotiable UI Rules
 
@@ -120,6 +128,8 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 첫 진입 시 사용자가 해야 할 첫 액션이 한눈에 보여야 한다.
 - 승인 필요 액션과 읽기 전용 상태는 시각적으로 분리되어야 한다.
 - 디버그 정보, mock 세부정보, callback 값은 기본 화면의 주인공이 되면 안 된다.
+- 코드 읽기, 흐름 추적, 테스트 확인은 AI 대화창보다 먼저 보이거나 최소한 같은 급의 작업 surface를 가져야 한다.
+- 에이전트 대화는 보조 surface일 수 있지만, 코드 보기가 사이드바나 하단 패널에 종속되면 안 된다.
 - 에이전트가 안정적으로 수정하기 어렵다면 React 추상화보다 더 단순한 `TypeScript` 중심 구조를 우선할 수 있다.
 
 ### English
@@ -130,6 +140,8 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - the first useful action must be obvious on first entry
 - approval-required actions must be visually distinct from read-only status
 - debug data, mock details, and raw callback values must not dominate the default UI
+- code reading, flow tracing, and test inspection should be at least as first-class as the AI conversation surface
+- AI chat may be secondary, but code viewing must not be trapped inside a sidebar-only or bottom-panel-only interaction model
 - if React abstractions make agent-driven maintenance harder, prefer a simpler `TypeScript`-first structure over framework purity
 
 ## 에이전트 친화적 구현 원칙 / Agent-Friendly Implementation Rules
@@ -159,6 +171,8 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 터미널보다 보조 카드가 더 시선을 끄는 배치
 - provider 상태, Telegram, debug, runtime 정보가 동시에 1차 영역을 차지하는 구조
 - 현재 무엇을 해야 하는지보다 현재 가능한 기능 목록이 먼저 보이는 구조
+- AI 대화가 메인인데 코드 보기와 테스트 확인이 사이드바나 하단 패널에 눌리는 구조
+- 코드 흐름을 따라가야 하는 순간에도 editor-like surface가 부족한 구조
 
 ### English
 
@@ -167,6 +181,8 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - supporting cards drawing more attention than the terminal surface
 - provider state, Telegram, debug, and runtime details all competing in the primary zone
 - layouts that emphasize feature inventory before the next user action
+- AI conversation dominating while code viewing and test inspection are squeezed into a sidebar or bottom panel
+- layouts that lack an editor-like surface when users need to trace code flow
 
 ## 프론트엔드 작업 체크리스트 / Frontend Review Checklist
 
@@ -179,6 +195,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 3. 이 작업 표면이 `cmux`처럼 터미널 중심인가
 4. 카드 수를 줄이고 패널 구조로 바꿀 수 없는가
 5. debug/mock 정보를 한 단계 더 뒤로 보낼 수 없는가
+6. 에이전트 대화와 별개로 사용자가 코드를 읽고 흐름을 따라가기 편한 editor-like surface가 있는가
 
 ### English
 
@@ -189,3 +206,4 @@ Before shipping frontend work, check:
 3. is the working surface still terminal-first like `cmux`
 4. can this be expressed with fewer cards and stronger panel layout
 5. can debug or mock details be pushed one level further back
+6. does the user still have an editor-like surface for reading code and tracing flow apart from the agent conversation
