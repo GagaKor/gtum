@@ -15,7 +15,7 @@ use runtime::auth::{
 use runtime::codex::{
     AgentProviderDiagnostics, AgentSuggestionResponse, RequestAgentSuggestionsRequest,
 };
-use runtime::filesystem::ProjectOverview;
+use runtime::filesystem::{ProjectFileSnapshot, ProjectOverview};
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
     TerminalSessionManager, TerminalSessionSnapshot,
@@ -58,6 +58,11 @@ fn read_project_overview(
     max_depth: Option<usize>,
 ) -> Result<ProjectOverview, String> {
     runtime::filesystem::read_project_overview(path, max_depth)
+}
+
+#[tauri::command]
+fn read_project_file(project_path: String, file_path: String) -> Result<ProjectFileSnapshot, String> {
+    runtime::filesystem::read_project_file(project_path, file_path)
 }
 
 #[tauri::command]
@@ -275,6 +280,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             read_project_overview,
+            read_project_file,
             create_terminal_session,
             list_terminal_sessions,
             rename_terminal_session,

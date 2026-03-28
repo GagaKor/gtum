@@ -6,11 +6,15 @@ test('requests a Codex suggestion and approves it in a new terminal tab', async 
   await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
 
+  const requestPreview = page.getByTestId('provider-request-preview')
+  await expect(requestPreview).toContainText('src/App.tsx')
+
   await page.getByLabel('Task Request').fill('rerun tests with a focused command')
   await page.getByRole('button', { name: 'Ask Codex' }).click()
 
   const suggestionCard = page.getByTestId('suggestion-card-codex')
   await expect(suggestionCard).toContainText('npm run test -- --runInBand')
+  await expect(suggestionCard).toContainText('src/App.tsx')
   await expect(suggestionCard).toContainText('Status: pending')
 
   await suggestionCard.getByRole('button', { name: 'Approve In New Tab' }).click()

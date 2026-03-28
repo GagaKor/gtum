@@ -153,6 +153,18 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - 작업 이력, 워크스페이스 저장, 실행 모드, 크로스 플랫폼 검증, aging test
 - `Sprint 6`
   - Post-MVP: Telegram 리포트와 제한된 원격 명령
+- `Sprint 7`
+  - Windows-first 실제 사용 피드백과 auth UX 재정리
+- `Sprint 8`
+  - backend-driven provider auth contract
+- `Sprint 9`
+  - workspace redesign과 approval 흐름 정렬
+- `Sprint 10`
+  - Codex preflight diagnostics와 bridge 정리
+- `Sprint 11`
+  - Codex CLI ChatGPT session 기반 real request path
+- `Sprint 12`
+  - read-only code surface와 selected-file agent context
 
 ### English
 
@@ -170,6 +182,18 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - task history, workspace persistence, execution modes, cross-platform validation, and aging test
 - `Sprint 6`
   - Post-MVP: Telegram reporting and limited remote commands
+- `Sprint 7`
+  - Windows-first usage feedback and auth UX reset
+- `Sprint 8`
+  - backend-driven provider auth contract
+- `Sprint 9`
+  - workspace redesign and approval-flow alignment
+- `Sprint 10`
+  - Codex preflight diagnostics and bridge cleanup
+- `Sprint 11`
+  - Codex CLI ChatGPT-session real request path
+- `Sprint 12`
+  - read-only code surface and selected-file agent context
 
 ## Sprint 0
 
@@ -1145,6 +1169,140 @@ Sprint 11 initial backlog:
 - `P1` demote the API-key bridge into a dev-only fallback path
 - `P1` record Windows-first login UX findings
 
+## Sprint 12
+
+### 한국어
+
+목표:
+
+- selected file를 active log와 같은 급의 컨텍스트로 승격하고, 메인 워크스페이스에 read-only code surface를 올린다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- file tree에서 선택 가능한 파일 노드
+- 메인 워크스페이스의 read-only code viewer
+- `read_project_file` 기반 파일 읽기 runtime contract
+- project root 밖 경로 차단, binary fallback, large file truncation
+- 선택 파일 상태 복원
+- provider request preview에 `selected file + active terminal log` 동시 노출
+- real provider request envelope에 `activeFilePath`, `activeFileSnippet` 포함
+- approval 카드에서 file context 재표시
+- browser preview와 desktop runtime contract 동기화
+
+권장 역할 분리:
+
+- `Planner`
+  - 이번 슬라이스를 `selected-file context promotion`으로 정의하고 다음 스프린트 범위를 정리
+- `Orchestrator`
+  - runtime/UI 계약을 잠그고 source-of-truth 문서를 동기화
+- `Designer`
+  - terminal + code dual-primary surface와 approval rail 가시성 기준을 정리
+- `Frontend`
+  - file selection, code viewer, request preview, approval card 반영
+- `Backend`
+  - 안전한 file read command와 provider request envelope 확장
+- `QA`
+  - read-only viewer, selected-file visibility, log-context 무회귀 확인
+- `Tester`
+  - file select, request preview, approval, restore, Windows path/newline 확인
+
+완료조건:
+
+- 파일 트리에서 선택한 파일이 메인 workspace의 read-only viewer에 표시된다.
+- terminal과 code surface가 동시에 유지된다.
+- request preview와 approval review에서 selected file context를 다시 읽을 수 있다.
+- real provider request path가 selected file snippet과 active log를 함께 받는다.
+- binary/large file이 bounded fallback 또는 truncation으로 안전하게 처리된다.
+- 관련 E2E가 추가 또는 갱신된다.
+
+리스크:
+
+- 빠른 파일 전환 중 stale context가 남을 수 있다.
+- large file 또는 binary file 처리에서 UI 성능이 흔들릴 수 있다.
+- Windows 경로 구분자와 CRLF 차이로 preview와 runtime 값이 어긋날 수 있다.
+- viewer만 생기고 approval/review contract가 따라오지 않으면 가치가 낮아진다.
+
+Sprint 12 initial backlog:
+
+- `P0` add safe `read_project_file` runtime command
+- `P0` render a read-only code viewer in the main workspace
+- `P0` persist and restore the selected file path
+- `P0` include `activeFilePath` and `activeFileSnippet` in the provider request envelope
+- `P0` show selected-file context in request preview and approval review
+- `P0` update project-workspace and agent-request-flow E2E coverage
+- `P1` add bounded binary/large-file fallback messaging
+- `P1` record Windows path and CRLF verification notes
+
+### English
+
+Goal:
+
+- promote the selected file to the same level of context as active logs and add a read-only code surface to the main workspace
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- selectable file nodes in the file tree
+- a read-only code viewer in the main workspace
+- a `read_project_file` runtime contract
+- project-root boundary checks, binary fallback, and large-file truncation
+- selected-file restore behavior
+- provider request preview showing both `selected file + active terminal log`
+- real provider request envelope fields for `activeFilePath` and `activeFileSnippet`
+- approval cards that restate the file context
+- synchronized browser-preview and desktop-runtime contracts
+
+Recommended Role Split:
+
+- `Planner`
+  - frames this slice as selected-file context promotion and drafts the next sprint scope
+- `Orchestrator`
+  - locks the runtime/UI contract and syncs the source-of-truth docs
+- `Designer`
+  - defines the terminal + code dual-primary surface and approval-rail visibility rules
+- `Frontend`
+  - implements file selection, code viewer, request preview, and approval-card updates
+- `Backend`
+  - implements safe file reads and extends the provider request envelope
+- `QA`
+  - verifies the read-only viewer, selected-file visibility, and no regression in log context
+- `Tester`
+  - validates file selection, request preview, approval, restore behavior, and Windows path/newline handling
+
+Acceptance Criteria:
+
+- selecting a file from the file tree shows it in a read-only viewer in the main workspace
+- the terminal and code surface remain visible together
+- selected-file context can be reread in both request preview and approval review
+- the real provider request path receives both selected-file snippet and active logs
+- binary or large files are handled through bounded fallback or truncation
+- relevant E2E coverage is added or updated
+
+Risks:
+
+- stale context may linger during rapid file switching
+- large or binary file handling may shake UI performance
+- Windows path separators and CRLF differences may drift between preview and runtime values
+- the slice loses value if the viewer exists but approval/review contracts do not expose the file context
+
+Sprint 12 initial backlog:
+
+- `P0` add a safe `read_project_file` runtime command
+- `P0` render a read-only code viewer in the main workspace
+- `P0` persist and restore the selected file path
+- `P0` include `activeFilePath` and `activeFileSnippet` in the provider request envelope
+- `P0` show selected-file context in request preview and approval review
+- `P0` update project-workspace and agent-request-flow E2E coverage
+- `P1` add bounded binary/large-file fallback messaging
+- `P1` record Windows path and CRLF verification notes
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -1159,6 +1317,7 @@ Sprint 11 initial backlog:
 - `Sprint 9`는 `Sprint 7`의 와이어프레임과 `Sprint 8`의 auth contract 명시화를 바탕으로 실제 워크스페이스 리디자인을 구현하는 단계다.
 - `Sprint 10`은 `Sprint 8`의 auth contract와 `Sprint 9`의 워크스페이스 리디자인 위에서 개발용 bridge와 diagnostics를 정리한 임시 슬라이스다.
 - `Sprint 11`은 `Sprint 10`의 임시 bridge 경험을 바탕으로 source of truth인 `OAuth/session login`을 실제 경로로 전환하는 단계다.
+- `Sprint 12`는 `Sprint 9`의 워크스페이스 구조와 `Sprint 11`의 real request path 위에서 selected-file context를 실사용 가능한 수준으로 연결하는 단계다.
 
 ### English
 
@@ -1172,6 +1331,7 @@ Sprint 11 initial backlog:
 - `Sprint 9` implements the real workspace redesign using the wireframes from `Sprint 7` and the auth contract clarified in `Sprint 8`
 - `Sprint 10` depends on the explicit auth contract from `Sprint 8` and the workspace redesign from `Sprint 9` to stabilize the temporary bridge and diagnostics slice
 - `Sprint 11` uses the contract from `Sprint 8`, the workspace from `Sprint 9`, and the bridge learnings from `Sprint 10` to implement the real `OAuth/session login` path
+- `Sprint 12` uses the workspace structure from `Sprint 9` and the real request path from `Sprint 11` to make selected-file context usable in daily work
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -1201,6 +1361,8 @@ Sprint 11 initial backlog:
   - 임시 bridge와 diagnostics가 실제 요청 파이프라인을 검증하는 데 충분한가
 - `Sprint 11`
   - real provider login이 API key가 아니라 `OAuth/session` 기준으로 동작하는가
+- `Sprint 12`
+  - 사용자가 코드 surface와 활성 로그를 함께 보면서, 어떤 파일 맥락으로 제안이 나왔는지 승인 전에 분명히 이해할 수 있는가
 
 ### English
 
@@ -1228,13 +1390,15 @@ Sprint 11 initial backlog:
   - is the temporary bridge sufficient to exercise the request pipeline while the real auth path is prepared
 - `Sprint 11`
   - does real provider login work through `OAuth/session` instead of API-key setup
+- `Sprint 12`
+  - can users understand which file context produced a suggestion while reading code and active logs together before approval
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 `Sprint 11` 기준으로 `Codex`의 `OAuth/session login` 경로를 설계/구현하고, 그 뒤 `Windows`에서 실기 검증을 진행하는 것이 맞다.
+다음 단계로는 `Sprint 12` 위에서 line/symbol anchor, reload/restore 강화, large/binary file 회귀, 그리고 `Windows` 실기 검증을 묶어 `editor-like` surface를 한 단계 더 깊게 만드는 것이 맞다.
 
 ### English
 
-The next step should be to implement the `Sprint 11` `Codex` `OAuth/session login` path first, then validate the real Windows loop on top of that path.
+The next step should be to build on `Sprint 12` with line/symbol anchors, stronger reload/restore behavior, large/binary-file regression coverage, and real Windows validation so the editor-like surface becomes materially more useful.

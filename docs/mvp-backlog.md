@@ -566,8 +566,9 @@ Acceptance Criteria:
 완료조건:
 
 - 에이전트 요청 시 현재 프로젝트와 현재 탭 기준 컨텍스트가 전달된다.
-- 최소한 파일 트리, 선택 파일, 현재 탭 최근 로그를 포함할 수 있다.
+- 최소한 파일 트리, 선택 파일, 선택 파일 excerpt, 현재 탭 최근 로그를 포함할 수 있다.
 - 테스트 중인 활성 터미널 로그를 제안 생성 컨텍스트로 넘길 수 있다.
+- 선택 파일이 read-only code surface에서 먼저 보여지고, request preview와 approval review에서도 다시 확인할 수 있다.
 
 #### English
 
@@ -587,8 +588,9 @@ Backlog:
 Acceptance Criteria:
 
 - project and current-tab context are sent with agent requests
-- at minimum, file tree, selected files, and recent current-tab logs can be included
+- at minimum, file tree, selected files, selected-file excerpts, and recent current-tab logs can be included
 - live logs from an active testing terminal can be passed into suggestion generation
+- the selected file is first visible in a read-only code surface and can be reread in request preview and approval review
 
 ### 10. 승인 기반 명령 실행 / Approval-Based Command Execution
 
@@ -909,7 +911,7 @@ Goal:
 Backlog:
 
 - make the provider request envelope real
-- connect project and active-log context into the actual request contract
+- connect project, selected-file, and active-log context into the actual request contract
 - normalize real suggestion payloads
 - add provider error and retry handling
 
@@ -917,6 +919,7 @@ Acceptance Criteria:
 
 - at least one provider returns real suggestion responses
 - suggestion cards represent both real responses and real error states
+- request preview and suggestion review make the selected file context legible to users
 
 ### 17. 프로젝트 열기 UX 개선 / Project Open UX Improvement
 

@@ -17,8 +17,10 @@ import {
   createTerminalSession,
   disconnectTelegramBridge,
   executeTerminalSessionCommand,
+  type ProjectFileSnapshot,
   type FileTreeNode,
   type ProjectOverview,
+  readProjectFile,
   readProjectOverview,
   readAgentProviderDiagnostics,
   readTelegramRuntimeSnapshot,
@@ -51,6 +53,7 @@ type AgentSuggestion = {
   summary: string
   command: string
   projectLabel: string
+  fileLabel: string | null
   terminalLabel: string
   attachedLogLines: number
   confidence: RuntimeAgentSuggestion['confidence']
@@ -96,6 +99,7 @@ const loadUiState = () => {
   if (typeof window === 'undefined') {
     return null as null | {
       lastProjectPath?: string
+      selectedFilePath?: string
       selectedProvider?: AgentProviderId
       executionMode?: ExecutionMode
       taskHistory?: TaskHistoryEntry[]
@@ -108,6 +112,7 @@ const loadUiState = () => {
     return raw
       ? (JSON.parse(raw) as {
           lastProjectPath?: string
+          selectedFilePath?: string
           selectedProvider?: AgentProviderId
           executionMode?: ExecutionMode
           taskHistory?: TaskHistoryEntry[]
@@ -200,18 +205,102 @@ const summarizePath = (value: string | null) => {
   return ['…', ...segments.slice(-3)].join('/')
 }
 
-function TreeNode({ node, depth = 0 }: { node: FileTreeNode; depth?: number }) {
+const treeContainsPath = (node: FileTreeNode, targetPath: string): boolean => {
+  if (node.path === targetPath) {
+    return true
+  }
+
+  return node.children.some((child) => treeContainsPath(child, targetPath))
+}
+
+const findFirstFilePath = (node: FileTreeNode): string | null => {
+  if (node.kind === 'file') {
+    return node.path
+  }
+
+  for (const child of node.children) {
+    const nextMatch = findFirstFilePath(child)
+    if (nextMatch) {
+      return nextMatch
+    }
+  }
+
+  return null
+}
+
+const resolveSelectedFilePath = (tree: FileTreeNode, preferredPath: string | null): string | null => {
+  if (preferredPath && treeContainsPath(tree, preferredPath)) {
+    return preferredPath
+  }
+
+  return findFirstFilePath(tree)
+}
+
+const buildFileSnippet = (file: ProjectFileSnapshot | null, maxLines = 24, maxChars = 1800) => {
+  if (!file?.isText || !file.content.trim()) {
+    return null
+  }
+
+  const snippet = file.content.split('\n').slice(0, maxLines).join('\n')
+  return snippet.length > maxChars ? `${snippet.slice(0, maxChars).trimEnd()}\n...` : snippet
+}
+
+const formatFileSizeLabel = (sizeBytes: number) => {
+  if (sizeBytes >= 1024 * 1024) {
+    return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  if (sizeBytes >= 1024) {
+    return `${Math.round(sizeBytes / 1024)} KB`
+  }
+
+  return `${sizeBytes} B`
+}
+
+function TreeNode({
+  node,
+  depth = 0,
+  selectedFilePath,
+  onSelectFile,
+}: {
+  node: FileTreeNode
+  depth?: number
+  selectedFilePath: string | null
+  onSelectFile: (node: FileTreeNode) => void
+}) {
+  const isSelected = node.kind === 'file' && node.path === selectedFilePath
+
   return (
     <li>
-      <div className={`tree-row ${node.kind}`} style={{ paddingLeft: `${depth * 14}px` }}>
-        <span className="tree-icon">{node.kind === 'directory' ? '▸' : '·'}</span>
-        <span className="tree-name">{node.name}</span>
-        {node.truncated ? <span className="tree-meta">depth limit</span> : null}
-      </div>
+      {node.kind === 'file' ? (
+        <button
+          type="button"
+          className={`tree-row tree-button ${node.kind} ${isSelected ? 'selected' : ''}`}
+          style={{ paddingLeft: `${depth * 14}px` }}
+          onClick={() => onSelectFile(node)}
+          aria-pressed={isSelected}
+        >
+          <span className="tree-icon">·</span>
+          <span className="tree-name">{node.name}</span>
+          {node.truncated ? <span className="tree-meta">depth limit</span> : null}
+        </button>
+      ) : (
+        <div className={`tree-row ${node.kind}`} style={{ paddingLeft: `${depth * 14}px` }}>
+          <span className="tree-icon">▸</span>
+          <span className="tree-name">{node.name}</span>
+          {node.truncated ? <span className="tree-meta">depth limit</span> : null}
+        </div>
+      )}
       {node.children.length > 0 ? (
         <ul className="tree-list">
           {node.children.map((child) => (
-            <TreeNode key={child.path} node={child} depth={depth + 1} />
+            <TreeNode
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              selectedFilePath={selectedFilePath}
+              onSelectFile={onSelectFile}
+            />
           ))}
         </ul>
       ) : null}
@@ -271,6 +360,12 @@ function App() {
   const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
   const [isProjectLoading, setIsProjectLoading] = useState(false)
   const [projectError, setProjectError] = useState<string | null>(null)
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(
+    restoredUiState?.selectedFilePath ?? null,
+  )
+  const [selectedFile, setSelectedFile] = useState<ProjectFileSnapshot | null>(null)
+  const [isFileLoading, setIsFileLoading] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSnapshot[]>([])
   const [terminalLogs, setTerminalLogs] = useState<TerminalSessionLogs | null>(null)
   const [terminalError, setTerminalError] = useState<string | null>(null)
@@ -300,6 +395,7 @@ function App() {
     },
   )
   const hasRestoredWorkspace = useRef(false)
+  const restoredSelectedFilePath = useRef(restoredUiState?.selectedFilePath ?? null)
 
   const refreshTerminalSessions = useCallback(async () => {
     try {
@@ -390,15 +486,24 @@ function App() {
 
     window.localStorage.setItem(
       UI_STATE_KEY,
-      JSON.stringify({
-        lastProjectPath: activeProjectPath || projectPathInput,
-        selectedProvider,
-        executionMode,
-        taskHistory,
-        telegramReport,
-      }),
-    )
-  }, [activeProjectPath, executionMode, projectPathInput, selectedProvider, taskHistory, telegramReport])
+        JSON.stringify({
+          lastProjectPath: activeProjectPath || projectPathInput,
+          selectedFilePath,
+          selectedProvider,
+          executionMode,
+          taskHistory,
+          telegramReport,
+        }),
+      )
+  }, [
+    activeProjectPath,
+    executionMode,
+    projectPathInput,
+    selectedFilePath,
+    selectedProvider,
+    taskHistory,
+    telegramReport,
+  ])
 
   useEffect(() => {
     if (!activeTerminalTabId) {
@@ -469,6 +574,37 @@ function App() {
     selectTerminalTab(String(session.sessionId))
   }, [activeTerminalTabId, selectTerminalTab])
 
+  const loadProjectFileSnapshot = useCallback(
+    async (projectPath: string, filePath: string, shouldRecord = false) => {
+      if (!projectPath || !filePath) {
+        setSelectedFilePath(null)
+        setSelectedFile(null)
+        setFileError(null)
+        return
+      }
+
+      setSelectedFilePath(filePath)
+      setIsFileLoading(true)
+      setFileError(null)
+
+      try {
+        const snapshot = await readProjectFile(projectPath, filePath)
+        setSelectedFile(snapshot)
+        setSelectedFilePath(snapshot.filePath)
+
+        if (shouldRecord) {
+          recordTask('Code surface focused', snapshot.displayPath, 'done')
+        }
+      } catch (error) {
+        setSelectedFile(null)
+        setFileError(error instanceof Error ? error.message : String(error))
+      } finally {
+        setIsFileLoading(false)
+      }
+    },
+    [recordTask],
+  )
+
   const openProject = useCallback(async (path: string) => {
     const trimmedPath = path.trim()
 
@@ -482,25 +618,46 @@ function App() {
 
     try {
       const overview = await readProjectOverview(trimmedPath)
+      const preferredFilePath =
+        selectedFilePath && selectedFilePath.startsWith(overview.metadata.path)
+          ? selectedFilePath
+          : restoredSelectedFilePath.current
+      const nextSelectedFilePath = resolveSelectedFilePath(overview.tree, preferredFilePath)
 
       setProjectOverview(overview)
       setActiveProject(overview.metadata.name)
       setActiveProjectPath(overview.metadata.path)
       setProjectPathInput(overview.metadata.path)
-      setActiveContext('Sprint 5 Workspace Restored')
+      setActiveContext('Sprint 12 Workspace Restored')
       rememberProject(overview.metadata.path)
+      setSelectedFilePath(nextSelectedFilePath)
+      setFileError(null)
       await ensureWorkspaceTerminal(overview.metadata.path)
+
+      if (nextSelectedFilePath) {
+        await loadProjectFileSnapshot(overview.metadata.path, nextSelectedFilePath)
+        restoredSelectedFilePath.current = nextSelectedFilePath
+      } else {
+        setSelectedFile(null)
+        setSelectedFilePath(null)
+      }
+
       recordTask('Project opened', overview.metadata.path, 'done')
     } catch (error) {
       setProjectOverview(null)
+      setSelectedFile(null)
+      setSelectedFilePath(null)
+      setFileError(null)
       setProjectError(error instanceof Error ? error.message : String(error))
     } finally {
       setIsProjectLoading(false)
     }
   }, [
     ensureWorkspaceTerminal,
+    loadProjectFileSnapshot,
     recordTask,
     rememberProject,
+    selectedFilePath,
     setActiveContext,
     setActiveProject,
     setActiveProjectPath,
@@ -529,6 +686,19 @@ function App() {
       void openProject(restoredUiState.lastProjectPath)
     }
   }, [openProject, restoredUiState?.lastProjectPath])
+
+  const selectProjectFile = useCallback(
+    (node: FileTreeNode) => {
+      const projectPath = projectOverview?.metadata.path ?? activeProjectPath
+
+      if (node.kind !== 'file' || !projectPath) {
+        return
+      }
+
+      void loadProjectFileSnapshot(projectPath, node.path, true)
+    },
+    [activeProjectPath, loadProjectFileSnapshot, projectOverview?.metadata.path],
+  )
 
   const createTab = async () => {
     try {
@@ -1056,6 +1226,7 @@ function App() {
     }
 
     const liveContextSnapshot = buildLiveContextSnapshot()
+    const activeFileSnippet = buildFileSnippet(selectedFile)
 
     if (liveContextSnapshot) {
       captureTerminalContext(liveContextSnapshot)
@@ -1070,6 +1241,8 @@ function App() {
         projectPath: projectOverview?.metadata.path ?? activeProjectPath,
         activeTabId: liveContextSnapshot?.tabId ?? (activeSession ? String(activeSession.sessionId) : null),
         activeTabTitle: liveContextSnapshot?.tabTitle ?? activeSession?.name ?? null,
+        activeFilePath: selectedFile?.filePath ?? selectedFilePath,
+        activeFileSnippet,
         lastNLogLines: liveContextSnapshot?.lines ?? [],
         userTask: normalizedRequest,
         executionMode,
@@ -1082,6 +1255,7 @@ function App() {
         summary: suggestion.summary,
         command: suggestion.command,
         projectLabel: projectOverview?.metadata.name ?? activeProject,
+        fileLabel: selectedFile?.displayPath ?? null,
         terminalLabel: liveContextSnapshot?.tabTitle ?? activeSession?.name ?? 'workspace',
         attachedLogLines: liveContextSnapshot?.lines.length ?? 0,
         confidence: suggestion.confidence,
@@ -1093,7 +1267,7 @@ function App() {
       setActiveContext(`Daily-use ${connectedProvider.displayName} suggestion ready`)
       recordTask(
         `${connectedProvider.displayName} suggestion requested`,
-        `${normalizedRequest} • ${mappedSuggestions[0]?.attachedLogLines ?? 0} log line(s) • ${formatModeLabel(executionMode)}`,
+        `${normalizedRequest} • ${selectedFile?.displayPath ?? 'no file'} • ${mappedSuggestions[0]?.attachedLogLines ?? 0} log line(s) • ${formatModeLabel(executionMode)}`,
         mappedSuggestions.some((entry) => entry.error) ? 'error' : 'done',
       )
     } catch (error) {
@@ -1177,8 +1351,11 @@ function App() {
 
   const activeSession = terminalSessions.find((session) => String(session.sessionId) === activeTerminalTabId)
   const requestContextSnapshot = buildLiveContextSnapshot()
+  const selectedFileSnippet = buildFileSnippet(selectedFile)
+  const selectedFileLines = selectedFile?.isText ? selectedFile.content.split('\n') : []
   const providerRequestPreview = {
     project: projectOverview?.metadata.name ?? activeProject,
+    file: selectedFile?.displayPath ?? 'No selected file',
     terminal: requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No active terminal',
     lines: requestContextSnapshot?.lines.length ?? 0,
   }
@@ -1191,6 +1368,7 @@ function App() {
   const telegramPendingCommands =
     telegramSnapshot?.remoteCommands.filter((entry) => entry.status === 'pending') ?? []
   const attachedLogCount = requestContextSnapshot?.lines.length ?? 0
+  const codeContextReady = Boolean(selectedFile?.isText)
   const canCaptureActiveLog = Boolean(activeSession && terminalLogs)
   const canSubmitAgentSuggestion =
     Boolean(selectedProviderContract?.canRequestSuggestion) && agentRequestInput.trim().length > 0
@@ -1199,7 +1377,7 @@ function App() {
     : 'Open a project to start'
   const workspaceHeroDetail = activeProjectPath
     ? `${summarizePath(activeProjectPath)} • ${gitLabel}`
-    : 'Choose a project, connect Codex, ask from the active terminal, then approve the next command.'
+    : 'Choose a project, review code beside the terminal, connect Codex, then approve the next command.'
 
   return (
     <div className="app-shell">
@@ -1288,7 +1466,11 @@ function App() {
               <span className="label">File Tree</span>
               {projectOverview ? (
                 <ul className="tree-list">
-                  <TreeNode node={projectOverview.tree} />
+                  <TreeNode
+                    node={projectOverview.tree}
+                    selectedFilePath={selectedFilePath}
+                    onSelectFile={selectProjectFile}
+                  />
                 </ul>
               ) : (
                 <p>Open a project to inspect its directory structure.</p>
@@ -1305,7 +1487,7 @@ function App() {
       <main className="workspace">
         <header className="workspace-topbar">
           <div className="workspace-title-group">
-            <span className="eyebrow">Sprint 9 Workspace</span>
+            <span className="eyebrow">Sprint 12 Workspace</span>
             <h2>{workspaceHeroTitle}</h2>
             <p className="workspace-subtitle">
               {workspaceHeroDetail}
@@ -1333,6 +1515,7 @@ function App() {
         <section className="workspace-body">
           <section className="workspace-status-strip">
             <span className="pill">Project: {projectOverview?.metadata.name ?? 'none'}</span>
+            <span className="pill">File: {selectedFile?.displayPath ?? 'none'}</span>
             <span className="pill">Tab: {activeSession?.name ?? 'none'}</span>
             <span className="pill">
               Terminal: {activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Not Ready'}
@@ -1341,96 +1524,158 @@ function App() {
               Provider: {selectedConnection ? selectedProviderSummary : 'Not Selected'}
             </span>
             <span className="pill">Mode: {formatModeLabel(executionMode)}</span>
+            <span className={`pill ${codeContextReady ? 'soft success' : 'soft'}`}>
+              Code Context: {codeContextReady ? 'Ready' : 'Select a file'}
+            </span>
             <span className={`pill ${attachedLogCount > 0 ? 'soft success' : 'soft'}`}>
               Log Context: {attachedLogCount > 0 ? `${attachedLogCount} line(s) ready` : 'Waiting for terminal output'}
             </span>
           </section>
 
-          <div className="terminal-stage" data-testid="terminal-workspace">
-            <div className="terminal-toolbar">
-              <div className="terminal-tabs" role="tablist" aria-label="Terminal Tabs">
-                {terminalSessions.length > 0 ? (
-                  terminalSessions.map((session) => (
-                    <div
-                      key={session.sessionId}
-                      className={`tab-shell ${
-                        String(session.sessionId) === activeTerminalTabId ? 'active' : ''
-                      }`}
-                    >
-                      <button
-                        className={`tab ${
+          <div className="workspace-main-grid">
+            <section className="code-stage" data-testid="code-viewer">
+              <div className="code-toolbar">
+                <div>
+                  <span className="label">Code Surface</span>
+                  <strong>{selectedFile?.displayPath ?? 'No file selected'}</strong>
+                  <p>
+                    {selectedFile
+                      ? 'Use the selected file and active terminal together before asking Codex.'
+                      : 'Choose a file from the project tree to inspect real project contents here.'}
+                  </p>
+                </div>
+                <div className="meta-strip">
+                  <span className="pill soft">
+                    {selectedFile
+                      ? selectedFile.isText
+                        ? `${selectedFile.lineCount} line(s)`
+                        : 'Binary'
+                      : 'No file'}
+                  </span>
+                  <span className="pill soft">
+                    {selectedFile ? formatFileSizeLabel(selectedFile.sizeBytes) : '0 B'}
+                  </span>
+                  <span className={`pill ${selectedFile?.truncated ? 'soft warning' : 'soft'}`}>
+                    {selectedFile?.truncated ? 'Preview Truncated' : 'Full Preview'}
+                  </span>
+                </div>
+              </div>
+              <div className="code-window">
+                {isFileLoading ? (
+                  <div className="code-empty">Loading file preview...</div>
+                ) : fileError ? (
+                  <div className="code-empty">
+                    <p>{fileError}</p>
+                  </div>
+                ) : selectedFile ? (
+                  selectedFile.isText ? (
+                    <div className="code-frame">
+                      {selectedFileLines.map((line, index) => (
+                        <div className="code-line" key={`${selectedFile.filePath}-${index}`}>
+                          <span className="code-line-number">{index + 1}</span>
+                          <code>{line || ' '}</code>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="code-empty">
+                      <p>{selectedFile.displayPath} is not a text file preview.</p>
+                    </div>
+                  )
+                ) : (
+                  <div className="code-empty">
+                    <p>Open a project and choose a file to start reading code in the main workspace.</p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <div className="terminal-stage" data-testid="terminal-workspace">
+              <div className="terminal-toolbar">
+                <div className="terminal-tabs" role="tablist" aria-label="Terminal Tabs">
+                  {terminalSessions.length > 0 ? (
+                    terminalSessions.map((session) => (
+                      <div
+                        key={session.sessionId}
+                        className={`tab-shell ${
                           String(session.sessionId) === activeTerminalTabId ? 'active' : ''
                         }`}
-                        role="tab"
-                        aria-selected={String(session.sessionId) === activeTerminalTabId}
-                        aria-controls={`terminal-panel-${session.sessionId}`}
-                        onClick={() => selectTerminalTab(String(session.sessionId))}
                       >
-                        {session.name}
-                      </button>
-                      <button
-                        className="tab-action"
-                        aria-label={`Close ${session.name}`}
-                        onClick={() => void closeTab(session.sessionId)}
-                      >
-                        Close
-                      </button>
+                        <button
+                          className={`tab ${
+                            String(session.sessionId) === activeTerminalTabId ? 'active' : ''
+                          }`}
+                          role="tab"
+                          aria-selected={String(session.sessionId) === activeTerminalTabId}
+                          aria-controls={`terminal-panel-${session.sessionId}`}
+                          onClick={() => selectTerminalTab(String(session.sessionId))}
+                        >
+                          {session.name}
+                        </button>
+                        <button
+                          className="tab-action"
+                          aria-label={`Close ${session.name}`}
+                          onClick={() => void closeTab(session.sessionId)}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="tab-empty">No terminal sessions yet.</span>
+                  )}
+                </div>
+                <div className="terminal-actions">
+                  <button onClick={() => void createTab()} disabled={!activeProjectPath}>+ New Tab</button>
+                  <button onClick={() => captureAgentContextFromActiveTab()} disabled={!canCaptureActiveLog}>
+                    {agentContext ? 'Refresh Pinned Log' : 'Pin Active Log'}
+                  </button>
+                  {usesMockRuntime() ? (
+                    <button onClick={() => void simulateMockActivity()}>Append Sample Log</button>
+                  ) : null}
+                </div>
+              </div>
+              {activeSession ? (
+                <div className="terminal-toolbar terminal-toolbar-secondary">
+                  <TerminalRenameField
+                    key={activeSession.sessionId}
+                    session={activeSession}
+                    onRename={renameTab}
+                  />
+                </div>
+              ) : null}
+              <div
+                className="terminal-window"
+                id={activeSession ? `terminal-panel-${activeSession.sessionId}` : undefined}
+                role="tabpanel"
+                aria-label={activeSession ? `${activeSession.name} logs` : 'Terminal logs'}
+              >
+                <div className="terminal-meta">
+                  <span>{activeSession ? activeSession.name : 'No active tab'}</span>
+                  <span>{activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Idle'}</span>
+                  <span>{activeSession?.cwd ?? 'no cwd'}</span>
+                  <span>{attachedLogCount > 0 ? `${attachedLogCount} request line(s)` : 'request context pending'}</span>
+                </div>
+                <div className="terminal-line">$ sprint-12:code-surface</div>
+                {(terminalLogs?.entries || []).length > 0 ? (
+                  terminalLogs?.entries.map((line, index) => (
+                    <div className="terminal-line" key={`${terminalLogs.sessionId}-${index}`}>
+                      {line || ' '}
                     </div>
                   ))
                 ) : (
-                  <span className="tab-empty">No terminal sessions yet.</span>
+                  <div className="terminal-line dim">
+                    No recent lines yet. Interactive shell output will appear here.
+                  </div>
                 )}
               </div>
-              <div className="terminal-actions">
-                <button onClick={() => void createTab()} disabled={!activeProjectPath}>+ New Tab</button>
-                <button onClick={() => captureAgentContextFromActiveTab()} disabled={!canCaptureActiveLog}>
-                  {agentContext ? 'Refresh Pinned Log' : 'Pin Active Log'}
-                </button>
-                {usesMockRuntime() ? (
-                  <button onClick={() => void simulateMockActivity()}>Append Sample Log</button>
-                ) : null}
-              </div>
-            </div>
-            {activeSession ? (
-              <div className="terminal-toolbar terminal-toolbar-secondary">
-                <TerminalRenameField
-                  key={activeSession.sessionId}
-                  session={activeSession}
-                  onRename={renameTab}
-                />
-              </div>
-            ) : null}
-            <div
-              className="terminal-window"
-              id={activeSession ? `terminal-panel-${activeSession.sessionId}` : undefined}
-              role="tabpanel"
-              aria-label={activeSession ? `${activeSession.name} logs` : 'Terminal logs'}
-            >
-              <div className="terminal-meta">
-                <span>{activeSession ? activeSession.name : 'No active tab'}</span>
-                <span>{activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Idle'}</span>
-                <span>{activeSession?.cwd ?? 'no cwd'}</span>
-                <span>{attachedLogCount > 0 ? `${attachedLogCount} request line(s)` : 'request context pending'}</span>
-              </div>
-              <div className="terminal-line">$ sprint-9:workspace-redesign</div>
-              {(terminalLogs?.entries || []).length > 0 ? (
-                terminalLogs?.entries.map((line, index) => (
-                  <div className="terminal-line" key={`${terminalLogs.sessionId}-${index}`}>
-                    {line || ' '}
-                  </div>
-                ))
-              ) : (
-                <div className="terminal-line dim">
-                  No recent lines yet. Interactive shell output will appear here.
-                </div>
-              )}
             </div>
           </div>
 
           <section className="workspace-flow-grid">
             <article className="card workspace-flow-card">
               <span className="label">Workspace Flow</span>
-              <strong>Project / Terminal / Agent</strong>
+              <strong>Project / Code / Terminal / Agent</strong>
               <div className="flow-steps">
                 <div className={`flow-step ${activeProjectPath ? 'done' : 'current'}`}>
                   <span className="flow-step-index">1</span>
@@ -1441,10 +1686,25 @@ function App() {
                 </div>
                 <div
                   className={`flow-step ${
-                    selectedProviderContract?.canRequestSuggestion ? 'done' : activeProjectPath ? 'current' : ''
+                    codeContextReady ? 'done' : activeProjectPath ? 'current' : ''
                   }`}
                 >
                   <span className="flow-step-index">2</span>
+                  <div>
+                    <strong>Code Surface</strong>
+                    <p>
+                      {selectedFile
+                        ? `${selectedFile.displayPath} is visible in the main workspace.`
+                        : 'Select a file so the next request can include code context as well as logs.'}
+                    </p>
+                  </div>
+                </div>
+                <div
+                  className={`flow-step ${
+                    selectedProviderContract?.canRequestSuggestion ? 'done' : codeContextReady ? 'current' : ''
+                  }`}
+                >
+                  <span className="flow-step-index">3</span>
                   <div>
                     <strong>Codex</strong>
                     <p>
@@ -1459,7 +1719,7 @@ function App() {
                     attachedLogCount > 0 ? 'done' : selectedProviderContract?.canRequestSuggestion ? 'current' : ''
                   }`}
                 >
-                  <span className="flow-step-index">3</span>
+                  <span className="flow-step-index">4</span>
                   <div>
                     <strong>Terminal + Context</strong>
                     <p>
@@ -1472,7 +1732,7 @@ function App() {
                   </div>
                 </div>
                 <div className={`flow-step ${agentSuggestions.length > 0 ? 'done' : canSubmitAgentSuggestion ? 'current' : ''}`}>
-                  <span className="flow-step-index">4</span>
+                  <span className="flow-step-index">5</span>
                   <div>
                     <strong>Approval</strong>
                     <p>
@@ -1486,12 +1746,17 @@ function App() {
             </article>
 
             <article className="card workspace-flow-card" data-testid="active-log-buffer">
-              <span className="label">Active Log Buffer</span>
-              <strong>{requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No Session'}</strong>
+              <span className="label">Attached Context</span>
+              <strong>{selectedFile?.displayPath ?? requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No Context Yet'}</strong>
               <p>
-                The next request will auto-attach the latest active terminal lines. Pinning keeps the exact slice visible.
+                The next request combines the selected file preview with the latest active terminal lines.
               </p>
               <div className="context-block">
+                <span className="context-meta">File preview</span>
+                {selectedFileSnippet ? <code>{selectedFileSnippet}</code> : <p>No file snippet selected yet.</p>}
+              </div>
+              <div className="context-block">
+                <span className="context-meta">Active terminal logs</span>
                 {(requestContextSnapshot?.lines ?? []).map((line, index) => (
                   <code key={`active-log-${index}`}>{line}</code>
                 ))}
@@ -1829,10 +2094,18 @@ function App() {
 
             <article className="card agent-stage-card">
               <span className="label">Step 2 · Context</span>
-              <strong>{requestContextSnapshot ? requestContextSnapshot.tabTitle : 'No Active Logs Yet'}</strong>
+              <strong>{selectedFile?.displayPath ?? requestContextSnapshot?.tabTitle ?? 'No Active Context Yet'}</strong>
               <p>
-                The request uses the active terminal by default and keeps the latest 50 lines ready for Codex.
+                The request uses the selected file plus the active terminal and keeps the latest 50 lines ready for Codex.
               </p>
+              <div className="context-block">
+                <span className="context-meta">Selected file</span>
+                {selectedFileSnippet ? (
+                  <code>{selectedFileSnippet}</code>
+                ) : (
+                  <p>Select a file from the project tree to attach code context.</p>
+                )}
+              </div>
               {requestContextSnapshot ? (
                 <div className="context-block" data-testid="agent-context-buffer">
                   <span className="context-meta">{requestContextSnapshot.capturedAt}</span>
@@ -1850,6 +2123,7 @@ function App() {
             <article className="card agent-stage-card" data-testid="provider-request-preview">
               <span className="label">Step 3 · Request Contract</span>
               <strong>{providerRequestPreview.project}</strong>
+              <p>{providerRequestPreview.file}</p>
               <p>{providerRequestPreview.terminal}</p>
               <p>{providerRequestPreview.lines} active log line(s) prepared for the provider request.</p>
             </article>
@@ -1866,7 +2140,7 @@ function App() {
                       checked={executionMode === mode}
                       onChange={() => {
                         setExecutionMode(mode)
-                        setActiveContext(`Sprint 5 ${formatModeLabel(mode)} mode selected`)
+                        setActiveContext(`Sprint 12 ${formatModeLabel(mode)} mode selected`)
                       }}
                     />
                     <span>{formatModeLabel(mode)}</span>
@@ -1885,7 +2159,7 @@ function App() {
             <article className="card agent-stage-card" data-testid="agent-request-panel">
               <span className="label">Step 4 · Request</span>
               <strong>{selectedConnection?.displayName ?? 'No Provider Selected'}</strong>
-              <p>Submit a task request using the selected provider, project metadata, and the latest active terminal logs.</p>
+              <p>Submit a task request using the selected provider, project metadata, selected file context, and the latest active terminal logs.</p>
               <label className="field-block">
                 <span className="label">Task Request</span>
                 <textarea
@@ -1924,7 +2198,7 @@ function App() {
                       <p>{suggestion.summary}</p>
                       {suggestion.command ? <code>{suggestion.command}</code> : null}
                       <p>
-                        {suggestion.projectLabel} • {suggestion.terminalLabel} •{' '}
+                        {suggestion.projectLabel} • {suggestion.fileLabel ?? 'No file context'} • {suggestion.terminalLabel} •{' '}
                         {suggestion.attachedLogLines} log line(s)
                       </p>
                       <p>Status: {suggestion.status} • confidence: {suggestion.confidence}</p>

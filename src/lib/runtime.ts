@@ -36,6 +36,18 @@ export type ProjectOverview = {
   git: GitOverview
 }
 
+export type ProjectFileSnapshot = {
+  projectPath: string
+  filePath: string
+  displayPath: string
+  exists: boolean
+  isText: boolean
+  truncated: boolean
+  sizeBytes: number
+  lineCount: number
+  content: string
+}
+
 export type TerminalSessionStatus = 'running' | 'exited' | 'terminated' | 'failed'
 
 export type CreateTerminalSessionRequest = {
@@ -131,6 +143,8 @@ export type AgentTaskRequest = {
   projectPath: string
   activeTabId: string | null
   activeTabTitle: string | null
+  activeFilePath: string | null
+  activeFileSnippet: string | null
   lastNLogLines: string[]
   userTask: string
   executionMode: ExecutionMode
@@ -276,6 +290,78 @@ const buildBrowserTree = (rootPath: string): FileTreeNode => ({
     },
   ],
 })
+
+const normalizeBrowserPath = (value: string) => value.replace(/\\/g, '/').replace(/\/+/g, '/')
+
+const resolveBrowserFilePath = (projectPath: string, filePath: string) => {
+  const normalizedProjectPath = normalizeBrowserPath(projectPath)
+  const normalizedFilePath = normalizeBrowserPath(filePath)
+
+  if (normalizedFilePath.startsWith(normalizedProjectPath)) {
+    return normalizedFilePath
+  }
+
+  return `${normalizedProjectPath}/${normalizedFilePath.replace(/^\/+/, '')}`
+}
+
+const buildBrowserFileContents = (rootPath: string) => {
+  const normalizedRoot = normalizeBrowserPath(rootPath)
+  const projectName = normalizedRoot.split('/').filter(Boolean).at(-1) || 'demo-project'
+
+  return {
+    [`${normalizedRoot}/package.json`]: JSON.stringify(
+      {
+        name: projectName,
+        private: true,
+        version: '0.1.0',
+        scripts: {
+          dev: 'vite',
+          build: 'tsc && vite build',
+          test: 'playwright test',
+        },
+      },
+      null,
+      2,
+    ),
+    [`${normalizedRoot}/src/App.tsx`]: [
+      "export function App() {",
+      "  return (",
+      "    <main>",
+      "      <h1>gtum preview workspace</h1>",
+      "      <p>Read code, inspect logs, and ask Codex from one surface.</p>",
+      "    </main>",
+      "  )",
+      "}",
+      '',
+    ].join('\n'),
+  }
+}
+
+const buildBrowserFileSnapshot = (projectPath: string, filePath: string): ProjectFileSnapshot => {
+  const resolvedProjectPath = normalizeBrowserPath(projectPath || currentBrowserProjectPath())
+  const resolvedFilePath = resolveBrowserFilePath(resolvedProjectPath, filePath)
+  const browserContents = buildBrowserFileContents(resolvedProjectPath)
+  const content =
+    browserContents[resolvedFilePath] ??
+    [
+      `// Preview content unavailable for ${resolvedFilePath}`,
+      '// Open the desktop runtime to inspect the real file contents.',
+      '',
+    ].join('\n')
+  const encoded = new TextEncoder().encode(content)
+
+  return {
+    projectPath: resolvedProjectPath,
+    filePath: resolvedFilePath,
+    displayPath: resolvedFilePath.replace(`${resolvedProjectPath}/`, ''),
+    exists: true,
+    isText: true,
+    truncated: false,
+    sizeBytes: encoded.length,
+    lineCount: content.split('\n').length,
+    content,
+  }
+}
 
 const createDefaultBrowserTelegramState = (): TelegramRuntimeSnapshot => ({
   storagePath: null,
@@ -495,6 +581,14 @@ export const readProjectOverview = async (path: string) => {
   }
 
   return invoke<ProjectOverview>('read_project_overview', { path })
+}
+
+export const readProjectFile = async (projectPath: string, filePath: string) => {
+  if (usesBrowserRuntime()) {
+    return buildBrowserFileSnapshot(projectPath, filePath)
+  }
+
+  return invoke<ProjectFileSnapshot>('read_project_file', { projectPath, filePath })
 }
 
 export const selectProjectFolder = async (defaultPath?: string) => {
@@ -832,6 +926,9 @@ const buildBrowserSuggestion = (request: AgentTaskRequest): AgentSuggestion => {
   const task = request.userTask.trim() || 'Investigate the current workspace state'
   const joinedLogs = request.lastNLogLines.join('\n').toLowerCase()
   const lowerTask = task.toLowerCase()
+  const fileLabel = request.activeFilePath
+    ? request.activeFilePath.split(/[\\/]/).filter(Boolean).slice(-2).join('/')
+    : 'current workspace'
 
   if (request.provider !== 'codex') {
     return {
@@ -869,7 +966,7 @@ const buildBrowserSuggestion = (request: AgentTaskRequest): AgentSuggestion => {
   return {
     id: `suggestion-${Date.now()}`,
     provider: request.provider,
-    summary: `Codex suggests running "${command}" next for "${task}".`,
+    summary: `Codex suggests running "${command}" next for "${task}" while reviewing ${fileLabel}.`,
     command,
     preferredTarget: command.includes('git status') || request.executionMode === 'deep' ? 'new_tab' : 'current_tab',
     confidence: request.executionMode === 'deep' ? 'high' : request.executionMode === 'fast' ? 'medium' : 'high',

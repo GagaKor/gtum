@@ -24,6 +24,8 @@ pub struct RequestAgentSuggestionsRequest {
     pub project_path: String,
     pub active_tab_id: Option<String>,
     pub active_tab_title: Option<String>,
+    pub active_file_path: Option<String>,
+    pub active_file_snippet: Option<String>,
     #[serde(default)]
     pub last_n_log_lines: Vec<String>,
     pub user_task: String,
@@ -447,6 +449,18 @@ fn cleanup_temp_files(schema_path: &PathBuf, output_path: &PathBuf) -> Result<()
 }
 
 fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
+    let file_path = request
+        .active_file_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("none");
+    let file_snippet = request
+        .active_file_snippet
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("No active file snippet was attached.");
     let log_lines = if request.last_n_log_lines.is_empty() {
         "No recent terminal logs were attached.".to_string()
     } else {
@@ -466,9 +480,11 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
     };
 
     format!(
-        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\nRead the project metadata and recent terminal logs.\nReturn exactly one safe next shell command.\nPrefer non-destructive commands that help the developer move forward immediately.\nIf you cannot recommend a safe command, set `error` and leave `command` empty.\n\nProject name: {}\nProject path: {}\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
+        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\nRead the project metadata, the active file snippet, and recent terminal logs.\nReturn exactly one safe next shell command.\nPrefer non-destructive commands that help the developer move forward immediately.\nIf you cannot recommend a safe command, set `error` and leave `command` empty.\n\nProject name: {}\nProject path: {}\nActive file path: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
         request.project_name.trim(),
         request.project_path.trim(),
+        file_path,
+        file_snippet,
         request.active_tab_id.as_deref().unwrap_or("none"),
         request.active_tab_title.as_deref().unwrap_or("none"),
         execution_mode_label(request.execution_mode),

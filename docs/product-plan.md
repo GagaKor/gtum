@@ -98,7 +98,7 @@ This product also comes from direct hands-on frustration with existing tools.
 - 작업 목적에 따라 터미널 탭 분리하기
 - 프로젝트 파일과 작업 상태를 터미널과 함께 관리하기
 - 코드를 읽고 흐름을 추적할 수 있는 editor-like surface를 확보하기
-- 에이전트가 프로젝트와 터미널 맥락을 읽도록 하기
+- 에이전트가 프로젝트, 선택 파일, 터미널 맥락을 읽도록 하기
 - 에이전트가 제안한 작업을 승인 후 실행하기
 - 현재 테스트 중인 터미널 로그를 에이전트와 자연스럽게 공유하기
 - 지금까지 밟아온 승인, 실패, 재시도 경로를 되짚어 문제를 파악하고 개선하기
@@ -113,7 +113,7 @@ The app should make it easy to:
 - split terminal tabs by task
 - manage project files and task state alongside terminals
 - keep an editor-like surface where users can read code and trace flow comfortably
-- let agents read project and terminal context
+- let agents read project, selected-file, and terminal context
 - approve and execute agent-suggested actions
 - share active testing logs with agents naturally inside the same workspace
 - review the path of approvals, failures, and retries already taken so problems can be diagnosed and improved
@@ -386,12 +386,16 @@ An agent can read:
 
 - current project structure
 - selected files
+- the active read-only code surface or excerpt from the selected file
 - terminal output from the current tab
 - recent task history
 - summarized approvals, failures, retries, and detours
 
 Based on that context, the agent can summarize issues, explain likely causes, or suggest next steps.
 It should also help users reread the path already taken and expose recurring problems.
+
+The first code-reading delivery should remain read-only.
+Editing, saving, and diff application can follow later, but the MVP path should first prove that users can read code, compare it with live logs, and understand why an approval was suggested.
 
 #### 4. Agent-Assisted Execution
 

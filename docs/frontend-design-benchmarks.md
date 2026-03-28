@@ -70,6 +70,28 @@ Frontend UI work must explicitly reference these three products:
 
 The goal is not visual copying. The goal is to extract the right product qualities and combine them inside `gtum`.
 
+## 현재 구현 슬라이스 기준 / Current Delivery Slice
+
+### 한국어
+
+현재 active 슬라이스에서 프론트가 지켜야 할 기준은 아래와 같다.
+
+- 중앙 workbench는 `Terminal + Code Reading`의 dual-primary surface여야 한다.
+- code viewer는 사이드바가 아니라 메인 영역의 독립 pane이어야 한다.
+- approval rail은 코드 pane을 밀어내지 않으면서도, 어떤 파일과 로그를 보고 제안이 나왔는지 보여줘야 한다.
+- 첫 code-reading slice는 read-only viewer까지만 포함한다.
+- task history, Telegram, runtime/debug는 2선 영역에 둔다.
+
+### English
+
+For the current active slice, the frontend should follow these rules:
+
+- the central workbench should act as a dual-primary surface for `Terminal + Code Reading`
+- the code viewer should be an independent pane in the main workspace, not a sidebar afterthought
+- the approval rail should show which file and logs produced a suggestion without pushing the code surface away
+- the first code-reading slice should stop at a read-only viewer
+- task history, Telegram, and runtime/debug belong in secondary zones
+
 ## 제품별로 배워야 할 점 / What To Borrow From Each Product
 
 ### 한국어

@@ -289,7 +289,7 @@ Recommended initial E2E coverage:
 - Sprint 0: app-shell smoke test
 - Sprint 1: project open, file tree, and Git status visibility
 - Sprint 2: multi-tab terminal creation and active-tab switching
-- later sprints: login, suggestion review, approval-based execution, and task history
+- later sprints: selected-file viewing, login, suggestion review, approval-based execution, and task history
 
 ### Aging Test Strategy
 
@@ -387,6 +387,98 @@ The Rust runtime is responsible for:
   - Codex provider adapter
 - `providers/claude`
   - Claude provider adapter
+
+## 코드 읽기 surface와 요청 envelope / Code-Reading Surface And Request Envelope
+
+### 한국어
+
+첫 code-reading 슬라이스는 full editor가 아니라 read-only viewer로 시작한다.
+
+#### 목적
+
+- 메인 워크스페이스에서 terminal과 code surface를 동시에 유지한다.
+- 선택 파일을 agent request의 1급 컨텍스트로 올린다.
+- approval review에서 어떤 파일 맥락을 보고 제안이 생성됐는지 다시 읽을 수 있게 한다.
+
+#### 런타임 계약
+
+- `read_project_overview(path, maxDepth)`
+  - 프로젝트 메타데이터, 파일 트리, Git 개요
+- `read_project_file(projectPath, filePath)`
+  - 선택 파일 읽기 전용 snapshot 반환
+  - project root 밖의 경로는 거부
+  - binary 파일은 text preview 대신 bounded fallback 반환
+  - 큰 파일은 제한된 크기만 읽고 `truncated` 상태를 반환
+
+#### 프론트엔드 상태
+
+- `selectedFilePath`
+- `selectedFileSnapshot`
+- `isFileLoading`
+- `fileError`
+
+선택 파일 상태는 workspace restore와 함께 다시 열 수 있는 수준까지만 유지하고, 실제 편집 상태는 아직 들고 가지 않는다.
+
+#### provider request envelope
+
+초기 request envelope은 아래 필드를 포함한다.
+
+- `projectPath`
+- `projectName`
+- `activeTabId`
+- `activeTabTitle`
+- `activeFilePath`
+- `activeFileSnippet`
+- `lastNLogLines`
+- `userTask`
+- `executionMode`
+
+`activeFileSnippet`은 선택 파일 전체가 아니라 preview용 excerpt일 수 있으며, terminal 로그와 같이 bounded size를 유지한다.
+
+### English
+
+The first code-reading slice should start as a read-only viewer rather than a full editor.
+
+#### Goals
+
+- keep the terminal and code surface visible together in the main workspace
+- promote the selected file into first-class agent-request context
+- let the approval review restate which file context the suggestion was based on
+
+#### Runtime Contract
+
+- `read_project_overview(path, maxDepth)`
+  - project metadata, file tree, and Git overview
+- `read_project_file(projectPath, filePath)`
+  - returns a read-only snapshot of the selected file
+  - reject paths outside the active project root
+  - return a bounded fallback instead of raw text for binary files
+  - read only a limited amount for large files and surface `truncated`
+
+#### Frontend State
+
+- `selectedFilePath`
+- `selectedFileSnapshot`
+- `isFileLoading`
+- `fileError`
+
+Selected-file state should be restorable at the workspace level, but should not introduce full editing state yet.
+
+#### Provider Request Envelope
+
+The initial request envelope for this slice includes:
+
+- `projectPath`
+- `projectName`
+- `activeTabId`
+- `activeTabTitle`
+- `activeFilePath`
+- `activeFileSnippet`
+- `lastNLogLines`
+- `userTask`
+- `executionMode`
+
+`activeFileSnippet` may be a bounded preview excerpt rather than the full file and should stay size-limited in the same spirit as attached terminal logs.
 
 ## 터미널 세션 설계 / Terminal Session Design
 

@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::{self, File},
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -9,6 +10,7 @@ use crate::runtime::platform;
 
 const DEFAULT_TREE_DEPTH: usize = 3;
 const MAX_TREE_DEPTH: usize = 6;
+const MAX_FILE_BYTES: usize = 128 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +56,20 @@ pub struct GitOverview {
     pub changed_files_count: usize,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFileSnapshot {
+    pub project_path: String,
+    pub file_path: String,
+    pub display_path: String,
+    pub exists: bool,
+    pub is_text: bool,
+    pub truncated: bool,
+    pub size_bytes: usize,
+    pub line_count: usize,
+    pub content: String,
+}
+
 pub fn read_project_overview(
     path: String,
     max_depth: Option<usize>,
@@ -86,6 +102,85 @@ pub fn read_project_overview(
         },
         tree,
         git,
+    })
+}
+
+pub fn read_project_file(project_path: String, file_path: String) -> Result<ProjectFileSnapshot, String> {
+    let normalized_root = platform::normalize_project_path(&project_path)?;
+    let canonical_root = fs::canonicalize(&normalized_root).map_err(|error| {
+        format!(
+            "failed to resolve project root {}: {error}",
+            normalized_root.display()
+        )
+    })?;
+
+    if !canonical_root.is_dir() {
+        return Err(format!(
+            "project path is not a directory: {}",
+            canonical_root.display()
+        ));
+    }
+
+    let requested_path = PathBuf::from(file_path.trim());
+    let candidate_path = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        canonical_root.join(requested_path)
+    };
+    let canonical_file = fs::canonicalize(&candidate_path)
+        .map_err(|error| format!("failed to resolve file {}: {error}", candidate_path.display()))?;
+
+    if !canonical_file.starts_with(&canonical_root) {
+        return Err("requested file is outside the active project root".into());
+    }
+
+    let metadata = fs::metadata(&canonical_file)
+        .map_err(|error| format!("failed to inspect {}: {error}", canonical_file.display()))?;
+
+    if !metadata.is_file() {
+        return Err(format!(
+            "requested path is not a file: {}",
+            canonical_file.display()
+        ));
+    }
+
+    let size_bytes = metadata.len().min(usize::MAX as u64) as usize;
+    let file = File::open(&canonical_file)
+        .map_err(|error| format!("failed to open {}: {error}", canonical_file.display()))?;
+    let mut bytes = Vec::with_capacity(size_bytes.min(MAX_FILE_BYTES));
+    file.take(MAX_FILE_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read {}: {error}", canonical_file.display()))?;
+
+    let truncated = size_bytes > bytes.len();
+    let is_text = !looks_like_binary(&bytes);
+    let content = if is_text {
+        String::from_utf8_lossy(&bytes).into_owned()
+    } else {
+        String::new()
+    };
+    let line_count = if is_text {
+        content.lines().count().max(usize::from(!content.is_empty()))
+    } else {
+        0
+    };
+    let display_path = canonical_file
+        .strip_prefix(&canonical_root)
+        .ok()
+        .and_then(|value| value.to_str())
+        .map(|value| value.replace('\\', "/"))
+        .unwrap_or_else(|| canonical_file.to_string_lossy().into_owned());
+
+    Ok(ProjectFileSnapshot {
+        project_path: canonical_root.to_string_lossy().into_owned(),
+        file_path: canonical_file.to_string_lossy().into_owned(),
+        display_path,
+        exists: true,
+        is_text,
+        truncated,
+        size_bytes,
+        line_count,
+        content,
     })
 }
 
@@ -198,4 +293,8 @@ fn display_name(path: &Path) -> String {
         .and_then(|value| value.to_str())
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| PathBuf::from(path).to_string_lossy().into_owned())
+}
+
+fn looks_like_binary(bytes: &[u8]) -> bool {
+    bytes.iter().any(|value| *value == 0)
 }
