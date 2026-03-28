@@ -40,6 +40,30 @@ Read this document when:
 - you need to confirm or change MVP scope, priority, acceptance criteria, or out-of-scope boundaries
 - you need to decide whether the current task is inside the MVP and which item should come first
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 백로그 문서다. 아래 경로만 먼저 읽는다.
+
+- MVP 한 줄 정의, 완료조건, 현재 상태만 볼 때
+  - 문서 앞부분만 읽는다.
+- 어떤 기능이 `P0/P1/P2`인지 확인할 때
+  - 우선순위와 해당 기능 섹션만 읽는다.
+- 실제 실행 순서와 현재 스프린트를 정할 때
+  - `sprint-plan.md`를 먼저 읽고 이 문서는 확인용으로만 사용한다.
+
+### English
+
+This document exceeds 200 lines. Read only the route that matches your question.
+
+- when you only need the one-line MVP definition, acceptance criteria, or current status
+  - read only the front portion
+- when you need to know whether an item is `P0`, `P1`, or `P2`
+  - read the priority framework and the matching feature section only
+- when you need actual execution order or the active sprint baseline
+  - read `sprint-plan.md` first and use this doc as confirmation
+
 ## MVP 한 줄 정의 / One-Line MVP Definition
 
 ### 한국어

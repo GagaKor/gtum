@@ -40,6 +40,30 @@ Read this document when:
 - you need to decide which layer or file should own a change
 - you need to confirm persistence boundaries, state ownership, or runtime command edges
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 아키텍처 문서다. 아래 경로만 먼저 읽는다.
+
+- 시스템 층과 모듈 경계만 볼 때
+  - `Current System Boundaries`와 모듈 지도만 읽는다.
+- Tauri command boundary가 궁금할 때
+  - `Tauri Command Boundary`만 읽는다.
+- 상태 저장과 restore 경계가 궁금할 때
+  - `State And Persistence`만 읽는다.
+
+### English
+
+This document exceeds 200 lines. Read only the matching route first.
+
+- when you need system layers and module boundaries
+  - read `Current System Boundaries` and the module maps only
+- when you need the Tauri command edge
+  - read `Tauri Command Boundary` only
+- when you need persistence and restore boundaries
+  - read `State And Persistence` only
+
 ## 현재 시스템 경계 / Current System Boundaries
 
 ### 한국어

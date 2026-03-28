@@ -22,6 +22,30 @@ Its goals are:
 - route quickly to the right source of truth for the current problem
 - recover context by rereading only what is relevant, not everything
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서도 200줄을 넘는 장문 라우팅 문서다. 아래 중 필요한 경로만 읽는다.
+
+- 새 작업을 시작할 때
+  - `Quick Start Route`와 `Task-Based Routing`만 읽는다.
+- 길을 잃었거나 직전 맥락이 흐려졌을 때
+  - `Context Overflow Recovery`만 읽는다.
+- 정말 방향이 안 잡힐 때
+  - 마지막에만 `Full Recovery Order`까지 내려간다.
+
+### English
+
+This document also exceeds 200 lines. Read only the route that matches your need.
+
+- when starting a new task
+  - read only `Quick Start Route` and `Task-Based Routing`
+- when context has drifted or recent reasoning is unclear
+  - read only `Context Overflow Recovery`
+- only when direction is still unclear
+  - continue into `Full Recovery Order` as a last step
+
 ## 빠른 시작 라우트 / Quick Start Route
 
 ### 한국어
@@ -34,6 +58,8 @@ Its goals are:
 
 문서를 고른 뒤에는 바로 수정하지 말고, 먼저 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 기준으로 역할을 나누고 파일 소유권과 handoff를 정한다.
 
+문서가 200줄을 넘으면 기본값은 전체 통독이 아니라 상단 `Long-Doc Routing` 섹션만 먼저 읽고 필요한 경로로 내려가는 것이다.
+
 ### English
 
 When starting a new task, read only this first:
@@ -43,6 +69,8 @@ When starting a new task, read only this first:
 3. only the task-specific docs selected from the routes below
 
 After choosing the docs, do not edit immediately. First split the work into `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`, then lock file ownership and handoff expectations.
+
+If a document exceeds 200 lines, do not read it end to end by default. Read only its top `Long-Doc Routing` section first and continue into the matching route.
 
 ## 작업별 라우팅 / Task-Based Routing
 

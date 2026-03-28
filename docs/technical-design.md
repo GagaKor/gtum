@@ -40,6 +40,33 @@ Read this document when:
 - you need to confirm architecture, runtime ownership, platform strategy, or auth structure
 - you are changing technical boundaries such as Tauri commands, state contracts, PTY, filesystem, or provider adapters
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 기술 문서다. 기본값은 전체 통독이 아니라 아래 경로만 읽는 것이다.
+
+- 현재 구현 구조와 저장 경계가 궁금할 때
+  - `architecture.md`를 먼저 읽는다.
+- request, approval, restore, provider request envelope이 궁금할 때
+  - `message-flow.md`를 먼저 읽는다.
+- 구현 규칙, 문서 흡수, `WORKLOG` 수명 주기가 궁금할 때
+  - `development-guide.md`를 먼저 읽는다.
+- Tauri command, provider/auth, PTY, cross-platform 정책처럼 기술 경계 자체를 바꿀 때
+  - 그때만 이 문서를 계속 읽는다.
+
+### English
+
+This document exceeds 200 lines. Do not reread it fully by default. Use one route below instead.
+
+- when you need current implementation structure or persistence boundaries
+  - read `architecture.md` first
+- when you need request, approval, restore, or provider request-envelope behavior
+  - read `message-flow.md` first
+- when you need implementation rules, doc absorption, or `WORKLOG` lifecycle policy
+  - read `development-guide.md` first
+- only continue through this doc when you are changing technical boundaries such as Tauri commands, provider/auth, PTY, or cross-platform policy
+
 ## 관련 source of truth / Related Source Of Truth
 
 ### 한국어

@@ -40,6 +40,30 @@ Read this document when:
 - you need to determine what should be built next or which sprint is the active planning baseline
 - you need to confirm deliverables, closing criteria, or handoff into the next sprint
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 실행 문서다. 기본값은 현재 필요한 스프린트만 읽는 것이다.
+
+- 지금 무엇을 먼저 해야 하는지 볼 때
+  - 문서 앞부분과 현재 active sprint 섹션만 읽는다.
+- 과거 스프린트 산출물이나 흐름을 확인할 때
+  - 해당 sprint heading만 찾아서 읽는다.
+- MVP 범위 자체를 바꿀 때
+  - 이 문서보다 `mvp-backlog.md`를 먼저 읽는다.
+
+### English
+
+This document exceeds 200 lines. Do not read every sprint by default.
+
+- when you need to know what to do next
+  - read the front matter plus only the current active sprint section
+- when you need a past sprint outcome or flow
+  - jump straight to the matching sprint heading only
+- when you are changing MVP scope itself
+  - read `mvp-backlog.md` before continuing through this doc
+
 ## 계획 원칙 / Planning Principles
 
 ### 한국어

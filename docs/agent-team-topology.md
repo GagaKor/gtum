@@ -42,6 +42,30 @@ Read this document when:
 - you need to define role split, sub-agent team formation, file ownership, or handoff rules
 - you need to decide how `planner`, `designer`, `QA`, and `tester` responsibilities are separated or when roles can be collapsed
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 운영 문서다. 기본값은 아래 경로만 읽는 것이다.
+
+- 기본 역할과 책임만 확인할 때
+  - `Default Team Shape`와 `Role Responsibilities`만 읽는다.
+- handoff와 작업 순서가 궁금할 때
+  - `Default Workflow`와 handoff 관련 부분만 읽는다.
+- worker별 편성 기준이 궁금할 때
+  - 문서 후반의 worker guidance만 읽는다.
+
+### English
+
+This document exceeds 200 lines. Read only the route that matches your need.
+
+- when you only need default roles and responsibilities
+  - read `Default Team Shape` and `Role Responsibilities`
+- when you need handoff or execution order
+  - read `Default Workflow` and the handoff guidance only
+- when you need worker-specific assignment rules
+  - jump to the later worker-guidance area only
+
 ## 기본 팀 편성 / Default Team Shape
 
 ### 한국어

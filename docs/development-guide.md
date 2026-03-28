@@ -40,6 +40,58 @@ Read this document when:
 - it is unclear which canonical doc should absorb a change
 - you need to decide when to create, absorb, or delete an in-progress `WORKLOG`
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 운영 문서다. 기본값은 아래 경로만 읽는 것이다.
+
+- 기록 원칙과 문서 흡수 기준만 볼 때
+  - `Recording Policy`와 `Where Durable Knowledge Goes`만 읽는다.
+- 장문 문서 규칙이나 `WORKLOG` 수명 주기가 궁금할 때
+  - `Long-Doc Rule`과 `WORKLOG Lifecycle`만 읽는다.
+- 테스트와 검증 기록 기준만 볼 때
+  - 문서 후반의 `Test And Validation Recording`만 읽는다.
+
+### English
+
+This document exceeds 200 lines. Read only the matching route first.
+
+- when you only need recording policy or doc-absorption rules
+  - read `Recording Policy` and `Where Durable Knowledge Goes`
+- when you need long-doc or `WORKLOG` lifecycle rules
+  - read `Long-Doc Rule` and `WORKLOG Lifecycle`
+- when you only need validation-recording rules
+  - jump to `Test And Validation Recording`
+
+## 장문 문서 규칙 / Long-Doc Rule
+
+### 한국어
+
+기준 문서가 200줄을 넘으면 아래 둘 중 하나를 반드시 만족해야 한다.
+
+1. 문서 상단 80줄 안에 `Long-Doc Routing` 섹션을 두고, 어떤 질문이면 어디까지만 읽는지 분기한다.
+2. 내용이 안정적인 하위 도메인으로 나뉘면 별도 문서로 분리하고 `README`, `DOCS_READING_ORDER`에 반영한다.
+
+추가 원칙은 다음과 같다.
+
+- 200줄 초과 문서는 기본값이 `전체 통독`이 아니다.
+- 400줄을 넘고 서로 다른 도메인이 섞이면 분리를 우선 검토한다.
+- 장문 문서를 분리하거나 라우팅했으면 라우팅 문서도 함께 갱신한다.
+
+### English
+
+When a canonical doc exceeds 200 lines, it must satisfy at least one of these:
+
+1. include a `Long-Doc Routing` section within the top 80 lines that tells readers which path to follow for which question
+2. split stable subdomains into separate docs and reflect that split in `README` and `DOCS_READING_ORDER`
+
+Additional rules:
+
+- a 200-plus-line doc should not default to full rereads
+- once a doc exceeds 400 lines and mixes distinct domains, splitting should be preferred
+- whenever a long doc is routed or split, the routing docs must be updated too
+
 ## 기록 원칙 / Recording Policy
 
 ### 한국어

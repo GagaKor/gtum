@@ -111,6 +111,7 @@
 - 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
 - `planner`와 `designer`는 매 스프린트마다 작업 경로 요약, 문제점, 다음 개선안을 문서로 남긴다.
 - 진행 중 스프린트는 `WORKLOG`로 추적할 수 있지만, 닫힌 스프린트의 `WORKLOG`는 source-of-truth 문서에 흡수한 뒤 삭제한다.
+- 200줄을 넘는 기준 문서는 상단 `Long-Doc Routing`만 먼저 읽고 필요한 범위만 내려가는 것을 기본값으로 한다.
 
 ## 현재 결정 / Current Decisions
 

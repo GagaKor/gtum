@@ -46,6 +46,34 @@ Read this document when:
 - you need to confirm product vision, scope, core value, or user problem framing
 - you are changing top-level policies such as provider direction, execution modes, or multi-agent product behavior
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 기준 문서다. 기본값은 끝까지 읽는 것이 아니라 아래 경로 중 필요한 것만 읽는 것이다.
+
+- 제품 비전, 핵심 문제, 핵심 원칙만 확인할 때
+  - 이 문서의 앞부분만 읽는다.
+- provider 정책, 플랫폼 기준, 실행 모드 정책을 확인할 때
+  - 이 문서와 `technical-design.md`를 같이 읽는다.
+- 현재 구현 구조나 데이터 흐름이 궁금할 때
+  - 이 문서 대신 `architecture.md`, `message-flow.md`를 먼저 읽는다.
+- 역할 분리나 팀 운영 모델이 궁금할 때
+  - `agent-team-topology.md`를 먼저 읽는다.
+
+### English
+
+This document exceeds 200 lines. Do not read it end to end by default. Use only the route that matches your question.
+
+- when you only need vision, problem framing, or core principles
+  - read only the front portion of this doc
+- when you need provider policy, platform baseline, or execution-mode policy
+  - read this doc together with `technical-design.md`
+- when you need current implementation structure or data flow
+  - read `architecture.md` and `message-flow.md` first instead of continuing through this whole doc
+- when you need role split or team-operating model
+  - read `agent-team-topology.md` first
+
 ## 개요 / Overview
 
 ### 한국어

@@ -40,6 +40,30 @@ Read this document when:
 - you need to confirm the order in which data moves through the system
 - you need to align E2E scenario names with real user flows
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 흐름 문서다. 기본값은 필요한 flow만 읽는 것이다.
+
+- 프로젝트 열기와 파일 복원이 궁금할 때
+  - `Flow 1`과 `Flow 2`만 읽는다.
+- provider 연결과 request/approval가 궁금할 때
+  - `Flow 3`, `Flow 4`, `Flow 5`만 읽는다.
+- restore와 반복 사용이 궁금할 때
+  - `Flow 6`과 테스트 연결 부분만 읽는다.
+
+### English
+
+This document exceeds 200 lines. Do not reread every flow by default.
+
+- when you need project-open or file-restore behavior
+  - read only `Flow 1` and `Flow 2`
+- when you need provider connect or request-and-approval behavior
+  - read only `Flow 3`, `Flow 4`, and `Flow 5`
+- when you need restore or repeated-use behavior
+  - read only `Flow 6` plus the linked test section
+
 ## Flow 1. 프로젝트 열기와 기본 복원 / Project Open And Baseline Restore
 
 ### 한국어

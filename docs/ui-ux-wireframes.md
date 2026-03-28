@@ -24,6 +24,30 @@ Its purpose is to:
 - create shared wireframe references before implementation
 - give humans and agents a common reference for screen intent
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 와이어프레임 문서다. 기본값은 필요한 화면 흐름만 읽는 것이다.
+
+- 현재 UI 문제와 설계 원칙만 확인할 때
+  - 문서 앞부분만 읽는다.
+- 핵심 사용자 흐름과 화면 배치만 볼 때
+  - `Core User Flow`와 wireframe 부분만 읽는다.
+- 구현 기준과 비교 검토가 필요할 때
+  - `frontend-design-benchmarks.md`를 먼저 읽고 이 문서는 보조로 본다.
+
+### English
+
+This document exceeds 200 lines. Read only the route that matches your need.
+
+- when you only need current UI problems and design principles
+  - read the front portion only
+- when you need core user flow and wireframe layout
+  - jump to `Core User Flow` and the wireframe sections
+- when you are validating implementation against design rules
+  - read `frontend-design-benchmarks.md` first and use this doc as a companion
+
 ## 현재 UI 문제 / Current UI Problems
 
 ### 한국어

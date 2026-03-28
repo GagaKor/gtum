@@ -24,6 +24,30 @@ Its purpose is to:
 - fix the release flow to GitHub Releases in documentation
 - record environment-specific bundling caveats and release concerns
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 릴리스 문서다. 기본값은 필요한 범위만 읽는 것이다.
+
+- 로컬 빌드와 번들 명령만 확인할 때
+  - `Build Stages`부터 읽는다.
+- 플랫폼별 산출물과 제약만 확인할 때
+  - `Release Artifacts`와 플랫폼별 주의점만 읽는다.
+- GitHub Release, 태그, CI 흐름을 바꿀 때
+  - release/CI 관련 후반부만 읽는다.
+
+### English
+
+This document exceeds 200 lines. Read only the route that matches your question.
+
+- when you only need local build and bundle commands
+  - start from `Build Stages`
+- when you only need platform artifacts and caveats
+  - read `Release Artifacts` and the platform-specific notes only
+- when you are changing GitHub Release, tagging, or CI flow
+  - continue only into the later release/CI sections
+
 ## 빌드 단계 / Build Stages
 
 ### 한국어

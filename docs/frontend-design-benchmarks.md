@@ -42,6 +42,30 @@ Read this document when:
 - you need to review or change UI structure, information hierarchy, interaction patterns, or anti-patterns
 - you need to check whether a frontend redesign still aligns with `VS Code`, `conductor`, and `cmux`
 
+## 장문 문서 라우팅 / Long-Doc Routing
+
+### 한국어
+
+이 문서는 200줄을 넘는 장문 디자인 문서다. 기본값은 필요한 기준만 읽는 것이다.
+
+- 레퍼런스와 금지 패턴만 확인할 때
+  - 앞부분의 reference와 anti-pattern 부분만 읽는다.
+- 현재 active UI slice 기준만 볼 때
+  - `Current Delivery Slice` 이후만 읽는다.
+- 세부 화면 설계가 필요할 때
+  - `ui-ux-wireframes.md`를 같이 읽는다.
+
+### English
+
+This document exceeds 200 lines. Read only the matching route first.
+
+- when you only need references and anti-patterns
+  - read the front reference and anti-pattern portions only
+- when you only need the current active UI-slice guidance
+  - jump to `Current Delivery Slice` and continue from there
+- when you need concrete screen structure
+  - read `ui-ux-wireframes.md` alongside this doc
+
 ## 필수 레퍼런스 / Required References
 
 ### 한국어
