@@ -1209,7 +1209,10 @@ function App() {
             <span className="eyebrow">Projects</span>
             <button onClick={() => togglePanel('projects')}>Hide</button>
           </div>
-          <h1>gtum</h1>
+          <div className="brand-lockup">
+            <img className="brand-logo" src="/brand/gtum-logo.svg" alt="gtum" />
+            <h1 className="visually-hidden">gtum</h1>
+          </div>
           <p className="lead">
             Project-centric terminal workspace for agents, code, and live logs.
           </p>

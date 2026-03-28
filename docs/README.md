@@ -6,6 +6,7 @@
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
 - [UI/UX 개선안과 와이어프레임 / UI/UX Improvements and Wireframes](./ui-ux-wireframes.md)
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
+- [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
 - [문서 읽기 순서 / Docs Reading Order](./DOCS_READING_ORDER.md)
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
 - [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
@@ -46,6 +47,8 @@
   - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
 - UI 참고 기준
   - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
+- 로고, 아이콘, favicon, 브랜드 사용 원칙
+  - [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
 - 릴리스, 빌드, 배포, CI/CD
   - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - 최신 실행 맥락과 체크리스트
@@ -67,6 +70,8 @@
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
   - UI 구조, 정보 계층, 인터랙션, 금지 패턴을 검토할 때 읽는다.
+- [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
+  - 로고, 아이콘, favicon, 시각 언어를 다룰 때 읽는다.
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
   - 릴리스, 번들, 태그, 배포, CI/CD를 다룰 때 읽는다.
 

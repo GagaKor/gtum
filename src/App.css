@@ -38,6 +38,18 @@
   display: flex;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .workspace-header,
 .panel-header {
   align-items: center;
@@ -47,6 +59,16 @@
 .workspace-header {
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.brand-lockup {
+  margin-bottom: 14px;
+}
+
+.brand-logo {
+  display: block;
+  width: min(100%, 260px);
+  height: auto;
 }
 
 .workspace-topbar {

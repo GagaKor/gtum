@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="280" viewBox="0 0 960 280" fill="none">
+  <title>gtum logo</title>
+  <rect x="24" y="24" width="232" height="232" rx="62" fill="#171412"/>
+  <rect x="41" y="41" width="198" height="198" rx="48" fill="#221D1A"/>
+  <rect x="58" y="66" width="39" height="154" rx="14" fill="#F3E6D4"/>
+  <rect x="116" y="84" width="91" height="14" rx="7" fill="#F3E6D4"/>
+  <rect x="116" y="109" width="68" height="14" rx="7" fill="#F3E6D4" opacity="0.72"/>
+  <rect x="110" y="145" width="108" height="5" rx="2.5" fill="#F3E6D4" opacity="0.16"/>
+  <path d="M120 161L145 181L120 201" stroke="#C95C27" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="159" y="174" width="58" height="14" rx="7" fill="#C95C27"/>
+  <circle cx="196" cy="89" r="13" fill="#C95C27"/>
+  <circle cx="196" cy="89" r="25" stroke="#C95C27" stroke-opacity="0.22" stroke-width="8"/>
+  <text x="304" y="136" fill="#171412" font-size="112" font-weight="700" font-family="Space Grotesk, IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.04em">gtum</text>
+  <text x="308" y="188" fill="#6E615A" font-size="32" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.02em">project terminal agent workspace</text>
+</svg>
