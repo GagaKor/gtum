@@ -11,6 +11,7 @@
 - 에이전트 역할을 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 일곱 축으로 고정한다.
 - 큰 작업을 병렬로 나누되, 충돌 없이 다시 통합하는 기준을 제공한다.
 - 각 역할이 무엇을 읽고, 무엇을 수정하고, 무엇을 검증하는지 명확히 한다.
+- 이미 밟아온 작업 경로, 반복 문제, 다음 개선안을 어느 역할이 정리하는지 분명히 한다.
 - 문서와 코드, 테스트가 같이 움직이도록 기본 handoff 규칙을 남긴다.
 
 ### English
@@ -22,6 +23,7 @@ Its goals are:
 - fix the default role split to `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`
 - provide a way to parallelize larger tasks without integration chaos
 - make it explicit what each role reads, edits, and validates
+- make it explicit which roles review prior work paths, repeated failures, and next improvements
 - keep code, docs, and tests moving together through clear handoff rules
 
 ## 언제 읽는 문서인가 / When To Read This Document
@@ -47,11 +49,11 @@ Read this document when:
 기본 팀은 아래 일곱 역할로 구성한다.
 
 - `Planner`
-  - 제품 목표, 현재 스프린트와 다음 스프린트 연결, 레퍼런스 분석, 기획 문서 갱신을 담당한다.
+  - 제품 목표, 현재 스프린트와 다음 스프린트 연결, 레퍼런스 분석, 과거 작업 경로 검토, 기획 문서 갱신을 담당한다.
 - `Orchestrator`
   - 작업 목표를 해석하고, 문서와 코드 기준선을 맞추고, 역할별 작업을 분해한다.
 - `Designer`
-  - `VS Code`, `conductor`, `cmux` 레퍼런스를 바탕으로 정보 계층, 코드 읽기 surface, 상호작용, 와이어프레임을 담당한다.
+  - `VS Code`, `conductor`, `cmux` 레퍼런스를 바탕으로 정보 계층, 코드 읽기 surface, 상호작용, 와이어프레임, 작업 경로 가시화를 담당한다.
 - `Frontend`
   - `src/` 중심 UI, 상태, 사용자 흐름, 프론트 검증을 담당한다.
 - `Backend`
@@ -68,11 +70,11 @@ Read this document when:
 The default team has seven roles:
 
 - `Planner`
-  - owns product intent, current-to-next sprint continuity, reference analysis, and planning-document updates
+  - owns product intent, current-to-next sprint continuity, reference analysis, review of prior work paths, and planning-document updates
 - `Orchestrator`
   - interprets the goal, aligns docs and code, and decomposes the work
 - `Designer`
-  - owns information hierarchy, code-reading surface design, interactions, and wireframes using `VS Code`, `conductor`, and `cmux` as references
+  - owns information hierarchy, code-reading surface design, interactions, wireframes, and workflow-visibility design using `VS Code`, `conductor`, and `cmux` as references
 - `Frontend`
   - owns UI, state, user flows, and frontend validation around `src/`
 - `Backend`
@@ -97,10 +99,13 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - 결정한다:
   - 현재 작업의 제품 목적
   - 다음 스프린트로 넘길 기획 항목
+  - 반복 문제와 개선 우선순위
   - 레퍼런스 분석 결과를 어디에 반영할지
 - 직접 맡는다:
   - 제품 범위와 우선순위 정리
   - 다음 스프린트 초안과 후속 작업 문서화
+  - 최신 `WORKLOG`, task history, 검증 메모를 검토해 반복 문제를 식별
+  - 현재 스프린트 산출물을 다음 스프린트 개선 항목으로 변환
   - `VS Code`, `conductor`, `cmux` 분석을 backlog와 계획으로 연결
 
 #### `Orchestrator`
@@ -129,7 +134,9 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - 직접 맡는다:
   - 코드 읽기 surface와 작업 흐름 설계
   - `VS Code`, `conductor`, `cmux` 레퍼런스 분석
+  - 사용자가 밟아온 승인, 실패, 재시도 경로를 시각적으로 드러낼 UX 방향 정리
   - 사용자 가시성과 테스트 용이성을 기준으로 디자인 정리
+  - 가시성 부족 때문에 생긴 마찰을 디자인 개선 항목으로 문서화
   - 다음 스프린트에서 구현해야 할 디자인 문서화
 
 #### `Frontend`
@@ -164,6 +171,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - 직접 맡는다:
   - 작업 시작 시 acceptance 기준 정리
   - frontend/backend 변경이 source of truth 문서와 맞는지 교차 확인
+  - planner와 designer가 뽑은 문제점이 acceptance와 회귀 체크포인트에 반영됐는지 확인
   - tester가 실행할 검증 포인트와 우선순위 정리
   - release readiness와 잔여 리스크 판단 보조
 
@@ -177,6 +185,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
   - 새 흐름 E2E 추가 또는 기존 시나리오 갱신
   - 실패 원인 분류
   - 최소 repro 정리
+  - 재현 로그를 다음 스프린트 개선 근거로 남김
   - aging test나 반복 검증 필요 여부 판단
 
 ### English
@@ -190,10 +199,13 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - decides:
   - the product intent of the current task
   - what should be handed into the next sprint
+  - recurring issues and improvement priority
   - where reference analysis must be reflected
 - owns directly:
   - product scope and priority framing
   - drafting the next sprint and follow-up planning notes
+  - reviewing the latest `WORKLOG`, task history, and validation notes to identify recurring issues
+  - converting the current sprint outputs into next-sprint improvement items
   - turning `VS Code`, `conductor`, and `cmux` analysis into backlog and planning updates
 
 #### `Orchestrator`
@@ -222,7 +234,9 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - owns directly:
   - code-reading surface and workflow design
   - reference analysis across `VS Code`, `conductor`, and `cmux`
+  - defining how approvals, failures, and retries should be made visually traceable
   - designing for user visibility and testing comfort
+  - documenting visibility gaps as concrete design-improvement items
   - documenting the design inputs for the next sprint
 
 #### `Frontend`
@@ -257,6 +271,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - owns directly:
   - defining acceptance criteria at task start
   - cross-checking frontend/backend changes against source-of-truth docs
+  - checking whether planner and designer findings are reflected in acceptance and regression focus
   - translating acceptance goals into concrete validation focus for the tester
   - helping judge release readiness and residual risk
 
@@ -270,14 +285,15 @@ Every task should first be decomposed into these seven sub-agent roles. For very
   - adding or updating E2E coverage for new flows
   - classifying failures
   - writing minimal repro steps
+  - leaving repro evidence behind as input for the next sprint
   - deciding when aging-style or repeated validation is needed
 
 ## 기본 작업 흐름 / Default Workflow
 
 ### 한국어
 
-1. `Planner`와 `Orchestrator`가 요청을 읽고 제품 문서, 관련 코드, 현재 스프린트 기준선을 확인한다.
-2. `Planner`는 다음 스프린트로 이어질 기획 항목을 정리하고, `Designer`는 필요한 레퍼런스와 디자인 포인트를 고정한다.
+1. `Planner`와 `Orchestrator`가 요청을 읽고 제품 문서, 관련 코드, 최신 `WORKLOG`, task history, 현재 스프린트 기준선을 함께 확인한다.
+2. `Planner`는 반복 문제와 다음 스프린트 개선 항목을 정리하고, `Designer`는 이를 드러낼 레퍼런스, 정보 구조, 디자인 포인트를 고정한다.
 3. `Orchestrator`가 작업을 `designer`, `frontend`, `backend`, `QA`, `tester` 단위로 나누고 파일 소유권을 먼저 정한다.
 4. `QA`는 구현과 병렬로 완료조건, acceptance 기준, handoff 체크포인트를 정리한다.
 5. `Designer`, `Frontend`, `Backend`는 서로 다른 파일 소유권으로 병렬 작업한다.
@@ -287,8 +303,8 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 
 ### English
 
-1. The `Planner` and `Orchestrator` read the request and check the product docs, relevant code, and sprint baseline.
-2. The `Planner` frames next-sprint implications, while the `Designer` locks the needed references and design direction.
+1. The `Planner` and `Orchestrator` read the request and review the product docs, relevant code, the latest `WORKLOG`, task history, and sprint baseline together.
+2. The `Planner` frames recurring issues and next-sprint improvements, while the `Designer` locks the references, hierarchy, and design direction that should make those issues visible.
 3. The `Orchestrator` splits the work into `designer`, `frontend`, `backend`, `QA`, and `tester` slices and locks file ownership first.
 4. `QA` defines acceptance criteria and handoff checkpoints in parallel with implementation.
 5. `Designer`, `Frontend`, and `Backend` work in parallel with separate file ownership.
@@ -302,8 +318,10 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 
 - `Planner`
   - 기본적으로 `docs/product-plan.md`, `docs/mvp-backlog.md`, `docs/sprint-plan.md`, 기획 메모를 수정한다.
+  - 작업 경로 요약과 문제 분석 메모도 기본 산출물에 포함한다.
 - `Designer`
   - 기본적으로 `docs/frontend-design-benchmarks.md`, `docs/ui-ux-wireframes.md`, 디자인 메모를 수정한다.
+  - 워크플로우 가시성 개선 메모도 기본 산출물에 포함한다.
 - `Frontend`
   - 기본적으로 `src/`만 수정한다.
 - `Backend`
@@ -321,8 +339,10 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 
 - `Planner`
   - should edit `docs/product-plan.md`, `docs/mvp-backlog.md`, `docs/sprint-plan.md`, and planning notes by default
+  - should also leave behind path summaries and problem-analysis notes as standard artifacts
 - `Designer`
   - should edit `docs/frontend-design-benchmarks.md`, `docs/ui-ux-wireframes.md`, and design notes by default
+  - should also leave behind workflow-visibility improvement notes as standard artifacts
 - `Frontend`
   - should edit `src/` by default
 - `Backend`
@@ -341,9 +361,9 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 ### 한국어
 
 - `Planner -> Designer`
-  - 다음 스프린트에서 구현해야 할 제품 목표와 레퍼런스 분석 포인트를 짧게 넘긴다.
+  - 다음 스프린트에서 구현해야 할 제품 목표, 작업 경로 요약, 반복 문제, 레퍼런스 분석 포인트를 짧게 넘긴다.
 - `Designer -> Frontend`
-  - 코드 읽기 surface, 정보 계층, 인터랙션 의도를 짧게 넘긴다.
+  - 코드 읽기 surface, 정보 계층, 인터랙션 의도와 작업 경로 가시화 요구사항을 짧게 넘긴다.
 - `Backend -> Frontend`
   - 새 command, snapshot, enum, status field, contract 변화가 있으면 이름과 의미를 먼저 고정한다.
 - `Frontend -> QA`
@@ -362,9 +382,9 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 ### English
 
 - `Planner -> Designer`
-  - hand off next-sprint product goals and reference-analysis points in short form
+  - hand off next-sprint product goals, a short path recap, recurring issues, and reference-analysis points
 - `Designer -> Frontend`
-  - hand off the intended code-reading surface, hierarchy, and interaction direction in short form
+  - hand off the intended code-reading surface, hierarchy, interaction direction, and workflow-visibility requirements
 - `Backend -> Frontend`
   - lock the names and meanings of any new command, snapshot, enum, status field, or contract change first
 - `Frontend -> QA`
@@ -389,13 +409,14 @@ The goal is not long prose. The goal is to pass along reproducible contracts and
 - `Planner`
   - 관련 제품 문서 확인
   - 현재 작업 목적과 다음 스프린트 carry-over 정리
+  - 최신 `WORKLOG`, task history, 검증 메모에서 반복 문제 추출
 - `Orchestrator`
   - 관련 문서 확인
   - 현재 코드 기준선 확인
   - 역할별 소유 파일 지정
 - `Designer`
   - `VS Code`, `conductor`, `cmux` 분석
-  - 코드 읽기와 테스트 가시성 기준 UI 설계 정리
+  - 코드 읽기, 테스트 가시성, 작업 경로 가시화 기준 UI 설계 정리
 - `Frontend`
   - UI 변경점 구현
   - 프론트 상태 및 표시 로직 정리
@@ -404,10 +425,10 @@ The goal is not long prose. The goal is to pass along reproducible contracts and
   - 필요한 mock 또는 snapshot 정리
 - `QA`
   - acceptance 기준 정의
-  - handoff와 문서/계약 정합성 확인
+  - handoff와 문서/계약 정합성, 문제 분석 반영 여부 확인
 - `Tester`
   - E2E 또는 회귀 시나리오 추가
-  - 테스트 결과와 재현 절차 정리
+  - 테스트 결과, 재현 절차, 다음 개선 근거 정리
 
 ### English
 
@@ -416,13 +437,14 @@ When a new task arrives, start by checking this decomposition:
 - `Planner`
   - verify relevant product docs
   - define the current-task purpose and next-sprint carryover
+  - extract recurring issues from the latest `WORKLOG`, task history, and validation notes
 - `Orchestrator`
   - verify relevant docs
   - verify the current code baseline
   - assign per-role file ownership
 - `Designer`
   - analyze `VS Code`, `conductor`, and `cmux`
-  - document UI hierarchy and code-reading design points
+  - document UI hierarchy, code-reading, test visibility, and workflow-visibility design points
 - `Frontend`
   - implement UI changes
   - align frontend state and rendering logic
@@ -431,10 +453,10 @@ When a new task arrives, start by checking this decomposition:
   - align any required mock or snapshot behavior
 - `QA`
   - define acceptance criteria
-  - check handoff quality and doc/contract consistency
+  - check handoff quality, doc/contract consistency, and whether the findings are reflected
 - `Tester`
   - add E2E or regression coverage
-  - summarize validation results and repro steps
+  - summarize validation results, repro steps, and improvement evidence
 
 ## 언제 일곱 역할을 유지하는가 / When To Keep All Seven Roles
 
@@ -449,6 +471,7 @@ When a new task arrives, start by checking this decomposition:
 - 문서 source of truth도 같이 갱신해야 한다.
 - acceptance 기준과 실제 검증을 분리해야 한다.
 - 다음 스프린트 기획이나 디자인 문서도 같이 남겨야 한다.
+- 최신 작업 경로 요약과 반복 문제 분석도 같이 남겨야 한다.
 
 ### English
 
@@ -461,6 +484,7 @@ Start from all seven roles for every task. Keep all seven roles when any of the 
 - source-of-truth docs also need updates
 - acceptance review should stay separate from test execution
 - next-sprint planning or design documentation should also be left behind
+- a path recap and recurring-issue analysis should also be left behind
 
 ## 예외적으로 축소하는가 / When To Collapse Roles Exceptionally
 

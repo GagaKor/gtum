@@ -87,6 +87,15 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 2. 현재 스프린트 체크리스트
 3. 최신 `WORKLOG`
 
+다음 작업을 정하기 전, 최신 `WORKLOG`에서 이미 시도한 경로와 반복 실패를 먼저 확인한다.
+
+### 이미 밟아온 작업 경로를 검토하고 문제점을 찾을 때
+
+1. 최신 `WORKLOG`
+2. 현재 스프린트 체크리스트
+3. `docs/sprint-plan.md`
+4. `docs/agent-team-topology.md`
+
 ### 릴리스, 빌드, CI가 문제일 때
 
 1. `docs/release-build-ci.md`
@@ -138,6 +147,15 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 1. `docs/sprint-plan.md`
 2. the current sprint checklist
 3. the latest `WORKLOG`
+
+Before choosing the next task, review the latest `WORKLOG` for the path already taken and repeated failures first.
+
+### When the issue is reviewing the path already taken and finding problems
+
+1. the latest `WORKLOG`
+2. the current sprint checklist
+3. `docs/sprint-plan.md`
+4. `docs/agent-team-topology.md`
 
 ### When the issue is release, build, or CI
 
@@ -212,6 +230,7 @@ Only when direction is still unclear should you widen out and reread in this ord
 - 지금 필요한 source of truth는 1개인가 2개인가
 - 이 작업은 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 중 어떻게 나눌 것인가
 - 지금 당장 최신 `WORKLOG`나 체크리스트도 같이 봐야 하는가
+- 이미 시도한 경로와 실패 패턴을 확인했는가
 
 ### English
 
@@ -221,3 +240,4 @@ Before rereading, ask:
 - do I need one source of truth, or two
 - how should this task be split across `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`
 - do I also need the latest `WORKLOG` or checklist right now
+- have I reviewed the path already taken and repeated failure patterns

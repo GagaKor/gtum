@@ -12,6 +12,7 @@
 - `VS Code`, `conductor`, `cmux`에서 배워야 할 지점을 명확히 고정한다.
 - 디자인 완성도와 UX 기준을 구현 전에 합의된 문서로 남긴다.
 - 코드 읽기와 흐름 추적이 AI 대화보다 뒤로 밀리지 않게 한다.
+- 사용자가 이미 밟아온 작업 경로와 반복 문제를 UI에서 복기할 수 있게 한다.
 
 ### English
 
@@ -23,6 +24,7 @@ Its goals are:
 - make the useful lessons from `VS Code`, `conductor`, and `cmux` explicit
 - keep design quality and UX expectations documented before implementation
 - keep code reading and flow tracing from being demoted behind the AI conversation surface
+- make prior work paths and repeated-problem signals easy to reread in the UI
 
 ## 언제 읽는 문서인가 / When To Read This Document
 
@@ -86,6 +88,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 계획, 실행, 승인, 결과가 이어지는 흐름형 UX
 - 무엇이 자동이고 무엇이 승인 필요인지 분명하게 보이는 표현
 - 에이전트 orchestration은 강하지만 코드 읽기 surface 불편함은 반복하지 않는 기준
+- 작업 경로와 승인/실패 이력을 문제 분석에 쓸 수 있게 드러내는 방식
 
 #### `cmux`에서 배울 점
 
@@ -93,6 +96,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 탭 단위 작업 전환이 빠르고 가벼운 점
 - 로그와 실행 상태를 읽는 경험이 끊기지 않는 점
 - 멀티 터미널은 좋더라도 코드 보기 불편함은 그대로 가져오지 않는 기준
+- 터미널 세션과 로그 경로를 끊지 않고 되짚어볼 수 있는 흐름
 
 ### English
 
@@ -109,6 +113,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - a UI that makes agent and task state scannable at a glance
 - flow-oriented UX across planning, execution, approval, and result
 - explicit distinction between what is automatic and what requires approval
+- visible traces of prior approvals, failures, and retries that can drive improvement
 - keep the orchestration strengths without inheriting uncomfortable code-reading surfaces
 
 #### What to borrow from `cmux`
@@ -117,6 +122,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - lightweight tab-based task switching
 - uninterrupted reading of logs and execution state
 - keep the strong multi-terminal workflow without inheriting weak code-view affordances
+- preserve enough session continuity that users can retrace execution paths instead of guessing
 
 ## 반드시 지켜야 할 UI 원칙 / Non-Negotiable UI Rules
 
@@ -130,6 +136,8 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 디버그 정보, mock 세부정보, callback 값은 기본 화면의 주인공이 되면 안 된다.
 - 코드 읽기, 흐름 추적, 테스트 확인은 AI 대화창보다 먼저 보이거나 최소한 같은 급의 작업 surface를 가져야 한다.
 - 에이전트 대화는 보조 surface일 수 있지만, 코드 보기가 사이드바나 하단 패널에 종속되면 안 된다.
+- 사용자는 현재 상태뿐 아니라 이미 밟은 승인, 실패, 재시도 경로를 한눈에 복기할 수 있어야 한다.
+- task history와 실행 이력은 단순 로그가 아니라 문제 분석이 가능한 timeline 또는 trace 형태로 읽혀야 한다.
 - 에이전트가 안정적으로 수정하기 어렵다면 React 추상화보다 더 단순한 `TypeScript` 중심 구조를 우선할 수 있다.
 
 ### English
@@ -142,6 +150,8 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - debug data, mock details, and raw callback values must not dominate the default UI
 - code reading, flow tracing, and test inspection should be at least as first-class as the AI conversation surface
 - AI chat may be secondary, but code viewing must not be trapped inside a sidebar-only or bottom-panel-only interaction model
+- users should be able to reread approvals, failures, retries, and detours without manually reconstructing the story from scattered logs
+- task history should be readable as a scannable timeline or trace, not just as raw transcript fragments
 - if React abstractions make agent-driven maintenance harder, prefer a simpler `TypeScript`-first structure over framework purity
 
 ## 에이전트 친화적 구현 원칙 / Agent-Friendly Implementation Rules
@@ -173,6 +183,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 현재 무엇을 해야 하는지보다 현재 가능한 기능 목록이 먼저 보이는 구조
 - AI 대화가 메인인데 코드 보기와 테스트 확인이 사이드바나 하단 패널에 눌리는 구조
 - 코드 흐름을 따라가야 하는 순간에도 editor-like surface가 부족한 구조
+- 이미 밟아온 작업 경로와 실패 기록이 흩어져 있어 사용자가 무엇이 있었는지 재구성해야 하는 구조
 
 ### English
 
@@ -183,6 +194,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - layouts that emphasize feature inventory before the next user action
 - AI conversation dominating while code viewing and test inspection are squeezed into a sidebar or bottom panel
 - layouts that lack an editor-like surface when users need to trace code flow
+- layouts where prior work paths and failure evidence are scattered badly enough that users must reconstruct them manually
 
 ## 프론트엔드 작업 체크리스트 / Frontend Review Checklist
 
@@ -196,6 +208,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 4. 카드 수를 줄이고 패널 구조로 바꿀 수 없는가
 5. debug/mock 정보를 한 단계 더 뒤로 보낼 수 없는가
 6. 에이전트 대화와 별개로 사용자가 코드를 읽고 흐름을 따라가기 편한 editor-like surface가 있는가
+7. 사용자가 승인, 실패, 재시도 경로를 별도 추리 없이 복기하고 문제를 파악할 수 있는가
 
 ### English
 
@@ -207,3 +220,4 @@ Before shipping frontend work, check:
 4. can this be expressed with fewer cards and stronger panel layout
 5. can debug or mock details be pushed one level further back
 6. does the user still have an editor-like surface for reading code and tracing flow apart from the agent conversation
+7. can the user quickly reread approvals, failures, retries, and detours to diagnose recurring problems

@@ -45,6 +45,32 @@ This document is a template for recording sprint or task-level progress.
 
 - completed items
 
+## 작업 경로 요약 / Path Recap
+
+### 한국어
+
+- 어떤 순서로 시도했는지
+- 승인, 실패, 우회, 재시도 경로
+
+### English
+
+- the order of attempts
+- approvals, failures, detours, and retries
+
+## 문제 발견 / Findings
+
+### 한국어
+
+- 반복 문제
+- 가시성 부족
+- UX 또는 워크플로우 마찰
+
+### English
+
+- recurring problems
+- visibility gaps
+- UX or workflow friction
+
 ## 확인 결과 / Verification
 
 ### 한국어
@@ -84,8 +110,10 @@ This document is a template for recording sprint or task-level progress.
 ### 한국어
 
 - 다음에 바로 이어서 할 일
+- 다음 스프린트에서 개선해야 할 항목
 
 ### English
 
 - next immediate action
+- items that should be improved in the next sprint
 ```

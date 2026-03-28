@@ -101,6 +101,7 @@ This product also comes from direct hands-on frustration with existing tools.
 - 에이전트가 프로젝트와 터미널 맥락을 읽도록 하기
 - 에이전트가 제안한 작업을 승인 후 실행하기
 - 현재 테스트 중인 터미널 로그를 에이전트와 자연스럽게 공유하기
+- 지금까지 밟아온 승인, 실패, 재시도 경로를 되짚어 문제를 파악하고 개선하기
 
 ### English
 
@@ -115,6 +116,7 @@ The app should make it easy to:
 - let agents read project and terminal context
 - approve and execute agent-suggested actions
 - share active testing logs with agents naturally inside the same workspace
+- review the path of approvals, failures, and retries already taken so problems can be diagnosed and improved
 
 ## 해결하려는 문제 / Problem Statement
 
@@ -126,6 +128,7 @@ The app should make it easy to:
 2. 에이전트 관리가 잘 되는 도구는 있어도, 현재 실행 중인 터미널 로그를 작업 맥락으로 다루는 경험이 약하다.
 3. 테스트와 디버깅 중 생성되는 실시간 로그를 코드, 프로젝트 구조, 에이전트 작업 흐름과 함께 연결하기 어렵다.
 4. 에이전트에 일을 전임해도 사용자는 결국 코드를 읽고 흐름을 따라가야 하는데, 기존 도구는 코드 보기 surface나 대화 가시성이 불편한 경우가 많다.
+5. 지금까지 어떤 시도와 승인, 실패, 우회가 있었는지 한눈에 재구성하기 어려우면 반복 문제를 개선하기 어렵다.
 
 즉, `gtum`은 "프로젝트, 코드, 터미널, 에이전트"가 분리된 도구들 사이를 오가는 불편함을 줄이는 것을 목표로 한다.
 
@@ -137,6 +140,7 @@ The core problems `gtum` is trying to solve are:
 2. some tools manage agents well, but do not treat live terminal logs as first-class working context
 3. real-time logs produced during testing and debugging are hard to connect with code, project structure, and agent workflows
 4. even when work is delegated to agents, users still need to read code and trace flow, but existing tools often make code-viewing surfaces or agent conversations uncomfortable
+5. if users cannot reconstruct which attempts, approvals, failures, and detours already happened, recurring workflow problems are hard to improve
 
 In short, `gtum` aims to reduce the friction of constantly switching between separate tools for projects, code, terminals, and agents.
 
@@ -158,6 +162,8 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
    의미 있는 작업은 단일 에이전트보다 서브에이전트를 포함한 멀티 에이전트 팀빌딩을 기본값으로 삼고, `planner + orchestrator + designer + frontend + backend + QA + tester` 분업을 먼저 적용한다.
 7. 코드 읽기 우선
    에이전트 위임이 있더라도 사용자가 코드를 읽고 흐름을 따라갈 수 있는 surface는 1급 작업 영역이어야 하며, 단순 사이드바나 하단 채팅 패널로 밀어넣지 않는다.
+8. 경로 가시성 우선
+   task history와 `WORKLOG`는 단순 기록이 아니라 사용자가 이미 밟아온 경로, 승인, 실패, 재시도를 재구성해 문제점을 파악하고 개선안을 만들 수 있는 입력이어야 한다.
 
 ### English
 
@@ -175,6 +181,8 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
    Non-trivial work should default to multi-agent team formation with sub-agents, starting from the `planner + orchestrator + designer + frontend + backend + QA + tester` split before any narrower path.
 7. Code-reading first
    Even with agent delegation, the surface for reading code and tracing flow should remain first-class rather than collapsing into a sidebar-only or bottom-panel chat model.
+8. Path-visibility first
+   task history and `WORKLOG` should function as interpretable inputs that help users reconstruct prior approvals, failures, and retries so recurring problems can be improved.
 
 ## 대상 사용자 / Target Users
 
@@ -301,8 +309,10 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - 선택된 파일
 - 현재 탭의 터미널 출력
 - 최근 작업 기록
+- 승인, 실패, 재시도, 우회 경로 요약
 
 이를 바탕으로 에러를 요약하거나, 문제 원인을 설명하거나, 다음 작업을 제안할 수 있다.
+또한 사용자가 이미 밟은 경로를 다시 읽고 반복 문제를 드러낼 수 있어야 한다.
 
 #### 4. 에이전트 보조 실행
 
@@ -378,8 +388,10 @@ An agent can read:
 - selected files
 - terminal output from the current tab
 - recent task history
+- summarized approvals, failures, retries, and detours
 
 Based on that context, the agent can summarize issues, explain likely causes, or suggest next steps.
+It should also help users reread the path already taken and expose recurring problems.
 
 #### 4. Agent-Assisted Execution
 
@@ -449,6 +461,7 @@ Because this adds important security and authentication boundaries, it should be
 - 이후 버전에서 pane 분할 지원
 - 명령 기록과 출력 로그 유지
 - 세션 복원
+- 현재까지의 실행 경로와 재시도 흐름을 다시 읽을 수 있게 유지
 
 #### Agents
 
@@ -459,6 +472,7 @@ Because this adds important security and authentication boundaries, it should be
 - 작업 제안
 - 승인된 명령 실행
 - 작업 진행 상태 추적
+- 어떤 경로가 실패했고 어떤 개선이 필요한지 요약
 
 ### English
 
@@ -482,6 +496,7 @@ Responsibilities:
 - support pane splits in later versions
 - preserve command history and output logs
 - restore sessions
+- preserve a readable path of executions and retries so prior work can be reconstructed
 
 #### Agents
 
@@ -492,6 +507,7 @@ Responsibilities:
 - suggest actions
 - execute approved commands
 - track task progress
+- summarize which paths failed and which improvements are worth trying next
 
 ## 권장 UI 구조 / Recommended UI Structure
 
@@ -516,6 +532,7 @@ Responsibilities:
 - 에이전트 채팅
 - 제안 액션
 - 작업 실행 기록
+- 워크플로우 문제 요약
 - 프로젝트 인사이트
 
 #### 하단 패널 또는 드로어
@@ -523,6 +540,7 @@ Responsibilities:
 - 로그
 - 알림
 - 명령 기록
+- 경로 요약
 
 ### English
 
@@ -545,6 +563,7 @@ Responsibilities:
 - agent chat
 - suggested actions
 - execution history
+- workflow findings
 - project insights
 
 #### Bottom Panel or Drawer
@@ -552,6 +571,7 @@ Responsibilities:
 - logs
 - notifications
 - command history
+- path recap
 
 ## 핵심 사용자 흐름 / Core User Flow
 
@@ -565,6 +585,7 @@ Responsibilities:
 4. 에이전트가 현재 프로젝트와 터미널 맥락을 읽는다.
 5. 에이전트가 설명 또는 다음 작업을 제안한다.
 6. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
+7. 사용자가 지금까지의 승인, 실패, 재시도 경로를 확인하고 다음 행동을 결정한다.
 
 #### 예시 시나리오
 
@@ -574,6 +595,7 @@ Responsibilities:
 4. 에이전트가 출력과 관련 설정 파일을 읽는다.
 5. 에이전트가 원인을 설명하고 수정용 명령을 제안한다.
 6. 사용자가 승인하면 새 디버깅 탭에서 명령이 실행된다.
+7. 사용자가 이전 시도와 새 결과를 비교해 반복 문제인지 판단한다.
 
 ### English
 
@@ -585,6 +607,7 @@ Responsibilities:
 4. The agent reads the current project and terminal context.
 5. The agent suggests explanations or next actions.
 6. The user approves execution in the current tab or a new tab.
+7. The user reviews the approval, failure, and retry path before deciding the next action.
 
 #### Example Scenario
 
@@ -594,6 +617,7 @@ Responsibilities:
 4. The agent reads the output and related config files.
 5. The agent explains the likely cause and proposes a fix command.
 6. The user approves execution in a new debugging tab.
+7. The user compares the new result with prior attempts to see whether the problem is repeating.
 
 ## 에이전트 모델 / Agent Model
 
@@ -690,11 +714,11 @@ In the MVP, command execution and file edits should both require user approval.
 #### 기본 역할 분리
 
 - `Planner`
-  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 기획 문서화
+  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 작업 경로 분석, 기획 문서화
 - `Orchestrator`
   - 전체 작업 분해, 우선순위 설정, 문서 기준선 정렬, 결과 통합
 - `Designer`
-  - `VS Code`, `conductor`, `cmux` 분석을 바탕으로 정보 계층, 코드 읽기 surface, 인터랙션, 와이어프레임 설계
+  - `VS Code`, `conductor`, `cmux` 분석을 바탕으로 정보 계층, 코드 읽기 surface, 인터랙션, 와이어프레임, 작업 경로 가시화 설계
 - `Frontend`
   - `src/` 중심 UI, 상태, 사용자 흐름 구현
 - `Backend`
@@ -724,6 +748,7 @@ In the MVP, command execution and file edits should both require user approval.
 - 열려 있는 터미널 탭 목록
 - 탭별 최근 로그
 - 최근 명령 실행 기록
+- 개선이 필요한 승인, 실패, 재시도, 우회 요약
 - 작업 큐와 에이전트별 담당 상태
 
 ### English
@@ -749,11 +774,11 @@ The core idea is:
 #### Default Role Split
 
 - `Planner`
-  - frames the current sprint goal, drafts the next sprint, analyzes references, and updates planning docs
+  - frames the current sprint goal, drafts the next sprint, analyzes references, reviews the work path already taken, and updates planning docs
 - `Orchestrator`
   - decomposes work, prioritizes tasks, aligns the doc baseline, and integrates results
 - `Designer`
-  - uses `VS Code`, `conductor`, and `cmux` to design hierarchy, code-reading surfaces, interactions, and wireframes
+  - uses `VS Code`, `conductor`, and `cmux` to design hierarchy, code-reading surfaces, interactions, wireframes, and workflow-visibility patterns
 - `Frontend`
   - implements UI, state, and user-facing flow changes around `src/`
 - `Backend`
@@ -783,6 +808,7 @@ A shared project context for multi-agent work may include:
 - list of open terminal tabs
 - recent logs per tab
 - recent command execution history
+- summarized approvals, failures, retries, and detours worth improving
 - task queue and per-agent assignment state
 
 ## 실행 모드 / Execution Modes

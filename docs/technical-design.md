@@ -199,7 +199,7 @@ docs/
 - `auth`
   - 제공자 로그인, 세션 상태, 권한 범위 표시
 - `tasks`
-  - 작업 큐, 실행 이력, 상태 업데이트
+  - 작업 큐, 실행 이력, 경로 요약, 상태 업데이트
 - `settings`
   - 플랫폼 설정, 단축키, 셸 설정, 실험 기능
 
@@ -211,6 +211,7 @@ docs/
 - Tauri 데스크톱 런타임과 웹 프론트엔드 검증을 분리하되, 가능한 한 같은 사용자 흐름 이름을 유지한다.
 - 프론트엔드 레이아웃과 상호작용은 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
 - 디자인 검토 시 `VS Code`, `conductor`, `cmux` 대비 정보 계층과 터미널 중심성이 유지되는지 확인한다.
+- UI는 task history와 실행 이력이 사용자가 밟아온 승인, 실패, 재시도 경로를 재구성할 수 있을 정도로 남는지 확인한다.
 - 프론트엔드 구현은 프레임워크 관용성보다 에이전트가 수정하기 쉬운 단순한 `TypeScript` 구조를 우선할 수 있다.
 
 #### 상태 관리 원칙
@@ -237,7 +238,7 @@ The frontend should be organized by feature domain.
 - `auth`
   - provider login, session state, granted scope visibility
 - `tasks`
-  - task queue, execution history, status updates
+  - task queue, execution history, path recap, and status updates
 - `settings`
   - platform settings, shortcuts, shell settings, experimental features
 
@@ -249,6 +250,7 @@ The frontend should be organized by feature domain.
 - separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
 - review frontend layout and interaction quality against `docs/frontend-design-benchmarks.md`
 - check whether the UI still preserves the hierarchy of `VS Code`, the workflow clarity of `conductor`, and the terminal-first emphasis of `cmux`
+- make sure task history and execution history remain legible enough for users to reconstruct approvals, failures, and retries
 - prefer frontend implementation patterns that are easy for agents to edit, even if that means reducing framework-heavy abstractions in favor of simpler `TypeScript` structures
 
 ## 테스트 전략 / Testing Strategy
@@ -805,26 +807,26 @@ The initial candidate channel is:
 - `Agent Worker`
   - provider와 연결된 실제 작업 실행 단위
 - `Context Store`
-  - 프로젝트, 파일, 터미널, 작업 상태 공유
+  - 프로젝트, 파일, 터미널, 작업 상태와 경로 요약 공유
 - `Approval Gate`
   - 명령 실행과 파일 수정 전 사용자 승인 요구
 
 #### 기본 워커 역할
 
 - `Planner Worker`
-  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 기획 문서 담당
+  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 작업 경로 분석, 기획 문서 담당
 - `Orchestrator Worker`
   - 문서/코드 기준선 확인, 작업 분해, 통합 담당
 - `Designer Worker`
-  - `VS Code`, `conductor`, `cmux` 기준의 정보 계층, 코드 읽기 surface, 상호작용, 와이어프레임 담당
+  - `VS Code`, `conductor`, `cmux` 기준의 정보 계층, 코드 읽기 surface, 상호작용, 와이어프레임, 작업 경로 가시화 담당
 - `Frontend Worker`
   - `src/` 범위 UI와 상태 변경 담당
 - `Backend Worker`
   - `src-tauri/` 범위 runtime과 contract 변경 담당
 - `QA Worker`
-  - 완료조건, acceptance 기준, handoff 품질, 문서/계약 정합성 담당
+  - 완료조건, acceptance 기준, handoff 품질, 문서/계약 정합성, 문제 분석 반영 여부 담당
 - `Tester Worker`
-  - `tests/` 범위 E2E, 회귀, repro 정리 담당
+  - `tests/` 범위 E2E, 회귀, repro, 반복 실패 근거 정리 담당
 
 기본 스케줄링은 위 일곱 역할을 서브에이전트 기준으로 먼저 편성하고, 필요한 경우에만 탐색 전용 워커나 리뷰 전용 워커를 추가한다.
 
@@ -868,26 +870,26 @@ Multi-agent execution should be orchestrated in the application layer.
 - `Agent Worker`
   - execution unit connected to a provider
 - `Context Store`
-  - shared state for project, file, terminal, and task context
+  - shared state for project, file, terminal, task context, and path recap
 - `Approval Gate`
   - requires user approval before command execution or file edits
 
 #### Default Worker Roles
 
 - `Planner Worker`
-  - owns sprint framing, next-sprint planning, reference analysis, and planning docs
+  - owns sprint framing, next-sprint planning, reference analysis, work-path analysis, and planning docs
 - `Orchestrator Worker`
   - checks the doc and code baseline, decomposes work, and integrates results
 - `Designer Worker`
-  - owns hierarchy, code-reading surfaces, interactions, and wireframes using `VS Code`, `conductor`, and `cmux` as references
+  - owns hierarchy, code-reading surfaces, interactions, wireframes, and workflow visibility using `VS Code`, `conductor`, and `cmux` as references
 - `Frontend Worker`
   - owns UI and state changes inside `src/`
 - `Backend Worker`
   - owns runtime and contract changes inside `src-tauri/`
 - `QA Worker`
-  - owns acceptance criteria, handoff quality, and doc/contract consistency
+  - owns acceptance criteria, handoff quality, doc/contract consistency, and whether findings are reflected in validation gates
 - `Tester Worker`
-  - owns E2E, regression, and repro work inside `tests/`
+  - owns E2E, regression, repro work, and recurring-failure evidence inside `tests/`
 
 Default scheduling should start from these seven sub-agent roles and add exploration-only or review-only workers only when needed.
 
@@ -901,12 +903,12 @@ Default scheduling should start from these seven sub-agent roles and add explora
 
 #### Ownership Boundary
 
-- `Planner Worker` should focus on product docs, sprint docs, and reference-analysis notes by default.
-- `Designer Worker` should focus on design-guideline docs, wireframes, and interaction notes by default.
+- `Planner Worker` should focus on product docs, sprint docs, reference-analysis notes, and problem-analysis notes by default.
+- `Designer Worker` should focus on design-guideline docs, wireframes, interaction notes, and workflow-visibility improvements by default.
 - `Frontend Worker` should avoid editing `src-tauri/` by default.
 - `Backend Worker` should avoid editing `src/` by default.
-- `QA Worker` should focus on acceptance docs, checklists, and validation notes.
-- `Tester Worker` should focus on `tests/` and validation artifacts.
+- `QA Worker` should focus on acceptance docs, checklists, validation notes, and whether findings are reflected in acceptance gates.
+- `Tester Worker` should focus on `tests/`, validation artifacts, and repro evidence for recurring failures.
 - `Orchestrator Worker` owns docs, integration, and conflict resolution.
 
 Parallelism should be increased only when these ownership boundaries stay clear.

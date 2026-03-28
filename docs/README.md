@@ -48,7 +48,7 @@
 - 릴리스, 빌드, 배포, CI/CD
   - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - 최신 실행 맥락과 체크리스트
-  - 현재 스프린트 체크리스트 또는 최신 `WORKLOG`
+  - 현재 스프린트 체크리스트 또는 최신 `WORKLOG`를 읽어 이미 수행한 경로, 실패, 보류, 다음 개선 포인트를 먼저 확인한다.
 
 ## 문서 역할 / What To Read When
 
@@ -61,9 +61,9 @@
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
   - MVP 범위, 완료조건, 우선순위, 제외 범위를 확인할 때 읽는다.
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
-  - 다음 작업 순서, 현재 스프린트 목표, 종료 조건을 정할 때 읽는다.
+  - 다음 작업 순서, 현재 스프린트 목표, 종료 조건, 직전 스프린트 경로를 다음 개선안으로 바꿀 때 읽는다.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
-  - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester` 책임을 정할 때 읽는다.
+  - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
   - UI 구조, 정보 계층, 인터랙션, 금지 패턴을 검토할 때 읽는다.
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
@@ -96,6 +96,7 @@
 - 컨텍스트가 길어질 때마다 `docs/DOCS_READING_ORDER.md`를 기준으로 다시 문서를 읽는다.
 - 기본값은 전체 문서 재독이 아니라 `AGENTS.md + docs/README.md + docs/DOCS_READING_ORDER.md`를 먼저 읽고 필요한 문서만 추가로 읽는 것이다.
 - 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
+- `planner`와 `designer`는 매 스프린트마다 작업 경로 요약, 문제점, 다음 개선안을 문서로 남긴다.
 
 ## 현재 결정 / Current Decisions
 
@@ -111,3 +112,4 @@
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다
 - 스프린트 종료 시 `Playwright` 기반 UI E2E와 다음 스프린트 작업 추가를 함께 진행한다
+- 최신 `WORKLOG`, task history, 검증 메모는 단순 기록이 아니라 다음 스프린트 개선 입력으로 취급한다
