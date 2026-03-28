@@ -24,6 +24,22 @@ Its purpose is to:
 - define cross-platform handling up front
 - establish boundaries for agent execution, authentication, and terminal session management
 
+## 언제 읽는 문서인가 / When To Read This Document
+
+### 한국어
+
+아래 상황이면 이 문서를 읽는다.
+
+- 아키텍처, 런타임 책임, 플랫폼 전략, auth 구조를 확인해야 할 때
+- Tauri command, 상태 계약, PTY, filesystem, provider adapter 같은 기술 경계를 바꿀 때
+
+### English
+
+Read this document when:
+
+- you need to confirm architecture, runtime ownership, platform strategy, or auth structure
+- you are changing technical boundaries such as Tauri commands, state contracts, PTY, filesystem, or provider adapters
+
 ## 설계 기준 / Design Constraints
 
 ### 한국어

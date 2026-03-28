@@ -24,6 +24,22 @@ Its purpose is to:
 - define acceptance criteria for each item
 - explicitly mark what is out of scope to prevent drift
 
+## 언제 읽는 문서인가 / When To Read This Document
+
+### 한국어
+
+아래 상황이면 이 문서를 읽는다.
+
+- MVP 범위, 우선순위, 완료조건, 제외 범위를 확인하거나 바꿔야 할 때
+- 지금 작업이 MVP 안인지 밖인지, 어떤 항목이 먼저인지 판단해야 할 때
+
+### English
+
+Read this document when:
+
+- you need to confirm or change MVP scope, priority, acceptance criteria, or out-of-scope boundaries
+- you need to decide whether the current task is inside the MVP and which item should come first
+
 ## MVP 한 줄 정의 / One-Line MVP Definition
 
 ### 한국어

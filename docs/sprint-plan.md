@@ -24,6 +24,22 @@ Its purpose is to:
 - validate dependencies and risks early
 - give humans and agents a shared implementation rhythm
 
+## 언제 읽는 문서인가 / When To Read This Document
+
+### 한국어
+
+아래 상황이면 이 문서를 읽는다.
+
+- 지금 무엇을 먼저 만들지, 어떤 스프린트가 현재 기준인지 확인해야 할 때
+- 산출물, 종료 기준, 다음 스프린트로 넘길 작업을 정해야 할 때
+
+### English
+
+Read this document when:
+
+- you need to determine what should be built next or which sprint is the active planning baseline
+- you need to confirm deliverables, closing criteria, or handoff into the next sprint
+
 ## 계획 원칙 / Planning Principles
 
 ### 한국어

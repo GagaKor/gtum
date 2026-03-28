@@ -2,232 +2,117 @@
 
 ## 1. 목적
 
-이 문서는 `gtum` 저장소에서 작업하는 사람과 에이전트가 작업을 시작하기 전에 무엇을 읽고, 어떤 기준으로 판단하고, 변경이 생겼을 때 어떤 문서를 함께 갱신해야 하는지 정리한 운영 지침서다.
+이 문서는 `gtum` 저장소의 짧은 부트스트랩 라우터다.
 
-핵심 목표는 다음과 같다.
+목표는 세 가지다.
 
-- 작업 시작 전에 문서로 현재 맥락을 빠르게 파악한다.
-- 코드만 바꾸고 문서를 방치하지 않는다.
-- 문서마다 역할을 분명히 구분해 중복과 충돌을 줄인다.
-- 기능이 변할 때 관련 문서를 함께 갱신해 에이전트가 길을 잃지 않게 한다.
+- 작업 시작 전에 최소한의 문서만 읽고 빠르게 방향을 잡는다.
+- 어떤 작업이 어떤 source of truth 문서를 읽어야 하는지 라우팅한다.
+- 구조, 정책, 계약이 바뀔 때 어떤 문서를 함께 갱신해야 하는지 놓치지 않게 한다.
 
-## 2. 기본 작업 원칙
+상세 정책은 이 문서에 길게 반복하지 않고, 필요한 문서로 바로 라우팅한다.
 
-- 이 프로젝트는 `docs/`를 작업 진입점으로 사용한다.
-- 작업 전에 필요한 문서를 먼저 읽고, 추측보다 문서와 코드 근거를 우선한다.
-- 작업을 받으면 먼저 `orchestrator` 관점에서 팀빌딩을 수행하고, 서브에이전트를 포함한 멀티 에이전트 분업을 기본값으로 사용한다.
-- 변경이 구조, 흐름, 정책, 권한, 계약에 영향을 주면 관련 문서를 같은 작업 안에서 함께 갱신한다.
-- 브랜치 운영은 `feature/* -> dev -> master` 흐름을 기본 협업 원칙으로 삼는다.
-- Codex 컨텍스트가 길어지거나 방향성이 흔들릴 수 있다고 느껴지면 즉시 `docs/` 문서를 다시 읽고 기준을 재정렬한다.
-- 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신하고 결과를 확인한다.
-- 각 스프린트의 마지막에는 다음 스프린트에 추가되어야 할 작업을 백로그나 스프린트 문서에 반영한다.
-- MVP 검증 단계에는 단발성 확인만이 아니라 `aging test`를 포함해 시간 경과 후 안정성도 확인한다.
-- 문서와 코드가 다르면 실제 코드와 최신 결정 내용을 기준으로 확인한 뒤 문서를 수정한다.
-- 새로운 규칙을 만들었으면 메모로 흩어두지 말고 적절한 문서에 반영한다.
-- 현재 없는 문서를 전제로 판단하지 말고, 실제 존재하는 문서를 기준으로 작업한다.
+## 2. 꼭 지킬 기본 원칙
 
-## 3. 작업 시작 전 읽기 규칙
+- 이 프로젝트의 진입점은 항상 `docs/`다.
+- 기본값은 `전체 문서 재독`이 아니라 `최소 읽기 팩 + 필요한 문서만 추가 읽기`다.
+- 의미 있는 작업은 먼저 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할로 팀빌딩한다.
+- 구조, 흐름, 정책, 권한, 계약이 바뀌면 관련 문서를 같은 작업 안에서 함께 갱신한다.
+- 문서와 코드가 다르면 실제 코드와 최신 결정을 기준으로 문서를 수정한다.
+- 브랜치 운영 기본값은 `feature/* -> dev -> master`다.
 
-현재 저장소 기준 기본 시작 순서는 아래와 같다.
+## 3. 최소 읽기 팩
+
+작업 시작 시 기본으로 먼저 읽는 문서는 아래 세 개다.
 
 1. `AGENTS.md`
-2. `docs/DOCS_READING_ORDER.md`
-3. `docs/README.md`
-4. `docs/product-plan.md`
-5. `docs/technical-design.md`
-6. `docs/frontend-design-benchmarks.md`
-7. `docs/agent-team-topology.md`
-8. `docs/mvp-backlog.md`
-9. `docs/sprint-plan.md`
-10. 현재 스프린트 체크리스트 또는 최신 `WORKLOG`
+2. `docs/README.md`
+3. `docs/DOCS_READING_ORDER.md`
 
-각 문서의 역할은 다음과 같다.
+그 다음에는 아래 라우팅 표를 보고 필요한 문서만 추가로 읽는다.
 
-- `AGENTS.md`
-  - 저장소 운영 규칙, 문서 동기화 원칙, 작업 절차를 안내한다.
-- `docs/DOCS_READING_ORDER.md`
-  - 길을 잃었을 때 어떤 문서를 어떤 순서로 다시 읽을지 안내한다.
-- `docs/README.md`
-  - 현재 문서 목록과 핵심 결정 사항을 빠르게 확인하게 해준다.
-- `docs/product-plan.md`
-  - 제품 비전, 핵심 기능, 멀티 에이전트 구조, 실행 모드, 기술 방향을 설명한다.
-- `docs/technical-design.md`
-  - 앱 구조, 런타임 책임, 크로스 플랫폼 전략, 인증 구조, 구현 순서를 설명한다.
-- `docs/frontend-design-benchmarks.md`
-  - 프론트엔드가 참고해야 할 UI 레퍼런스와 금지 패턴을 설명한다.
-- `docs/agent-team-topology.md`
-  - 오케스트레이터, 프론트엔드, 백엔드, QA, 테스터 역할 분리와 서브에이전트 handoff 기준을 설명한다.
-- `docs/mvp-backlog.md`
-  - MVP 범위, 우선순위, 완료조건, 제외 범위를 정의한다.
-- `docs/sprint-plan.md`
-  - MVP 백로그를 실제 스프린트 단위 실행 계획으로 변환한다.
+## 4. 문서 라우팅
 
-짧게 확인해야 할 때도 최소한 아래는 먼저 읽는다.
-
-1. `AGENTS.md`
-2. `docs/DOCS_READING_ORDER.md`
-3. `docs/product-plan.md`
-4. `docs/technical-design.md`
-5. `docs/frontend-design-benchmarks.md`
-6. `docs/agent-team-topology.md`
-7. `docs/mvp-backlog.md`
-8. `docs/sprint-plan.md`
-
-또한 컨텍스트가 길어질 때마다 아래를 반복한다.
-
-1. `docs/DOCS_READING_ORDER.md`
-2. 현재 스프린트에 해당하는 체크리스트 또는 계획 문서
-3. 관련 구현 문서와 최신 작업 로그
-
-관련 문서를 다시 읽은 뒤에는 바로 수정에 들어가지 말고, 먼저 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할로 작업을 어떻게 나눌지 정한다.
-
-## 4. 현재 문서별 역할
-
-- `AGENTS.md`
-  - 저장소 운영 원칙과 에이전트 행동 규칙
-- `docs/DOCS_READING_ORDER.md`
-  - 문서 복귀 순서 기준 문서
-- `docs/README.md`
-  - 문서 인덱스와 현재 핵심 결정 요약
-- `docs/product-plan.md`
-  - 제품 기획의 기준 문서
-- `docs/technical-design.md`
-  - 구현 구조의 기준 문서
-- `docs/frontend-design-benchmarks.md`
-  - 프론트엔드 디자인 레퍼런스와 UX 품질 기준 문서
-- `docs/agent-team-topology.md`
-  - 멀티 에이전트 역할 분리, 팀빌딩 기본값, 작업 handoff 기준 문서
-- `docs/mvp-backlog.md`
-  - MVP 실행 범위의 기준 문서
-- `docs/sprint-plan.md`
-  - 스프린트 실행 순서의 기준 문서
-- `docs/release-build-ci.md`
-  - 빌드, 번들, GitHub Release, CI/CD 기준 문서
-- `docs/WORKLOG_TEMPLATE.md`
-  - 스프린트 작업 기록 템플릿
-
-향후 구현이 더 커지면 아래 문서들을 추가하는 것을 권장한다.
-
-- `docs/repository-map.md`
-  - 디렉토리 구조와 주요 진입점
-- `docs/architecture.md`
-  - 시스템 경계와 모듈 책임
-- `docs/message-flow.md`
-  - 요청, 이벤트, 작업 orchestration 흐름
-- `docs/development-guide.md`
-  - 구현 규칙과 개발 패턴
-
-## 5. 문서 동기화 규칙
-
-아래와 같은 변경이 생기면 문서도 함께 갱신해야 한다.
-
-- 브랜치 전략 또는 협업 워크플로우 변경
+- 제품 비전, 범위, 핵심 가치, provider 정책, 멀티 에이전트 제품 방향
   - `docs/product-plan.md`
+- 아키텍처, 런타임 책임, 플랫폼 전략, auth 구조, contract 변경
   - `docs/technical-design.md`
+- 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff, `QA`와 `tester` 분리
+  - `docs/agent-team-topology.md`
+- 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 산출물과 종료 기준
+  - `docs/sprint-plan.md`
+- MVP 범위, 우선순위, 완료조건, 제외 범위
+  - `docs/mvp-backlog.md`
+- UI 레퍼런스와 프론트엔드 품질 기준
+  - `docs/frontend-design-benchmarks.md`
+- 릴리스, 빌드, 배포, CI/CD
+  - `docs/release-build-ci.md`
+- 최신 실행 맥락, 체크리스트, 작업 기록
+  - 현재 스프린트 체크리스트 또는 최신 `WORKLOG`
+
+## 5. 문서 동기화 라우팅
+
+아래 변경이 생기면 함께 갱신할 문서는 다음과 같다.
+
 - 제품 비전, 범위, 에이전트 정책, 실행 모드 변경
   - `docs/product-plan.md`
+- 기술 스택, 런타임 구조, PTY 설계, 플랫폼 전략, 상태 계약 변경
+  - `docs/technical-design.md`
+- 멀티 에이전트 역할 분리, 팀빌딩 기본값, handoff 규칙 변경
+  - `docs/agent-team-topology.md`
+  - `docs/README.md`
+  - `docs/DOCS_READING_ORDER.md`
+  - 필요 시 `docs/sprint-plan.md`
 - MVP 범위, 우선순위, 완료조건 변경
   - `docs/mvp-backlog.md`
   - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
 - 스프린트 순서, 산출물, 완료조건 변경
   - `docs/sprint-plan.md`
   - `docs/mvp-backlog.md`
-  - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
-- 기술 스택, 런타임 구조, PTY 설계, 상태 모델 확정 또는 변경
-  - `docs/product-plan.md`
-  - `docs/technical-design.md`
+- 릴리스, 빌드, 배포, CI/CD 변경
+  - `docs/release-build-ci.md`
+  - 필요 시 `docs/README.md`, `docs/technical-design.md`
 - 새로운 문서 추가 또는 문서 역할 변경
   - `docs/README.md`
   - 필요 시 `AGENTS.md`
-- 에이전트 역할 분리 또는 멀티 에이전트 운영 모델 변경
-  - `AGENTS.md`
-  - `docs/agent-team-topology.md`
-  - `docs/product-plan.md`
-  - `docs/technical-design.md`
-  - `docs/README.md`
-  - `docs/DOCS_READING_ORDER.md`
-  - 필요 시 `docs/sprint-plan.md`
-- 체크리스트나 작업 로그 기준 변경
-  - 해당 스프린트 문서
-  - `docs/WORKLOG_TEMPLATE.md`
-  - 필요 시 `docs/sprint-plan.md`
-- 릴리스 빌드, 배포, CI/CD 흐름 변경
-  - `docs/release-build-ci.md`
-  - 필요 시 `docs/README.md`, `docs/technical-design.md`
 
-문서 갱신이 필요한데 이번 작업에서 반영하지 못했다면 어떤 문서가 비동기 상태인지 명시적으로 남긴다.
+이번 작업에서 못 고친 문서가 있으면 비동기 상태를 명시적으로 남긴다.
 
-## 6. 한영 동기화 규칙
+## 6. 멀티에이전트 기본값
+
+- 기본 역할은 `orchestrator + frontend + backend + QA + tester`다.
+- `orchestrator`는 역할 분리, 파일 소유권, handoff, 최종 통합을 맡는다.
+- `QA`는 완료조건, 품질 게이트, 회귀 체크리스트를 맡는다.
+- `tester`는 E2E, 재현 절차, aging 관점 검증을 맡는다.
+- 같은 파일을 여러 역할이 동시에 수정하지 않도록 먼저 분해한다.
+- 상세 규칙은 `docs/agent-team-topology.md`를 기준으로 따른다.
+
+## 7. 작업 순서
+
+1. 최소 읽기 팩을 읽는다.
+2. 라우팅 표를 보고 필요한 문서만 추가로 읽는다.
+3. `orchestrator` 기준으로 역할과 파일 소유권을 먼저 정한다.
+4. 현재 코드와 문서 기준선이 맞는지 빠르게 확인한다.
+5. 변경 대상을 수정한다.
+6. 영향받는 문서를 함께 갱신한다.
+7. 테스트 또는 검증을 수행한다.
+8. 결과와 남은 리스크를 짧게 정리한다.
+
+## 8. 한영 동기화 원칙
 
 `AGENTS.md`는 한국어 단일 문서로 운영한다.
 
-다만 핵심 제품 문서와 기술 문서는 한영 동기화를 유지한다.
+다만 아래 핵심 문서는 한국어와 영어를 함께 유지한다.
 
 - `docs/product-plan.md`
 - `docs/technical-design.md`
 - `docs/mvp-backlog.md`
 - `docs/sprint-plan.md`
 - `docs/agent-team-topology.md`
-- 필요 시 다른 source of truth 문서
 
-원칙은 다음과 같다.
+## 9. 현재 저장소에서 특히 중요한 점
 
-- 한국어는 사람이 읽기 좋은 기준 문서 역할을 한다.
-- 영어는 에이전트가 안정적으로 참조하는 기준 문서 역할을 한다.
-- 어느 한 언어만 먼저 수정된 상태로 오래 두지 않는다.
-- 느슨한 번역을 피하고 두 언어가 같은 정책과 결정을 담도록 유지한다.
-
-## 7. 작업 절차
-
-가능하면 아래 순서를 따른다.
-
-1. 관련 문서를 먼저 읽는다.
-2. `orchestrator` 기준으로 역할을 나누고 서브에이전트 편성을 먼저 정한다.
-3. 현재 코드와 문서가 얼마나 맞는지 빠르게 확인한다.
-4. 변경 대상 코드를 수정한다.
-5. 영향받는 문서를 함께 갱신한다.
-6. 테스트 또는 검증을 수행한다.
-7. 결과와 남은 리스크를 짧게 정리한다.
-
-문서 갱신은 선택 사항이 아니라 구조나 동작이 바뀐 경우 작업의 일부다.
-
-## 8. 에이전트 행동 규칙
-
-이 저장소에서 작업하는 에이전트는 다음을 따른다.
-
-- 작업 전에 관련 문서를 먼저 읽는다.
-- 문서만 믿지 말고 실제 코드도 함께 확인한다.
-- 코드 변경이 문서 성격 중 하나에 영향을 주면 해당 문서를 업데이트한다.
-- 어떤 문서를 갱신해야 할지 애매하면 `docs/README.md`와 이 파일의 문서 역할 정의를 기준으로 판단한다.
-- 문서 간 충돌이 보이면 조용히 지나가지 말고 코드와 최신 결정 근거를 바탕으로 정리한다.
-- 큰 변경을 했으면 필요 시 새 문서를 추가하거나 문서 구조 개편을 제안한다.
-- 작업 크기와 관계없이 먼저 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할로 팀빌딩을 시도한다.
-- 실제로 역할을 줄일 때도 누가 `QA` 판단을 하고 누가 `tester` 관점 검증을 맡는지 명시한다.
-- 멀티 에이전트 작업은 기본적으로 서브에이전트를 구성해 병렬로 진행하고, 파일 소유권과 handoff는 `orchestrator`가 먼저 정리한다.
-- `QA`는 완료조건, 품질 게이트, 회귀 체크리스트를 관리하고 `tester`는 E2E, 재현 절차, aging 관점 검증을 담당한다.
-- 프론트엔드 작업은 `VS Code`, `conductor`, `cmux`를 참고하고 카드형 대시보드 남발을 피한다.
-
-## 9. 새 문서 추가 규칙
-
-아래 중 하나에 해당하면 새 문서 추가를 고려한다.
-
-- 같은 설명을 반복해서 여러 번 하게 될 때
-- 특정 기능 영역이 커져서 기존 문서 하나에 담기 어려울 때
-- 구조 설명이나 흐름 설명이 반복적으로 필요할 때
-- 구현 규칙과 설계 규칙을 분리할 필요가 생길 때
-
-새 문서를 추가했다면 함께 수행한다.
-
-1. `docs/README.md`에 링크를 추가한다.
-2. 필요하면 `AGENTS.md`의 읽기 순서와 문서 역할을 갱신한다.
-3. 기존 문서의 중복 설명은 제거하거나 링크로 대체한다.
-
-## 10. 현재 저장소에서 특히 중요한 점
-
-- 이 저장소는 아직 초기 단계이므로 문서가 곧 구조다.
+- 이 저장소는 아직 초기 단계라 문서가 곧 구조다.
 - `docs/`는 참고 자료가 아니라 실제 작업 진입점이다.
-- 현재는 `docs/product-plan.md`, `docs/technical-design.md`, `docs/sprint-plan.md`가 가장 중요한 기준 문서다.
-- 기본 개발 운영 모델은 팀빌딩된 멀티 에이전트 구조이며, `orchestrator + frontend + backend + QA + tester` 분업을 우선 사용한다.
-- 브랜치 전략은 `feature/* -> dev -> master` 흐름을 유지한다.
-- 앞으로 기술 설계와 코드 구조가 더 생기면 문서 체계도 함께 확장해야 한다.
-- 문서 품질은 개발 속도와 에이전트 정확도에 직접 영향을 준다.
+- 항상 `AGENTS.md` 하나에 모든 정책을 밀어넣지 말고, 필요한 문서로 라우팅하는 구조를 유지한다.
+- 현재 가장 자주 기준이 되는 source of truth는 `docs/product-plan.md`, `docs/technical-design.md`, `docs/sprint-plan.md`다.

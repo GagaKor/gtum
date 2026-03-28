@@ -24,6 +24,22 @@ Its goals are:
 - make it explicit what each role reads, edits, and validates
 - keep code, docs, and tests moving together through clear handoff rules
 
+## 언제 읽는 문서인가 / When To Read This Document
+
+### 한국어
+
+아래 상황이면 이 문서를 읽는다.
+
+- 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff 규칙을 정해야 할 때
+- `QA`와 `tester` 책임을 어디서 나눌지, 어떤 역할을 축소할지 판단해야 할 때
+
+### English
+
+Read this document when:
+
+- you need to define role split, sub-agent team formation, file ownership, or handoff rules
+- you need to decide how `QA` and `tester` responsibilities are separated or when roles can be collapsed
+
 ## 기본 팀 편성 / Default Team Shape
 
 ### 한국어

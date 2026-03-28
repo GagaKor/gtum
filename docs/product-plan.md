@@ -30,6 +30,22 @@ The operating rules are:
 
 In other words, the Korean and English sections are not treated as a source-and-translation pair. They are parallel canonical views that must stay synchronized.
 
+## 언제 읽는 문서인가 / When To Read This Document
+
+### 한국어
+
+아래 상황이면 이 문서를 읽는다.
+
+- 제품 비전, 범위, 핵심 가치, 사용자 문제 정의를 확인해야 할 때
+- provider 정책, 실행 모드, 멀티 에이전트 제품 방향 같은 상위 정책을 바꿀 때
+
+### English
+
+Read this document when:
+
+- you need to confirm product vision, scope, core value, or user problem framing
+- you are changing top-level policies such as provider direction, execution modes, or multi-agent product behavior
+
 ## 개요 / Overview
 
 ### 한국어

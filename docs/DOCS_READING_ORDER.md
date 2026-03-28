@@ -4,200 +4,206 @@
 
 ### 한국어
 
-이 문서는 `gtum`에서 작업하다가 방향이 흐려질 때 어떤 문서를 어떤 순서로 다시 읽어야 하는지 안내하는 빠른 복귀 문서다.
+이 문서는 `gtum`에서 작업할 때 필요한 문서만 빠르게 고르기 위한 라우팅 문서다.
+
+목표는 세 가지다.
+
+- 작업 시작 시 전체 문서를 다 읽지 않게 한다.
+- 현재 문제 유형에 맞는 source of truth로 바로 이동하게 한다.
+- 컨텍스트가 길어졌을 때 전체 재독이 아니라 필요한 부분만 다시 읽게 한다.
 
 ### English
 
-This document is a fast recovery guide for deciding which documents to reread, and in what order, when work on `gtum` starts losing direction.
+This document is a routing guide for choosing only the docs needed for work in `gtum`.
 
-## 기본 복귀 순서 / Default Recovery Order
+Its goals are:
+
+- avoid rereading the entire doc set at task start
+- route quickly to the right source of truth for the current problem
+- recover context by rereading only what is relevant, not everything
+
+## 빠른 시작 라우트 / Quick Start Route
 
 ### 한국어
 
-길을 잃었다고 느껴지면 아래 순서로 다시 읽는다.
+새 작업을 시작할 때는 아래까지만 먼저 읽는다.
 
 1. `AGENTS.md`
 2. `docs/README.md`
-3. `docs/product-plan.md`
-4. `docs/technical-design.md`
-5. `docs/frontend-design-benchmarks.md`
-6. `docs/agent-team-topology.md`
-7. `docs/mvp-backlog.md`
-8. `docs/sprint-plan.md`
-9. `docs/release-build-ci.md`
-10. 현재 스프린트 체크리스트 또는 작업 로그
+3. 현재 작업 유형에 맞는 문서만 아래 라우트에서 고른다.
+
+문서를 고른 뒤에는 바로 수정하지 말고, 먼저 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 기준으로 역할을 나누고 파일 소유권과 handoff를 정한다.
 
 ### English
 
-If you feel lost, reread documents in this order:
+When starting a new task, read only this first:
 
 1. `AGENTS.md`
 2. `docs/README.md`
-3. `docs/product-plan.md`
-4. `docs/technical-design.md`
-5. `docs/frontend-design-benchmarks.md`
-6. `docs/agent-team-topology.md`
-7. `docs/mvp-backlog.md`
-8. `docs/sprint-plan.md`
-9. `docs/release-build-ci.md`
-10. the current sprint checklist or worklog
+3. only the task-specific docs selected from the routes below
 
-## 작업 시작 전 팀빌딩 규칙 / Team Formation Before Execution
+After choosing the docs, do not edit immediately. First split the work into `orchestrator`, `frontend`, `backend`, `QA`, and `tester`, then lock file ownership and handoff expectations.
+
+## 작업별 라우팅 / Task-Based Routing
 
 ### 한국어
 
-의미 있는 구현 작업이나 source of truth 문서 변경을 시작하기 전에는 아래 순서를 먼저 수행한다.
+### 제품 방향, 범위, 정책이 문제일 때
 
-1. `AGENTS.md`
-2. `docs/agent-team-topology.md`
-3. `docs/sprint-plan.md`
+1. `docs/product-plan.md`
+2. `docs/mvp-backlog.md`
 
-그 다음 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할로 먼저 팀을 나누고 파일 소유권과 handoff를 정한다.
+### 런타임 구조, provider/auth, contract가 문제일 때
+
+1. `docs/technical-design.md`
+2. 필요 시 `docs/product-plan.md`
+
+### 프론트엔드 UI/UX가 문제일 때
+
+1. `docs/frontend-design-benchmarks.md`
+2. 필요 시 `docs/ui-ux-wireframes.md`
+3. 필요 시 `docs/technical-design.md`
+
+### 멀티 에이전트 역할 분리와 handoff가 문제일 때
+
+1. `docs/agent-team-topology.md`
+2. `docs/sprint-plan.md`
+
+### MVP 범위, 완료조건, 우선순위가 문제일 때
+
+1. `docs/mvp-backlog.md`
+2. `docs/sprint-plan.md`
+
+### 지금 무엇을 먼저 해야 할지 문제일 때
+
+1. `docs/sprint-plan.md`
+2. 현재 스프린트 체크리스트
+3. 최신 `WORKLOG`
+
+### 릴리스, 빌드, CI가 문제일 때
+
+1. `docs/release-build-ci.md`
+2. 필요 시 `docs/technical-design.md`
+
+### 최신 상태와 직전 맥락이 필요할 때
+
+1. 최신 `WORKLOG`
+2. 현재 스프린트 체크리스트
+3. `docs/MVP_VALIDATION_NOTES.md`
 
 ### English
 
-Before starting non-trivial implementation work or source-of-truth documentation changes, do this first:
+### When the issue is product direction, scope, or policy
 
-1. `AGENTS.md`
-2. `docs/agent-team-topology.md`
-3. `docs/sprint-plan.md`
+1. `docs/product-plan.md`
+2. `docs/mvp-backlog.md`
 
-Then split the work into `orchestrator`, `frontend`, `backend`, `QA`, and `tester` roles first, and lock file ownership plus handoff expectations before editing.
+### When the issue is runtime structure, provider/auth, or contracts
 
-## 컨텍스트 초과 시 규칙 / Rule For Context Overflow
+1. `docs/technical-design.md`
+2. `docs/product-plan.md` if needed
+
+### When the issue is frontend UI/UX
+
+1. `docs/frontend-design-benchmarks.md`
+2. `docs/ui-ux-wireframes.md` if needed
+3. `docs/technical-design.md` if needed
+
+### When the issue is multi-agent ownership or handoff
+
+1. `docs/agent-team-topology.md`
+2. `docs/sprint-plan.md`
+
+### When the issue is MVP scope, acceptance, or priority
+
+1. `docs/mvp-backlog.md`
+2. `docs/sprint-plan.md`
+
+### When the issue is what to do next
+
+1. `docs/sprint-plan.md`
+2. the current sprint checklist
+3. the latest `WORKLOG`
+
+### When the issue is release, build, or CI
+
+1. `docs/release-build-ci.md`
+2. `docs/technical-design.md` if needed
+
+### When you need the latest state and recent context
+
+1. the latest `WORKLOG`
+2. the current sprint checklist
+3. `docs/MVP_VALIDATION_NOTES.md`
+
+## 컨텍스트 초과 시 복구 규칙 / Context Overflow Recovery
 
 ### 한국어
 
-Codex 컨텍스트가 길어져서 앞선 판단 근거를 잊을 수 있다고 느껴지면, 작업을 밀어붙이지 말고 아래 순서로 다시 읽는다.
+컨텍스트가 길어져서 앞선 판단 근거가 흐려지면 아래 순서로 복구한다.
 
 1. `docs/DOCS_READING_ORDER.md`
-2. `docs/product-plan.md`
-3. `docs/technical-design.md`
-4. `docs/frontend-design-benchmarks.md`
+2. `docs/README.md`
+3. 현재 작업 유형에 맞는 source of truth 1개 또는 2개
+4. 현재 스프린트 문서 또는 최신 `WORKLOG`
+
+그래도 방향이 안 잡히면 그때만 아래 `전체 복구 순서`로 넓힌다.
+
+### English
+
+If context grows long enough that earlier reasoning starts to drift, recover in this order:
+
+1. `docs/DOCS_READING_ORDER.md`
+2. `docs/README.md`
+3. one or two source-of-truth docs that match the current task type
+4. the current sprint doc or latest `WORKLOG`
+
+Only if direction is still unclear should you expand into the full recovery order below.
+
+## 전체 복구 순서 / Full Recovery Order
+
+### 한국어
+
+아직도 방향이 안 잡힐 때만 아래 순서로 넓게 다시 읽는다.
+
+1. `AGENTS.md`
+2. `docs/README.md`
+3. `docs/product-plan.md`
+4. `docs/technical-design.md`
 5. `docs/agent-team-topology.md`
 6. `docs/mvp-backlog.md`
-7. 현재 스프린트 문서
+7. `docs/sprint-plan.md`
 8. 최신 `WORKLOG`
 
-이 규칙의 목적은 기억에 의존하지 않고 문서 기준으로 방향을 복구하는 것이다.
-
 ### English
 
-If Codex context grows long enough that earlier reasoning may drift or be forgotten, do not push forward from memory alone. Reread in this order:
+Only when direction is still unclear should you widen out and reread in this order:
 
-1. `docs/DOCS_READING_ORDER.md`
-2. `docs/product-plan.md`
-3. `docs/technical-design.md`
-4. `docs/frontend-design-benchmarks.md`
+1. `AGENTS.md`
+2. `docs/README.md`
+3. `docs/product-plan.md`
+4. `docs/technical-design.md`
 5. `docs/agent-team-topology.md`
 6. `docs/mvp-backlog.md`
-7. the current sprint document
+7. `docs/sprint-plan.md`
 8. the latest `WORKLOG`
-
-The purpose of this rule is to restore direction from documentation rather than memory.
-
-## 상황별 읽기 순서 / Situation-Based Reading Order
-
-### 한국어
-
-### 제품 방향이 헷갈릴 때
-
-1. `docs/product-plan.md`
-2. `docs/mvp-backlog.md`
-
-### 구현 구조가 헷갈릴 때
-
-1. `docs/technical-design.md`
-2. `docs/frontend-design-benchmarks.md`
-3. `docs/agent-team-topology.md`
-4. `docs/sprint-plan.md`
-
-### 역할 분담이 헷갈릴 때
-
-1. `docs/agent-team-topology.md`
-2. `AGENTS.md`
-3. `docs/sprint-plan.md`
-4. `docs/frontend-design-benchmarks.md`
-5. `docs/technical-design.md`
-
-### 지금 무엇부터 만들어야 할지 헷갈릴 때
-
-1. `docs/mvp-backlog.md`
-2. `docs/sprint-plan.md`
-3. `docs/sprint-0-checklist.md`
-
-### 문서가 서로 충돌해 보일 때
-
-1. `AGENTS.md`
-2. `docs/product-plan.md`
-3. `docs/technical-design.md`
-4. 관련 구현 파일
-
-### 릴리스/빌드/CI가 헷갈릴 때
-
-1. `docs/release-build-ci.md`
-2. `docs/technical-design.md`
-3. `docs/README.md`
-
-### English
-
-### When product direction feels unclear
-
-1. `docs/product-plan.md`
-2. `docs/mvp-backlog.md`
-
-### When implementation structure feels unclear
-
-1. `docs/technical-design.md`
-2. `docs/frontend-design-benchmarks.md`
-3. `docs/agent-team-topology.md`
-4. `docs/sprint-plan.md`
-
-### When role ownership feels unclear
-
-1. `docs/agent-team-topology.md`
-2. `AGENTS.md`
-3. `docs/sprint-plan.md`
-4. `docs/frontend-design-benchmarks.md`
-5. `docs/technical-design.md`
-
-### When it is unclear what to build next
-
-1. `docs/mvp-backlog.md`
-2. `docs/sprint-plan.md`
-3. `docs/sprint-0-checklist.md`
-
-### When documents appear to conflict
-
-1. `AGENTS.md`
-2. `docs/product-plan.md`
-3. `docs/technical-design.md`
-4. related implementation files
-
-### When release, build, or CI flow feels unclear
-
-1. `docs/release-build-ci.md`
-2. `docs/technical-design.md`
-3. `docs/README.md`
 
 ## 짧은 복귀 질문 / Quick Recovery Questions
 
 ### 한국어
 
-문서를 다시 읽기 전에 아래 질문을 스스로 확인하면 좋다.
+문서를 다시 읽기 전에 아래 질문을 확인한다.
 
-- 지금 내가 풀려는 문제가 제품 문제인가, 구현 문제인가, 실행 순서 문제인가
-- 지금 이 작업을 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 중 어떤 역할로 나눌 것인가
-- 지금 작업이 MVP에 직접 들어가는가
-- 지금 작업이 활성 터미널 로그 활용이라는 핵심 가치를 강화하는가
-- 지금 작업이 어느 스프린트에 속하는가
+- 지금 문제는 제품, 구현, 우선순위, 릴리스 중 무엇인가
+- 지금 필요한 source of truth는 1개인가 2개인가
+- 이 작업은 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 중 어떻게 나눌 것인가
+- 지금 당장 최신 `WORKLOG`나 체크리스트도 같이 봐야 하는가
 
 ### English
 
-Before rereading, it helps to ask:
+Before rereading, ask:
 
-- is the current confusion about product direction, implementation, or execution order
+- is the issue about product, implementation, priority, or release
+- do I need one source of truth, or two
 - how should this task be split across `orchestrator`, `frontend`, `backend`, `QA`, and `tester`
-- is this task directly inside the MVP scope
-- does this task strengthen the core value of using active terminal logs
-- which sprint does this task belong to
+- do I also need the latest `WORKLOG` or checklist right now

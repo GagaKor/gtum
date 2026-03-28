@@ -22,6 +22,22 @@ Its goals are:
 - make the useful lessons from `VS Code`, `conductor`, and `cmux` explicit
 - keep design quality and UX expectations documented before implementation
 
+## 언제 읽는 문서인가 / When To Read This Document
+
+### 한국어
+
+아래 상황이면 이 문서를 읽는다.
+
+- UI 구조, 정보 계층, 인터랙션 패턴, 금지 패턴을 검토하거나 수정해야 할 때
+- 프론트엔드 개편이 `VS Code`, `conductor`, `cmux` 기준과 맞는지 확인해야 할 때
+
+### English
+
+Read this document when:
+
+- you need to review or change UI structure, information hierarchy, interaction patterns, or anti-patterns
+- you need to check whether a frontend redesign still aligns with `VS Code`, `conductor`, and `cmux`
+
 ## 필수 레퍼런스 / Required References
 
 ### 한국어
