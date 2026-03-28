@@ -12,7 +12,9 @@ use runtime::auth::{
     AgentAuthManager, AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProvider,
     CompleteAgentLoginRequest,
 };
-use runtime::codex::{AgentSuggestionResponse, RequestAgentSuggestionsRequest};
+use runtime::codex::{
+    AgentProviderDiagnostics, AgentSuggestionResponse, RequestAgentSuggestionsRequest,
+};
 use runtime::filesystem::ProjectOverview;
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
@@ -156,6 +158,14 @@ fn request_agent_suggestions(
 }
 
 #[tauri::command]
+fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
+    match provider {
+        AgentProvider::Codex => runtime::codex::read_codex_diagnostics(),
+        AgentProvider::Claude => runtime::codex::deferred_provider_diagnostics(provider),
+    }
+}
+
+#[tauri::command]
 fn disconnect_agent_provider(
     state: tauri::State<'_, AgentAuthManager>,
     provider: AgentProvider,
@@ -276,6 +286,7 @@ pub fn run() {
             begin_agent_login,
             complete_agent_login,
             request_agent_suggestions,
+            read_agent_provider_diagnostics,
             disconnect_agent_provider,
             agent_auth_runtime_snapshot,
             read_workspace_runtime_snapshot,

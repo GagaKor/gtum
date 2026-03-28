@@ -16,7 +16,7 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 
 - 프로젝트 열기, 파일 트리, Git 상태
 - 멀티 탭 터미널과 활성 로그 캡처
-- provider auth 성공/실패 mock callback
+- provider 연결 preview/deferred 상태와 diagnostics
 - agent request -> suggestion -> approval 흐름
 - 반복 실행과 reload를 포함한 초기 aging test
 
@@ -24,7 +24,7 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 
 - project open, file tree, and Git status
 - multi-tab terminal and active-log capture
-- provider auth success/failure mock callbacks
+- preview/deferred provider connection states and diagnostics
 - agent request -> suggestion -> approval flow
 - initial aging test with repetition and reload
 
@@ -61,10 +61,11 @@ This does not replace long-duration manual aging validation, but it serves as th
 ### 한국어
 
 - `Ubuntu`
-  - 현재 개발 및 주요 검증 기준 플랫폼
+  - 현재 주요 개발 플랫폼
 - `Windows`
-  - 셸 후보 추상화와 command submission line 분기만 적용됨
-  - 실기 검증은 아직 필요
+  - 첫 실사용 기준 플랫폼
+  - 셸 후보 추상화와 command submission line 분기까지 반영됨
+  - real-device 검증은 아직 필요
 - `macOS`
   - 비-Windows 셸 후보 추상화 범위에 포함됨
   - 실기 검증은 아직 필요
@@ -72,8 +73,9 @@ This does not replace long-duration manual aging validation, but it serves as th
 ### English
 
 - `Ubuntu`
-  - current primary development and validation platform
+  - current primary development platform
 - `Windows`
+  - first daily-use baseline platform
   - shell-candidate abstraction and command-submission newline handling are in place
   - real-device validation is still required
 - `macOS`
@@ -86,7 +88,7 @@ This does not replace long-duration manual aging validation, but it serves as th
 
 현재 기준으로 `gtum`은 문서에 정의한 MVP 핵심 흐름을 충족한다. 다만 아래는 `Post-MVP` 또는 후속 안정화 과제로 남는다.
 
-- 실제 official OAuth 연동
+- `Codex` real-device connect-time preflight 안정화
 - 실제 Windows/macOS 실기 검증
 - 장시간 수동 aging test 확대
 - Telegram 외부 채널 연동
@@ -95,7 +97,7 @@ This does not replace long-duration manual aging validation, but it serves as th
 
 At the current stage, `gtum` satisfies the core MVP flows defined in the planning documents. The following remain post-MVP or later stabilization work:
 
-- real official OAuth integration
+- real-device Codex connect-time preflight stabilization
 - real-device Windows/macOS validation
 - expanded long-running manual aging validation
 - Telegram external-channel integration

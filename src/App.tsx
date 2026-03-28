@@ -6,6 +6,7 @@ import {
   completeAgentLogin,
   disconnectAgentProvider,
   type AgentConnectionSnapshot,
+  type AgentProviderDiagnostics as RuntimeProviderDiagnostics,
   type AgentProviderId,
   type AgentSuggestion as RuntimeAgentSuggestion,
   appendMockTerminalLine,
@@ -18,6 +19,7 @@ import {
   type FileTreeNode,
   type ProjectOverview,
   readProjectOverview,
+  readAgentProviderDiagnostics,
   readTelegramRuntimeSnapshot,
   readTerminalSessionLogs,
   type RuntimeInfo,
@@ -80,6 +82,12 @@ type ProviderUiContract = {
   primaryActionLabel: string
 }
 
+const formatProviderSetupStateLabel = (state: RuntimeProviderDiagnostics['setupState']) =>
+  state === 'ready' ? 'Ready' : state === 'deferred' ? 'Deferred' : 'Needs Setup'
+
+const formatProviderSetupStateBadgeClass = (state: RuntimeProviderDiagnostics['setupState']) =>
+  state === 'ready' ? 'connected' : state === 'deferred' ? 'pending' : 'error'
+
 const UI_STATE_KEY = 'gtum.app-ui-state'
 const TASK_HISTORY_LIMIT = 12
 
@@ -135,7 +143,7 @@ const formatProviderHint = (
 
   if (connection.status === 'connected') {
     return kind === 'real'
-      ? 'Real Codex provider access is ready for suggestion requests.'
+      ? 'Real Codex provider access passed the desktop preflight check and is ready for suggestion requests.'
       : `${formatProviderUxKindLabel(kind)} provider session is connected for workspace testing.`
   }
 
@@ -146,7 +154,7 @@ const formatProviderHint = (
   }
 
   return kind === 'real'
-    ? 'Connect this provider to enable live Codex suggestions from terminal context.'
+    ? 'Connect this provider to validate desktop Codex access before the first suggestion request.'
     : `${formatProviderUxKindLabel(kind)} provider flow remains secondary while the first real path focuses on Codex.`
 }
 
@@ -266,6 +274,7 @@ function App() {
   const [terminalLogs, setTerminalLogs] = useState<TerminalSessionLogs | null>(null)
   const [terminalError, setTerminalError] = useState<string | null>(null)
   const [agentConnections, setAgentConnections] = useState<AgentConnectionSnapshot[]>([])
+  const [providerDiagnostics, setProviderDiagnostics] = useState<RuntimeProviderDiagnostics[]>([])
   const [authError, setAuthError] = useState<string | null>(null)
   const [telegramSnapshot, setTelegramSnapshot] = useState<TelegramRuntimeSnapshot | null>(null)
   const [telegramError, setTelegramError] = useState<string | null>(null)
@@ -322,6 +331,17 @@ function App() {
     }
   }, [])
 
+  const refreshProviderDiagnostics = useCallback(async () => {
+    try {
+      const diagnostics = await Promise.all(
+        (['codex', 'claude'] as AgentProviderId[]).map((provider) => readAgentProviderDiagnostics(provider)),
+      )
+      setProviderDiagnostics(diagnostics)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : String(error))
+    }
+  }, [])
+
   const refreshTelegramState = useCallback(async () => {
     try {
       const snapshot = await readTelegramRuntimeSnapshot()
@@ -358,8 +378,9 @@ function App() {
 
     void refreshTerminalSessions()
     void refreshAgentConnections()
+    void refreshProviderDiagnostics()
     void refreshTelegramState()
-  }, [refreshAgentConnections, refreshTelegramState, refreshTerminalSessions])
+  }, [refreshAgentConnections, refreshProviderDiagnostics, refreshTelegramState, refreshTerminalSessions])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -415,6 +436,7 @@ function App() {
         setAgentConnections((current) =>
           current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
         )
+        await refreshProviderDiagnostics()
       } catch (error) {
         setAuthError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -425,7 +447,7 @@ function App() {
         window.history.replaceState({}, '', nextUrl)
       }
     })()
-  }, [refreshAgentConnections])
+  }, [refreshAgentConnections, refreshProviderDiagnostics])
 
   const ensureWorkspaceTerminal = useCallback(async (cwd: string) => {
     const sessions = await listTerminalSessions()
@@ -610,6 +632,7 @@ function App() {
       setAgentConnections((current) =>
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
+      await refreshProviderDiagnostics()
       setSelectedProvider(provider)
       setActiveContext(
         snapshot.status === 'connected'
@@ -640,6 +663,7 @@ function App() {
       setAgentConnections((current) =>
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
+      await refreshProviderDiagnostics()
       setActiveContext(`Daily-use ${snapshot.displayName} disconnected`)
       recordTask(`${snapshot.displayName} disconnected`, 'Provider session cleared.', 'done')
     } catch (error) {
@@ -690,6 +714,7 @@ function App() {
       setAgentConnections((current) =>
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
+      await refreshProviderDiagnostics()
       setActiveContext(
         snapshot.status === 'connected'
           ? `Sprint 4 ${snapshot.displayName} connected`
@@ -1130,6 +1155,7 @@ function App() {
     lines: requestContextSnapshot?.lines.length ?? 0,
   }
   const selectedConnection = agentConnections.find((connection) => connection.provider === selectedProvider)
+  const diagnosticsByProvider = new Map(providerDiagnostics.map((entry) => [entry.provider, entry]))
   const selectedProviderSummary = selectedConnection
     ? `${selectedConnection.displayName} • ${formatProviderStatusLabel(selectedConnection.status)}`
     : 'No provider selected'
@@ -1670,6 +1696,11 @@ function App() {
               <div className="stack compact">
                 {agentConnections.map((connection) => {
                   const contract = buildProviderUiContract(connection)
+                  const diagnostics = diagnosticsByProvider.get(connection.provider)
+                  const displayedSetupState =
+                    diagnostics && connection.connectionKind === 'real' && connection.status === 'error'
+                      ? 'needs_setup'
+                      : diagnostics?.setupState
 
                   return (
                     <div
@@ -1691,11 +1722,15 @@ function App() {
                       <p>{connection.accountLabel ? `${connection.accountLabel} is ready for requests.` : contract.guidance}</p>
                       <div className="terminal-actions">
                         {contract.canDisconnect ? (
-                          <button onClick={() => void disconnectProvider(connection.provider)}>
+                          <button
+                            data-testid={`provider-action-${connection.provider}`}
+                            onClick={() => void disconnectProvider(connection.provider)}
+                          >
                             {contract.primaryActionLabel}
                           </button>
                         ) : (
                           <button
+                            data-testid={`provider-action-${connection.provider}`}
                             onClick={() => void startProviderLogin(connection.provider)}
                             disabled={!contract.canStartLogin}
                           >
@@ -1716,8 +1751,37 @@ function App() {
                       {selectedProvider === connection.provider ? (
                         <p className="provider-selection-note">Selected provider for the next request.</p>
                       ) : null}
-                      <details className="subtle-disclosure">
+                      <details
+                        className="subtle-disclosure"
+                        data-testid={`provider-diagnostics-${connection.provider}`}
+                      >
                         <summary>Diagnostics</summary>
+                        {diagnostics ? (
+                          <div className="stack compact">
+                            <p>{diagnostics.summary}</p>
+                            <p>{diagnostics.guidance}</p>
+                            <div className="status-pill-row">
+                              <span
+                                className={`status-badge state-${formatProviderSetupStateBadgeClass(
+                                  displayedSetupState ?? diagnostics.setupState,
+                                )}`}
+                              >
+                                {formatProviderSetupStateLabel(displayedSetupState ?? diagnostics.setupState)}
+                              </span>
+                              <span className="status-badge scopes">{diagnostics.connectionPath}</span>
+                            </div>
+                            {diagnostics.model ? <code>model: {diagnostics.model}</code> : null}
+                            {diagnostics.baseUrl ? <code>base URL: {diagnostics.baseUrl}</code> : null}
+                            {diagnostics.envVars.map((envVar) => (
+                              <p key={`${connection.provider}-${envVar.name}`}>
+                                {envVar.required ? 'required' : 'optional'} env • {envVar.name} •{' '}
+                                {envVar.present ? 'present' : 'missing'}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p>Provider diagnostics are not available yet.</p>
+                        )}
                         {connection.callbackUrl ? <code>{connection.callbackUrl}</code> : null}
                         {connection.authUrl ? <code>{connection.authUrl}</code> : null}
                       </details>
@@ -1805,7 +1869,7 @@ function App() {
               </div>
               {!selectedProviderContract?.canRequestSuggestion ? (
                 <p className="provider-selection-note">
-                  Connect Codex before the request step becomes active.
+                  Connect Codex after the desktop provider setup is ready, then use the validated request flow.
                 </p>
               ) : null}
               {agentRequestError ? <p className="error-text">{agentRequestError}</p> : null}

@@ -610,7 +610,7 @@ Sprint 6 progress update:
 - 핵심 작업 흐름 기준의 데스크톱 와이어프레임 정리
 - provider auth UI에서 `mock`, `prototype`, `real` 상태 구분
 - callback URL 직접 노출 축소 또는 제거
-- 최소 1개 provider에 대한 실제 OAuth/공식 로그인 가능성 검토와 연결 착수
+- 최소 1개 provider에 대한 실제 daily-use 연결 경로 착수
 - agent suggestion의 실제 provider 응답 계약 초안
 - Windows 실사용 기준 UX 이슈 기록
 
@@ -621,12 +621,12 @@ Sprint 6 progress update:
 - 터미널이 메인 작업 영역으로 명확하게 보인다.
 - provider auth가 실제 연결인지 mock인지 UI에서 즉시 구분된다.
 - callback URL 같은 내부 값이 일반 사용자 UX에 그대로 노출되지 않는다.
-- 다음 스프린트에서 실제 provider 연동 구현에 들어갈 수 있는 auth/response 계약이 문서 또는 코드로 정리된다.
+- 다음 스프린트에서 실제 provider 연동 구현에 들어갈 수 있는 연결/response 계약이 문서 또는 코드로 정리된다.
 - 정보 구조와 와이어프레임이 문서로 정리되어 구현 기준이 된다.
 
 리스크:
 
-- 공식 OAuth 또는 로그인 플로우가 provider별로 충분히 열려 있지 않을 수 있다.
+- 실제 daily-use 연결 경로가 provider별로 다를 수 있다.
 - 플랫폼별 폴더 선택기 동작 차이가 프로젝트 열기 UX를 다시 복잡하게 만들 수 있다.
 - mock과 real 흐름이 함께 남아 있는 동안 상태 관리가 더 복잡해질 수 있다.
 
@@ -647,7 +647,7 @@ Scope:
 - document desktop wireframes around the core workflow
 - distinguish `mock`, `prototype`, and `real` provider-auth states in the UI
 - reduce or remove direct callback URL exposure
-- begin real OAuth/official-login feasibility work for at least one provider
+- begin a real daily-use connection path for at least one provider
 - draft a real provider-response contract for agent suggestions
 - record Windows real-usage UX issues as explicit follow-up items
 
@@ -663,7 +663,7 @@ Acceptance Criteria:
 
 Risks:
 
-- official OAuth or login flows may not be equally available across providers
+- real daily-use connection paths may differ by provider
 - platform-specific folder-picker behavior may reintroduce UX inconsistency
 - mixed mock and real flows may complicate state management while both coexist
 
@@ -674,7 +674,7 @@ Sprint 7 initial backlog:
 - `P0` document desktop wireframes for the main workspace states
 - `P0` add explicit mock/prototype/real auth state labels
 - `P0` remove raw callback URL exposure from normal provider UI
-- `P0` start real `Codex` OAuth or official-login feasibility work
+- `P0` start the real `Codex` daily-use connection path
 - `P0` define a real provider request/response contract for agent suggestions
 - `P1` improve active-log attachment ergonomics
 - `P1` rewrite auth and runtime errors in more user-facing language
@@ -870,6 +870,120 @@ Sprint 9 initial backlog:
 - `P1` make terminal tab switching feel lighter and more focused, inspired by `cmux`
 - `P2` refine visual polish after the workflow hierarchy is stable
 
+## Sprint 10
+
+### 한국어
+
+목표:
+
+- 첫 real daily-use `Codex` 경로를 connect-time preflight와 진단 정보 중심으로 안정화한다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- `Codex` env-backed OpenAI API bridge 진단 정보 추가
+- connect 시 preflight 성공/실패 상태를 실제 연결 상태에 반영
+- `Claude` deferred 상태를 diagnostics와 연결 UI에 명시
+- 활성 로그 최근 50줄 자동 첨부 기준을 UI에서 더 분명하게 노출
+- provider diagnostics 관련 E2E 갱신
+- Windows 실사용 검증 전 필요한 문서 기준 정리
+
+권장 역할 분리:
+
+- `Orchestrator`
+  - 범위 고정, 역할 분리, 문서 동기화, 최종 통합
+- `Frontend`
+  - diagnostics UI, 연결 안내 문구, active-log preview 정리
+- `Backend`
+  - preflight 검증, provider diagnostics contract, 연결 상태 저장 보강
+- `QA`
+  - source of truth 문서와 런타임 계약 일치 여부 확인
+- `Tester`
+  - provider auth 및 request-flow 회귀 E2E 갱신
+
+완료조건:
+
+- `Codex` connect 액션이 실제 preflight 결과에 따라 성공 또는 실패로 표시된다.
+- provider card에서 setup state, connection path, env 상태를 확인할 수 있다.
+- `Claude` deferred path가 실연결처럼 보이지 않는다.
+- 활성 로그 최근 50줄이 다음 요청에 자동 첨부된다는 점이 UI에 보인다.
+- 관련 E2E와 빌드 검증이 통과한다.
+
+리스크:
+
+- 실제 provider base URL이나 model 접근 정책이 환경마다 다를 수 있다.
+- preflight 성공이 suggestion 성공을 완전히 보장하지는 않는다.
+- Windows 실기 환경에서는 셸, 네트워크, 환경변수 주입 차이로 추가 이슈가 생길 수 있다.
+
+Sprint 10 initial backlog:
+
+- `P0` add runtime diagnostics for the env-backed `Codex` connection path
+- `P0` gate `Codex` connection state on connect-time preflight validation
+- `P0` make `Claude` explicitly deferred in diagnostics and connection UX
+- `P0` surface the latest 50 active log lines as the default request attachment window
+- `P0` update provider-auth E2E around diagnostics and connection state
+- `P1` refine user-facing preflight error copy for common provider failures
+- `P1` record the Windows real-device validation checklist for the next pass
+
+### English
+
+Goal:
+
+- stabilize the first real daily-use `Codex` path around connect-time preflight and explicit diagnostics
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- add diagnostics for the env-backed `Codex` OpenAI API bridge
+- reflect connect-time preflight success or failure directly in provider connection state
+- make the deferred `Claude` path explicit in diagnostics and connection UX
+- surface the latest 50 active log lines as the default request attachment window
+- update E2E coverage for provider diagnostics
+- align documentation before Windows real-device validation
+
+Recommended Role Split:
+
+- `Orchestrator`
+  - locks scope, splits roles, syncs docs, and integrates the final slice
+- `Frontend`
+  - refines diagnostics UI, connection guidance, and active-log preview
+- `Backend`
+  - implements preflight validation, provider diagnostics contract, and stronger connection-state persistence
+- `QA`
+  - verifies that source-of-truth documents and runtime contracts still match
+- `Tester`
+  - updates provider-auth and request-flow regression coverage
+
+Acceptance Criteria:
+
+- the `Codex` connect action resolves to success or failure based on real preflight validation
+- provider cards expose setup state, connection path, and env-status details
+- the deferred `Claude` path does not look like a live real-provider connection
+- the UI makes it clear that the latest 50 active log lines will auto-attach to the next request
+- related E2E and build validation pass
+
+Risks:
+
+- real provider base-URL or model access policy may differ across environments
+- preflight success does not fully guarantee suggestion success
+- Windows real-device environments may still reveal shell, network, or env-injection issues
+
+Sprint 10 initial backlog:
+
+- `P0` add runtime diagnostics for the env-backed `Codex` connection path
+- `P0` gate `Codex` connection state on connect-time preflight validation
+- `P0` make `Claude` explicitly deferred in diagnostics and connection UX
+- `P0` surface the latest 50 active log lines as the default request attachment window
+- `P0` update provider-auth E2E around diagnostics and connection state
+- `P1` refine user-facing preflight error copy for common provider failures
+- `P1` record the Windows real-device validation checklist for the next pass
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -882,6 +996,7 @@ Sprint 9 initial backlog:
 - `Sprint 7`은 `Sprint 3`의 provider foundation, `Sprint 4`의 approval flow, `Sprint 5`의 workspace restore, 그리고 실제 Windows 사용 피드백이 필요하다.
 - `Sprint 8`은 `Sprint 7`의 UX 재정리 결과를 바탕으로 auth contract를 heuristic 없는 명시 계약으로 바꾸는 단계다.
 - `Sprint 9`는 `Sprint 7`의 와이어프레임과 `Sprint 8`의 auth contract 명시화를 바탕으로 실제 워크스페이스 리디자인을 구현하는 단계다.
+- `Sprint 10`은 `Sprint 8`의 auth contract와 `Sprint 9`의 워크스페이스 리디자인 위에서 real Codex preflight와 diagnostics를 안정화하는 단계다.
 
 ### English
 
@@ -891,6 +1006,9 @@ Sprint 9 initial backlog:
 - `Sprint 5` integrates and stabilizes results from all previous sprints
 - `Sprint 6` depends on the approval flow from `Sprint 4` and the task-state model from `Sprint 5`
 - `Sprint 7` depends on the provider foundation from `Sprint 3`, approval flow from `Sprint 4`, workspace restore from `Sprint 5`, and real Windows usage feedback
+- `Sprint 8` turns the `Sprint 7` auth UX into an explicit backend-driven contract
+- `Sprint 9` implements the real workspace redesign using the wireframes from `Sprint 7` and the auth contract clarified in `Sprint 8`
+- `Sprint 10` depends on the explicit auth contract from `Sprint 8` and the workspace redesign from `Sprint 9` to stabilize real Codex preflight and diagnostics
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -916,6 +1034,8 @@ Sprint 9 initial backlog:
   - provider auth 상태가 frontend 추측이 아니라 backend 계약으로 설명되는가
 - `Sprint 9`
   - 현재 UI가 정말 작업용 워크스페이스처럼 느껴지고, 터미널과 에이전트 흐름이 한 화면에서 자연스럽게 읽히는가
+- `Sprint 10`
+  - real Codex 연결이 connect 시점부터 진단 가능하고, 사용자가 요청 전 준비 상태를 명확히 이해할 수 있는가
 
 ### English
 
@@ -935,13 +1055,19 @@ Sprint 9 initial backlog:
   - can users safely inspect status and send limited commands outside the desktop app
 - `Sprint 7`
   - can users avoid confusing mock and real flows, open projects without typing paths, and move naturally into the next stage of real provider integration
+- `Sprint 8`
+  - can provider-auth state now be explained by backend contract instead of frontend guesswork
+- `Sprint 9`
+  - does the UI now feel like a real working workspace where the terminal and agent flow read naturally together
+- `Sprint 10`
+  - is real Codex connectivity diagnosable at connect time, with enough readiness clarity before the user submits the next request
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 `Sprint 9`를 프론트/백엔드/테스터 역할로 더 세분화한 구현 체크리스트 또는 `worklog` 문서를 만드는 것이 좋다.
+다음 단계로는 `Sprint 10` 결과를 바탕으로 실제 `Windows` 환경에서 `Open Folder -> Connect Codex -> Ask -> Approve -> Restore` 루프를 검증하고, 실기 이슈를 체크리스트와 `worklog`로 남기는 것이 좋다.
 
 ### English
 
-The next step should be to break `Sprint 9` into a role-based implementation checklist or worklog-style task document.
+The next step should be to use the `Sprint 10` baseline to validate the `Open Folder -> Connect Codex -> Ask -> Approve -> Restore` loop on real Windows hardware and record the findings in a checklist and worklog.

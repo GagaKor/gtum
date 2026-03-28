@@ -21,6 +21,7 @@
 - [Sprint 7 작업 로그 / Sprint 7 Worklog](./WORKLOG_2026-03-22_sprint-7-ux-and-project-picker.md)
 - [Sprint 8 작업 로그 / Sprint 8 Worklog](./WORKLOG_2026-03-22_sprint-8-auth-contract.md)
 - [Sprint 9 작업 로그 / Sprint 9 Worklog](./WORKLOG_2026-03-24_sprint-9-workspace-redesign.md)
+- [Sprint 10 작업 로그 / Sprint 10 Worklog](./WORKLOG_2026-03-28_sprint-10-codex-preflight-diagnostics.md)
 - [Telegram 프로토타입 작업 로그 / Telegram Prototype Worklog](./WORKLOG_2026-03-22_post-mvp-telegram-prototype.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
@@ -101,9 +102,10 @@
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
 - 기본 개발 운영 모델은 서브에이전트 기반 멀티 에이전트 구조이며, `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할 분리를 우선 사용한다
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
-- 에이전트 제공자는 우선 `Codex + Claude`, 인증은 `OAuth 기반 로그인`을 우선한다
+- 에이전트 제공자는 우선 `Codex + Claude`이며, 첫 실사용 `Codex` 경로는 `OPENAI_API_KEY` 기반 OpenAI API bridge와 connect 시 preflight 검증을 사용한다
 - 현재 Sprint 5 기준으로 task history, workspace restore, execution mode, aging test까지 포함한 MVP 흐름이 구현되어 있다
 - Sprint 7에서는 폴더 선택기 중심 프로젝트 열기, UI 정보 구조 재배치, provider auth mock/prototype/real 구분이 반영되어 있다
+- Sprint 10에서는 `Codex` connect-time preflight, provider diagnostics, 앱 재시작 후 real-provider 재검증, provider-auth E2E 보강이 반영되어 있다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다

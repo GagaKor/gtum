@@ -309,7 +309,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 
 #### 5. 에이전트 계정 연결
 
-사용자는 API 토큰을 직접 입력하는 방식이 아니라, 에이전트 제공자 계정을 로그인 방식으로 연결한다.
+사용자는 에이전트 제공자를 앱이 관리하는 연결 경로로 연결한다.
 
 초기 지원 대상은 다음과 같다.
 
@@ -318,9 +318,10 @@ It is acceptable to start with only `master`, but once implementation begins, in
 
 인증 방식은 다음 원칙을 따른다.
 
-- 사용자는 OAuth 또는 이에 준하는 공식 로그인 흐름으로 계정을 연결한다.
-- 장기 API 토큰을 직접 복사해서 붙여넣는 UX는 기본 경로로 채택하지 않는다.
-- 연결된 계정 상태, 권한 범위, 로그인 만료 여부를 앱 안에서 확인할 수 있어야 한다.
+- 첫 실사용 `Codex` 경로는 `OPENAI_API_KEY` 기반 OpenAI API bridge를 사용한다.
+- 앱은 연결 시점에 preflight 검증을 수행해 잘못된 키, base URL, model 설정을 Step 1에서 먼저 드러낸다.
+- 장기 API 토큰을 직접 붙여넣는 인앱 입력 UX는 기본 경로로 채택하지 않는다.
+- 연결된 계정 상태, 권한 범위, 연결 준비 상태를 앱 안에서 확인할 수 있어야 한다.
 
 #### 6. 원격 명령 및 리포트 채널
 
@@ -385,7 +386,7 @@ Execution happens only after user approval.
 
 #### 5. Agent Account Connection
 
-Users connect agent providers through account login flows rather than by pasting raw API tokens.
+Users connect agent providers through app-managed connection paths rather than by pasting raw API tokens into the UI.
 
 The initial supported providers are:
 
@@ -394,9 +395,10 @@ The initial supported providers are:
 
 The authentication model follows these rules:
 
-- users connect accounts through OAuth or an equivalent official login flow
-- manually pasting long-lived API tokens is not the default path
-- the app should show connection state, granted scopes, and token expiration or session validity
+- the first daily-use `Codex` path uses an `OPENAI_API_KEY`-backed OpenAI API bridge
+- the app should run preflight validation at connect time so invalid keys, base URLs, and models fail in Step 1 rather than later in the request flow
+- manually pasting long-lived API tokens into the app UI is not the default path
+- the app should show connection state, granted scopes, and readiness diagnostics
 
 #### 6. Remote Command and Report Channels
 
@@ -995,9 +997,9 @@ The first version should focus on the smallest complete experience.
 - 에이전트는 현재 또는 선택된 탭의 출력을 읽을 수 있어야 한다.
 - 에이전트는 작업 제안을 생성할 수 있어야 한다.
 - 명령 실행 전 사용자가 실행 대상과 명령 내용을 확인하고 승인할 수 있어야 한다.
-- 사용자는 `Codex`와 `Claude` 계정을 앱 안에서 로그인 기반으로 연결할 수 있어야 한다.
-- 인증은 API 토큰 수동 입력이 아니라 OAuth 또는 이에 준하는 공식 인증 흐름을 우선해야 한다.
-- 앱은 연결 상태, 세션 만료, 권한 범위를 사용자에게 표시해야 한다.
+- 사용자는 `Codex`와 `Claude` 제공자를 앱 안에서 연결할 수 있어야 한다.
+- 첫 실사용 `Codex` 경로는 env-backed OpenAI API bridge와 preflight 검증을 사용해야 한다.
+- 앱은 연결 상태, 권한 범위, 연결 준비 상태와 진단 정보를 사용자에게 표시해야 한다.
 - 향후 `SMS`와 `Telegram` 같은 외부 채널을 통해 상태 리포트와 제한된 원격 명령을 지원할 수 있어야 한다.
 
 #### 작업 인식
@@ -1027,9 +1029,9 @@ The first version should focus on the smallest complete experience.
 - agents should be able to read current or selected tab output
 - agents should be able to generate task suggestions
 - users should be able to review and approve command targets before execution
-- users should be able to connect `Codex` and `Claude` accounts through in-app login flows
-- authentication should prefer OAuth or equivalent official sign-in flows instead of manual API token entry
-- the app should display connection state, session expiration, and granted scopes
+- users should be able to connect `Codex` and `Claude` providers from inside the app
+- the first daily-use `Codex` path should use an env-backed OpenAI API bridge plus preflight validation
+- the app should display connection state, readiness diagnostics, and granted scopes
 - the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 
 #### Task Awareness
@@ -1048,7 +1050,7 @@ The first version should focus on the smallest complete experience.
 - 복원 가능한 세션 상태
 - Ubuntu, Windows, macOS에서 일관된 동작
 - 운영체제별 차이를 흡수하는 크로스 플랫폼 추상화
-- 로그인 기반 에이전트 인증의 안정적인 세션 관리
+- env-backed provider 연결과 preflight 검증의 안정적인 상태 관리
 - 다중 브랜치 작업에서도 명확한 Git 상태 표현
 
 ### English
@@ -1060,7 +1062,7 @@ The first version should focus on the smallest complete experience.
 - restorable session state
 - consistent behavior across Ubuntu, Windows, and macOS
 - cross-platform abstractions for OS-specific differences
-- reliable session handling for login-based agent authentication
+- reliable state handling for env-backed provider connectivity and preflight validation
 - clear Git state representation across multi-branch workflows
 
 ## 기술 방향 / Technical Direction
@@ -1089,7 +1091,8 @@ The first version should focus on the smallest complete experience.
 에이전트 연결 기준은 다음과 같다.
 
 - 초기 지원 제공자: `Codex`, `Claude`
-- 인증 원칙: API 토큰 수동 입력보다 OAuth 또는 공식 로그인 흐름 우선
+- 첫 실사용 `Codex` 경로: `OPENAI_API_KEY` 기반 OpenAI API bridge + connect 시 preflight 검증
+- `Claude`: provider contract 호환 대상이지만 첫 실사용 릴리스에서는 deferred path 유지
 
 한 줄로 정리하면 다음과 같다.
 
@@ -1158,7 +1161,8 @@ Platform targets are:
 Agent connection rules are:
 
 - initial providers: `Codex`, `Claude`
-- authentication rule: prefer OAuth or official sign-in flows over manual API token entry
+- first daily-use `Codex` path: `OPENAI_API_KEY`-backed OpenAI API bridge plus preflight validation at connect time
+- `Claude`: contract-compatible provider that stays on the deferred path for the first daily-use release
 
 In one sentence:
 

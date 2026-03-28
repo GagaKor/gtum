@@ -3,6 +3,7 @@ use std::{env, time::Duration};
 use reqwest::{
     blocking::Client,
     header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
+    StatusCode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -15,6 +16,7 @@ use crate::runtime::{
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_CODEX_MODEL: &str = "gpt-5.3-codex";
 const REQUEST_TIMEOUT_SECS: u64 = 45;
+const PREFLIGHT_TIMEOUT_SECS: u64 = 12;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +57,35 @@ pub struct AgentSuggestionResponse {
     pub preferred_target: AgentExecutionTarget,
     pub confidence: AgentSuggestionConfidence,
     pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentProviderSetupState {
+    Ready,
+    NeedsSetup,
+    Deferred,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProviderEnvVarStatus {
+    pub name: String,
+    pub required: bool,
+    pub present: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProviderDiagnostics {
+    pub provider: AgentProvider,
+    pub setup_state: AgentProviderSetupState,
+    pub connection_path: String,
+    pub summary: String,
+    pub guidance: String,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub env_vars: Vec<AgentProviderEnvVarStatus>,
 }
 
 #[derive(Deserialize)]
@@ -104,40 +135,140 @@ impl CodexConfig {
     }
 }
 
+pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
+    let api_key_present = env_var_present("OPENAI_API_KEY");
+    let env_vars = vec![
+        AgentProviderEnvVarStatus {
+            name: "OPENAI_API_KEY".into(),
+            required: true,
+            present: api_key_present,
+        },
+        AgentProviderEnvVarStatus {
+            name: "GTUM_CODEX_MODEL".into(),
+            required: false,
+            present: env_var_present("GTUM_CODEX_MODEL"),
+        },
+        AgentProviderEnvVarStatus {
+            name: "GTUM_OPENAI_BASE_URL".into(),
+            required: false,
+            present: env_var_present("GTUM_OPENAI_BASE_URL"),
+        },
+        AgentProviderEnvVarStatus {
+            name: "OPENAI_BASE_URL".into(),
+            required: false,
+            present: env_var_present("OPENAI_BASE_URL"),
+        },
+        AgentProviderEnvVarStatus {
+            name: "OPENAI_ORG_ID".into(),
+            required: false,
+            present: env_var_present("OPENAI_ORG_ID"),
+        },
+        AgentProviderEnvVarStatus {
+            name: "OPENAI_PROJECT_ID".into(),
+            required: false,
+            present: env_var_present("OPENAI_PROJECT_ID"),
+        },
+        AgentProviderEnvVarStatus {
+            name: "GTUM_CODEX_ACCOUNT_LABEL".into(),
+            required: false,
+            present: env_var_present("GTUM_CODEX_ACCOUNT_LABEL"),
+        },
+    ];
+
+    let base_url = env::var("GTUM_OPENAI_BASE_URL")
+        .or_else(|_| env::var("OPENAI_BASE_URL"))
+        .unwrap_or_else(|_| DEFAULT_OPENAI_BASE_URL.to_string());
+    let model = env::var("GTUM_CODEX_MODEL").unwrap_or_else(|_| DEFAULT_CODEX_MODEL.to_string());
+
+    AgentProviderDiagnostics {
+        provider: AgentProvider::Codex,
+        setup_state: if api_key_present {
+            AgentProviderSetupState::Ready
+        } else {
+            AgentProviderSetupState::NeedsSetup
+        },
+        connection_path: "Env-backed OpenAI Responses API bridge".into(),
+        summary: if api_key_present {
+            "Desktop Codex access is configured and will be live-validated when you connect.".into()
+        } else {
+            "Desktop Codex access is blocked until OPENAI_API_KEY is available in the app environment.".into()
+        },
+        guidance: if api_key_present {
+            "Connect Codex to run a preflight check against the configured provider before the first suggestion request.".into()
+        } else {
+            "Set OPENAI_API_KEY, then reopen or relaunch the desktop app before connecting Codex again.".into()
+        },
+        base_url: Some(base_url),
+        model: Some(model),
+        env_vars,
+    }
+}
+
+pub fn deferred_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
+    AgentProviderDiagnostics {
+        provider,
+        setup_state: AgentProviderSetupState::Deferred,
+        connection_path: "Deferred real-provider path".into(),
+        summary: format!(
+            "{} is not part of the first daily-use release yet.",
+            provider.display_name()
+        ),
+        guidance: format!(
+            "Keep {} on the prototype path while the real daily-use release focuses on Codex.",
+            provider.display_name()
+        ),
+        base_url: None,
+        model: None,
+        env_vars: vec![AgentProviderEnvVarStatus {
+            name: "provider:deferred".into(),
+            required: false,
+            present: false,
+        }],
+    }
+}
+
+pub fn validate_codex_connection() -> Result<String, String> {
+    let config = CodexConfig::from_env()?;
+    let client = build_client(PREFLIGHT_TIMEOUT_SECS)?;
+    let headers = build_headers(&config)?;
+    let url = format!(
+        "{}/models/{}",
+        config.base_url.trim_end_matches('/'),
+        config.model
+    );
+
+    let response = client
+        .get(url)
+        .headers(headers)
+        .send()
+        .map_err(|error| format!("Codex preflight could not reach the configured provider: {error}"))?;
+    let status = response.status();
+
+    if !status.is_success() {
+        return Err(match status {
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                "Codex preflight rejected the configured OPENAI_API_KEY.".into()
+            }
+            StatusCode::NOT_FOUND => format!(
+                "Codex preflight could not find model `{}` at the configured provider base URL.",
+                config.model
+            ),
+            _ => format!("Codex preflight failed with status {status}."),
+        });
+    }
+
+    Ok(config.account_label())
+}
+
 pub fn request_codex_suggestions(
     request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
     let config = CodexConfig::from_env()?;
-    let client = Client::builder()
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|error| format!("failed to initialize Codex client: {error}"))?;
+    let client = build_client(REQUEST_TIMEOUT_SECS)?;
 
     let payload = build_request_payload(&config, &request);
     let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", config.api_key))
-            .map_err(|error| format!("failed to prepare Codex authorization header: {error}"))?,
-    );
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-    if let Some(organization_id) = &config.organization_id {
-        headers.insert(
-            "OpenAI-Organization",
-            HeaderValue::from_str(organization_id)
-                .map_err(|error| format!("failed to prepare OpenAI organization header: {error}"))?,
-        );
-    }
-
-    if let Some(project_id) = &config.project_id {
-        headers.insert(
-            "OpenAI-Project",
-            HeaderValue::from_str(project_id)
-                .map_err(|error| format!("failed to prepare OpenAI project header: {error}"))?,
-        );
-    }
+    let headers = build_headers(&config)?;
 
     let response_json = client
         .post(url)
@@ -176,8 +307,46 @@ pub fn request_codex_suggestions(
     }])
 }
 
-pub fn codex_account_label() -> Option<String> {
-    CodexConfig::from_env().ok().map(|config| config.account_label())
+fn env_var_present(name: &str) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn build_client(timeout_secs: u64) -> Result<Client, String> {
+    Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|error| format!("failed to initialize Codex client: {error}"))
+}
+
+fn build_headers(config: &CodexConfig) -> Result<HeaderMap, String> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", config.api_key))
+            .map_err(|error| format!("failed to prepare Codex authorization header: {error}"))?,
+    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    if let Some(organization_id) = &config.organization_id {
+        headers.insert(
+            "OpenAI-Organization",
+            HeaderValue::from_str(organization_id)
+                .map_err(|error| format!("failed to prepare OpenAI organization header: {error}"))?,
+        );
+    }
+
+    if let Some(project_id) = &config.project_id {
+        headers.insert(
+            "OpenAI-Project",
+            HeaderValue::from_str(project_id)
+                .map_err(|error| format!("failed to prepare OpenAI project header: {error}"))?,
+        );
+    }
+
+    Ok(headers)
 }
 
 fn build_request_payload(config: &CodexConfig, request: &RequestAgentSuggestionsRequest) -> Value {
@@ -308,4 +477,3 @@ fn unix_timestamp_ms() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
 }
-

@@ -54,7 +54,7 @@ Read this document when:
 - 지원 플랫폼은 `Ubuntu`, `Windows`, `macOS`
 - 첫 실사용 기준 플랫폼은 `Windows`
 - 에이전트 제공자는 초기 기준 `Codex`, `Claude`
-- 인증 방식은 API 토큰 수동 입력이 아니라 OAuth 또는 공식 로그인 흐름 우선
+- 첫 실사용 `Codex` 경로는 `OPENAI_API_KEY` 기반 OpenAI API bridge와 connect 시 preflight 검증을 사용한다
 
 ### English
 
@@ -68,7 +68,7 @@ This document assumes the following decisions:
 - supported platforms: `Ubuntu`, `Windows`, `macOS`
 - first daily-use baseline platform: `Windows`
 - initial agent providers: `Codex`, `Claude`
-- authentication should prefer OAuth or official sign-in flows over manual API token entry
+- the first daily-use `Codex` path uses an `OPENAI_API_KEY`-backed OpenAI API bridge with preflight validation at connect time
 
 ## 전체 아키텍처 / High-Level Architecture
 
@@ -350,7 +350,7 @@ Rust 런타임은 아래 책임을 가진다.
 - `runtime/platform`
   - OS별 셸, 경로, 환경 변수, 권한 처리
 - `providers/auth`
-  - OAuth 리디렉션, 토큰 교환, 세션 저장
+  - provider 연결 상태, preflight 검증, 세션 저장
 - `providers/codex`
   - Codex provider adapter
 - `providers/claude`
@@ -378,7 +378,7 @@ The Rust runtime is responsible for:
 - `runtime/platform`
   - OS-specific shell, path, env, and permission handling
 - `providers/auth`
-  - OAuth redirect handling, token exchange, session storage
+  - provider connection state, preflight validation, session storage
 - `providers/codex`
   - Codex provider adapter
 - `providers/claude`
@@ -496,7 +496,7 @@ The structural support scope still covers all three platforms, but the first dai
 - PTY library differences
 - environment variable access
 - shortcuts and system menu behavior
-- opening files, opening URLs, and browser login redirect handling
+- opening files, opening URLs, and provider diagnostics or setup affordances
 
 #### Design Principles
 
@@ -620,7 +620,7 @@ Project state should include at least the following Git metadata:
 
 - UI는 provider-specific API를 직접 다루지 않는다.
 - 애플리케이션 레이어는 공통 인터페이스만 사용한다.
-- 실제 로그인, 세션 확인, 요청 전송은 provider adapter가 담당한다.
+- 실제 연결 준비 확인, preflight 검증, 요청 전송은 provider adapter가 담당한다.
 
 #### 공통 인터페이스 예시
 
@@ -634,11 +634,11 @@ Project state should include at least the following Git metadata:
 #### provider별 책임
 
 - `CodexAdapter`
-  - Codex 로그인 세션 확인
+  - env-backed Codex connection readiness와 preflight 검증
   - 작업 요청 전송
   - 응답 스트리밍 정규화
 - `ClaudeAdapter`
-  - Claude 로그인 세션 확인
+  - Claude deferred path 상태 확인
   - 작업 요청 전송
   - 응답 스트리밍 정규화
 
@@ -650,7 +650,7 @@ The initial providers are `Codex` and `Claude`.
 
 - the UI should not deal with provider-specific APIs directly
 - the application layer should depend on a shared interface only
-- actual login, session validation, and request transport belong to provider adapters
+- readiness checks, preflight validation, and request transport belong to provider adapters
 
 #### Example Shared Interface
 
@@ -664,11 +664,11 @@ The initial providers are `Codex` and `Claude`.
 #### Per-Provider Responsibilities
 
 - `CodexAdapter`
-  - validate Codex login session
+  - validate env-backed Codex readiness and preflight access
   - send task requests
   - normalize response streaming
 - `ClaudeAdapter`
-  - validate Claude login session
+  - validate the Claude deferred-path state
   - send task requests
   - normalize response streaming
 
@@ -676,21 +676,21 @@ The initial providers are `Codex` and `Claude`.
 
 ### 한국어
 
-인증은 API 토큰 입력보다 로그인 기반 흐름을 우선한다.
+첫 실사용 릴리스에서는 `Codex`를 env-backed OpenAI API bridge로 연결하고, connect 시 preflight 검증을 수행한다.
 
 #### 목표
 
 - 사용자가 앱 안에서 제공자 계정을 연결할 수 있어야 한다.
-- 장기 API 토큰을 노출하지 않는 UX를 기본으로 한다.
-- 세션 상태를 안전하게 저장하고, 만료를 감지해야 한다.
+- 인앱 토큰 입력 대신 데스크톱 환경에 준비된 연결 정보를 사용한다.
+- 잘못된 키, base URL, model 설정은 요청 단계가 아니라 connect 단계에서 먼저 드러나야 한다.
 
 #### 권장 흐름
 
 1. 사용자가 `Codex` 또는 `Claude` 연결 버튼을 누른다.
-2. 앱이 시스템 브라우저 또는 내장 브라우저로 공식 로그인 페이지를 연다.
-3. OAuth 또는 공식 로그인 완료 후 앱이 콜백을 수신한다.
-4. 런타임이 세션 정보를 안전하게 저장한다.
-5. UI는 연결 상태와 권한 범위를 표시한다.
+2. `Codex`는 env-backed 설정을 읽고 preflight 검증을 수행한다.
+3. `Claude`는 deferred real-provider 상태를 명시적으로 표시한다.
+4. 런타임이 연결 상태와 기본 진단 정보를 저장한다.
+5. UI는 연결 상태, 권한 범위, 준비 상태를 표시한다.
 
 #### 세션 저장 원칙
 
@@ -700,21 +700,21 @@ The initial providers are `Codex` and `Claude`.
 
 ### English
 
-Authentication should prefer login-based flows over manual API token entry.
+The first daily-use release should prefer an env-backed provider bridge with connect-time preflight validation instead of browser callback flows.
 
 #### Goals
 
 - users should be able to connect provider accounts from within the app
-- avoid making exposed long-lived API tokens the default user experience
-- store session state securely and detect expiration
+- prefer desktop environment setup plus connect-time validation over in-app token forms
+- store connection state securely and detect expiration or configuration errors
 
 #### Recommended Flow
 
 1. the user clicks connect for `Codex` or `Claude`
-2. the app opens an official login page in a system or embedded browser
-3. after OAuth or official sign-in, the app receives the callback
-4. the runtime stores the session securely
-5. the UI shows connection state and granted scopes
+2. `Codex` reads the env-backed provider configuration and runs a preflight validation
+3. `Claude` stays explicitly marked as a deferred real-provider path
+4. the runtime stores connection state and baseline diagnostics
+5. the UI shows connection state, readiness, and granted scopes
 
 #### Session Storage Rules
 
@@ -1024,7 +1024,7 @@ Because `gtum` interacts with local files and shell execution, security boundari
 3. PTY 기반 터미널 탭
 4. 워크스페이스 상태 저장
 5. 에이전트 패널 UI
-6. OAuth 기반 provider 연결 구조
+6. env-backed provider 연결 구조와 preflight 검증
 7. provider adapter 공통 인터페이스
 8. 멀티 에이전트 오케스트레이션 초안
 9. 실행 모드 정책 적용
@@ -1036,7 +1036,7 @@ Because `gtum` interacts with local files and shell execution, security boundari
 3. add PTY-backed terminal tabs
 4. persist workspace state
 5. add the agent panel UI
-6. implement login-based provider connection structure
+6. implement env-backed provider connection structure and preflight validation
 7. add a shared provider adapter interface
 8. implement read-only Git branch and dirty-state visibility
 9. implement a first multi-agent orchestration layer

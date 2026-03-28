@@ -79,6 +79,7 @@ export type AgentConnectionKind = 'mock' | 'prototype' | 'real'
 export type ExecutionMode = 'fast' | 'balanced' | 'deep'
 export type AgentExecutionTarget = 'current_tab' | 'new_tab'
 export type AgentSuggestionConfidence = 'low' | 'medium' | 'high'
+export type AgentProviderSetupState = 'ready' | 'needs_setup' | 'deferred'
 
 export type AgentConnectionSnapshot = {
   provider: AgentProviderId
@@ -93,6 +94,23 @@ export type AgentConnectionSnapshot = {
   connectedAt: number | null
   updatedAt: number
   lastError: string | null
+}
+
+export type AgentProviderEnvVarStatus = {
+  name: string
+  required: boolean
+  present: boolean
+}
+
+export type AgentProviderDiagnostics = {
+  provider: AgentProviderId
+  setupState: AgentProviderSetupState
+  connectionPath: string
+  summary: string
+  guidance: string
+  baseUrl: string | null
+  model: string | null
+  envVars: AgentProviderEnvVarStatus[]
 }
 
 export type CompleteAgentLoginRequest = {
@@ -272,7 +290,7 @@ const createDefaultBrowserTelegramState = (): TelegramRuntimeSnapshot => ({
 
 const requiredScopesForProvider = (provider: AgentProviderId) =>
   provider === 'codex'
-    ? ['responses:create', 'project-context:read', 'terminal-context:read']
+    ? ['project:read', 'terminal:read']
     : ['provider:deferred']
 
 const createDefaultBrowserConnections = (): AgentConnectionSnapshot[] =>
@@ -613,6 +631,59 @@ export const listAgentConnections = async () => {
   }
 
   return invoke<AgentConnectionSnapshot[]>('list_agent_connections')
+}
+
+export const readAgentProviderDiagnostics = async (provider: AgentProviderId) => {
+  if (isMockRuntime()) {
+    return {
+      provider,
+      setupState: provider === 'codex' ? 'ready' : 'deferred',
+      connectionPath: provider === 'codex' ? 'Mock callback provider flow' : 'Deferred real-provider path',
+      summary:
+        provider === 'codex'
+          ? 'Mock runtime simulates a callback-based provider connection for UI testing.'
+          : 'Claude remains deferred in the first daily-use release.',
+      guidance:
+        provider === 'codex'
+          ? 'Use the mock callback to exercise the provider UI without a live desktop environment.'
+          : 'Keep Claude on the prototype path while Codex is the first real provider route.',
+      baseUrl: provider === 'codex' ? 'https://mock.gtum.local/auth/codex' : null,
+      model: provider === 'codex' ? 'mock-codex' : null,
+      envVars:
+        provider === 'codex'
+          ? [{ name: 'MOCK_CALLBACK', required: false, present: true }]
+          : [{ name: 'provider:deferred', required: false, present: false }],
+    } satisfies AgentProviderDiagnostics
+  }
+
+  if (isPreviewContractRuntime()) {
+    return {
+      provider,
+      setupState: provider === 'codex' ? 'ready' : 'deferred',
+      connectionPath:
+        provider === 'codex' ? 'Previewed env-backed OpenAI Responses API bridge' : 'Deferred real-provider path',
+      summary:
+        provider === 'codex'
+          ? 'Preview mode simulates a validated desktop Codex connection before the first request.'
+          : 'Claude remains deferred in the first daily-use release.',
+      guidance:
+        provider === 'codex'
+          ? 'Desktop mode expects OPENAI_API_KEY and validates live provider access when you connect.'
+          : 'Keep Claude on the prototype path while Codex is the first real provider route.',
+      baseUrl: provider === 'codex' ? 'https://api.openai.com/v1' : null,
+      model: provider === 'codex' ? 'gpt-5.3-codex' : null,
+      envVars:
+        provider === 'codex'
+          ? [
+              { name: 'OPENAI_API_KEY', required: true, present: true },
+              { name: 'GTUM_CODEX_MODEL', required: false, present: false },
+              { name: 'GTUM_OPENAI_BASE_URL', required: false, present: false },
+            ]
+          : [{ name: 'provider:deferred', required: false, present: false }],
+    } satisfies AgentProviderDiagnostics
+  }
+
+  return invoke<AgentProviderDiagnostics>('read_agent_provider_diagnostics', { provider })
 }
 
 export const beginAgentLogin = async (provider: AgentProviderId, requestedScopes: string[] = []) => {

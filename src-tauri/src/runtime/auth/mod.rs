@@ -64,10 +64,14 @@ impl AgentAuthManager {
     }
 
     pub fn list_connections(&self) -> Vec<AgentConnectionSnapshot> {
-        let mut snapshots = self
-            .store
-            .lock()
-            .unwrap()
+        let mut store = self.store.lock().unwrap();
+        if self.refresh_real_connections_locked(&mut store) {
+            if let Err(error) = self.persist_locked(&store) {
+                log::warn!("failed to persist auth state after provider refresh: {error}");
+            }
+        }
+
+        let mut snapshots = store
             .connections
             .values()
             .cloned()
@@ -105,21 +109,19 @@ impl AgentAuthManager {
         snapshot.last_error = None;
 
         match provider {
-            AgentProvider::Codex => match crate::runtime::codex::codex_account_label() {
-                Some(account_label) => {
+            AgentProvider::Codex => match crate::runtime::codex::validate_codex_connection() {
+                Ok(account_label) => {
                     snapshot.status = AgentConnectionStatus::Connected;
                     snapshot.account_label = Some(account_label);
                     snapshot.account_email = None;
                     snapshot.connected_at = Some(now);
                 }
-                None => {
+                Err(error) => {
                     snapshot.status = AgentConnectionStatus::Error;
                     snapshot.account_label = None;
                     snapshot.account_email = None;
                     snapshot.connected_at = None;
-                    snapshot.last_error = Some(
-                        "Set OPENAI_API_KEY in the desktop environment to connect Codex.".into(),
-                    );
+                    snapshot.last_error = Some(error);
                 }
             },
             AgentProvider::Claude => {
@@ -331,6 +333,41 @@ impl AgentAuthManager {
         fs::write(path, serialized)
             .map_err(|error| format!("failed to persist auth state: {error}"))
     }
+
+    fn refresh_real_connections_locked(&self, store: &mut AgentAuthStore) -> bool {
+        let mut changed = false;
+        let now = unix_timestamp_ms();
+
+        if let Some(snapshot) = store.connections.get_mut(AgentProvider::Codex.as_key()) {
+            if snapshot.connection_kind == AgentConnectionKind::Real
+                && snapshot.status == AgentConnectionStatus::Connected
+            {
+                match crate::runtime::codex::validate_codex_connection() {
+                    Ok(account_label) => {
+                        if snapshot.account_label.as_deref() != Some(account_label.as_str())
+                            || snapshot.last_error.is_some()
+                        {
+                            snapshot.account_label = Some(account_label);
+                            snapshot.last_error = None;
+                            snapshot.updated_at = now;
+                            changed = true;
+                        }
+                    }
+                    Err(error) => {
+                        snapshot.status = AgentConnectionStatus::Error;
+                        snapshot.account_label = None;
+                        snapshot.account_email = None;
+                        snapshot.connected_at = None;
+                        snapshot.last_error = Some(error);
+                        snapshot.updated_at = now;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        changed
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -364,11 +401,7 @@ impl AgentProvider {
 
     fn required_scopes(&self) -> Vec<String> {
         match self {
-            Self::Codex => vec![
-                "responses:create".into(),
-                "project-context:read".into(),
-                "terminal-context:read".into(),
-            ],
+            Self::Codex => vec!["project:read".into(), "terminal:read".into()],
             Self::Claude => vec!["provider:deferred".into()],
         }
     }
