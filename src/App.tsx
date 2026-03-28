@@ -5,6 +5,7 @@ import {
   beginAgentLogin,
   completeAgentLogin,
   disconnectAgentProvider,
+  createTerminalSessionWithCommand,
   type AgentConnectionSnapshot,
   type AgentProviderDiagnostics as RuntimeProviderDiagnostics,
   type AgentProviderId,
@@ -143,7 +144,7 @@ const formatProviderHint = (
 
   if (connection.status === 'connected') {
     return kind === 'real'
-      ? 'Real Codex provider access passed the desktop preflight check and is ready for suggestion requests.'
+      ? 'Codex CLI ChatGPT session is connected and ready for suggestion requests.'
       : `${formatProviderUxKindLabel(kind)} provider session is connected for workspace testing.`
   }
 
@@ -154,7 +155,7 @@ const formatProviderHint = (
   }
 
   return kind === 'real'
-    ? 'Connect this provider to validate desktop Codex access before the first suggestion request.'
+    ? 'Connect this provider after Codex CLI is logged in with ChatGPT on this desktop.'
     : `${formatProviderUxKindLabel(kind)} provider flow remains secondary while the first real path focuses on Codex.`
 }
 
@@ -653,6 +654,33 @@ function App() {
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
       recordTask(`${provider} login failed`, String(error), 'error')
+    }
+  }
+
+  const openCodexLogin = async () => {
+    try {
+      setAuthError(null)
+      const session = await createTerminalSessionWithCommand({
+        session: {
+          name: 'codex-login',
+          cwd: projectOverview?.metadata.path ?? activeProjectPath ?? activeSession?.cwd ?? undefined,
+          maxLogEntries: 400,
+        },
+        command: 'codex login --device-auth',
+      })
+      await refreshTerminalSessions()
+      selectTerminalTab(String(session.sessionId))
+      await refreshActiveTerminalLogs(String(session.sessionId))
+      setActiveContext('Daily-use Codex login launched')
+      recordTask(
+        'Codex login launched',
+        'Complete the ChatGPT browser sign-in, then reconnect Codex inside gtum.',
+        'pending',
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setAuthError(message)
+      recordTask('Codex login launch failed', message, 'error')
     }
   }
 
@@ -1737,6 +1765,9 @@ function App() {
                             {contract.primaryActionLabel}
                           </button>
                         )}
+                        {connection.provider === 'codex' && connection.connectionKind !== 'mock' && !contract.canDisconnect ? (
+                          <button onClick={() => void openCodexLogin()}>Open Codex Login</button>
+                        ) : null}
                         {contract.canCompleteMock ? (
                           <button onClick={() => void simulateMockCallback(connection.provider)}>
                             Complete Mock Callback
@@ -1772,10 +1803,10 @@ function App() {
                             </div>
                             {diagnostics.model ? <code>model: {diagnostics.model}</code> : null}
                             {diagnostics.baseUrl ? <code>base URL: {diagnostics.baseUrl}</code> : null}
-                            {diagnostics.envVars.map((envVar) => (
-                              <p key={`${connection.provider}-${envVar.name}`}>
-                                {envVar.required ? 'required' : 'optional'} env • {envVar.name} •{' '}
-                                {envVar.present ? 'present' : 'missing'}
+                            {diagnostics.requirements.map((requirement) => (
+                              <p key={`${connection.provider}-${requirement.name}`}>
+                                {requirement.required ? 'required' : 'optional'} check • {requirement.name} •{' '}
+                                {requirement.present ? 'present' : 'missing'}
                               </p>
                             ))}
                           </div>
@@ -1869,7 +1900,7 @@ function App() {
               </div>
               {!selectedProviderContract?.canRequestSuggestion ? (
                 <p className="provider-selection-note">
-                  Connect Codex after the desktop provider setup is ready, then use the validated request flow.
+                  Connect Codex after the desktop Codex CLI session is ready, then use the validated request flow.
                 </p>
               ) : null}
               {agentRequestError ? <p className="error-text">{agentRequestError}</p> : null}
@@ -1912,7 +1943,7 @@ function App() {
                     </div>
                   ))
                 ) : (
-                  <p>Connect Codex and submit a task request to generate the next real command suggestion.</p>
+                  <p>Connect Codex and submit a task request to generate the next CLI-backed command suggestion.</p>
                 )}
               </div>
             </article>

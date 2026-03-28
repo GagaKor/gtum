@@ -47,6 +47,11 @@ export type CreateTerminalSessionRequest = {
   maxLogEntries?: number
 }
 
+export type CreateTerminalSessionWithCommandRequest = {
+  session: CreateTerminalSessionRequest
+  command: string
+}
+
 export type TerminalSessionSnapshot = {
   sessionId: number
   name: string
@@ -96,7 +101,7 @@ export type AgentConnectionSnapshot = {
   lastError: string | null
 }
 
-export type AgentProviderEnvVarStatus = {
+export type AgentProviderRequirementStatus = {
   name: string
   required: boolean
   present: boolean
@@ -110,7 +115,7 @@ export type AgentProviderDiagnostics = {
   guidance: string
   baseUrl: string | null
   model: string | null
-  envVars: AgentProviderEnvVarStatus[]
+  requirements: AgentProviderRequirementStatus[]
 }
 
 export type CompleteAgentLoginRequest = {
@@ -543,6 +548,26 @@ export const createTerminalSession = async (request: CreateTerminalSessionReques
   return invoke<TerminalSessionSnapshot>('create_terminal_session', { request })
 }
 
+export const createTerminalSessionWithCommand = async (request: CreateTerminalSessionWithCommandRequest) => {
+  if (usesBrowserRuntime()) {
+    const session = await createTerminalSession(request.session)
+    const prompt = isPreviewContractRuntime() ? 'PS>' : '$'
+    const extraLines = isPreviewContractRuntime()
+      ? [
+          `${prompt} ${request.command}`,
+          '[preview] open the ChatGPT device login flow in your browser',
+          '[preview] finish login, then return to gtum and connect Codex',
+        ]
+      : [`${prompt} ${request.command}`, '[mock] Codex login command queued']
+
+    browserTerminalLogs[session.sessionId] = [...(browserTerminalLogs[session.sessionId] || []), ...extraLines]
+    refreshBrowserSession(session.sessionId)
+    return browserTerminalSessions.find((entry) => entry.sessionId === session.sessionId) ?? session
+  }
+
+  return invoke<TerminalSessionSnapshot>('create_terminal_session_with_command', { request })
+}
+
 export const listTerminalSessions = async () => {
   if (usesBrowserRuntime()) {
     return browserTerminalSessions
@@ -638,20 +663,24 @@ export const readAgentProviderDiagnostics = async (provider: AgentProviderId) =>
     return {
       provider,
       setupState: provider === 'codex' ? 'ready' : 'deferred',
-      connectionPath: provider === 'codex' ? 'Mock callback provider flow' : 'Deferred real-provider path',
+      connectionPath: provider === 'codex' ? 'Mock Codex CLI session flow' : 'Deferred real-provider path',
       summary:
         provider === 'codex'
-          ? 'Mock runtime simulates a callback-based provider connection for UI testing.'
+          ? 'Mock runtime simulates a Codex CLI session for provider UI testing.'
           : 'Claude remains deferred in the first daily-use release.',
       guidance:
         provider === 'codex'
-          ? 'Use the mock callback to exercise the provider UI without a live desktop environment.'
+          ? 'Use the mock session to exercise the provider UI without a live desktop Codex login.'
           : 'Keep Claude on the prototype path while Codex is the first real provider route.',
-      baseUrl: provider === 'codex' ? 'https://mock.gtum.local/auth/codex' : null,
-      model: provider === 'codex' ? 'mock-codex' : null,
-      envVars:
+      baseUrl: null,
+      model: provider === 'codex' ? 'Codex CLI default' : null,
+      requirements:
         provider === 'codex'
-          ? [{ name: 'MOCK_CALLBACK', required: false, present: true }]
+          ? [
+              { name: 'codex CLI', required: true, present: true },
+              { name: '~/.codex/auth.json', required: true, present: true },
+              { name: 'ChatGPT session', required: true, present: true },
+            ]
           : [{ name: 'provider:deferred', required: false, present: false }],
     } satisfies AgentProviderDiagnostics
   }
@@ -661,23 +690,23 @@ export const readAgentProviderDiagnostics = async (provider: AgentProviderId) =>
       provider,
       setupState: provider === 'codex' ? 'ready' : 'deferred',
       connectionPath:
-        provider === 'codex' ? 'Previewed env-backed OpenAI Responses API bridge' : 'Deferred real-provider path',
+        provider === 'codex' ? 'Previewed Codex CLI ChatGPT session' : 'Deferred real-provider path',
       summary:
         provider === 'codex'
-          ? 'Preview mode simulates a validated desktop Codex connection before the first request.'
+          ? 'Preview mode simulates a validated desktop Codex CLI session before the first request.'
           : 'Claude remains deferred in the first daily-use release.',
       guidance:
         provider === 'codex'
-          ? 'Desktop mode expects OPENAI_API_KEY and validates live provider access when you connect.'
+          ? 'Desktop mode expects Codex CLI to be logged in with ChatGPT before you connect.'
           : 'Keep Claude on the prototype path while Codex is the first real provider route.',
-      baseUrl: provider === 'codex' ? 'https://api.openai.com/v1' : null,
-      model: provider === 'codex' ? 'gpt-5.3-codex' : null,
-      envVars:
+      baseUrl: null,
+      model: provider === 'codex' ? 'Codex CLI default' : null,
+      requirements:
         provider === 'codex'
           ? [
-              { name: 'OPENAI_API_KEY', required: true, present: true },
-              { name: 'GTUM_CODEX_MODEL', required: false, present: false },
-              { name: 'GTUM_OPENAI_BASE_URL', required: false, present: false },
+              { name: 'codex CLI', required: true, present: true },
+              { name: '~/.codex/auth.json', required: true, present: true },
+              { name: 'ChatGPT session', required: true, present: true },
             ]
           : [{ name: 'provider:deferred', required: false, present: false }],
     } satisfies AgentProviderDiagnostics
@@ -719,7 +748,7 @@ export const beginAgentLogin = async (provider: AgentProviderId, requestedScopes
           ...entry,
           status: 'connected',
           connectionKind: 'real',
-          accountLabel: 'Codex Windows Preview',
+          accountLabel: 'Codex ChatGPT Session',
           requiredScopes: requestedScopes.length > 0 ? requestedScopes : entry.requiredScopes,
           expiresAt: null,
           callbackUrl: null,

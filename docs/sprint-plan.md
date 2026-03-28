@@ -1036,6 +1036,8 @@ Note:
 - provider 승인 경로 또는 시스템 브라우저 로그인 시작
 - callback, deep link, 또는 desktop sign-in 완료 처리
 - 세션 저장, 만료, 재연결, 취소 상태 처리
+- 워크스페이스 안에서 `codex login --device-auth`를 시작할 수 있는 로그인 런처
+- `Codex CLI` ChatGPT session과 `codex exec` 기반 첫 desktop session-backed adapter
 - `Codex` account/session/scopes UI 표시
 - `Claude` deferred path 유지
 - Windows 기준 로그인 UX와 실패 상태 검증
@@ -1073,6 +1075,8 @@ Note:
 Sprint 11 initial backlog:
 
 - `P0` launch the official `Codex` OAuth/session login flow
+- `P0` surface a workspace-native `codex login --device-auth` launcher
+- `P0` route the first real request path through `Codex CLI` ChatGPT session and `codex exec`
 - `P0` implement callback or desktop sign-in completion handling
 - `P0` persist session state and show reconnect/expiry/cancel status
 - `P0` update provider-auth E2E around success, cancel, and reconnect
@@ -1094,6 +1098,8 @@ Scope:
 - launch the provider-approved path or system-browser login flow
 - handle callback, deep link, or desktop sign-in completion
 - implement session persistence plus expiry, reconnect, and cancellation handling
+- provide a workspace-native launcher for `codex login --device-auth`
+- use `Codex CLI` ChatGPT session plus `codex exec` as the first desktop session-backed adapter
 - expose `Codex` account, session, and scopes in the UI
 - keep `Claude` on the deferred path
 - validate login UX and failure states with Windows as the baseline
@@ -1131,6 +1137,8 @@ Risks:
 Sprint 11 initial backlog:
 
 - `P0` launch the official `Codex` OAuth/session login flow
+- `P0` surface a workspace-native `codex login --device-auth` launcher
+- `P0` route the first real request path through `Codex CLI` ChatGPT session and `codex exec`
 - `P0` implement callback or desktop sign-in completion handling
 - `P0` persist session state and show reconnect/expiry/cancel status
 - `P0` update provider-auth E2E around success, cancel, and reconnect

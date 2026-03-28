@@ -11,20 +11,24 @@ test('connects the real Codex-first preview path', async ({ page }) => {
     'Selected provider for the next request.',
   )
 
+  await page.getByRole('button', { name: 'Open Codex Login' }).click()
+  await expect(page.getByTestId('terminal-workspace').getByText('PS> codex login --device-auth')).toBeVisible()
+
   await page.getByTestId('provider-action-codex').click()
   await expect(page.getByTestId('provider-card-codex')).toContainText('Connected')
-  await expect(page.getByTestId('provider-card-codex')).toContainText('Codex Windows Preview')
+  await expect(page.getByTestId('provider-card-codex')).toContainText('Codex ChatGPT Session')
   await expect(page.getByTestId('provider-card-codex')).toContainText('project:read, terminal:read')
   await page.getByTestId('provider-diagnostics-codex').locator('summary').click()
   await expect(page.getByTestId('provider-diagnostics-codex')).toContainText(
-    'Previewed env-backed OpenAI Responses API bridge',
+    'Previewed Codex CLI ChatGPT session',
   )
   await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('Ready')
-  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('OPENAI_API_KEY')
-  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('gpt-5.3-codex')
-  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('base URL: https://api.openai.com/v1')
+  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('codex CLI')
+  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('~/.codex/auth.json')
+  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('ChatGPT session')
+  await expect(page.getByTestId('provider-diagnostics-codex')).toContainText('Codex CLI default')
   await expect(page.getByTestId('provider-diagnostics-codex')).not.toContainText('gtum://auth/callback')
-  await expect(page.getByTestId('provider-request-preview')).toContainText('workspace')
+  await expect(page.getByTestId('provider-request-preview')).toContainText('codex-login')
   await expect(page.getByTestId('provider-request-preview')).toContainText(
     'active log line(s) prepared for the provider request',
   )
@@ -32,10 +36,10 @@ test('connects the real Codex-first preview path', async ({ page }) => {
   await page.getByTestId('provider-action-codex').click()
   await expect(page.getByTestId('provider-card-codex')).toContainText('Needs Connection')
   await expect(page.getByTestId('provider-card-codex')).toContainText(
-    'Connect this provider to validate desktop Codex access before the first suggestion request.',
+    'Connect this provider after Codex CLI is logged in with ChatGPT on this desktop.',
   )
   await expect(page.getByTestId('agent-request-panel')).toContainText(
-    'Connect Codex after the desktop provider setup is ready, then use the validated request flow.',
+    'Connect Codex after the desktop Codex CLI session is ready, then use the validated request flow.',
   )
 })
 

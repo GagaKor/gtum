@@ -1,22 +1,20 @@
-use std::{env, time::Duration};
-
-use reqwest::{
-    blocking::Client,
-    header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
-    StatusCode,
+use std::{
+    env, fs,
+    path::PathBuf,
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
 };
+
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 
 use crate::runtime::{
     auth::AgentProvider,
     workspace::ExecutionMode,
 };
 
-const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_CODEX_MODEL: &str = "gpt-5.3-codex";
-const REQUEST_TIMEOUT_SECS: u64 = 45;
-const PREFLIGHT_TIMEOUT_SECS: u64 = 12;
+const CODEX_AUTH_PATH_LABEL: &str = "~/.codex/auth.json";
+const CODEX_CONNECTION_PATH: &str = "Codex CLI ChatGPT session";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +67,7 @@ pub enum AgentProviderSetupState {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentProviderEnvVarStatus {
+pub struct AgentProviderRequirementStatus {
     pub name: String,
     pub required: bool,
     pub present: bool,
@@ -85,7 +83,7 @@ pub struct AgentProviderDiagnostics {
     pub guidance: String,
     pub base_url: Option<String>,
     pub model: Option<String>,
-    pub env_vars: Vec<AgentProviderEnvVarStatus>,
+    pub requirements: Vec<AgentProviderRequirementStatus>,
 }
 
 #[derive(Deserialize)]
@@ -98,109 +96,99 @@ struct CodexStructuredSuggestion {
     error: Option<String>,
 }
 
-struct CodexConfig {
-    api_key: String,
-    base_url: String,
-    model: String,
-    organization_id: Option<String>,
-    project_id: Option<String>,
+#[derive(Default, Deserialize)]
+struct CodexAuthFile {
+    auth_mode: Option<String>,
+    tokens: Option<CodexAuthTokens>,
 }
 
-impl CodexConfig {
-    fn from_env() -> Result<Self, String> {
-        let api_key = env::var("OPENAI_API_KEY")
-            .map_err(|_| "Set OPENAI_API_KEY in the desktop environment to connect Codex.".to_string())?;
+#[derive(Default, Deserialize)]
+struct CodexAuthTokens {
+    access_token: Option<String>,
+    refresh_token: Option<String>,
+    account_id: Option<String>,
+    id_token: Option<String>,
+}
 
-        let base_url = env::var("GTUM_OPENAI_BASE_URL")
-            .or_else(|_| env::var("OPENAI_BASE_URL"))
-            .unwrap_or_else(|_| DEFAULT_OPENAI_BASE_URL.to_string());
-        let model = env::var("GTUM_CODEX_MODEL").unwrap_or_else(|_| DEFAULT_CODEX_MODEL.to_string());
-        let organization_id = env::var("OPENAI_ORG_ID").ok().filter(|value| !value.trim().is_empty());
-        let project_id = env::var("OPENAI_PROJECT_ID").ok().filter(|value| !value.trim().is_empty());
+struct CodexCliStatus {
+    binary_available: bool,
+    auth_file_exists: bool,
+    auth_mode: Option<String>,
+    has_chatgpt_session: bool,
+}
 
-        Ok(Self {
-            api_key,
-            base_url,
-            model,
-            organization_id,
-            project_id,
-        })
-    }
-
+impl CodexCliStatus {
     fn account_label(&self) -> String {
-        env::var("GTUM_CODEX_ACCOUNT_LABEL")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| format!("{} via OpenAI API", self.model))
+        match self.auth_mode.as_deref() {
+            Some("chatgpt") => "Codex ChatGPT Session".into(),
+            Some("api_key") => "Codex API Key Session".into(),
+            Some(mode) if !mode.trim().is_empty() => format!("Codex {} Session", mode),
+            _ => "Codex Session".into(),
+        }
     }
 }
 
 pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
-    let api_key_present = env_var_present("OPENAI_API_KEY");
-    let env_vars = vec![
-        AgentProviderEnvVarStatus {
-            name: "OPENAI_API_KEY".into(),
+    let status = read_codex_cli_status();
+    let requirements = vec![
+        AgentProviderRequirementStatus {
+            name: "codex CLI".into(),
             required: true,
-            present: api_key_present,
+            present: status.binary_available,
         },
-        AgentProviderEnvVarStatus {
-            name: "GTUM_CODEX_MODEL".into(),
-            required: false,
-            present: env_var_present("GTUM_CODEX_MODEL"),
+        AgentProviderRequirementStatus {
+            name: CODEX_AUTH_PATH_LABEL.into(),
+            required: true,
+            present: status.auth_file_exists,
         },
-        AgentProviderEnvVarStatus {
-            name: "GTUM_OPENAI_BASE_URL".into(),
-            required: false,
-            present: env_var_present("GTUM_OPENAI_BASE_URL"),
-        },
-        AgentProviderEnvVarStatus {
-            name: "OPENAI_BASE_URL".into(),
-            required: false,
-            present: env_var_present("OPENAI_BASE_URL"),
-        },
-        AgentProviderEnvVarStatus {
-            name: "OPENAI_ORG_ID".into(),
-            required: false,
-            present: env_var_present("OPENAI_ORG_ID"),
-        },
-        AgentProviderEnvVarStatus {
-            name: "OPENAI_PROJECT_ID".into(),
-            required: false,
-            present: env_var_present("OPENAI_PROJECT_ID"),
-        },
-        AgentProviderEnvVarStatus {
-            name: "GTUM_CODEX_ACCOUNT_LABEL".into(),
-            required: false,
-            present: env_var_present("GTUM_CODEX_ACCOUNT_LABEL"),
+        AgentProviderRequirementStatus {
+            name: "ChatGPT session".into(),
+            required: true,
+            present: status.has_chatgpt_session,
         },
     ];
 
-    let base_url = env::var("GTUM_OPENAI_BASE_URL")
-        .or_else(|_| env::var("OPENAI_BASE_URL"))
-        .unwrap_or_else(|_| DEFAULT_OPENAI_BASE_URL.to_string());
-    let model = env::var("GTUM_CODEX_MODEL").unwrap_or_else(|_| DEFAULT_CODEX_MODEL.to_string());
+    let (setup_state, summary, guidance) = if !status.binary_available {
+        (
+            AgentProviderSetupState::NeedsSetup,
+            "Desktop Codex access is blocked until Codex CLI is installed on this machine.".into(),
+            "Install Codex CLI, run `codex login`, then reconnect Codex in gtum.".into(),
+        )
+    } else if matches!(status.auth_mode.as_deref(), Some("api_key")) {
+        (
+            AgentProviderSetupState::NeedsSetup,
+            "Codex CLI is present, but the current login is API-key based instead of ChatGPT session based.".into(),
+            "Run `codex login` without API-key mode so gtum can use the ChatGPT session path.".into(),
+        )
+    } else if !status.auth_file_exists {
+        (
+            AgentProviderSetupState::NeedsSetup,
+            "Codex CLI is installed, but no local session file was found for the current desktop user.".into(),
+            "Run `codex login` and complete the browser sign-in flow, then reconnect Codex.".into(),
+        )
+    } else if !status.has_chatgpt_session {
+        (
+            AgentProviderSetupState::NeedsSetup,
+            "Codex CLI session is not ready for the ChatGPT-based daily-use path yet.".into(),
+            "Refresh the local Codex login with `codex login`, then reconnect Codex.".into(),
+        )
+    } else {
+        (
+            AgentProviderSetupState::Ready,
+            "Codex CLI is installed and the ChatGPT session is ready for desktop suggestion requests.".into(),
+            "Connect Codex to validate the local CLI session before the first suggestion request.".into(),
+        )
+    };
 
     AgentProviderDiagnostics {
         provider: AgentProvider::Codex,
-        setup_state: if api_key_present {
-            AgentProviderSetupState::Ready
-        } else {
-            AgentProviderSetupState::NeedsSetup
-        },
-        connection_path: "Env-backed OpenAI Responses API bridge".into(),
-        summary: if api_key_present {
-            "Desktop Codex access is configured and will be live-validated when you connect.".into()
-        } else {
-            "Desktop Codex access is blocked until OPENAI_API_KEY is available in the app environment.".into()
-        },
-        guidance: if api_key_present {
-            "Connect Codex to run a preflight check against the configured provider before the first suggestion request.".into()
-        } else {
-            "Set OPENAI_API_KEY, then reopen or relaunch the desktop app before connecting Codex again.".into()
-        },
-        base_url: Some(base_url),
-        model: Some(model),
-        env_vars,
+        setup_state,
+        connection_path: CODEX_CONNECTION_PATH.into(),
+        summary,
+        guidance,
+        base_url: None,
+        model: Some("Codex CLI default".into()),
+        requirements,
     }
 }
 
@@ -219,7 +207,7 @@ pub fn deferred_provider_diagnostics(provider: AgentProvider) -> AgentProviderDi
         ),
         base_url: None,
         model: None,
-        env_vars: vec![AgentProviderEnvVarStatus {
+        requirements: vec![AgentProviderRequirementStatus {
             name: "provider:deferred".into(),
             required: false,
             present: false,
@@ -228,63 +216,76 @@ pub fn deferred_provider_diagnostics(provider: AgentProvider) -> AgentProviderDi
 }
 
 pub fn validate_codex_connection() -> Result<String, String> {
-    let config = CodexConfig::from_env()?;
-    let client = build_client(PREFLIGHT_TIMEOUT_SECS)?;
-    let headers = build_headers(&config)?;
-    let url = format!(
-        "{}/models/{}",
-        config.base_url.trim_end_matches('/'),
-        config.model
-    );
+    let status = read_codex_cli_status();
 
-    let response = client
-        .get(url)
-        .headers(headers)
-        .send()
-        .map_err(|error| format!("Codex preflight could not reach the configured provider: {error}"))?;
-    let status = response.status();
-
-    if !status.is_success() {
-        return Err(match status {
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                "Codex preflight rejected the configured OPENAI_API_KEY.".into()
-            }
-            StatusCode::NOT_FOUND => format!(
-                "Codex preflight could not find model `{}` at the configured provider base URL.",
-                config.model
-            ),
-            _ => format!("Codex preflight failed with status {status}."),
-        });
+    if !status.binary_available {
+        return Err("Codex CLI is not installed. Install it and run `codex login` before connecting Codex.".into());
     }
 
-    Ok(config.account_label())
+    if matches!(status.auth_mode.as_deref(), Some("api_key")) {
+        return Err(
+            "Codex CLI is logged in with an API key. Re-run `codex login` with ChatGPT session mode before connecting gtum."
+                .into(),
+        );
+    }
+
+    if !status.auth_file_exists || !status.has_chatgpt_session {
+        return Err(
+            "Codex CLI is not logged in with ChatGPT for this desktop user. Run `codex login`, finish the browser sign-in, then connect again."
+                .into(),
+        );
+    }
+
+    Ok(status.account_label())
 }
 
 pub fn request_codex_suggestions(
     request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
-    let config = CodexConfig::from_env()?;
-    let client = build_client(REQUEST_TIMEOUT_SECS)?;
+    let _ = validate_codex_connection()?;
 
-    let payload = build_request_payload(&config, &request);
-    let url = format!("{}/responses", config.base_url.trim_end_matches('/'));
-    let headers = build_headers(&config)?;
+    let output_path = temp_file_path("gtum-codex-output", "json");
+    let schema_path = temp_file_path("gtum-codex-schema", "json");
+    let prompt = build_prompt(&request);
 
-    let response_json = client
-        .post(url)
-        .headers(headers)
-        .json(&payload)
-        .send()
-        .map_err(|error| format!("failed to reach Codex provider: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Codex provider request failed: {error}"))?
-        .json::<Value>()
-        .map_err(|error| format!("failed to decode Codex provider response: {error}"))?;
+    write_schema_file(&schema_path)?;
 
-    let output_text = extract_output_text(&response_json)
-        .ok_or_else(|| "Codex provider returned no structured text output.".to_string())?;
-    let structured = serde_json::from_str::<CodexStructuredSuggestion>(&output_text)
-        .map_err(|error| format!("failed to parse Codex structured response: {error}"))?;
+    let output = Command::new(codex_command_name())
+        .arg("exec")
+        .arg("--sandbox")
+        .arg("read-only")
+        .arg("--skip-git-repo-check")
+        .arg("--output-schema")
+        .arg(&schema_path)
+        .arg("-o")
+        .arg(&output_path)
+        .arg("-C")
+        .arg(&request.project_path)
+        .arg(&prompt)
+        .output()
+        .map_err(|error| format!("failed to launch Codex CLI: {error}"))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    if !output.status.success() {
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("Codex CLI exited with status {}.", output.status)
+        };
+        let _ = cleanup_temp_files(&schema_path, &output_path);
+        return Err(message);
+    }
+
+    let raw_output = fs::read_to_string(&output_path)
+        .map_err(|error| format!("failed to read Codex CLI output: {error}"))?;
+    let structured = serde_json::from_str::<CodexStructuredSuggestion>(&raw_output)
+        .map_err(|error| format!("failed to parse Codex CLI structured response: {error}"))?;
+
+    let _ = cleanup_temp_files(&schema_path, &output_path);
 
     let normalized_error = structured
         .error
@@ -293,7 +294,7 @@ pub fn request_codex_suggestions(
     let normalized_command = structured.command.trim().to_string();
 
     if normalized_error.is_none() && normalized_command.is_empty() {
-        return Err("Codex provider returned an empty command without an error reason.".into());
+        return Err("Codex CLI returned an empty command without an error reason.".into());
     }
 
     Ok(vec![AgentSuggestionResponse {
@@ -307,94 +308,142 @@ pub fn request_codex_suggestions(
     }])
 }
 
-fn env_var_present(name: &str) -> bool {
-    env::var(name)
-        .ok()
-        .map(|value| !value.trim().is_empty())
+fn read_codex_cli_status() -> CodexCliStatus {
+    let binary_available = codex_command_available();
+    let auth_path = codex_auth_path();
+    let auth = read_auth_file(&auth_path);
+    let auth_mode = auth.auth_mode.clone();
+    let has_chatgpt_session = if !binary_available {
+        false
+    } else if matches!(auth_mode.as_deref(), Some("chatgpt")) {
+        let tokens = auth.tokens.unwrap_or_default();
+        let has_required_tokens = token_present(tokens.access_token.as_deref())
+            && token_present(tokens.refresh_token.as_deref());
+        let _has_identity = token_present(tokens.account_id.as_deref()) || token_present(tokens.id_token.as_deref());
+        has_required_tokens && codex_login_status_reports_chatgpt()
+    } else {
+        false
+    };
+
+    CodexCliStatus {
+        binary_available,
+        auth_file_exists: auth_path.exists(),
+        auth_mode,
+        has_chatgpt_session,
+    }
+}
+
+fn codex_command_available() -> bool {
+    Command::new(codex_command_name())
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
         .unwrap_or(false)
 }
 
-fn build_client(timeout_secs: u64) -> Result<Client, String> {
-    Client::builder()
-        .timeout(Duration::from_secs(timeout_secs))
-        .build()
-        .map_err(|error| format!("failed to initialize Codex client: {error}"))
+fn codex_login_status_reports_chatgpt() -> bool {
+    Command::new(codex_command_name())
+        .arg("login")
+        .arg("status")
+        .output()
+        .map(|output| {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            output.status.success()
+                && (stdout.contains("Logged in using ChatGPT") || stderr.contains("Logged in using ChatGPT"))
+        })
+        .unwrap_or(false)
 }
 
-fn build_headers(config: &CodexConfig) -> Result<HeaderMap, String> {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", config.api_key))
-            .map_err(|error| format!("failed to prepare Codex authorization header: {error}"))?,
-    );
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-    if let Some(organization_id) = &config.organization_id {
-        headers.insert(
-            "OpenAI-Organization",
-            HeaderValue::from_str(organization_id)
-                .map_err(|error| format!("failed to prepare OpenAI organization header: {error}"))?,
-        );
-    }
-
-    if let Some(project_id) = &config.project_id {
-        headers.insert(
-            "OpenAI-Project",
-            HeaderValue::from_str(project_id)
-                .map_err(|error| format!("failed to prepare OpenAI project header: {error}"))?,
-        );
-    }
-
-    Ok(headers)
+fn read_auth_file(path: &PathBuf) -> CodexAuthFile {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<CodexAuthFile>(&contents).ok())
+        .unwrap_or_default()
 }
 
-fn build_request_payload(config: &CodexConfig, request: &RequestAgentSuggestionsRequest) -> Value {
-    let prompt = build_prompt(request);
+fn token_present(value: Option<&str>) -> bool {
+    value.map(|entry| !entry.trim().is_empty()).unwrap_or(false)
+}
 
-    json!({
-        "model": config.model,
-        "instructions": "You are Codex inside gtum, a desktop workspace for terminal-heavy development. Read the project metadata and recent terminal logs, then return exactly one safe next shell command. Prefer non-destructive commands that help the developer move forward immediately. If you cannot recommend a safe command, set `error` and leave `command` empty.",
-        "input": prompt,
-        "reasoning": {
-            "effort": reasoning_effort(request.execution_mode)
-        },
-        "text": {
-            "verbosity": "low",
-            "format": {
-                "type": "json_schema",
-                "name": "gtum_agent_suggestion",
-                "strict": true,
-                "schema": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "summary": {
-                            "type": "string",
-                            "description": "One concise summary for the suggestion card."
-                        },
-                        "command": {
-                            "type": "string",
-                            "description": "Exactly one terminal command to run next."
-                        },
-                        "preferredTarget": {
-                            "type": "string",
-                            "enum": ["current_tab", "new_tab"]
-                        },
-                        "confidence": {
-                            "type": "string",
-                            "enum": ["low", "medium", "high"]
-                        },
-                        "error": {
-                            "type": ["string", "null"],
-                            "description": "Explain why no safe command is available. Use null when a command is present."
-                        }
-                    },
-                    "required": ["summary", "command", "preferredTarget", "confidence", "error"]
+fn codex_auth_path() -> PathBuf {
+    if let Ok(codex_home) = env::var("CODEX_HOME") {
+        return PathBuf::from(codex_home).join("auth.json");
+    }
+
+    home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".codex")
+        .join("auth.json")
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+        .or_else(|| {
+            match (env::var_os("HOMEDRIVE"), env::var_os("HOMEPATH")) {
+                (Some(drive), Some(path)) => {
+                    let mut value = PathBuf::from(drive);
+                    value.push(path);
+                    Some(value)
                 }
+                _ => None,
             }
-        }
-    })
+        })
+}
+
+fn codex_command_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "codex.cmd"
+    } else {
+        "codex"
+    }
+}
+
+fn temp_file_path(prefix: &str, extension: &str) -> PathBuf {
+    env::temp_dir().join(format!("{prefix}-{}.{}", unix_timestamp_ms(), extension))
+}
+
+fn write_schema_file(path: &PathBuf) -> Result<(), String> {
+    let schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": "One concise summary for the suggestion card."
+            },
+            "command": {
+                "type": "string",
+                "description": "Exactly one terminal command to run next."
+            },
+            "preferredTarget": {
+                "type": "string",
+                "enum": ["current_tab", "new_tab"]
+            },
+            "confidence": {
+                "type": "string",
+                "enum": ["low", "medium", "high"]
+            },
+            "error": {
+                "type": ["string", "null"],
+                "description": "Explain why no safe command is available. Use null when a command is present."
+            }
+        },
+        "required": ["summary", "command", "preferredTarget", "confidence", "error"]
+    });
+
+    let serialized = serde_json::to_string(&schema)
+        .map_err(|error| format!("failed to serialize Codex CLI output schema: {error}"))?;
+    fs::write(path, serialized)
+        .map_err(|error| format!("failed to write Codex CLI output schema: {error}"))
+}
+
+fn cleanup_temp_files(schema_path: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
+    let _ = fs::remove_file(schema_path);
+    let _ = fs::remove_file(output_path);
+    Ok(())
 }
 
 fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
@@ -417,7 +466,7 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
     };
 
     format!(
-        "Project name: {}\nProject path: {}\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
+        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\nRead the project metadata and recent terminal logs.\nReturn exactly one safe next shell command.\nPrefer non-destructive commands that help the developer move forward immediately.\nIf you cannot recommend a safe command, set `error` and leave `command` empty.\n\nProject name: {}\nProject path: {}\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
         request.project_name.trim(),
         request.project_path.trim(),
         request.active_tab_id.as_deref().unwrap_or("none"),
@@ -428,14 +477,6 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
     )
 }
 
-fn reasoning_effort(mode: ExecutionMode) -> &'static str {
-    match mode {
-        ExecutionMode::Fast => "low",
-        ExecutionMode::Balanced => "medium",
-        ExecutionMode::Deep => "high",
-    }
-}
-
 fn execution_mode_label(mode: ExecutionMode) -> &'static str {
     match mode {
         ExecutionMode::Fast => "fast",
@@ -444,34 +485,7 @@ fn execution_mode_label(mode: ExecutionMode) -> &'static str {
     }
 }
 
-fn extract_output_text(response_json: &Value) -> Option<String> {
-    if let Some(output_text) = response_json.get("output_text").and_then(Value::as_str) {
-        if !output_text.trim().is_empty() {
-            return Some(output_text.to_string());
-        }
-    }
-
-    response_json
-        .get("output")
-        .and_then(Value::as_array)
-        .and_then(|items| {
-            items.iter().find_map(|item| {
-                item.get("content")
-                    .and_then(Value::as_array)
-                    .and_then(|content| {
-                        content.iter().find_map(|entry| {
-                            entry.get("text")
-                                .and_then(Value::as_str)
-                                .map(|text| text.to_string())
-                        })
-                    })
-            })
-        })
-}
-
 fn unix_timestamp_ms() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)

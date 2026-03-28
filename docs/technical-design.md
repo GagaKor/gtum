@@ -1034,6 +1034,7 @@ Because `gtum` interacts with local files and shell execution, security boundari
 - file edits are allowed only through approval or explicit editing flows
 - login sessions and sensitive data must use secure storage
 - provider responses should be normalized into shared internal formats before being exposed to the UI
+- the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
 
 ## MVP 구현 순서 / MVP Implementation Order
 
