@@ -78,7 +78,7 @@ The MVP is not successful merely by being "an agent app with terminals." It must
 2. 파일 트리와 현재 Git 브랜치 및 dirty state를 볼 수 있다.
 3. 탭 단위로 독립적인 터미널 세션을 만들고 종료할 수 있다.
 4. 터미널 출력과 기본 세션 상태가 유지된다.
-5. 사용자가 앱 안에서 `Codex` 연결 상태를 검증하고, `Claude`의 deferred 상태를 구분해서 볼 수 있다.
+5. 사용자가 앱 안에서 최소 1개 provider에 대해 세션 기반 로그인 연결을 완료하고, `Claude`의 deferred 상태를 구분해서 볼 수 있다.
 6. 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽어 제안을 생성할 수 있다.
 7. 사용자가 제안된 명령을 검토하고 승인 후 실행할 수 있다.
 8. 작업 이력과 기본적인 에이전트 상태를 UI에서 확인할 수 있다.
@@ -95,7 +95,7 @@ The MVP is considered complete when all of the following are true:
 2. users can view the file tree, current Git branch, and dirty state
 3. users can create and close isolated terminal sessions by tab
 4. terminal output and basic session state are preserved
-5. users can validate in-app `Codex` connectivity and clearly distinguish the deferred `Claude` path
+5. users can complete a session-based sign-in flow for at least one provider and clearly distinguish the deferred `Claude` path
 6. an agent can read project context and current terminal output to generate suggestions
 7. users can review and approve suggested commands before execution
 8. task history and basic agent state are visible in the UI
@@ -418,20 +418,21 @@ Acceptance Criteria:
 
 목표:
 
-- 사용자가 앱 안에서 `Codex` 연결을 검증하고, `Claude`의 deferred 상태를 구분할 수 있게 한다.
+- 사용자가 앱 안에서 session-based provider login을 시작하고, `Claude`의 deferred 상태를 구분할 수 있게 한다.
 
 백로그 항목:
 
 - provider 선택 UI
 - 연결 시작 액션
-- `Codex` env-backed preflight 검증
+- OAuth/session 로그인 시작
+- callback 또는 desktop sign-in 완료 처리
 - 세션 저장
 - 연결 상태와 진단 정보 표시
 
 완료조건:
 
-- 사용자가 `Codex` 연결 검증을 시작할 수 있다.
-- `Codex` 연결 성공 또는 실패 상태가 UI에 표시된다.
+- 사용자가 최소 1개 provider에 대해 로그인 연결을 시작할 수 있다.
+- 로그인 성공, 실패, 취소 상태가 UI에 표시된다.
 - `Claude` deferred 상태와 `Codex` real 상태를 구분해 보여줄 수 있다.
 
 #### English
@@ -440,20 +441,21 @@ Priority: `P0`
 
 Goal:
 
-- let users validate `Codex` connectivity in-app while clearly distinguishing the deferred `Claude` path
+- let users start a session-based provider login in-app while clearly distinguishing the deferred `Claude` path
 
 Backlog:
 
 - provider selection UI
 - connect action
-- `Codex` env-backed preflight validation
+- OAuth/session login start
+- callback or desktop sign-in completion handling
 - session persistence
 - connection status and diagnostics display
 
 Acceptance Criteria:
 
-- users can start connectivity validation for `Codex`
-- `Codex` success and failure states are visible in the UI
+- users can start a login flow for at least one provider
+- login success, failure, and cancellation states are visible in the UI
 - the deferred `Claude` path is visibly distinct from the real `Codex` path
 
 ### 7. Provider Adapter 공통화 / Shared Provider Adapter Layer
@@ -836,20 +838,20 @@ The items below serve as the planning backlog for the next sprint phase.
 
 목표:
 
-- `Codex` provider 연결을 mock foundation에서 실제 daily-use 연결 경로로 전환하고, `Claude`는 deferred 상태를 명시한다.
+- `Codex` provider 연결을 mock foundation에서 실제 `OAuth/session login` 경로로 전환하고, `Claude`는 deferred 상태를 명시한다.
 
 백로그 항목:
 
-- `Codex` env-backed OpenAI API bridge 연결
-- connect-time preflight 검증
+- `Codex` OAuth/session login 경로 설계와 구현
+- 브라우저 또는 데스크톱 승인 완료 callback 처리
 - 실제 provider 에러 상태 계약 정의
 - 만료, 취소, scope 부족 상태 처리
 - mock/real provider 상태 표시 분리
 
 완료조건:
 
-- 최소 1개 provider가 실제 daily-use 연결 경로로 동작한다.
-- preflight 실패, 취소, scope 부족을 사용자가 이해 가능한 상태로 본다.
+- 최소 1개 provider가 실제 `OAuth/session login` 경로로 동작한다.
+- 로그인 실패, 취소, scope 부족을 사용자가 이해 가능한 상태로 본다.
 - UI에서 mock 상태와 real 상태를 혼동하지 않는다.
 
 #### English
@@ -858,20 +860,20 @@ Priority: `P0`
 
 Goal:
 
-- move `Codex` provider connection from mock foundation to a real daily-use path while keeping `Claude` explicitly deferred
+- move `Codex` provider connection from mock foundation to a real `OAuth/session login` path while keeping `Claude` explicitly deferred
 
 Backlog:
 
-- connect `Codex` through an env-backed OpenAI API bridge
-- add connect-time preflight validation
+- implement the `Codex` OAuth/session login path
+- handle browser or desktop sign-in callback completion
 - define contracts for real provider error states
 - handle expiry, cancellation, and missing-scope states
 - clearly separate mock and real provider status in the UI
 
 Acceptance Criteria:
 
-- at least one provider works through a real daily-use connectivity path
-- preflight failure, cancellation, and missing-scope states are understandable to users
+- at least one provider works through a real `OAuth/session login` path
+- login failure, cancellation, and missing-scope states are understandable to users
 - the UI does not confuse mock status with real status
 
 ### 16. Agent 응답 실제화 / Real Agent Responses
@@ -1258,7 +1260,7 @@ The following items matter, but are not part of the MVP completion criteria:
 
 - Tauri 환경에서 PTY 계층 안정성
 - Ubuntu, Windows, macOS 간 셸 차이
-- Codex env-backed bridge와 connect-time preflight 안정성
+- Codex OAuth/session login 경로와 데스크톱 callback 처리 안정성
 - provider 응답 모델 공통화 난이도
 
 ### English
@@ -1267,7 +1269,7 @@ The highest-risk items that should be validated early are:
 
 - PTY stability inside the Tauri runtime
 - shell behavior differences across Ubuntu, Windows, and macOS
-- stability of the Codex env-backed bridge and connect-time preflight
+- stability of the Codex OAuth/session login path and desktop callback handling
 - difficulty of normalizing provider response models
 
 ## 다음 문서 제안 / Recommended Next Document

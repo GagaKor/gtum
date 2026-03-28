@@ -17,6 +17,7 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - 프로젝트 열기, 파일 트리, Git 상태
 - 멀티 탭 터미널과 활성 로그 캡처
 - provider 연결 preview/deferred 상태와 diagnostics
+- 현재 provider-auth 자동화는 최종 `OAuth/session login` 검증이 아니라 계약/프리뷰 범위 검증이다.
 - agent request -> suggestion -> approval 흐름
 - 반복 실행과 reload를 포함한 초기 aging test
 
@@ -25,6 +26,7 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - project open, file tree, and Git status
 - multi-tab terminal and active-log capture
 - preview/deferred provider connection states and diagnostics
+- current provider-auth automation is contract/preview coverage, not final `OAuth/session login` validation
 - agent request -> suggestion -> approval flow
 - initial aging test with repetition and reload
 
@@ -88,7 +90,8 @@ This does not replace long-duration manual aging validation, but it serves as th
 
 현재 기준으로 `gtum`은 문서에 정의한 MVP 핵심 흐름을 충족한다. 다만 아래는 `Post-MVP` 또는 후속 안정화 과제로 남는다.
 
-- `Codex` real-device connect-time preflight 안정화
+- `Codex` real `OAuth/session login` 경로 구현
+- 세션 만료, 취소, 재연결, scope 부족 검증
 - 실제 Windows/macOS 실기 검증
 - 장시간 수동 aging test 확대
 - Telegram 외부 채널 연동
@@ -97,7 +100,8 @@ This does not replace long-duration manual aging validation, but it serves as th
 
 At the current stage, `gtum` satisfies the core MVP flows defined in the planning documents. The following remain post-MVP or later stabilization work:
 
-- real-device Codex connect-time preflight stabilization
+- real `Codex` `OAuth/session login` implementation
+- session expiry, cancellation, reconnect, and missing-scope validation
 - real-device Windows/macOS validation
 - expanded long-running manual aging validation
 - Telegram external-channel integration

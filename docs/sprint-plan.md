@@ -876,7 +876,7 @@ Sprint 9 initial backlog:
 
 목표:
 
-- 첫 real daily-use `Codex` 경로를 connect-time preflight와 진단 정보 중심으로 안정화한다.
+- 개발용 `Codex` bridge와 diagnostics를 통해 real 요청 파이프라인의 임시 기반을 정리한다.
 
 단계:
 
@@ -906,7 +906,7 @@ Sprint 9 initial backlog:
 
 완료조건:
 
-- `Codex` connect 액션이 실제 preflight 결과에 따라 성공 또는 실패로 표시된다.
+- 개발용 `Codex` bridge connect 액션이 실제 preflight 결과에 따라 성공 또는 실패로 표시된다.
 - provider card에서 setup state, connection path, env 상태를 확인할 수 있다.
 - `Claude` deferred path가 실연결처럼 보이지 않는다.
 - 활성 로그 최근 50줄이 다음 요청에 자동 첨부된다는 점이 UI에 보인다.
@@ -928,11 +928,16 @@ Sprint 10 initial backlog:
 - `P1` refine user-facing preflight error copy for common provider failures
 - `P1` record the Windows real-device validation checklist for the next pass
 
+주의:
+
+- 이 스프린트는 최종 auth 방향이 아니라 개발용 bridge를 정리한 임시 슬라이스다.
+- source of truth 기준의 실사용 provider 연결 방향은 다음 스프린트의 `OAuth/session login` 구현이다.
+
 ### English
 
 Goal:
 
-- stabilize the first real daily-use `Codex` path around connect-time preflight and explicit diagnostics
+- stabilize the temporary development `Codex` bridge and diagnostics so the request pipeline can be exercised end to end
 
 Phase:
 
@@ -962,7 +967,7 @@ Recommended Role Split:
 
 Acceptance Criteria:
 
-- the `Codex` connect action resolves to success or failure based on real preflight validation
+- the temporary `Codex` bridge connect action resolves to success or failure based on preflight validation
 - provider cards expose setup state, connection path, and env-status details
 - the deferred `Claude` path does not look like a live real-provider connection
 - the UI makes it clear that the latest 50 active log lines will auto-attach to the next request
@@ -984,6 +989,121 @@ Sprint 10 initial backlog:
 - `P1` refine user-facing preflight error copy for common provider failures
 - `P1` record the Windows real-device validation checklist for the next pass
 
+Note:
+
+- this sprint is an interim bridge slice, not the final auth direction
+- the source-of-truth daily-use provider path moves to `OAuth/session login` in the next sprint
+
+## Sprint 11
+
+### 한국어
+
+목표:
+
+- 첫 real daily-use `Codex` 경로를 `OAuth/session login`으로 전환한다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- provider 승인 경로 또는 시스템 브라우저 로그인 시작
+- callback, deep link, 또는 desktop sign-in 완료 처리
+- 세션 저장, 만료, 재연결, 취소 상태 처리
+- `Codex` account/session/scopes UI 표시
+- `Claude` deferred path 유지
+- Windows 기준 로그인 UX와 실패 상태 검증
+
+권장 역할 분리:
+
+- `Orchestrator`
+  - 범위 고정, provider 정책 정리, 문서 동기화, 최종 통합
+- `Frontend`
+  - 로그인 시작 UX, reconnect/expiry/cancel 상태, account/session 표시 정리
+- `Backend`
+  - callback/session 처리, secure storage, session lifecycle 구현
+- `QA`
+  - source of truth와 구현 계약 일치 여부, 실패/취소/만료 상태 점검
+- `Tester`
+  - 로그인 성공, 취소, 만료, reconnect, Windows 기준 회귀 시나리오 갱신
+
+완료조건:
+
+- 최소 1개 provider가 실제 `OAuth/session login`으로 연결된다.
+- 사용자가 로그인 성공, 취소, 만료, reconnect 상태를 UI에서 이해할 수 있다.
+- `OPENAI_API_KEY` 기반 bridge는 개발용 fallback으로만 남거나 2선 설정으로 내려간다.
+- Windows 기준 핵심 로그인 흐름과 실패 상태가 문서와 테스트에 남는다.
+
+리스크:
+
+- provider의 공식 desktop login 지원 범위가 제한적일 수 있다.
+- callback/deep-link 처리 방식이 플랫폼마다 다를 수 있다.
+- secure session storage와 refresh 정책이 provider별로 다를 수 있다.
+
+Sprint 11 initial backlog:
+
+- `P0` launch the official `Codex` OAuth/session login flow
+- `P0` implement callback or desktop sign-in completion handling
+- `P0` persist session state and show reconnect/expiry/cancel status
+- `P0` update provider-auth E2E around success, cancel, and reconnect
+- `P1` demote the API-key bridge into a dev-only fallback path
+- `P1` record Windows-first login UX findings
+
+### English
+
+Goal:
+
+- switch the first real daily-use `Codex` path to `OAuth/session login`
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- launch the provider-approved path or system-browser login flow
+- handle callback, deep link, or desktop sign-in completion
+- implement session persistence plus expiry, reconnect, and cancellation handling
+- expose `Codex` account, session, and scopes in the UI
+- keep `Claude` on the deferred path
+- validate login UX and failure states with Windows as the baseline
+
+Recommended Role Split:
+
+- `Orchestrator`
+  - locks scope, aligns provider policy, syncs docs, and integrates the final slice
+- `Frontend`
+  - refines login start UX, reconnect/expiry/cancel state, and account/session display
+- `Backend`
+  - implements callback/session handling, secure storage, and session lifecycle
+- `QA`
+  - checks source-of-truth alignment and failure/cancel/expiry semantics
+- `Tester`
+  - updates login success, cancellation, expiry, reconnect, and Windows-first regression coverage
+
+Acceptance Criteria:
+
+- at least one provider connects through a real `OAuth/session login` path
+- users can understand success, cancellation, expiry, and reconnect states in the UI
+- the `OPENAI_API_KEY` bridge remains only as a dev fallback or secondary setting
+- Windows-baseline login flows and failure states are captured in docs and tests
+
+Risks:
+
+- provider support for official desktop login may be limited
+- callback or deep-link handling may differ by platform
+- secure session storage and refresh policy may vary by provider
+
+Sprint 11 initial backlog:
+
+- `P0` launch the official `Codex` OAuth/session login flow
+- `P0` implement callback or desktop sign-in completion handling
+- `P0` persist session state and show reconnect/expiry/cancel status
+- `P0` update provider-auth E2E around success, cancel, and reconnect
+- `P1` demote the API-key bridge into a dev-only fallback path
+- `P1` record Windows-first login UX findings
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -996,7 +1116,8 @@ Sprint 10 initial backlog:
 - `Sprint 7`은 `Sprint 3`의 provider foundation, `Sprint 4`의 approval flow, `Sprint 5`의 workspace restore, 그리고 실제 Windows 사용 피드백이 필요하다.
 - `Sprint 8`은 `Sprint 7`의 UX 재정리 결과를 바탕으로 auth contract를 heuristic 없는 명시 계약으로 바꾸는 단계다.
 - `Sprint 9`는 `Sprint 7`의 와이어프레임과 `Sprint 8`의 auth contract 명시화를 바탕으로 실제 워크스페이스 리디자인을 구현하는 단계다.
-- `Sprint 10`은 `Sprint 8`의 auth contract와 `Sprint 9`의 워크스페이스 리디자인 위에서 real Codex preflight와 diagnostics를 안정화하는 단계다.
+- `Sprint 10`은 `Sprint 8`의 auth contract와 `Sprint 9`의 워크스페이스 리디자인 위에서 개발용 bridge와 diagnostics를 정리한 임시 슬라이스다.
+- `Sprint 11`은 `Sprint 10`의 임시 bridge 경험을 바탕으로 source of truth인 `OAuth/session login`을 실제 경로로 전환하는 단계다.
 
 ### English
 
@@ -1008,7 +1129,8 @@ Sprint 10 initial backlog:
 - `Sprint 7` depends on the provider foundation from `Sprint 3`, approval flow from `Sprint 4`, workspace restore from `Sprint 5`, and real Windows usage feedback
 - `Sprint 8` turns the `Sprint 7` auth UX into an explicit backend-driven contract
 - `Sprint 9` implements the real workspace redesign using the wireframes from `Sprint 7` and the auth contract clarified in `Sprint 8`
-- `Sprint 10` depends on the explicit auth contract from `Sprint 8` and the workspace redesign from `Sprint 9` to stabilize real Codex preflight and diagnostics
+- `Sprint 10` depends on the explicit auth contract from `Sprint 8` and the workspace redesign from `Sprint 9` to stabilize the temporary bridge and diagnostics slice
+- `Sprint 11` uses the contract from `Sprint 8`, the workspace from `Sprint 9`, and the bridge learnings from `Sprint 10` to implement the real `OAuth/session login` path
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -1035,7 +1157,9 @@ Sprint 10 initial backlog:
 - `Sprint 9`
   - 현재 UI가 정말 작업용 워크스페이스처럼 느껴지고, 터미널과 에이전트 흐름이 한 화면에서 자연스럽게 읽히는가
 - `Sprint 10`
-  - real Codex 연결이 connect 시점부터 진단 가능하고, 사용자가 요청 전 준비 상태를 명확히 이해할 수 있는가
+  - 임시 bridge와 diagnostics가 실제 요청 파이프라인을 검증하는 데 충분한가
+- `Sprint 11`
+  - real provider login이 API key가 아니라 `OAuth/session` 기준으로 동작하는가
 
 ### English
 
@@ -1060,14 +1184,16 @@ Sprint 10 initial backlog:
 - `Sprint 9`
   - does the UI now feel like a real working workspace where the terminal and agent flow read naturally together
 - `Sprint 10`
-  - is real Codex connectivity diagnosable at connect time, with enough readiness clarity before the user submits the next request
+  - is the temporary bridge sufficient to exercise the request pipeline while the real auth path is prepared
+- `Sprint 11`
+  - does real provider login work through `OAuth/session` instead of API-key setup
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 `Sprint 10` 결과를 바탕으로 실제 `Windows` 환경에서 `Open Folder -> Connect Codex -> Ask -> Approve -> Restore` 루프를 검증하고, 실기 이슈를 체크리스트와 `worklog`로 남기는 것이 좋다.
+다음 단계로는 `Sprint 11` 기준으로 `Codex`의 `OAuth/session login` 경로를 설계/구현하고, 그 뒤 `Windows`에서 실기 검증을 진행하는 것이 맞다.
 
 ### English
 
-The next step should be to use the `Sprint 10` baseline to validate the `Open Folder -> Connect Codex -> Ask -> Approve -> Restore` loop on real Windows hardware and record the findings in a checklist and worklog.
+The next step should be to implement the `Sprint 11` `Codex` `OAuth/session login` path first, then validate the real Windows loop on top of that path.
