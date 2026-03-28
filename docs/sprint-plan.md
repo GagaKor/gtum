@@ -51,10 +51,10 @@ Read this document when:
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
 - 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
 - 각 스프린트의 마지막에는 새로 발견된 후속 작업을 다음 스프린트 문서나 백로그에 추가한다.
-- 모든 작업은 먼저 서브에이전트를 포함한 `planner + orchestrator + designer + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 예외가 있으면 `WORKLOG`에 남긴다.
+- 모든 작업은 먼저 서브에이전트를 포함한 `planner + orchestrator + designer + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 예외가 있으면 `docs/development-guide.md` 기준으로 historical note 여부를 판단한다.
 - 각 스프린트 동안 `planner`와 `designer`는 다음 스프린트 초안, 레퍼런스 분석, 디자인 문서도 병렬로 남긴다.
 - 각 스프린트는 이전 스프린트의 작업 경로, 실패, 우회, 반복 마찰을 검토하고 다음 개선안으로 연결해야 한다.
-- `planner`와 `designer`는 최신 `WORKLOG`, task history, 검증 메모를 읽고 문제 분석 메모를 병렬 산출물로 남긴다.
+- `planner`와 `designer`는 현재 스프린트 문서, task history, 검증 메모를 읽고 문제 분석 메모를 병렬 산출물로 남긴다.
 - 프론트엔드 개편은 `VS Code`, `conductor`, `cmux` 레퍼런스와 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
 - 프론트엔드 구조는 사람이 아니라 에이전트가 지속적으로 수정하기 쉬운지까지 기준으로 본다.
 
@@ -67,10 +67,10 @@ Read this document when:
 - each sprint should leave a clean foundation for the next one
 - finish each sprint with a practical UI E2E pass added or updated for the delivered flow
 - finish each sprint by adding newly discovered follow-up work into the next sprint plan or backlog
-- first decompose every task into the sub-agent split `planner + orchestrator + designer + frontend + backend + QA + tester`, record any exception in the `WORKLOG`, and keep that split whenever frontend, runtime, and validation change together
+- first decompose every task into the sub-agent split `planner + orchestrator + designer + frontend + backend + QA + tester`, decide any historical-note exception under `docs/development-guide.md`, and keep that split whenever frontend, runtime, and validation change together
 - during each sprint, `planner` and `designer` should also leave behind the next-sprint draft, reference analysis, and design documentation in parallel
 - each sprint should review the prior path taken, including failures, detours, and repeated friction, and turn that into next-sprint improvements
-- `planner` and `designer` should read the latest `WORKLOG`, task history, and validation notes and leave behind explicit problem-analysis notes
+- `planner` and `designer` should read the current sprint docs, task history, and validation notes and leave behind explicit problem-analysis notes
 - review frontend redesign work against `VS Code`, `conductor`, `cmux`, and `docs/frontend-design-benchmarks.md`
 - treat agent editability as a first-class frontend design and implementation constraint
 
@@ -81,7 +81,7 @@ Read this document when:
 각 스프린트는 아래를 만족해야 닫힌다.
 
 1. 현재 스프린트 목표 구현 또는 명시적 블로커 기록
-2. 관련 문서와 작업 로그 동기화
+2. 관련 source-of-truth 문서와 검증 메모 동기화
 3. 해당 스프린트 UI E2E 검증 추가 또는 갱신
 4. 다음 스프린트에 들어가야 할 작업 항목 추가
 5. 이번 스프린트에서 밟은 경로, 실패, 우회, 반복 문제 요약
@@ -92,7 +92,7 @@ Read this document when:
 - `docs/mvp-backlog.md`
 - `docs/sprint-plan.md`
 - 해당 스프린트 체크리스트
-- 최신 `WORKLOG`
+- 필요 시 `docs/MVP_VALIDATION_NOTES.md`
 
 추가로 UI와 runtime이 함께 바뀌는 스프린트라면 아래 산출물도 남겨야 한다.
 
@@ -102,6 +102,9 @@ Read this document when:
 - designer 레퍼런스/와이어프레임 메모
 - QA acceptance 메모
 - tester 검증 메모
+- 변경된 구조가 있으면 `docs/architecture.md`
+- 변경된 흐름이 있으면 `docs/message-flow.md`
+- 변경된 규칙이 있으면 `docs/development-guide.md`
 - 문서나 계약이 바뀐 경우 orchestrator 통합 메모
 
 ### English
@@ -109,7 +112,7 @@ Read this document when:
 Each sprint should be considered closed only when it includes:
 
 1. implementation of the sprint goal or an explicit blocker record
-2. synchronized docs and worklog updates
+2. synchronized source-of-truth docs and validation updates
 3. added or updated UI E2E coverage for that sprint
 4. newly discovered work items added for the next sprint
 5. a summary of the path taken in the sprint, including failures, detours, and recurring friction
@@ -120,7 +123,7 @@ Those next-sprint items should be written into at least one of:
 - `docs/mvp-backlog.md`
 - `docs/sprint-plan.md`
 - the relevant sprint checklist
-- the latest `WORKLOG`
+- `docs/MVP_VALIDATION_NOTES.md` when needed
 
 When a sprint changes both UI and runtime behavior, it should also leave behind:
 
@@ -132,7 +135,9 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
 - designer reference or wireframe notes
 - explicit QA acceptance notes
 - explicit tester verification notes
-- `WORKLOG`-based path recap
+- `docs/architecture.md` when structure changed
+- `docs/message-flow.md` when flow changed
+- `docs/development-guide.md` when implementation or recording rules changed
 - orchestrator-level integration notes when docs or contracts changed
 
 ## MVP 스프린트 개요 / MVP Sprint Overview
@@ -764,7 +769,7 @@ Sprint 7 completion update:
 
 - provider UI가 URL heuristic 없이 `mock`, `prototype`, `real`을 구분한다.
 - 관련 E2E가 새 계약을 기준으로 통과한다.
-- 다음 단계의 실제 provider contract 작업을 이어갈 기준 worklog가 남는다.
+- 다음 단계의 실제 provider contract 작업을 이어갈 기준 source-of-truth 문서가 갱신된다.
 
 ### English
 
@@ -787,7 +792,7 @@ Acceptance Criteria:
 
 - the provider UI distinguishes `mock`, `prototype`, and `real` without URL heuristics
 - the relevant E2E coverage passes against the new contract
-- a worklog exists to hand off the next real-provider contract step
+- the source-of-truth docs are updated enough to hand off the next real-provider contract step
 
 Sprint 8 completion update:
 

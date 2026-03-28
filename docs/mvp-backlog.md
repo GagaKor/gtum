@@ -108,11 +108,11 @@ The MVP is considered complete when all of the following are true:
 
 ### 한국어
 
-현재 저장소 기준으로 MVP는 완료된 상태로 판단한다. 상세 근거는 `docs/MVP_VALIDATION_NOTES.md`와 `docs/WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md`를 따른다.
+현재 저장소 기준으로 MVP는 완료된 상태로 판단한다. 상세 근거는 `docs/MVP_VALIDATION_NOTES.md`, `docs/sprint-plan.md`, 현재 E2E 시나리오를 따른다.
 
 ### English
 
-At the current repository state, the MVP is considered complete. See `docs/MVP_VALIDATION_NOTES.md` and `docs/WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md` for the supporting evidence.
+At the current repository state, the MVP is considered complete. See `docs/MVP_VALIDATION_NOTES.md`, `docs/sprint-plan.md`, and the current E2E scenarios for the supporting evidence.
 
 ## MVP 검증 원칙 / MVP Validation Principles
 

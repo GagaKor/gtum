@@ -40,6 +40,30 @@ Read this document when:
 - you need to confirm architecture, runtime ownership, platform strategy, or auth structure
 - you are changing technical boundaries such as Tauri commands, state contracts, PTY, filesystem, or provider adapters
 
+## 관련 source of truth / Related Source Of Truth
+
+### 한국어
+
+이 문서는 기술 방향과 경계를 정의한다. 아래 문서는 함께 읽는다.
+
+- [`architecture.md`](./architecture.md)
+  - 현재 구현 구조, 모듈 책임, 저장 경계
+- [`message-flow.md`](./message-flow.md)
+  - request envelope, approval, restore, 주요 사용자 흐름
+- [`development-guide.md`](./development-guide.md)
+  - 구현 규칙, 문서 흡수 기준, `WORKLOG` 예외 정책
+
+### English
+
+This document defines technical direction and boundaries. Read these alongside it:
+
+- [`architecture.md`](./architecture.md)
+  - current implementation structure, module ownership, and persistence boundaries
+- [`message-flow.md`](./message-flow.md)
+  - request envelope, approval, restore, and major user flows
+- [`development-guide.md`](./development-guide.md)
+  - implementation rules, doc-absorption policy, and the `WORKLOG` exception policy
+
 ## 설계 기준 / Design Constraints
 
 ### 한국어

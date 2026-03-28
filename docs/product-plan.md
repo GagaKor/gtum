@@ -163,7 +163,7 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 7. 코드 읽기 우선
    에이전트 위임이 있더라도 사용자가 코드를 읽고 흐름을 따라갈 수 있는 surface는 1급 작업 영역이어야 하며, 단순 사이드바나 하단 채팅 패널로 밀어넣지 않는다.
 8. 경로 가시성 우선
-   task history와 `WORKLOG`는 단순 기록이 아니라 사용자가 이미 밟아온 경로, 승인, 실패, 재시도를 재구성해 문제점을 파악하고 개선안을 만들 수 있는 입력이어야 한다.
+   task history, validation notes, sprint 문서, path recap UI는 단순 기록이 아니라 사용자가 이미 밟아온 경로, 승인, 실패, 재시도를 재구성해 문제점을 파악하고 개선안을 만들 수 있는 입력이어야 한다.
 
 ### English
 
@@ -182,7 +182,7 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 7. Code-reading first
    Even with agent delegation, the surface for reading code and tracing flow should remain first-class rather than collapsing into a sidebar-only or bottom-panel chat model.
 8. Path-visibility first
-   task history and `WORKLOG` should function as interpretable inputs that help users reconstruct prior approvals, failures, and retries so recurring problems can be improved.
+   task history, validation notes, sprint docs, and path-recap UI should function as interpretable inputs that help users reconstruct prior approvals, failures, and retries so recurring problems can be improved.
 
 ## 대상 사용자 / Target Users
 

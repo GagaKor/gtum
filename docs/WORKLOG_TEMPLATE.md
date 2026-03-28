@@ -1,19 +1,29 @@
-# gtum 작업 로그 템플릿 / Worklog Template
+# gtum historical note 템플릿 / Historical Note Template
 
 ## 문서 목적 / Document Purpose
 
 ### 한국어
 
-이 문서는 스프린트나 작업 단위 진행 내용을 남길 때 사용하는 템플릿이다.
+이 문서는 기본 스프린트 기록용이 아니라, 예외적인 historical note가 필요할 때만 쓰는 템플릿이다.
+
+기본 원칙은 다음과 같다.
+
+- 일반 스프린트 진행 내용은 `git`과 source-of-truth 문서로 흡수한다.
+- 이 템플릿은 실기 장비 검증, 릴리스 사고, 외부 레퍼런스 조사처럼 시간축 기록이 꼭 필요할 때만 사용한다.
 
 ### English
 
-This document is a template for recording sprint or task-level progress.
+This document is not a default sprint log template. It should be used only when an exceptional historical note is needed.
+
+The default rules are:
+
+- ordinary sprint progress should be absorbed into `git` and source-of-truth docs
+- use this template only when time-ordered evidence matters, such as real-device validation, release incidents, or external reference analysis
 
 ## 템플릿 / Template
 
 ```md
-# WORKLOG YYYY-MM-DD - <title>
+# HISTORICAL NOTE YYYY-MM-DD - <title>
 
 ## 목적 / Purpose
 

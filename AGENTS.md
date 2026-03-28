@@ -17,10 +17,11 @@
 - 이 프로젝트의 진입점은 항상 `docs/`다.
 - 기본값은 `전체 문서 재독`이 아니라 `최소 읽기 팩 + 필요한 문서만 추가 읽기`다.
 - 의미 있는 작업은 먼저 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할로 팀빌딩한다.
-- 의미 있는 작업은 최신 `WORKLOG`, task history, 체크리스트를 함께 검토해 지금까지 밟아온 경로와 반복 문제를 먼저 파악한다.
+- 의미 있는 작업은 현재 스프린트 문서, 검증 메모, task history를 함께 검토해 지금까지 밟아온 경로와 반복 문제를 먼저 파악한다.
 - 구조, 흐름, 정책, 권한, 계약이 바뀌면 관련 문서를 같은 작업 안에서 함께 갱신한다.
 - 문서와 코드가 다르면 실제 코드와 최신 결정을 기준으로 문서를 수정한다.
 - 브랜치 운영 기본값은 `feature/* -> dev -> master`다.
+- `WORKLOG`는 기본 산출물이 아니라 historical note 예외 경로다.
 
 ## 3. 최소 읽기 팩
 
@@ -38,8 +39,14 @@
   - `docs/product-plan.md`
 - 아키텍처, 런타임 책임, 플랫폼 전략, auth 구조, contract 변경
   - `docs/technical-design.md`
+- 현재 구현 구조, 모듈 책임, 저장 경계
+  - `docs/architecture.md`
+- 주요 데이터 흐름, request envelope, approval/restore 경계
+  - `docs/message-flow.md`
 - 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff, `planner`, `designer`, `QA`, `tester` 분리
   - `docs/agent-team-topology.md`
+- 구현 규칙, 문서 흡수 기준, 검증 기록 기준
+  - `docs/development-guide.md`
 - 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 산출물과 종료 기준
   - `docs/sprint-plan.md`
 - MVP 범위, 우선순위, 완료조건, 제외 범위
@@ -48,8 +55,10 @@
   - `docs/frontend-design-benchmarks.md`
 - 릴리스, 빌드, 배포, CI/CD
   - `docs/release-build-ci.md`
-- 최신 실행 맥락, 체크리스트, 작업 기록
-  - 현재 스프린트 체크리스트 또는 최신 `WORKLOG`
+- 최신 실행 맥락, 체크리스트, 검증 근거
+  - 현재 스프린트 체크리스트
+  - `docs/MVP_VALIDATION_NOTES.md`
+  - UI의 task history
 
 ## 5. 문서 동기화 라우팅
 
@@ -59,11 +68,18 @@
   - `docs/product-plan.md`
 - 기술 스택, 런타임 구조, PTY 설계, 플랫폼 전략, 상태 계약 변경
   - `docs/technical-design.md`
+- 현재 구현 아키텍처, 모듈 책임, 저장 경계 변경
+  - `docs/architecture.md`
+- request payload, approval 흐름, restore 흐름 변경
+  - `docs/message-flow.md`
 - 멀티 에이전트 역할 분리, 팀빌딩 기본값, handoff 규칙 변경
   - `docs/agent-team-topology.md`
   - `docs/README.md`
   - `docs/DOCS_READING_ORDER.md`
   - 필요 시 `docs/sprint-plan.md`
+- 개발 규칙, 기록 원칙, 문서 흡수 정책 변경
+  - `docs/development-guide.md`
+  - `docs/README.md`
 - MVP 범위, 우선순위, 완료조건 변경
   - `docs/mvp-backlog.md`
   - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
@@ -82,7 +98,7 @@
 ## 6. 멀티에이전트 기본값
 
 - 기본 역할은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
-- `planner`는 제품 목표, 다음 스프린트 범위, 과거 작업 경로, `WORKLOG`, task history를 읽고 문제점과 개선 항목을 정리한다.
+- `planner`는 제품 목표, 다음 스프린트 범위, 과거 작업 경로, 스프린트 문서, 검증 메모, task history를 읽고 문제점과 개선 항목을 정리한다.
 - `orchestrator`는 역할 분리, 파일 소유권, handoff, 최종 통합을 맡는다.
 - `designer`는 `VS Code`, `conductor`, `cmux` 레퍼런스를 바탕으로 정보 계층, 코드 읽기 surface, 상호작용 디자인, 와이어프레임과 작업 경로 가시화 방향을 정리한다.
 - `QA`는 완료조건, 품질 게이트, 회귀 체크리스트를 맡는다.
@@ -95,7 +111,7 @@
 1. 최소 읽기 팩을 읽는다.
 2. 라우팅 표를 보고 필요한 문서만 추가로 읽는다.
 3. `planner`와 `orchestrator` 기준으로 역할과 파일 소유권을 먼저 정한다.
-4. 현재 코드와 문서 기준선이 맞는지 빠르게 확인하고, 최신 `WORKLOG`, task history, 검증 메모에서 이미 시도한 것과 실패 패턴을 함께 정리한다.
+4. 현재 코드와 문서 기준선이 맞는지 빠르게 확인하고, 현재 스프린트 문서, task history, 검증 메모에서 이미 시도한 것과 실패 패턴을 함께 정리한다.
 5. 변경 대상을 수정한다.
 6. 영향받는 문서를 함께 갱신한다.
 7. 테스트 또는 검증을 수행한다.
@@ -118,4 +134,4 @@
 - 이 저장소는 아직 초기 단계라 문서가 곧 구조다.
 - `docs/`는 참고 자료가 아니라 실제 작업 진입점이다.
 - 항상 `AGENTS.md` 하나에 모든 정책을 밀어넣지 말고, 필요한 문서로 라우팅하는 구조를 유지한다.
-- 현재 가장 자주 기준이 되는 source of truth는 `docs/product-plan.md`, `docs/technical-design.md`, `docs/sprint-plan.md`다.
+- 현재 가장 자주 기준이 되는 source of truth는 `docs/product-plan.md`, `docs/technical-design.md`, `docs/architecture.md`, `docs/message-flow.md`, `docs/sprint-plan.md`다.

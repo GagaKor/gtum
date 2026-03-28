@@ -104,7 +104,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - 직접 맡는다:
   - 제품 범위와 우선순위 정리
   - 다음 스프린트 초안과 후속 작업 문서화
-  - 최신 `WORKLOG`, task history, 검증 메모를 검토해 반복 문제를 식별
+  - 현재 스프린트 문서, task history, 검증 메모를 검토해 반복 문제를 식별
   - 현재 스프린트 산출물을 다음 스프린트 개선 항목으로 변환
   - `VS Code`, `conductor`, `cmux` 분석을 backlog와 계획으로 연결
 
@@ -204,7 +204,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 - owns directly:
   - product scope and priority framing
   - drafting the next sprint and follow-up planning notes
-  - reviewing the latest `WORKLOG`, task history, and validation notes to identify recurring issues
+  - reviewing the current sprint docs, task history, and validation notes to identify recurring issues
   - converting the current sprint outputs into next-sprint improvement items
   - turning `VS Code`, `conductor`, and `cmux` analysis into backlog and planning updates
 
@@ -292,7 +292,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 
 ### 한국어
 
-1. `Planner`와 `Orchestrator`가 요청을 읽고 제품 문서, 관련 코드, 최신 `WORKLOG`, task history, 현재 스프린트 기준선을 함께 확인한다.
+1. `Planner`와 `Orchestrator`가 요청을 읽고 제품 문서, 관련 코드, 현재 스프린트 문서, task history, 검증 메모를 함께 확인한다.
 2. `Planner`는 반복 문제와 다음 스프린트 개선 항목을 정리하고, `Designer`는 이를 드러낼 레퍼런스, 정보 구조, 디자인 포인트를 고정한다.
 3. `Orchestrator`가 작업을 `designer`, `frontend`, `backend`, `QA`, `tester` 단위로 나누고 파일 소유권을 먼저 정한다.
 4. `QA`는 구현과 병렬로 완료조건, acceptance 기준, handoff 체크포인트를 정리한다.
@@ -303,7 +303,7 @@ Every task should first be decomposed into these seven sub-agent roles. For very
 
 ### English
 
-1. The `Planner` and `Orchestrator` read the request and review the product docs, relevant code, the latest `WORKLOG`, task history, and sprint baseline together.
+1. The `Planner` and `Orchestrator` read the request and review the product docs, relevant code, current sprint docs, task history, and validation notes together.
 2. The `Planner` frames recurring issues and next-sprint improvements, while the `Designer` locks the references, hierarchy, and design direction that should make those issues visible.
 3. The `Orchestrator` splits the work into `designer`, `frontend`, `backend`, `QA`, and `tester` slices and locks file ownership first.
 4. `QA` defines acceptance criteria and handoff checkpoints in parallel with implementation.
@@ -409,7 +409,7 @@ The goal is not long prose. The goal is to pass along reproducible contracts and
 - `Planner`
   - 관련 제품 문서 확인
   - 현재 작업 목적과 다음 스프린트 carry-over 정리
-  - 최신 `WORKLOG`, task history, 검증 메모에서 반복 문제 추출
+  - 현재 스프린트 문서, task history, 검증 메모에서 반복 문제 추출
 - `Orchestrator`
   - 관련 문서 확인
   - 현재 코드 기준선 확인
@@ -437,7 +437,7 @@ When a new task arrives, start by checking this decomposition:
 - `Planner`
   - verify relevant product docs
   - define the current-task purpose and next-sprint carryover
-  - extract recurring issues from the latest `WORKLOG`, task history, and validation notes
+  - extract recurring issues from the current sprint docs, task history, and validation notes
 - `Orchestrator`
   - verify relevant docs
   - verify the current code baseline

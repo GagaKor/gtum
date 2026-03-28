@@ -2,6 +2,9 @@
 
 - [제품 기획서 / Product Plan](./product-plan.md)
 - [기술 설계서 / Technical Design](./technical-design.md)
+- [아키텍처 / Architecture](./architecture.md)
+- [메시지 흐름 / Message Flow](./message-flow.md)
+- [개발 가이드 / Development Guide](./development-guide.md)
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
 - [UI/UX 개선안과 와이어프레임 / UI/UX Improvements and Wireframes](./ui-ux-wireframes.md)
@@ -11,20 +14,7 @@
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
 - [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
 - [Sprint 9 체크리스트 / Sprint 9 Checklist](./sprint-9-checklist.md)
-- [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
-- [릴리스 워크플로우 수정 로그 / Release Workflow Fix Worklog](./WORKLOG_2026-03-22_release-workflow-fix.md)
-- [Sprint 1 작업 로그 / Sprint 1 Worklog](./WORKLOG_2026-03-22_sprint-1-project-workspace.md)
-- [Sprint 2 작업 로그 / Sprint 2 Worklog](./WORKLOG_2026-03-22_sprint-2-terminal-workspace.md)
-- [Sprint 3 작업 로그 / Sprint 3 Worklog](./WORKLOG_2026-03-22_sprint-3-provider-auth.md)
-- [Sprint 4 작업 로그 / Sprint 4 Worklog](./WORKLOG_2026-03-22_sprint-4-agent-request-flow.md)
-- [Sprint 5 작업 로그 / Sprint 5 Worklog](./WORKLOG_2026-03-22_sprint-5-mvp-stabilization.md)
-- [Sprint 7 작업 로그 / Sprint 7 Worklog](./WORKLOG_2026-03-22_sprint-7-ux-and-project-picker.md)
-- [Sprint 8 작업 로그 / Sprint 8 Worklog](./WORKLOG_2026-03-22_sprint-8-auth-contract.md)
-- [Sprint 9 작업 로그 / Sprint 9 Worklog](./WORKLOG_2026-03-24_sprint-9-workspace-redesign.md)
-- [Sprint 10 작업 로그 / Sprint 10 Worklog](./WORKLOG_2026-03-28_sprint-10-codex-preflight-diagnostics.md)
-- [Sprint 11 작업 로그 / Sprint 11 Worklog](./WORKLOG_2026-03-28_sprint-11-codex-cli-session-launcher.md)
-- [Telegram 프로토타입 작업 로그 / Telegram Prototype Worklog](./WORKLOG_2026-03-22_post-mvp-telegram-prototype.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
 
@@ -40,8 +30,14 @@
   - [제품 기획서 / Product Plan](./product-plan.md)
 - 아키텍처, 런타임 책임, 플랫폼 전략, auth와 contract
   - [기술 설계서 / Technical Design](./technical-design.md)
+- 현재 구현 구조, 모듈 책임, 상태 저장 경계
+  - [아키텍처 / Architecture](./architecture.md)
+- request payload, approval, restore, 주요 사용자 흐름
+  - [메시지 흐름 / Message Flow](./message-flow.md)
 - 역할 분리, 서브에이전트 팀빌딩, handoff, `planner`, `designer`, `QA`, `tester` 분리
   - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
+- 구현 규칙, 문서 흡수 기준, 검증 기록 기준
+  - [개발 가이드 / Development Guide](./development-guide.md)
 - 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 종료 기준
   - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
   - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
@@ -52,7 +48,7 @@
 - 릴리스, 빌드, 배포, CI/CD
   - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - 최신 실행 맥락과 체크리스트
-  - 현재 스프린트 체크리스트 또는 최신 `WORKLOG`를 읽어 이미 수행한 경로, 실패, 보류, 다음 개선 포인트를 먼저 확인한다.
+  - 현재 스프린트 체크리스트, [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md), UI task history를 읽어 이미 수행한 경로, 실패, 보류, 다음 개선 포인트를 먼저 확인한다.
 
 ## 문서 역할 / What To Read When
 
@@ -62,6 +58,12 @@
   - 제품 비전, 핵심 가치, 에이전트 정책, 지원 플랫폼 기준을 다룰 때 읽는다.
 - [기술 설계서 / Technical Design](./technical-design.md)
   - `src-tauri/`, provider/auth, command contract, 플랫폼 처리 구조를 다룰 때 읽는다.
+- [아키텍처 / Architecture](./architecture.md)
+  - 현재 구현 구조, 모듈 책임, 저장 위치, command boundary를 파악할 때 읽는다.
+- [메시지 흐름 / Message Flow](./message-flow.md)
+  - 프로젝트 열기, file focus, provider connect, request, approval, restore 흐름을 볼 때 읽는다.
+- [개발 가이드 / Development Guide](./development-guide.md)
+  - 구현 규칙, 문서 흡수 기준, `WORKLOG` 대신 무엇을 남길지 판단할 때 읽는다.
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
   - MVP 범위, 완료조건, 우선순위, 제외 범위를 확인할 때 읽는다.
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
@@ -81,11 +83,17 @@
   - `product-plan`
 - 런타임 구조, auth/provider, 플랫폼 처리, contract 변경
   - `technical-design`
+- 현재 구현 구조, 모듈 책임, 저장 경계 변경
+  - `architecture`
+- request payload, approval 경계, restore 흐름 변경
+  - `message-flow`
+- 개발 규칙, 기록 원칙, 문서 흡수 정책 변경
+  - `development-guide`
 - MVP 우선순위, 완료조건, 제외 범위 변경
   - `mvp-backlog`
 - 스프린트 순서, 다음 작업, 체크리스트 변경
   - `sprint-plan`
-  - 관련 체크리스트 또는 `WORKLOG`
+  - 관련 체크리스트
 - 멀티 에이전트 운영 모델, 라우팅 규칙 변경
   - `agent-team-topology`
   - `DOCS_READING_ORDER`
@@ -103,6 +111,7 @@
 - 기본값은 전체 문서 재독이 아니라 `AGENTS.md + docs/README.md + docs/DOCS_READING_ORDER.md`를 먼저 읽고 필요한 문서만 추가로 읽는 것이다.
 - 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
 - `planner`와 `designer`는 매 스프린트마다 작업 경로 요약, 문제점, 다음 개선안을 문서로 남긴다.
+- 지속 정보는 source-of-truth 문서에 흡수하고, `WORKLOG`는 예외적인 historical note로만 취급한다.
 
 ## 현재 결정 / Current Decisions
 
@@ -121,4 +130,9 @@
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다
 - 스프린트 종료 시 `Playwright` 기반 UI E2E와 다음 스프린트 작업 추가를 함께 진행한다
-- 최신 `WORKLOG`, task history, 검증 메모는 단순 기록이 아니라 다음 스프린트 개선 입력으로 취급한다
+- 현재 구현 구조와 흐름은 `architecture`, `message-flow`, `development-guide`를 통해 유지하고, historical `WORKLOG`는 active routing에서 제외한다
+
+## Historical Notes
+
+- 기존 `docs/WORKLOG_*.md` 파일은 과거 경로를 복구해야 할 때만 참고하는 historical note다.
+- 새 일반 스프린트 작업은 기본적으로 `WORKLOG`를 추가하지 않고, 관련 source-of-truth 문서와 검증 메모에 흡수한다.

@@ -63,13 +63,32 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 ### 런타임 구조, provider/auth, contract가 문제일 때
 
 1. `docs/technical-design.md`
-2. 필요 시 `docs/product-plan.md`
+2. `docs/architecture.md`
+3. 필요 시 `docs/message-flow.md`
+4. 필요 시 `docs/product-plan.md`
+
+### 현재 구현 구조나 저장 경계가 문제일 때
+
+1. `docs/architecture.md`
+2. `docs/technical-design.md`
+
+### request payload, approval, restore, 데이터 흐름이 문제일 때
+
+1. `docs/message-flow.md`
+2. `docs/technical-design.md`
+3. 필요 시 `docs/architecture.md`
 
 ### 프론트엔드 UI/UX가 문제일 때
 
 1. `docs/frontend-design-benchmarks.md`
 2. 필요 시 `docs/ui-ux-wireframes.md`
 3. 필요 시 `docs/technical-design.md`
+
+### 구현 규칙이나 문서 흡수 기준이 문제일 때
+
+1. `docs/development-guide.md`
+2. `docs/README.md`
+3. 필요 시 `AGENTS.md`
 
 ### 멀티 에이전트 역할 분리와 handoff가 문제일 때
 
@@ -85,16 +104,19 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 
 1. `docs/sprint-plan.md`
 2. 현재 스프린트 체크리스트
-3. 최신 `WORKLOG`
+3. `docs/mvp-backlog.md`
+4. `docs/MVP_VALIDATION_NOTES.md`
 
-다음 작업을 정하기 전, 최신 `WORKLOG`에서 이미 시도한 경로와 반복 실패를 먼저 확인한다.
+다음 작업을 정하기 전, 현재 스프린트 문서, 검증 메모, UI task history에서 이미 시도한 경로와 반복 실패를 먼저 확인한다.
 
 ### 이미 밟아온 작업 경로를 검토하고 문제점을 찾을 때
 
-1. 최신 `WORKLOG`
+1. `docs/sprint-plan.md`
 2. 현재 스프린트 체크리스트
-3. `docs/sprint-plan.md`
+3. `docs/MVP_VALIDATION_NOTES.md`
 4. `docs/agent-team-topology.md`
+5. 필요 시 UI task history
+6. 필요 시 historical `docs/WORKLOG_*.md`
 
 ### 릴리스, 빌드, CI가 문제일 때
 
@@ -103,9 +125,10 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 
 ### 최신 상태와 직전 맥락이 필요할 때
 
-1. 최신 `WORKLOG`
-2. 현재 스프린트 체크리스트
+1. 현재 스프린트 체크리스트
+2. `docs/sprint-plan.md`
 3. `docs/MVP_VALIDATION_NOTES.md`
+4. 필요 시 UI task history
 
 ### English
 
@@ -124,13 +147,32 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 ### When the issue is runtime structure, provider/auth, or contracts
 
 1. `docs/technical-design.md`
-2. `docs/product-plan.md` if needed
+2. `docs/architecture.md`
+3. `docs/message-flow.md` if needed
+4. `docs/product-plan.md` if needed
+
+### When the issue is current implementation structure or persistence boundaries
+
+1. `docs/architecture.md`
+2. `docs/technical-design.md`
+
+### When the issue is request payloads, approval, restore, or data flow
+
+1. `docs/message-flow.md`
+2. `docs/technical-design.md`
+3. `docs/architecture.md` if needed
 
 ### When the issue is frontend UI/UX
 
 1. `docs/frontend-design-benchmarks.md`
 2. `docs/ui-ux-wireframes.md` if needed
 3. `docs/technical-design.md` if needed
+
+### When the issue is implementation rules or doc-absorption policy
+
+1. `docs/development-guide.md`
+2. `docs/README.md`
+3. `AGENTS.md` if needed
 
 ### When the issue is multi-agent ownership or handoff
 
@@ -146,16 +188,19 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 
 1. `docs/sprint-plan.md`
 2. the current sprint checklist
-3. the latest `WORKLOG`
+3. `docs/mvp-backlog.md`
+4. `docs/MVP_VALIDATION_NOTES.md`
 
-Before choosing the next task, review the latest `WORKLOG` for the path already taken and repeated failures first.
+Before choosing the next task, review the current sprint docs, validation notes, and UI task history for the path already taken and repeated failures first.
 
 ### When the issue is reviewing the path already taken and finding problems
 
-1. the latest `WORKLOG`
+1. `docs/sprint-plan.md`
 2. the current sprint checklist
-3. `docs/sprint-plan.md`
+3. `docs/MVP_VALIDATION_NOTES.md`
 4. `docs/agent-team-topology.md`
+5. UI task history if needed
+6. historical `docs/WORKLOG_*.md` only if needed
 
 ### When the issue is release, build, or CI
 
@@ -164,9 +209,10 @@ Before choosing the next task, review the latest `WORKLOG` for the path already 
 
 ### When you need the latest state and recent context
 
-1. the latest `WORKLOG`
-2. the current sprint checklist
+1. the current sprint checklist
+2. `docs/sprint-plan.md`
 3. `docs/MVP_VALIDATION_NOTES.md`
+4. UI task history if needed
 
 ## 컨텍스트 초과 시 복구 규칙 / Context Overflow Recovery
 
@@ -177,7 +223,7 @@ Before choosing the next task, review the latest `WORKLOG` for the path already 
 1. `docs/DOCS_READING_ORDER.md`
 2. `docs/README.md`
 3. 현재 작업 유형에 맞는 source of truth 1개 또는 2개
-4. 현재 스프린트 문서 또는 최신 `WORKLOG`
+4. 현재 스프린트 문서 또는 `docs/MVP_VALIDATION_NOTES.md`
 
 그래도 방향이 안 잡히면 그때만 아래 `전체 복구 순서`로 넓힌다.
 
@@ -188,7 +234,7 @@ If context grows long enough that earlier reasoning starts to drift, recover in 
 1. `docs/DOCS_READING_ORDER.md`
 2. `docs/README.md`
 3. one or two source-of-truth docs that match the current task type
-4. the current sprint doc or latest `WORKLOG`
+4. the current sprint doc or `docs/MVP_VALIDATION_NOTES.md`
 
 Only if direction is still unclear should you expand into the full recovery order below.
 
@@ -202,10 +248,12 @@ Only if direction is still unclear should you expand into the full recovery orde
 2. `docs/README.md`
 3. `docs/product-plan.md`
 4. `docs/technical-design.md`
-5. `docs/agent-team-topology.md`
-6. `docs/mvp-backlog.md`
-7. `docs/sprint-plan.md`
-8. 최신 `WORKLOG`
+5. `docs/architecture.md`
+6. `docs/message-flow.md`
+7. `docs/agent-team-topology.md`
+8. `docs/mvp-backlog.md`
+9. `docs/sprint-plan.md`
+10. `docs/development-guide.md`
 
 ### English
 
@@ -215,10 +263,12 @@ Only when direction is still unclear should you widen out and reread in this ord
 2. `docs/README.md`
 3. `docs/product-plan.md`
 4. `docs/technical-design.md`
-5. `docs/agent-team-topology.md`
-6. `docs/mvp-backlog.md`
-7. `docs/sprint-plan.md`
-8. the latest `WORKLOG`
+5. `docs/architecture.md`
+6. `docs/message-flow.md`
+7. `docs/agent-team-topology.md`
+8. `docs/mvp-backlog.md`
+9. `docs/sprint-plan.md`
+10. `docs/development-guide.md`
 
 ## 짧은 복귀 질문 / Quick Recovery Questions
 
@@ -229,7 +279,7 @@ Only when direction is still unclear should you widen out and reread in this ord
 - 지금 문제는 제품, 구현, 우선순위, 릴리스 중 무엇인가
 - 지금 필요한 source of truth는 1개인가 2개인가
 - 이 작업은 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 중 어떻게 나눌 것인가
-- 지금 당장 최신 `WORKLOG`나 체크리스트도 같이 봐야 하는가
+- 지금 당장 체크리스트, 검증 메모, task history도 같이 봐야 하는가
 - 이미 시도한 경로와 실패 패턴을 확인했는가
 
 ### English
@@ -239,5 +289,5 @@ Before rereading, ask:
 - is the issue about product, implementation, priority, or release
 - do I need one source of truth, or two
 - how should this task be split across `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, and `tester`
-- do I also need the latest `WORKLOG` or checklist right now
+- do I also need the checklist, validation notes, or task history right now
 - have I reviewed the path already taken and repeated failure patterns
