@@ -126,6 +126,7 @@
 - Sprint 11 첫 슬라이스에서는 `Codex CLI`의 ChatGPT session과 `codex exec`를 활용해 API key가 아닌 session-backed real path를 앱 안에서 시작할 수 있게 한다
 - Sprint 12에서는 read-only code surface와 selected-file agent context가 메인 workspace에 반영되어 있다
 - Sprint 13에서는 line anchor, selected-file restore 강화, binary/large-file bounded fallback을 기준으로 editor-like surface를 더 깊게 다듬는다
+- Sprint 14에서는 `FSD` 기준의 `app / widgets / features / shared` 구조로 프론트 orchestration을 분해하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다

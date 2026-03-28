@@ -107,6 +107,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - line anchor와 restore 상태는 숨은 내부 상태가 아니라 사용자가 다시 읽을 수 있는 정보여야 한다.
 - binary와 large-file fallback은 에러처럼 보이지 않고 bounded preview mode처럼 읽혀야 한다.
 - task history, Telegram, runtime/debug는 2선 영역에 둔다.
+- 구조를 `FSD`로 나누더라도 기준 단위는 `project rail / workspace stage / agent rail` 같은 workbench zone이어야 한다.
 
 ### English
 
@@ -203,6 +204,7 @@ For the current active slice, the frontend should follow these rules:
 - users should be able to reread approvals, failures, retries, and detours without manually reconstructing the story from scattered logs
 - task history should be readable as a scannable timeline or trace, not just as raw transcript fragments
 - if React abstractions make agent-driven maintenance harder, prefer a simpler `TypeScript`-first structure over framework purity
+- if the frontend adopts an FSD-style split, keep the boundaries aligned with workbench zones rather than decorative card fragments
 
 ## 에이전트 친화적 구현 원칙 / Agent-Friendly Implementation Rules
 

@@ -15,6 +15,8 @@ test('opens a project path and shows repository context', async ({ page }) => {
   await expect(recentProjects.getByRole('button', { name: 'C:/Users/demo/demo-project' })).toBeVisible()
   await expect(fileTree.getByText('package.json', { exact: true })).toBeVisible()
   await expect(fileTree.getByText('src', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('terminal-workspace')).toBeVisible()
+  await expect(page.getByTestId('provider-auth-panel')).toBeVisible()
   await expect(codeViewer).toContainText('src/App.tsx')
   await page.getByTestId('terminal-reference-1').click()
   await expect(page.getByTestId('code-anchor-pill')).toContainText('Anchor: L4')

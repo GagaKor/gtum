@@ -143,6 +143,7 @@ The default workflow should follow this order:
   - 작업 이력
   - Telegram
   - runtime/debug
+- 구현 구조는 가능하면 `widgets/project-sidebar`, `widgets/workspace-stage`, `widgets/agent-sidebar`처럼 화면 zone과 같은 단위로 나눈다.
 
 ### English
 
@@ -167,6 +168,7 @@ The default workflow should follow this order:
   - task history
   - Telegram
   - runtime/debug
+- when splitting implementation structure, prefer boundaries that match these screen zones such as `widgets/project-sidebar`, `widgets/workspace-stage`, and `widgets/agent-sidebar`
 
 ## 데스크톱 기본 와이어프레임 / Desktop Primary Wireframe
 

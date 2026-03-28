@@ -198,6 +198,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - read-only code surface와 selected-file agent context
 - `Sprint 13`
   - line anchor, restore 강화, bounded file fallback
+- `Sprint 14`
+  - FSD frontend split과 app-shell orchestration 정리
 
 ### English
 
@@ -229,6 +231,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - read-only code surface and selected-file agent context
 - `Sprint 13`
   - line anchors, stronger restore, and bounded file fallback
+- `Sprint 14`
+  - FSD frontend split and app-shell orchestration cleanup
 
 ## Sprint 0
 
@@ -1470,6 +1474,134 @@ Sprint 13 initial backlog:
 - `P1` document Windows path, newline, and readability checks
 - `P1` prepare the follow-up slice for symbol/range anchors
 
+## Sprint 14
+
+### 한국어
+
+목표:
+
+- 프론트엔드 구조를 `FSD` 기준의 `app / widgets / features / shared`로 재정렬하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- `src/App.tsx`를 얇은 엔트리 파일로 전환
+- `src/app/App.tsx`를 composition root로 도입
+- `projects`, `terminals`, `auth`, `agents`, `telegram`, `tasks`, `workspace` 흐름을 feature hook과 순수 `TypeScript` helper로 분리
+- 좌측 project rail, 중앙 workspace stage, 우측 agent rail을 widget으로 분리
+- persisted UI state 저장 로직을 feature 모듈로 이동
+- 기존 runtime contract와 사용자-visible layout은 유지
+
+권장 역할 분리:
+
+- `Planner`
+  - 이번 슬라이스를 `frontend structure sprint`로 정리하고, 다음 widget 세분화와 symbol/range anchor 초안을 남긴다
+- `Orchestrator`
+  - `app -> widgets -> features -> shared` 경계를 잠그고 source-of-truth 문서를 동기화한다
+- `Designer`
+  - FSD 분해가 workbench-first layout을 해치지 않는지 확인하고, 다음 `code-stage / terminal-stage / support` 분해 기준을 정리한다
+- `Frontend`
+  - composition root, feature hook, widget 분리와 기존 selector/copy contract 유지
+- `Backend`
+  - runtime contract 무변경을 확인하고 frontend split과 충돌하지 않게 한다
+- `QA`
+  - restore, request envelope, approval, provider gating 무회귀를 확인한다
+- `Tester`
+  - 기존 E2E selector와 핵심 flow가 그대로 유지되는지 검증한다
+
+완료조건:
+
+- `src/App.tsx`는 얇은 엔트리 파일이 된다.
+- 주요 orchestration은 `features/*/model`과 `shared/lib`로 이동한다.
+- 좌측 project rail, 중앙 workspace stage, 우측 agent rail이 widget 경계로 분리된다.
+- 기존 request payload와 approval semantics는 유지된다.
+- 기존 E2E suite가 통과한다.
+
+리스크:
+
+- restore ordering이 바뀌면 selected file, provider, execution mode가 어긋날 수 있다.
+- terminal polling이나 provider bootstrap effect가 중복되면 stale state나 duplicate interval이 생길 수 있다.
+- UI를 card 단위로 과분해하면 workbench-first 구조가 다시 약해질 수 있다.
+- widget 분해 뒤 selector/copy contract가 바뀌면 E2E false red가 발생할 수 있다.
+
+Sprint 14 initial backlog:
+
+- `P0` thin entry `src/App.tsx` and introduce `src/app/App.tsx`
+- `P0` extract `useProjectWorkspace`
+- `P0` extract `useTerminalWorkspace`
+- `P0` extract `useProviderAuth`
+- `P0` extract `useAgentSuggestions`
+- `P0` extract persisted UI state and task-history helpers
+- `P0` keep current Playwright selectors and labels stable
+- `P1` extract `useTelegramWorkspace`
+- `P1` prepare `code-stage`, `terminal-stage`, `workspace-support` follow-up widget split
+
+### English
+
+Goal:
+
+- reorganize the frontend into an `FSD`-style `app / widgets / features / shared` structure and reduce `src/App.tsx` to a thin entrypoint
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- convert `src/App.tsx` into a thin entry file
+- introduce `src/app/App.tsx` as the composition root
+- move `projects`, `terminals`, `auth`, `agents`, `telegram`, `tasks`, and `workspace` flow logic into feature hooks and pure `TypeScript` helpers
+- split the left project rail, center workspace stage, and right agent rail into widgets
+- move persisted UI-state handling into a feature module
+- preserve the current runtime contracts and user-visible layout
+
+Recommended Role Split:
+
+- `Planner`
+  - frames this slice as a frontend-structure sprint and leaves the next widget-splitting and symbol/range-anchor draft
+- `Orchestrator`
+  - locks the `app -> widgets -> features -> shared` boundaries and syncs the source-of-truth docs
+- `Designer`
+  - checks that the FSD split preserves the workbench-first layout and defines the next `code-stage / terminal-stage / support` split
+- `Frontend`
+  - implements the composition root, feature-hook split, widget split, and preserves the existing selector/copy contract
+- `Backend`
+  - confirms that runtime contracts remain unchanged and do not conflict with the frontend split
+- `QA`
+  - checks no regression in restore, request-envelope, approval, and provider-gating behavior
+- `Tester`
+  - validates that the existing E2E selectors and critical flows remain intact
+
+Acceptance Criteria:
+
+- `src/App.tsx` becomes a thin entry file
+- major orchestration moves into `features/*/model` plus `shared/lib`
+- the left project rail, center workspace stage, and right agent rail are split as widget boundaries
+- the existing request payload and approval semantics remain stable
+- the existing E2E suite stays green
+
+Risks:
+
+- restore ordering may drift selected file, provider choice, or execution mode
+- duplicate terminal polling or provider bootstrap effects may create stale state or repeated intervals
+- over-fragmenting the UI into cards may weaken the workbench-first structure again
+- selector or copy drift after widget splitting may create false-red E2E failures
+
+Sprint 14 initial backlog:
+
+- `P0` thin entry `src/App.tsx` and introduce `src/app/App.tsx`
+- `P0` extract `useProjectWorkspace`
+- `P0` extract `useTerminalWorkspace`
+- `P0` extract `useProviderAuth`
+- `P0` extract `useAgentSuggestions`
+- `P0` extract persisted UI-state and task-history helpers
+- `P0` keep current Playwright selectors and labels stable
+- `P1` extract `useTelegramWorkspace`
+- `P1` prepare the follow-up widget split into `code-stage`, `terminal-stage`, and `workspace-support`
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -1486,6 +1618,7 @@ Sprint 13 initial backlog:
 - `Sprint 11`은 `Sprint 10`의 임시 bridge 경험을 바탕으로 source of truth인 `OAuth/session login`을 실제 경로로 전환하는 단계다.
 - `Sprint 12`는 `Sprint 9`의 워크스페이스 구조와 `Sprint 11`의 real request path 위에서 selected-file context를 실사용 가능한 수준으로 연결하는 단계다.
 - `Sprint 13`은 `Sprint 12`의 selected-file surface 위에서 line anchor, restore semantics, bounded fallback을 안정화하는 단계다.
+- `Sprint 14`는 `Sprint 13`의 editor-like surface 위에서 frontend 구조를 FSD 기준으로 재정렬해 이후 widget 세분화와 symbol/range 확장을 쉽게 만드는 단계다.
 
 ### English
 
@@ -1501,6 +1634,7 @@ Sprint 13 initial backlog:
 - `Sprint 11` uses the contract from `Sprint 8`, the workspace from `Sprint 9`, and the bridge learnings from `Sprint 10` to implement the real `OAuth/session login` path
 - `Sprint 12` uses the workspace structure from `Sprint 9` and the real request path from `Sprint 11` to make selected-file context usable in daily work
 - `Sprint 13` stabilizes line anchors, restore semantics, and bounded fallback on top of the selected-file surface from `Sprint 12`
+- `Sprint 14` reorganizes the frontend into an FSD-style structure on top of the editor-like surface from `Sprint 13` so later widget splitting and symbol/range expansion become safer
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -1534,6 +1668,8 @@ Sprint 13 initial backlog:
   - 사용자가 코드 surface와 활성 로그를 함께 보면서, 어떤 파일 맥락으로 제안이 나왔는지 승인 전에 분명히 이해할 수 있는가
 - `Sprint 13`
   - 사용자가 같은 파일의 같은 지점으로 다시 돌아오고, line anchor가 request와 approval에서도 일관되게 읽히는가
+- `Sprint 14`
+  - 에이전트가 프론트 구조를 더 작고 명확한 단위로 수정할 수 있으면서도, workbench 가시성과 핵심 흐름은 그대로 유지되는가
 
 ### English
 
@@ -1565,13 +1701,15 @@ Sprint 13 initial backlog:
   - can users understand which file context produced a suggestion while reading code and active logs together before approval
 - `Sprint 13`
   - can users return to the same location in a file and reread that line-anchor context consistently in request and approval flows
+- `Sprint 14`
+  - can agents edit the frontend in smaller, clearer units while preserving workbench visibility and the core user flow
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 `Sprint 13` 위에서 symbol/range anchor, richer outline navigation, 더 강한 Windows 실기 검증을 붙여 `editor-like` surface를 실제 코드 추적 도구로 끌어올리는 것이 맞다.
+다음 단계로는 `Sprint 14` 위에서 `WorkspaceStage`를 `code-stage / terminal-stage / workspace-support`로 한 번 더 나누고, symbol/range anchor, richer outline navigation, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
 
 ### English
 
-The next step should be to build on `Sprint 13` with symbol/range anchors, richer outline navigation, and stronger real Windows validation so the editor-like surface becomes a materially better code-tracing tool.
+The next step should be to build on `Sprint 14` by splitting `WorkspaceStage` further into `code-stage / terminal-stage / workspace-support`, then add symbol/range anchors, richer outline navigation, and stronger real Windows validation so the editor-like surface becomes a materially better code-tracing tool.

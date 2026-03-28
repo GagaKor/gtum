@@ -69,7 +69,7 @@ This document exceeds 200 lines. Do not reread every flow by default.
 ### 한국어
 
 1. 앱 시작 시 프론트엔드는 `localStorage`에서 마지막 UI 상태를 읽는다.
-2. 마지막 프로젝트 경로가 있으면 [`src/App.tsx`](../src/App.tsx) `openProject`가 자동 호출된다.
+2. 마지막 프로젝트 경로가 있으면 [`src/app/App.tsx`](../src/app/App.tsx)가 persisted UI state를 읽고 [`src/features/projects/model/useProjectWorkspace.ts`](../src/features/projects/model/useProjectWorkspace.ts)의 `openProject`를 자동 실행한다.
 3. 프론트엔드는 [`src/lib/runtime.ts`](../src/lib/runtime.ts)를 통해 `read_project_overview`를 요청한다.
 4. 런타임 [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs)가 프로젝트 metadata, 파일 트리, Git overview를 반환한다.
 5. 프론트엔드는 프로젝트 상태를 갱신하고, 복원 가능한 선택 파일이 있으면 그 파일을 먼저 읽는다.
@@ -79,7 +79,7 @@ This document exceeds 200 lines. Do not reread every flow by default.
 ### English
 
 1. On startup, the frontend reads the last UI state from `localStorage`.
-2. If a last project path exists, `openProject` in [`src/App.tsx`](../src/App.tsx) runs automatically.
+2. If a last project path exists, [`src/app/App.tsx`](../src/app/App.tsx) reads the persisted UI state and automatically runs `openProject` from [`src/features/projects/model/useProjectWorkspace.ts`](../src/features/projects/model/useProjectWorkspace.ts).
 3. The frontend requests `read_project_overview` through [`src/lib/runtime.ts`](../src/lib/runtime.ts).
 4. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) returns project metadata, file tree, and Git overview.
 5. The frontend updates project state and restores a preferred selected file if possible.
@@ -152,7 +152,7 @@ This document exceeds 200 lines. Do not reread every flow by default.
 - `userTask`
 - `executionMode`
 
-실제 payload 조립은 [`src/App.tsx`](../src/App.tsx)에서 하고, typed contract는 [`src/lib/runtime.ts`](../src/lib/runtime.ts), runtime 수신 구조는 [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs)에 있다.
+실제 payload 조립은 [`src/features/agents/model/useAgentSuggestions.ts`](../src/features/agents/model/useAgentSuggestions.ts)에서 하고, [`src/app/App.tsx`](../src/app/App.tsx)가 필요한 project/file/terminal/auth 상태를 조합한다. typed contract는 [`src/lib/runtime.ts`](../src/lib/runtime.ts), runtime 수신 구조는 [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs)에 있다.
 
 ### English
 
@@ -170,15 +170,15 @@ The input contract for `request_agent_suggestions` is fixed around these fields:
 - `userTask`
 - `executionMode`
 
-The payload is assembled in [`src/App.tsx`](../src/App.tsx), typed in [`src/lib/runtime.ts`](../src/lib/runtime.ts), and received in [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs).
+The payload is assembled in [`src/features/agents/model/useAgentSuggestions.ts`](../src/features/agents/model/useAgentSuggestions.ts), while [`src/app/App.tsx`](../src/app/App.tsx) composes the necessary project/file/terminal/auth state. It is typed in [`src/lib/runtime.ts`](../src/lib/runtime.ts) and received in [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs).
 
 ## Flow 5. Suggestion Request 와 승인 실행 / Suggestion Request And Approval Execution
 
 ### 한국어
 
 1. 사용자가 request를 입력하고 provider가 연결된 상태여야 한다.
-2. 프론트엔드는 활성 terminal이 있으면 최근 50줄을 캡처한다.
-3. 선택 파일이 text면 anchored snippet을 만든다.
+2. [`src/features/terminals/model/useTerminalWorkspace.ts`](../src/features/terminals/model/useTerminalWorkspace.ts)가 활성 terminal의 최근 50줄을 읽을 수 있게 유지한다.
+3. [`src/features/projects/model/useProjectWorkspace.ts`](../src/features/projects/model/useProjectWorkspace.ts)와 [`src/shared/lib/file-context.ts`](../src/shared/lib/file-context.ts)가 anchored snippet을 준비한다.
 4. 위 두 정보를 request envelope에 넣어 `request_agent_suggestions`를 호출한다.
 5. `Codex` runtime은 connection 검증 뒤 `codex exec --sandbox read-only`로 suggestion을 요청한다.
 6. 응답은 아래 구조로 정규화된다.
@@ -187,16 +187,16 @@ The payload is assembled in [`src/App.tsx`](../src/App.tsx), typed in [`src/lib/
    - `preferredTarget`
    - `confidence`
    - `error`
-7. 프론트엔드는 suggestion card를 만들고, 사용자는 `현재 탭` 또는 `새 탭`으로 승인할 수 있다.
+7. [`src/features/agents/model/useAgentSuggestions.ts`](../src/features/agents/model/useAgentSuggestions.ts)가 suggestion card용 UI state를 만들고, 사용자는 `현재 탭` 또는 `새 탭`으로 승인할 수 있다.
 8. 승인 전에는 command가 실행되지 않는다.
-9. 승인 후 현재 탭이면 `execute_terminal_session_command`로 주입하고, 새 탭이면 session 생성 뒤 같은 command를 실행한다.
+9. 승인 후 실행은 [`src/features/terminals/model/useTerminalWorkspace.ts`](../src/features/terminals/model/useTerminalWorkspace.ts)의 command-target helper를 통해 현재 탭 또는 새 탭으로 주입된다.
 10. task history에는 request 성공/실패, approval 성공/실패가 남는다.
 
 ### English
 
 1. The user must enter a request while the provider is connected.
-2. If an active terminal exists, the frontend captures its last 50 log lines.
-3. If the selected file is text, an anchored snippet is built.
+2. [`src/features/terminals/model/useTerminalWorkspace.ts`](../src/features/terminals/model/useTerminalWorkspace.ts) keeps the latest 50 lines from the active terminal available.
+3. [`src/features/projects/model/useProjectWorkspace.ts`](../src/features/projects/model/useProjectWorkspace.ts) plus [`src/shared/lib/file-context.ts`](../src/shared/lib/file-context.ts) prepare the anchored file snippet.
 4. Those inputs are packed into the request envelope and sent through `request_agent_suggestions`.
 5. After validating the connection, the `Codex` runtime requests suggestions through `codex exec --sandbox read-only`.
 6. The response is normalized into:
@@ -205,16 +205,16 @@ The payload is assembled in [`src/App.tsx`](../src/App.tsx), typed in [`src/lib/
    - `preferredTarget`
    - `confidence`
    - `error`
-7. The frontend creates suggestion cards, and the user can approve them into the `current tab` or a `new tab`.
+7. [`src/features/agents/model/useAgentSuggestions.ts`](../src/features/agents/model/useAgentSuggestions.ts) creates the suggestion-card UI state, and the user can approve it into the `current tab` or a `new tab`.
 8. No command runs before approval.
-9. After approval, the current-tab path injects the command with `execute_terminal_session_command`, while the new-tab path creates a session first and then runs the same command.
+9. After approval, execution is delegated through the command-target helper in [`src/features/terminals/model/useTerminalWorkspace.ts`](../src/features/terminals/model/useTerminalWorkspace.ts) for either the current-tab or new-tab path.
 10. Task history records request success/failure and approval success/failure.
 
 ## Flow 6. Restore 와 반복 사용 / Restore And Repeated Use
 
 ### 한국어
 
-1. 프론트엔드는 마지막 프로젝트 경로, 선택 파일, line anchor, provider 선택, execution mode, task history를 `localStorage`에 저장한다.
+1. 프론트엔드는 [`src/features/workspace/model/ui-state.ts`](../src/features/workspace/model/ui-state.ts)를 통해 마지막 프로젝트 경로, 선택 파일, line anchor, provider 선택, execution mode, task history를 `localStorage`에 저장한다.
 2. 런타임은 provider auth, workspace meta, Telegram state를 app data JSON에 저장한다.
 3. 앱 재시작 시 프론트엔드는 마지막 프로젝트를 다시 열고, 복원 가능한 파일과 line anchor를 우선 선택한다.
 4. provider 연결 목록은 재로딩되지만, real provider는 stale connected 상태가 그대로 남지 않도록 다시 검증한다.
@@ -222,7 +222,7 @@ The payload is assembled in [`src/App.tsx`](../src/App.tsx), typed in [`src/lib/
 
 ### English
 
-1. The frontend stores last project path, selected file, line anchor, provider choice, execution mode, and task history in `localStorage`.
+1. The frontend stores the last project path, selected file, line anchor, provider choice, execution mode, and task history in `localStorage` through [`src/features/workspace/model/ui-state.ts`](../src/features/workspace/model/ui-state.ts).
 2. The runtime stores provider auth, workspace metadata, and Telegram state in app-data JSON.
 3. On app restart, the frontend reopens the last project and prefers the previously selected file and line anchor when still valid.
 4. Provider connection lists reload, but real-provider state is revalidated so stale connected state does not survive unchecked.

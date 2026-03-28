@@ -160,19 +160,32 @@ This document assumes the following decisions:
 ```text
 src/
   app/
-    providers/
-    router/
-    layout/
+    App.tsx
   features/
     projects/
+      model/
     workspace/
+      model/
     terminals/
+      model/
     agents/
+      model/
     auth/
+      model/
     tasks/
-    settings/
-  components/
-  hooks/
+      model/
+    telegram/
+      model/
+  widgets/
+    project-sidebar/
+      ui/
+    workspace-stage/
+      ui/
+    agent-sidebar/
+      ui/
+  shared/
+    lib/
+    ui/
   stores/
   lib/
 src-tauri/
@@ -199,19 +212,32 @@ The recommended initial structure is:
 ```text
 src/
   app/
-    providers/
-    router/
-    layout/
+    App.tsx
   features/
     projects/
+      model/
     workspace/
+      model/
     terminals/
+      model/
     agents/
+      model/
     auth/
+      model/
     tasks/
-    settings/
-  components/
-  hooks/
+      model/
+    telegram/
+      model/
+  widgets/
+    project-sidebar/
+      ui/
+    workspace-stage/
+      ui/
+    agent-sidebar/
+      ui/
+  shared/
+    lib/
+    ui/
   stores/
   lib/
 src-tauri/
@@ -254,6 +280,19 @@ docs/
 - `settings`
   - 플랫폼 설정, 단축키, 셸 설정, 실험 기능
 
+#### 현재 구현 기준선
+
+- `app`
+  - `src/App.tsx`는 얇은 entrypoint이고 `src/app/App.tsx`가 composition root다.
+- `features/*/model`
+  - 프로젝트, terminal, auth, agent, Telegram 흐름 로직은 가능한 한 순수 `TypeScript` helper와 feature hook으로 내린다.
+- `widgets/*/ui`
+  - 좌측 project rail, 중앙 workspace stage, 우측 agent rail처럼 큰 workbench zone 단위로 자른다.
+- `shared/lib`, `shared/ui`
+  - tree recursion, file snippet, line reference, formatter 같은 cross-feature helper를 둔다.
+- `stores`
+  - layout visibility, active tab, captured agent context 같은 전역 workspace state만 남긴다.
+
 #### UI 검증 원칙
 
 - UI 핵심 흐름은 `Playwright` 같은 브라우저/앱 자동화 도구로 E2E 검증한다.
@@ -264,6 +303,8 @@ docs/
 - 디자인 검토 시 `VS Code`, `conductor`, `cmux` 대비 정보 계층과 터미널 중심성이 유지되는지 확인한다.
 - UI는 task history와 실행 이력이 사용자가 밟아온 승인, 실패, 재시도 경로를 재구성할 수 있을 정도로 남는지 확인한다.
 - 프론트엔드 구현은 프레임워크 관용성보다 에이전트가 수정하기 쉬운 단순한 `TypeScript` 구조를 우선할 수 있다.
+- FSD-style 분해를 쓰더라도 기본 단위는 card fragment가 아니라 workbench zone이어야 한다.
+- `app -> widgets -> features -> shared` 경계를 쓰더라도 `code + terminal`의 dual-primary surface는 그대로 유지해야 한다.
 
 #### 상태 관리 원칙
 
@@ -293,6 +334,19 @@ The frontend should be organized by feature domain.
 - `settings`
   - platform settings, shortcuts, shell settings, experimental features
 
+#### Current Implemented Baseline
+
+- `app`
+  - `src/App.tsx` is the thin entrypoint and `src/app/App.tsx` is the composition root.
+- `features/*/model`
+  - project, terminal, auth, agent, and Telegram flow logic should be pushed into pure `TypeScript` helpers and feature hooks whenever possible.
+- `widgets/*/ui`
+  - split along major workbench zones such as the left project rail, center workspace stage, and right agent rail.
+- `shared/lib`, `shared/ui`
+  - hold cross-feature helpers such as tree recursion, file snippets, line references, and formatters.
+- `stores`
+  - keep only global workspace state such as layout visibility, the active tab, and captured agent context.
+
 #### UI Verification Principles
 
 - validate core UI flows with an E2E automation tool such as `Playwright`
@@ -303,6 +357,8 @@ The frontend should be organized by feature domain.
 - check whether the UI still preserves the hierarchy of `VS Code`, the workflow clarity of `conductor`, and the terminal-first emphasis of `cmux`
 - make sure task history and execution history remain legible enough for users to reconstruct approvals, failures, and retries
 - prefer frontend implementation patterns that are easy for agents to edit, even if that means reducing framework-heavy abstractions in favor of simpler `TypeScript` structures
+- when using an FSD-style split, prefer workbench-zone boundaries over fragmenting the UI into many small dashboard cards
+- keep the dual-primary `code + terminal` surface intact while decomposing widgets and features
 
 ## 테스트 전략 / Testing Strategy
 
