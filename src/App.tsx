@@ -100,6 +100,7 @@ const loadUiState = () => {
     return null as null | {
       lastProjectPath?: string
       selectedFilePath?: string
+      selectedFileLine?: number | null
       selectedProvider?: AgentProviderId
       executionMode?: ExecutionMode
       taskHistory?: TaskHistoryEntry[]
@@ -113,6 +114,7 @@ const loadUiState = () => {
       ? (JSON.parse(raw) as {
           lastProjectPath?: string
           selectedFilePath?: string
+          selectedFileLine?: number | null
           selectedProvider?: AgentProviderId
           executionMode?: ExecutionMode
           taskHistory?: TaskHistoryEntry[]
@@ -205,6 +207,49 @@ const summarizePath = (value: string | null) => {
   return ['…', ...segments.slice(-3)].join('/')
 }
 
+type ParsedLineReference = {
+  filePath: string
+  lineNumber: number
+  label: string
+}
+
+const lineReferencePattern = /((?:[A-Za-z]:)?[A-Za-z0-9_./\\-]+\.[A-Za-z0-9]+):(\d+)(?::\d+)?/
+
+const extractLineReference = (value: string): ParsedLineReference | null => {
+  const match = value.match(lineReferencePattern)
+
+  if (!match) {
+    return null
+  }
+
+  const lineNumber = Number(match[2])
+  if (!Number.isFinite(lineNumber) || lineNumber <= 0) {
+    return null
+  }
+
+  return {
+    filePath: match[1],
+    lineNumber,
+    label: `${match[1].replace(/\\/g, '/')}:L${lineNumber}`,
+  }
+}
+
+const buildDisplayFileAnchor = (displayPath: string | null, lineNumber: number | null) => {
+  if (!displayPath) {
+    return 'No selected file'
+  }
+
+  return lineNumber && lineNumber > 0 ? `${displayPath}:L${lineNumber}` : displayPath
+}
+
+const clampLineNumber = (lineNumber: number | null, maxLines: number) => {
+  if (!lineNumber || lineNumber <= 0 || maxLines <= 0) {
+    return null
+  }
+
+  return Math.min(lineNumber, maxLines)
+}
+
 const treeContainsPath = (node: FileTreeNode, targetPath: string): boolean => {
   if (node.path === targetPath) {
     return true
@@ -236,12 +281,27 @@ const resolveSelectedFilePath = (tree: FileTreeNode, preferredPath: string | nul
   return findFirstFilePath(tree)
 }
 
-const buildFileSnippet = (file: ProjectFileSnapshot | null, maxLines = 24, maxChars = 1800) => {
+const buildFileSnippet = (
+  file: ProjectFileSnapshot | null,
+  lineNumber: number | null = null,
+  maxLines = 24,
+  maxChars = 1800,
+) => {
   if (!file?.isText || !file.content.trim()) {
     return null
   }
 
-  const snippet = file.content.split('\n').slice(0, maxLines).join('\n')
+  const lines = file.content.split('\n')
+  const normalizedLineNumber = clampLineNumber(lineNumber, lines.length)
+  const start = normalizedLineNumber
+    ? Math.max(0, normalizedLineNumber - Math.min(6, maxLines) - 1)
+    : 0
+  const end = Math.min(lines.length, start + (normalizedLineNumber ? 12 : maxLines))
+  const snippet = lines
+    .slice(start, end)
+    .map((line, index) => `${start + index + 1}: ${line}`)
+    .join('\n')
+
   return snippet.length > maxChars ? `${snippet.slice(0, maxChars).trimEnd()}\n...` : snippet
 }
 
@@ -363,6 +423,9 @@ function App() {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(
     restoredUiState?.selectedFilePath ?? null,
   )
+  const [selectedFileLine, setSelectedFileLine] = useState<number | null>(
+    restoredUiState?.selectedFileLine ?? null,
+  )
   const [selectedFile, setSelectedFile] = useState<ProjectFileSnapshot | null>(null)
   const [isFileLoading, setIsFileLoading] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -396,6 +459,8 @@ function App() {
   )
   const hasRestoredWorkspace = useRef(false)
   const restoredSelectedFilePath = useRef(restoredUiState?.selectedFilePath ?? null)
+  const restoredSelectedFileLine = useRef(restoredUiState?.selectedFileLine ?? null)
+  const codeWindowRef = useRef<HTMLDivElement | null>(null)
 
   const refreshTerminalSessions = useCallback(async () => {
     try {
@@ -489,6 +554,7 @@ function App() {
         JSON.stringify({
           lastProjectPath: activeProjectPath || projectPathInput,
           selectedFilePath,
+          selectedFileLine,
           selectedProvider,
           executionMode,
           taskHistory,
@@ -500,10 +566,34 @@ function App() {
     executionMode,
     projectPathInput,
     selectedFilePath,
+    selectedFileLine,
     selectedProvider,
     taskHistory,
     telegramReport,
   ])
+
+  useEffect(() => {
+    restoredSelectedFilePath.current = selectedFilePath
+  }, [selectedFilePath])
+
+  useEffect(() => {
+    restoredSelectedFileLine.current = selectedFileLine
+  }, [selectedFileLine])
+
+  useEffect(() => {
+    if (!selectedFile?.isText || !selectedFileLine || !codeWindowRef.current) {
+      return
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = codeWindowRef.current?.querySelector<HTMLElement>(
+        `[data-code-line="${selectedFileLine}"]`,
+      )
+      target?.scrollIntoView({ block: 'center' })
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [selectedFile?.filePath, selectedFile?.isText, selectedFileLine])
 
   useEffect(() => {
     if (!activeTerminalTabId) {
@@ -575,12 +665,20 @@ function App() {
   }, [activeTerminalTabId, selectTerminalTab])
 
   const loadProjectFileSnapshot = useCallback(
-    async (projectPath: string, filePath: string, shouldRecord = false) => {
+    async (
+      projectPath: string,
+      filePath: string,
+      options: {
+        shouldRecord?: boolean
+        anchorLine?: number | null
+      } = {},
+    ) => {
       if (!projectPath || !filePath) {
         setSelectedFilePath(null)
+        setSelectedFileLine(null)
         setSelectedFile(null)
         setFileError(null)
-        return
+        return null
       }
 
       setSelectedFilePath(filePath)
@@ -589,15 +687,23 @@ function App() {
 
       try {
         const snapshot = await readProjectFile(projectPath, filePath)
+        const normalizedAnchor = snapshot.isText
+          ? clampLineNumber(options.anchorLine ?? null, snapshot.content.split('\n').length)
+          : null
         setSelectedFile(snapshot)
         setSelectedFilePath(snapshot.filePath)
+        setSelectedFileLine(normalizedAnchor)
 
-        if (shouldRecord) {
-          recordTask('Code surface focused', snapshot.displayPath, 'done')
+        if (options.shouldRecord) {
+          recordTask('Code surface focused', buildDisplayFileAnchor(snapshot.displayPath, normalizedAnchor), 'done')
         }
+
+        return snapshot
       } catch (error) {
         setSelectedFile(null)
+        setSelectedFileLine(null)
         setFileError(error instanceof Error ? error.message : String(error))
+        return null
       } finally {
         setIsFileLoading(false)
       }
@@ -618,28 +724,42 @@ function App() {
 
     try {
       const overview = await readProjectOverview(trimmedPath)
+      const firstFilePath = findFirstFilePath(overview.tree)
       const preferredFilePath =
         selectedFilePath && selectedFilePath.startsWith(overview.metadata.path)
           ? selectedFilePath
           : restoredSelectedFilePath.current
+      const preferredFileLine =
+        preferredFilePath && preferredFilePath === selectedFilePath
+          ? selectedFileLine
+          : restoredSelectedFileLine.current
       const nextSelectedFilePath = resolveSelectedFilePath(overview.tree, preferredFilePath)
 
       setProjectOverview(overview)
       setActiveProject(overview.metadata.name)
       setActiveProjectPath(overview.metadata.path)
       setProjectPathInput(overview.metadata.path)
-      setActiveContext('Sprint 12 Workspace Restored')
+      setActiveContext('Sprint 13 Workspace Restored')
       rememberProject(overview.metadata.path)
       setSelectedFilePath(nextSelectedFilePath)
       setFileError(null)
       await ensureWorkspaceTerminal(overview.metadata.path)
 
+      let loadedFile = null
       if (nextSelectedFilePath) {
-        await loadProjectFileSnapshot(overview.metadata.path, nextSelectedFilePath)
-        restoredSelectedFilePath.current = nextSelectedFilePath
+        loadedFile = await loadProjectFileSnapshot(overview.metadata.path, nextSelectedFilePath, {
+          anchorLine: preferredFileLine,
+        })
+      }
+
+      if (!loadedFile && firstFilePath && firstFilePath !== nextSelectedFilePath) {
+        loadedFile = await loadProjectFileSnapshot(overview.metadata.path, firstFilePath)
       } else {
-        setSelectedFile(null)
-        setSelectedFilePath(null)
+        if (!nextSelectedFilePath) {
+          setSelectedFile(null)
+          setSelectedFilePath(null)
+          setSelectedFileLine(null)
+        }
       }
 
       recordTask('Project opened', overview.metadata.path, 'done')
@@ -647,6 +767,7 @@ function App() {
       setProjectOverview(null)
       setSelectedFile(null)
       setSelectedFilePath(null)
+      setSelectedFileLine(null)
       setFileError(null)
       setProjectError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -657,6 +778,7 @@ function App() {
     loadProjectFileSnapshot,
     recordTask,
     rememberProject,
+    selectedFileLine,
     selectedFilePath,
     setActiveContext,
     setActiveProject,
@@ -695,9 +817,49 @@ function App() {
         return
       }
 
-      void loadProjectFileSnapshot(projectPath, node.path, true)
+      void loadProjectFileSnapshot(projectPath, node.path, { shouldRecord: true })
     },
     [activeProjectPath, loadProjectFileSnapshot, projectOverview?.metadata.path],
+  )
+
+  const selectCodeLine = useCallback(
+    (lineNumber: number) => {
+      const normalizedLineNumber = clampLineNumber(
+        lineNumber,
+        selectedFile?.content.split('\n').length ?? 0,
+      )
+
+      if (!selectedFile?.isText || !normalizedLineNumber) {
+        return
+      }
+
+      setSelectedFileLine(normalizedLineNumber)
+      setActiveContext(`Sprint 13 Line Anchor Ready • ${buildDisplayFileAnchor(selectedFile.displayPath, normalizedLineNumber)}`)
+      recordTask('Line anchor focused', buildDisplayFileAnchor(selectedFile.displayPath, normalizedLineNumber), 'done')
+    },
+    [recordTask, selectedFile, setActiveContext],
+  )
+
+  const clearSelectedLine = useCallback(() => {
+    setSelectedFileLine(null)
+  }, [])
+
+  const openLineReference = useCallback(
+    async (line: string) => {
+      const reference = extractLineReference(line)
+      const projectPath = projectOverview?.metadata.path ?? activeProjectPath
+
+      if (!reference || !projectPath) {
+        return
+      }
+
+      await loadProjectFileSnapshot(projectPath, reference.filePath, {
+        shouldRecord: true,
+        anchorLine: reference.lineNumber,
+      })
+      setActiveContext(`Sprint 13 Log Anchor Ready • ${reference.label}`)
+    },
+    [activeProjectPath, loadProjectFileSnapshot, projectOverview?.metadata.path, setActiveContext],
   )
 
   const createTab = async () => {
@@ -1226,7 +1388,7 @@ function App() {
     }
 
     const liveContextSnapshot = buildLiveContextSnapshot()
-    const activeFileSnippet = buildFileSnippet(selectedFile)
+    const activeFileSnippet = buildFileSnippet(selectedFile, selectedFileLine)
 
     if (liveContextSnapshot) {
       captureTerminalContext(liveContextSnapshot)
@@ -1242,6 +1404,7 @@ function App() {
         activeTabId: liveContextSnapshot?.tabId ?? (activeSession ? String(activeSession.sessionId) : null),
         activeTabTitle: liveContextSnapshot?.tabTitle ?? activeSession?.name ?? null,
         activeFilePath: selectedFile?.filePath ?? selectedFilePath,
+        activeFileLine: selectedFileLine,
         activeFileSnippet,
         lastNLogLines: liveContextSnapshot?.lines ?? [],
         userTask: normalizedRequest,
@@ -1255,7 +1418,7 @@ function App() {
         summary: suggestion.summary,
         command: suggestion.command,
         projectLabel: projectOverview?.metadata.name ?? activeProject,
-        fileLabel: selectedFile?.displayPath ?? null,
+        fileLabel: buildDisplayFileAnchor(selectedFile?.displayPath ?? null, selectedFileLine),
         terminalLabel: liveContextSnapshot?.tabTitle ?? activeSession?.name ?? 'workspace',
         attachedLogLines: liveContextSnapshot?.lines.length ?? 0,
         confidence: suggestion.confidence,
@@ -1267,7 +1430,7 @@ function App() {
       setActiveContext(`Daily-use ${connectedProvider.displayName} suggestion ready`)
       recordTask(
         `${connectedProvider.displayName} suggestion requested`,
-        `${normalizedRequest} • ${selectedFile?.displayPath ?? 'no file'} • ${mappedSuggestions[0]?.attachedLogLines ?? 0} log line(s) • ${formatModeLabel(executionMode)}`,
+        `${normalizedRequest} • ${buildDisplayFileAnchor(selectedFile?.displayPath ?? null, selectedFileLine)} • ${mappedSuggestions[0]?.attachedLogLines ?? 0} log line(s) • ${formatModeLabel(executionMode)}`,
         mappedSuggestions.some((entry) => entry.error) ? 'error' : 'done',
       )
     } catch (error) {
@@ -1351,11 +1514,12 @@ function App() {
 
   const activeSession = terminalSessions.find((session) => String(session.sessionId) === activeTerminalTabId)
   const requestContextSnapshot = buildLiveContextSnapshot()
-  const selectedFileSnippet = buildFileSnippet(selectedFile)
+  const selectedFileSnippet = buildFileSnippet(selectedFile, selectedFileLine)
   const selectedFileLines = selectedFile?.isText ? selectedFile.content.split('\n') : []
+  const selectedFileAnchorLabel = buildDisplayFileAnchor(selectedFile?.displayPath ?? null, selectedFileLine)
   const providerRequestPreview = {
     project: projectOverview?.metadata.name ?? activeProject,
-    file: selectedFile?.displayPath ?? 'No selected file',
+    file: selectedFileAnchorLabel,
     terminal: requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No active terminal',
     lines: requestContextSnapshot?.lines.length ?? 0,
   }
@@ -1487,7 +1651,7 @@ function App() {
       <main className="workspace">
         <header className="workspace-topbar">
           <div className="workspace-title-group">
-            <span className="eyebrow">Sprint 12 Workspace</span>
+            <span className="eyebrow">Sprint 13 Workspace</span>
             <h2>{workspaceHeroTitle}</h2>
             <p className="workspace-subtitle">
               {workspaceHeroDetail}
@@ -1515,7 +1679,7 @@ function App() {
         <section className="workspace-body">
           <section className="workspace-status-strip">
             <span className="pill">Project: {projectOverview?.metadata.name ?? 'none'}</span>
-            <span className="pill">File: {selectedFile?.displayPath ?? 'none'}</span>
+            <span className="pill">File: {selectedFileAnchorLabel}</span>
             <span className="pill">Tab: {activeSession?.name ?? 'none'}</span>
             <span className="pill">
               Terminal: {activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Not Ready'}
@@ -1537,10 +1701,10 @@ function App() {
               <div className="code-toolbar">
                 <div>
                   <span className="label">Code Surface</span>
-                  <strong>{selectedFile?.displayPath ?? 'No file selected'}</strong>
+                  <strong>{selectedFileAnchorLabel}</strong>
                   <p>
                     {selectedFile
-                      ? 'Use the selected file and active terminal together before asking Codex.'
+                      ? 'Use the selected file, optional line anchor, and active terminal together before asking Codex.'
                       : 'Choose a file from the project tree to inspect real project contents here.'}
                   </p>
                 </div>
@@ -1555,12 +1719,20 @@ function App() {
                   <span className="pill soft">
                     {selectedFile ? formatFileSizeLabel(selectedFile.sizeBytes) : '0 B'}
                   </span>
+                  <span className={`pill ${selectedFileLine ? 'soft success' : 'soft'}`} data-testid="code-anchor-pill">
+                    {selectedFileLine ? `Anchor: L${selectedFileLine}` : 'No Anchor'}
+                  </span>
                   <span className={`pill ${selectedFile?.truncated ? 'soft warning' : 'soft'}`}>
                     {selectedFile?.truncated ? 'Preview Truncated' : 'Full Preview'}
                   </span>
+                  {selectedFileLine ? (
+                    <button type="button" onClick={() => clearSelectedLine()}>
+                      Clear Anchor
+                    </button>
+                  ) : null}
                 </div>
               </div>
-              <div className="code-window">
+              <div className="code-window" ref={codeWindowRef}>
                 {isFileLoading ? (
                   <div className="code-empty">Loading file preview...</div>
                 ) : fileError ? (
@@ -1571,15 +1743,27 @@ function App() {
                   selectedFile.isText ? (
                     <div className="code-frame">
                       {selectedFileLines.map((line, index) => (
-                        <div className="code-line" key={`${selectedFile.filePath}-${index}`}>
-                          <span className="code-line-number">{index + 1}</span>
+                        <div
+                          className={`code-line ${selectedFileLine === index + 1 ? 'anchored' : ''}`}
+                          key={`${selectedFile.filePath}-${index}`}
+                          data-code-line={index + 1}
+                        >
+                          <button
+                            type="button"
+                            className={`code-line-number ${selectedFileLine === index + 1 ? 'active' : ''}`}
+                            data-testid={`code-line-button-${index + 1}`}
+                            onClick={() => selectCodeLine(index + 1)}
+                          >
+                            {index + 1}
+                          </button>
                           <code>{line || ' '}</code>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="code-empty">
-                      <p>{selectedFile.displayPath} is not a text file preview.</p>
+                      <p>Binary preview unavailable for {selectedFile.displayPath}.</p>
+                      <p>Use the project tree or terminal workflow to inspect a text file before asking Codex.</p>
                     </div>
                   )
                 ) : (
@@ -1588,6 +1772,11 @@ function App() {
                   </div>
                 )}
               </div>
+              {selectedFile?.truncated ? (
+                <div className="code-footer-note">
+                  Preview truncated for safety. The full file is larger than the current preview window.
+                </div>
+              ) : null}
             </section>
 
             <div className="terminal-stage" data-testid="terminal-workspace">
@@ -1656,13 +1845,30 @@ function App() {
                   <span>{activeSession?.cwd ?? 'no cwd'}</span>
                   <span>{attachedLogCount > 0 ? `${attachedLogCount} request line(s)` : 'request context pending'}</span>
                 </div>
-                <div className="terminal-line">$ sprint-12:code-surface</div>
+                <div className="terminal-line">$ sprint-13:line-anchor</div>
                 {(terminalLogs?.entries || []).length > 0 ? (
-                  terminalLogs?.entries.map((line, index) => (
-                    <div className="terminal-line" key={`${terminalLogs.sessionId}-${index}`}>
-                      {line || ' '}
-                    </div>
-                  ))
+                  terminalLogs?.entries.map((line, index) => {
+                    const reference = extractLineReference(line)
+
+                    return (
+                      <div
+                        className={`terminal-line ${reference ? 'with-reference' : ''}`}
+                        key={`${terminalLogs.sessionId}-${index}`}
+                      >
+                        <span>{line || ' '}</span>
+                        {reference ? (
+                          <button
+                            type="button"
+                            className="line-reference-button"
+                            data-testid={`terminal-reference-${index}`}
+                            onClick={() => void openLineReference(line)}
+                          >
+                            Open {reference.label}
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  })
                 ) : (
                   <div className="terminal-line dim">
                     No recent lines yet. Interactive shell output will appear here.
@@ -1747,7 +1953,7 @@ function App() {
 
             <article className="card workspace-flow-card" data-testid="active-log-buffer">
               <span className="label">Attached Context</span>
-              <strong>{selectedFile?.displayPath ?? requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No Context Yet'}</strong>
+              <strong>{selectedFileAnchorLabel ?? requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No Context Yet'}</strong>
               <p>
                 The next request combines the selected file preview with the latest active terminal lines.
               </p>
@@ -1757,9 +1963,24 @@ function App() {
               </div>
               <div className="context-block">
                 <span className="context-meta">Active terminal logs</span>
-                {(requestContextSnapshot?.lines ?? []).map((line, index) => (
-                  <code key={`active-log-${index}`}>{line}</code>
-                ))}
+                {(requestContextSnapshot?.lines ?? []).map((line, index) => {
+                  const reference = extractLineReference(line)
+
+                  return (
+                    <div className="context-line" key={`active-log-${index}`}>
+                      <code>{line}</code>
+                      {reference ? (
+                        <button
+                          type="button"
+                          className="line-reference-button"
+                          onClick={() => void openLineReference(line)}
+                        >
+                          Open {reference.label}
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })}
                 {(requestContextSnapshot?.lines ?? []).length === 0 ? (
                   <p>No active terminal lines yet. Run a command or pin the current log snapshot.</p>
                 ) : null}
@@ -2094,9 +2315,9 @@ function App() {
 
             <article className="card agent-stage-card">
               <span className="label">Step 2 · Context</span>
-              <strong>{selectedFile?.displayPath ?? requestContextSnapshot?.tabTitle ?? 'No Active Context Yet'}</strong>
+              <strong>{selectedFileAnchorLabel ?? requestContextSnapshot?.tabTitle ?? 'No Active Context Yet'}</strong>
               <p>
-                The request uses the selected file plus the active terminal and keeps the latest 50 lines ready for Codex.
+                The request uses the selected file, optional line anchor, plus the active terminal and keeps the latest 50 lines ready for Codex.
               </p>
               <div className="context-block">
                 <span className="context-meta">Selected file</span>
@@ -2109,9 +2330,24 @@ function App() {
               {requestContextSnapshot ? (
                 <div className="context-block" data-testid="agent-context-buffer">
                   <span className="context-meta">{requestContextSnapshot.capturedAt}</span>
-                  {requestContextSnapshot.lines.map((line, index) => (
-                    <code key={`${requestContextSnapshot.tabId}-${index}`}>{line}</code>
-                  ))}
+                  {requestContextSnapshot.lines.map((line, index) => {
+                    const reference = extractLineReference(line)
+
+                    return (
+                      <div className="context-line" key={`${requestContextSnapshot.tabId}-${index}`}>
+                        <code>{line}</code>
+                        {reference ? (
+                          <button
+                            type="button"
+                            className="line-reference-button"
+                            onClick={() => void openLineReference(line)}
+                          >
+                            Open {reference.label}
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="context-block" data-testid="agent-context-buffer">
@@ -2140,7 +2376,7 @@ function App() {
                       checked={executionMode === mode}
                       onChange={() => {
                         setExecutionMode(mode)
-                        setActiveContext(`Sprint 12 ${formatModeLabel(mode)} mode selected`)
+                        setActiveContext(`Sprint 13 ${formatModeLabel(mode)} mode selected`)
                       }}
                     />
                     <span>{formatModeLabel(mode)}</span>

@@ -165,6 +165,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - Codex CLI ChatGPT session 기반 real request path
 - `Sprint 12`
   - read-only code surface와 selected-file agent context
+- `Sprint 13`
+  - line anchor, restore 강화, bounded file fallback
 
 ### English
 
@@ -194,6 +196,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - Codex CLI ChatGPT-session real request path
 - `Sprint 12`
   - read-only code surface and selected-file agent context
+- `Sprint 13`
+  - line anchors, stronger restore, and bounded file fallback
 
 ## Sprint 0
 
@@ -1303,6 +1307,138 @@ Sprint 12 initial backlog:
 - `P1` add bounded binary/large-file fallback messaging
 - `P1` record Windows path and CRLF verification notes
 
+## Sprint 13
+
+### 한국어
+
+목표:
+
+- selected-file context를 `file + line anchor + restore + bounded fallback` 수준으로 고정한다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- code viewer line anchor 선택과 강조
+- request preview와 approval review에 line anchor 재표시
+- `activeFileLine` 기반 provider request envelope 확장
+- reload 후 `selectedFilePath + selectedFileLine` 복원
+- invalid anchor, missing file, binary file, truncated preview fallback
+- terminal log의 file:line reference에서 code surface jump
+- browser preview fixture에 binary/large-file 회귀 경로 추가
+- Windows path, newline, 가독성 기준 문서화
+
+권장 역할 분리:
+
+- `Planner`
+  - 이번 슬라이스를 `selected-file stability sprint`로 정리하고 다음 symbol/range 단계 초안을 남긴다
+- `Orchestrator`
+  - line anchor contract, restore semantics, fallback 기준을 잠그고 문서를 동기화한다
+- `Designer`
+  - anchor 표시, restore 표시, bounded fallback의 시각 규칙을 정리한다
+- `Frontend`
+  - line anchor UI, restore 표시, log jump, fallback 표현을 구현한다
+- `Backend`
+  - provider request envelope에 `activeFileLine`을 추가하고 file-read fallback semantics를 유지한다
+- `QA`
+  - anchor 정확도, restore 신뢰성, fallback 안전성, log-context 무회귀를 확인한다
+- `Tester`
+  - reload, binary, large-file, Windows newline/path 시나리오를 검증한다
+
+완료조건:
+
+- 사용자가 code surface에서 line anchor를 선택하고 다시 읽을 수 있다.
+- request preview와 approval review에서 `selected file + line anchor + active logs`가 함께 보인다.
+- reload 후 선택 파일과 line anchor가 best-effort로 복원된다.
+- binary와 large file은 bounded fallback으로 처리되고 UI가 깨지지 않는다.
+- terminal log의 file:line reference에서 code surface로 점프할 수 있다.
+- 관련 E2E가 갱신된다.
+
+리스크:
+
+- 빠른 파일/line 전환 중 stale anchor가 남을 수 있다.
+- truncation과 anchor가 섞일 때 실제 line 의미가 흐려질 수 있다.
+- Windows CRLF와 경로 구분자로 인해 anchor 또는 restore 값이 어긋날 수 있다.
+- viewer와 request envelope이 line anchor에서 다시 어긋나면 승인 UX 가치가 낮아진다.
+
+Sprint 13 initial backlog:
+
+- `P0` persist and restore `selectedFileLine`
+- `P0` add `activeFileLine` to the provider request envelope
+- `P0` make line anchors visible in request preview and approval review
+- `P0` support terminal log file:line jumps into the code surface
+- `P0` add binary and large-file regression fixtures to browser preview
+- `P0` update aging and project-workspace E2E coverage around anchors and restore
+- `P1` document Windows path, newline, and readability checks
+- `P1` prepare the follow-up slice for symbol/range anchors
+
+### English
+
+Goal:
+
+- lock selected-file context into a `file + line anchor + restore + bounded fallback` workflow
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- line-anchor selection and highlighting in the code viewer
+- restating line anchors in request preview and approval review
+- extending the provider request envelope with `activeFileLine`
+- restoring `selectedFilePath + selectedFileLine` after reload
+- fallback handling for invalid anchors, missing files, binary files, and truncated previews
+- jumping from terminal-log `file:line` references into the code surface
+- adding binary and large-file regression fixtures to browser preview
+- documenting Windows path, newline, and readability expectations
+
+Recommended Role Split:
+
+- `Planner`
+  - frames this slice as a selected-file stability sprint and leaves the next symbol/range draft
+- `Orchestrator`
+  - locks line-anchor contracts, restore semantics, and fallback rules while syncing docs
+- `Designer`
+  - defines the visual rules for anchors, restore state, and bounded fallback
+- `Frontend`
+  - implements line-anchor UI, restore visibility, log jumps, and fallback presentation
+- `Backend`
+  - extends the provider request envelope with `activeFileLine` and preserves file-read fallback semantics
+- `QA`
+  - checks anchor accuracy, restore reliability, fallback safety, and no regression in log context
+- `Tester`
+  - validates reload, binary, large-file, and Windows newline/path scenarios
+
+Acceptance Criteria:
+
+- users can select and reread a line anchor in the code surface
+- request preview and approval review show `selected file + line anchor + active logs` together
+- selected file and line anchor restore through best-effort recovery after reload
+- binary and large files use bounded fallback without breaking the UI
+- terminal log `file:line` references can jump into the code surface
+- related E2E coverage is updated
+
+Risks:
+
+- stale anchors may remain during rapid file and line switching
+- truncation plus anchors may blur the meaning of original line positions
+- Windows CRLF and path separators may drift anchor or restore values
+- the slice loses approval value if the viewer and request envelope diverge again on line-anchor semantics
+
+Sprint 13 initial backlog:
+
+- `P0` persist and restore `selectedFileLine`
+- `P0` add `activeFileLine` to the provider request envelope
+- `P0` make line anchors visible in request preview and approval review
+- `P0` support terminal-log file:line jumps into the code surface
+- `P0` add binary and large-file regression fixtures to browser preview
+- `P0` update aging and project-workspace E2E coverage around anchors and restore
+- `P1` document Windows path, newline, and readability checks
+- `P1` prepare the follow-up slice for symbol/range anchors
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -1318,6 +1454,7 @@ Sprint 12 initial backlog:
 - `Sprint 10`은 `Sprint 8`의 auth contract와 `Sprint 9`의 워크스페이스 리디자인 위에서 개발용 bridge와 diagnostics를 정리한 임시 슬라이스다.
 - `Sprint 11`은 `Sprint 10`의 임시 bridge 경험을 바탕으로 source of truth인 `OAuth/session login`을 실제 경로로 전환하는 단계다.
 - `Sprint 12`는 `Sprint 9`의 워크스페이스 구조와 `Sprint 11`의 real request path 위에서 selected-file context를 실사용 가능한 수준으로 연결하는 단계다.
+- `Sprint 13`은 `Sprint 12`의 selected-file surface 위에서 line anchor, restore semantics, bounded fallback을 안정화하는 단계다.
 
 ### English
 
@@ -1332,6 +1469,7 @@ Sprint 12 initial backlog:
 - `Sprint 10` depends on the explicit auth contract from `Sprint 8` and the workspace redesign from `Sprint 9` to stabilize the temporary bridge and diagnostics slice
 - `Sprint 11` uses the contract from `Sprint 8`, the workspace from `Sprint 9`, and the bridge learnings from `Sprint 10` to implement the real `OAuth/session login` path
 - `Sprint 12` uses the workspace structure from `Sprint 9` and the real request path from `Sprint 11` to make selected-file context usable in daily work
+- `Sprint 13` stabilizes line anchors, restore semantics, and bounded fallback on top of the selected-file surface from `Sprint 12`
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -1363,6 +1501,8 @@ Sprint 12 initial backlog:
   - real provider login이 API key가 아니라 `OAuth/session` 기준으로 동작하는가
 - `Sprint 12`
   - 사용자가 코드 surface와 활성 로그를 함께 보면서, 어떤 파일 맥락으로 제안이 나왔는지 승인 전에 분명히 이해할 수 있는가
+- `Sprint 13`
+  - 사용자가 같은 파일의 같은 지점으로 다시 돌아오고, line anchor가 request와 approval에서도 일관되게 읽히는가
 
 ### English
 
@@ -1392,13 +1532,15 @@ Sprint 12 initial backlog:
   - does real provider login work through `OAuth/session` instead of API-key setup
 - `Sprint 12`
   - can users understand which file context produced a suggestion while reading code and active logs together before approval
+- `Sprint 13`
+  - can users return to the same location in a file and reread that line-anchor context consistently in request and approval flows
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 `Sprint 12` 위에서 line/symbol anchor, reload/restore 강화, large/binary file 회귀, 그리고 `Windows` 실기 검증을 묶어 `editor-like` surface를 한 단계 더 깊게 만드는 것이 맞다.
+다음 단계로는 `Sprint 13` 위에서 symbol/range anchor, richer outline navigation, 더 강한 Windows 실기 검증을 붙여 `editor-like` surface를 실제 코드 추적 도구로 끌어올리는 것이 맞다.
 
 ### English
 
-The next step should be to build on `Sprint 12` with line/symbol anchors, stronger reload/restore behavior, large/binary-file regression coverage, and real Windows validation so the editor-like surface becomes materially more useful.
+The next step should be to build on `Sprint 13` with symbol/range anchors, richer outline navigation, and stronger real Windows validation so the editor-like surface becomes a materially better code-tracing tool.

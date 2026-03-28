@@ -25,6 +25,7 @@ pub struct RequestAgentSuggestionsRequest {
     pub active_tab_id: Option<String>,
     pub active_tab_title: Option<String>,
     pub active_file_path: Option<String>,
+    pub active_file_line: Option<usize>,
     pub active_file_snippet: Option<String>,
     #[serde(default)]
     pub last_n_log_lines: Vec<String>,
@@ -455,6 +456,10 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("none");
+    let file_line = request
+        .active_file_line
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".into());
     let file_snippet = request
         .active_file_snippet
         .as_deref()
@@ -480,10 +485,11 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
     };
 
     format!(
-        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\nRead the project metadata, the active file snippet, and recent terminal logs.\nReturn exactly one safe next shell command.\nPrefer non-destructive commands that help the developer move forward immediately.\nIf you cannot recommend a safe command, set `error` and leave `command` empty.\n\nProject name: {}\nProject path: {}\nActive file path: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
+        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\nRead the project metadata, the active file snippet, and recent terminal logs.\nReturn exactly one safe next shell command.\nPrefer non-destructive commands that help the developer move forward immediately.\nIf you cannot recommend a safe command, set `error` and leave `command` empty.\n\nProject name: {}\nProject path: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
         request.project_name.trim(),
         request.project_path.trim(),
         file_path,
+        file_line,
         file_snippet,
         request.active_tab_id.as_deref().unwrap_or("none"),
         request.active_tab_title.as_deref().unwrap_or("none"),

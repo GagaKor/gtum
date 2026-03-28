@@ -4,6 +4,7 @@ test('repeats the core MVP flow and restores workspace state after reload', asyn
   await page.goto('/')
 
   await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('code-line-button-4').click()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
 
   const modes = ['Fast', 'Balanced', 'Deep'] as const
@@ -29,6 +30,8 @@ test('repeats the core MVP flow and restores workspace state after reload', asyn
   await expect(page.getByText('C:/Users/demo/demo-project', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('radio', { name: 'Deep' })).toBeChecked()
   await expect(page.getByRole('tab', { name: 'workspace' })).toBeVisible()
+  await expect(page.getByTestId('code-viewer')).toContainText('src/App.tsx:L4')
+  await expect(page.getByTestId('code-anchor-pill')).toContainText('Anchor: L4')
   await page.locator('summary', { hasText: 'Task History' }).click()
   await expect(page.getByTestId('task-history-panel')).toContainText('Recent Activity')
 })

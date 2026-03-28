@@ -78,8 +78,10 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 
 - 중앙 workbench는 `Terminal + Code Reading`의 dual-primary surface여야 한다.
 - code viewer는 사이드바가 아니라 메인 영역의 독립 pane이어야 한다.
-- approval rail은 코드 pane을 밀어내지 않으면서도, 어떤 파일과 로그를 보고 제안이 나왔는지 보여줘야 한다.
+- approval rail은 코드 pane을 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
 - 첫 code-reading slice는 read-only viewer까지만 포함한다.
+- line anchor와 restore 상태는 숨은 내부 상태가 아니라 사용자가 다시 읽을 수 있는 정보여야 한다.
+- binary와 large-file fallback은 에러처럼 보이지 않고 bounded preview mode처럼 읽혀야 한다.
 - task history, Telegram, runtime/debug는 2선 영역에 둔다.
 
 ### English
@@ -88,8 +90,10 @@ For the current active slice, the frontend should follow these rules:
 
 - the central workbench should act as a dual-primary surface for `Terminal + Code Reading`
 - the code viewer should be an independent pane in the main workspace, not a sidebar afterthought
-- the approval rail should show which file and logs produced a suggestion without pushing the code surface away
+- the approval rail should show which file, line anchor, and logs produced a suggestion without pushing the code surface away
 - the first code-reading slice should stop at a read-only viewer
+- line-anchor state and restore state should stay legible to users rather than hidden as internal implementation
+- binary and large-file fallback should read like bounded preview modes, not generic errors
 - task history, Telegram, and runtime/debug belong in secondary zones
 
 ## 제품별로 배워야 할 점 / What To Borrow From Each Product

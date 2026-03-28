@@ -144,6 +144,7 @@ export type AgentTaskRequest = {
   activeTabId: string | null
   activeTabTitle: string | null
   activeFilePath: string | null
+  activeFileLine: number | null
   activeFileSnippet: string | null
   lastNLogLines: string[]
   userTask: string
@@ -282,6 +283,36 @@ const buildBrowserTree = (rootPath: string): FileTreeNode => ({
       ],
     },
     {
+      name: 'logs',
+      path: `${rootPath}/logs`,
+      kind: 'directory',
+      truncated: false,
+      children: [
+        {
+          name: 'build-output.log',
+          path: `${rootPath}/logs/build-output.log`,
+          kind: 'file',
+          truncated: false,
+          children: [],
+        },
+      ],
+    },
+    {
+      name: 'assets',
+      path: `${rootPath}/assets`,
+      kind: 'directory',
+      truncated: false,
+      children: [
+        {
+          name: 'demo.bin',
+          path: `${rootPath}/assets/demo.bin`,
+          kind: 'file',
+          truncated: false,
+          children: [],
+        },
+      ],
+    },
+    {
       name: 'package.json',
       path: `${rootPath}/package.json`,
       kind: 'file',
@@ -290,6 +321,14 @@ const buildBrowserTree = (rootPath: string): FileTreeNode => ({
     },
   ],
 })
+
+type BrowserFileFixture = {
+  content: string
+  isText?: boolean
+  truncated?: boolean
+  sizeBytes?: number
+  lineCount?: number
+}
 
 const normalizeBrowserPath = (value: string) => value.replace(/\\/g, '/').replace(/\/+/g, '/')
 
@@ -307,6 +346,9 @@ const resolveBrowserFilePath = (projectPath: string, filePath: string) => {
 const buildBrowserFileContents = (rootPath: string) => {
   const normalizedRoot = normalizeBrowserPath(rootPath)
   const projectName = normalizedRoot.split('/').filter(Boolean).at(-1) || 'demo-project'
+  const largeLogExcerpt = Array.from({ length: 26 }, (_, index) =>
+    `[excerpt ${index + 1}] FAIL src/App.tsx:${index + 4}:7 expected stable workspace state`,
+  ).join('\n')
 
   return {
     [`${normalizedRoot}/package.json`]: JSON.stringify(
@@ -334,20 +376,46 @@ const buildBrowserFileContents = (rootPath: string) => {
       "}",
       '',
     ].join('\n'),
-  }
+    [`${normalizedRoot}/logs/build-output.log`]: {
+      content: `${largeLogExcerpt}\n[excerpt 27] preview truncated before the full build log tail\n`,
+      isText: true,
+      truncated: true,
+      sizeBytes: 196432,
+      lineCount: 320,
+    },
+    [`${normalizedRoot}/assets/demo.bin`]: {
+      content: '',
+      isText: false,
+      truncated: false,
+      sizeBytes: 32768,
+      lineCount: 0,
+    },
+  } satisfies Record<string, string | BrowserFileFixture>
 }
 
 const buildBrowserFileSnapshot = (projectPath: string, filePath: string): ProjectFileSnapshot => {
   const resolvedProjectPath = normalizeBrowserPath(projectPath || currentBrowserProjectPath())
   const resolvedFilePath = resolveBrowserFilePath(resolvedProjectPath, filePath)
   const browserContents = buildBrowserFileContents(resolvedProjectPath)
-  const content =
-    browserContents[resolvedFilePath] ??
-    [
-      `// Preview content unavailable for ${resolvedFilePath}`,
-      '// Open the desktop runtime to inspect the real file contents.',
-      '',
-    ].join('\n')
+  const fixture = browserContents[resolvedFilePath]
+  const normalizedFixture: BrowserFileFixture =
+    typeof fixture === 'string'
+      ? ({
+          content: fixture,
+          isText: true,
+          truncated: false,
+        } satisfies BrowserFileFixture)
+      : fixture ??
+        ({
+          content: [
+            `// Preview content unavailable for ${resolvedFilePath}`,
+            '// Open the desktop runtime to inspect the real file contents.',
+            '',
+          ].join('\n'),
+          isText: true,
+          truncated: false,
+        } satisfies BrowserFileFixture)
+  const content = normalizedFixture.content
   const encoded = new TextEncoder().encode(content)
 
   return {
@@ -355,10 +423,10 @@ const buildBrowserFileSnapshot = (projectPath: string, filePath: string): Projec
     filePath: resolvedFilePath,
     displayPath: resolvedFilePath.replace(`${resolvedProjectPath}/`, ''),
     exists: true,
-    isText: true,
-    truncated: false,
-    sizeBytes: encoded.length,
-    lineCount: content.split('\n').length,
+    isText: normalizedFixture.isText ?? true,
+    truncated: normalizedFixture.truncated ?? false,
+    sizeBytes: normalizedFixture.sizeBytes ?? encoded.length,
+    lineCount: normalizedFixture.lineCount ?? content.split('\n').length,
     content,
   }
 }
@@ -500,7 +568,8 @@ const createInitialBrowserTerminalLogs = (): Record<number, string[]> => ({
   1: isPreviewContractRuntime()
     ? [
         'PS> pnpm test -- --watch=false',
-        'FAIL src/app-shell.spec.ts',
+        'FAIL src/App.tsx:4:7',
+        'src/App.tsx:4:7 Unexpected token while rendering the workspace pane.',
         'The process exited with code 1.',
         'Open the active logs and ask Codex for the next command.',
       ]
@@ -929,6 +998,7 @@ const buildBrowserSuggestion = (request: AgentTaskRequest): AgentSuggestion => {
   const fileLabel = request.activeFilePath
     ? request.activeFilePath.split(/[\\/]/).filter(Boolean).slice(-2).join('/')
     : 'current workspace'
+  const fileAnchor = request.activeFileLine ? `${fileLabel}:L${request.activeFileLine}` : fileLabel
 
   if (request.provider !== 'codex') {
     return {
@@ -966,7 +1036,7 @@ const buildBrowserSuggestion = (request: AgentTaskRequest): AgentSuggestion => {
   return {
     id: `suggestion-${Date.now()}`,
     provider: request.provider,
-    summary: `Codex suggests running "${command}" next for "${task}" while reviewing ${fileLabel}.`,
+    summary: `Codex suggests running "${command}" next for "${task}" while reviewing ${fileAnchor}.`,
     command,
     preferredTarget: command.includes('git status') || request.executionMode === 'deep' ? 'new_tab' : 'current_tab',
     confidence: request.executionMode === 'deep' ? 'high' : request.executionMode === 'fast' ? 'medium' : 'high',

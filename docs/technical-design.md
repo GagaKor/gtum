@@ -413,11 +413,20 @@ The Rust runtime is responsible for:
 #### 프론트엔드 상태
 
 - `selectedFilePath`
+- `selectedFileLine`
 - `selectedFileSnapshot`
 - `isFileLoading`
 - `fileError`
 
 선택 파일 상태는 workspace restore와 함께 다시 열 수 있는 수준까지만 유지하고, 실제 편집 상태는 아직 들고 가지 않는다.
+
+#### restore와 fallback 규칙
+
+- restore는 `project + selectedFilePath + selectedFileLine` 기준으로 best-effort 복원을 시도한다.
+- 복원 대상 파일이 사라졌거나 root 밖으로 벗어나면 first-file fallback으로 내려간다.
+- line anchor가 현재 preview 범위 또는 line count를 벗어나면 가장 가까운 유효 line 또는 no-anchor 상태로 clamp한다.
+- binary 파일은 viewer fallback을 보여주되 line anchor는 비활성화한다.
+- large file은 bounded preview만 보여주며 `truncated` 상태를 유지한다.
 
 #### provider request envelope
 
@@ -428,12 +437,14 @@ The Rust runtime is responsible for:
 - `activeTabId`
 - `activeTabTitle`
 - `activeFilePath`
+- `activeFileLine`
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
 - `executionMode`
 
 `activeFileSnippet`은 선택 파일 전체가 아니라 preview용 excerpt일 수 있으며, terminal 로그와 같이 bounded size를 유지한다.
+line anchor가 있으면 snippet은 anchor 근처 excerpt를 우선 사용한다.
 
 ### English
 
@@ -458,11 +469,20 @@ The first code-reading slice should start as a read-only viewer rather than a fu
 #### Frontend State
 
 - `selectedFilePath`
+- `selectedFileLine`
 - `selectedFileSnapshot`
 - `isFileLoading`
 - `fileError`
 
 Selected-file state should be restorable at the workspace level, but should not introduce full editing state yet.
+
+#### Restore And Fallback Rules
+
+- restore should attempt best-effort recovery from `project + selectedFilePath + selectedFileLine`
+- if the stored file is missing or outside the project root, fall back to the first readable file
+- if the stored line anchor is outside the preview range or current line count, clamp to the nearest valid line or clear the anchor
+- binary files should keep the viewer fallback and disable line anchors
+- large files should keep a bounded preview and preserve the `truncated` state
 
 #### Provider Request Envelope
 
@@ -473,12 +493,14 @@ The initial request envelope for this slice includes:
 - `activeTabId`
 - `activeTabTitle`
 - `activeFilePath`
+- `activeFileLine`
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
 - `executionMode`
 
 `activeFileSnippet` may be a bounded preview excerpt rather than the full file and should stay size-limited in the same spirit as attached terminal logs.
+When a line anchor exists, the snippet should prefer the anchored region rather than only the top of the file.
 
 ## 터미널 세션 설계 / Terminal Session Design
 
