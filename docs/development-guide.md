@@ -10,7 +10,7 @@
 
 - 무엇을 `git`에 맡기고 무엇을 문서에 남길지 구분한다.
 - 아키텍처, 규칙, 데이터 흐름 같은 지속 정보를 어디에 흡수할지 정한다.
-- `WORKLOG`가 다시 active source of truth로 커지지 않게 막는다.
+- `WORKLOG`를 진행 중 스프린트의 임시 추적 문서로 제한하고, 종료 후 삭제하는 수명 주기를 고정한다.
 
 ### English
 
@@ -30,7 +30,7 @@ Its goals are:
 
 - 새로운 규칙, 개발 절차, 문서 정책을 정하거나 바꿀 때
 - 어떤 변경을 어떤 문서에 반영해야 할지 애매할 때
-- `WORKLOG` 대신 무엇을 남겨야 하는지 판단해야 할 때
+- 진행 중 `WORKLOG`를 언제 만들고 언제 삭제할지 판단해야 할 때
 
 ### English
 
@@ -38,7 +38,7 @@ Read this document when:
 
 - you are defining or changing development rules, process rules, or doc policy
 - it is unclear which canonical doc should absorb a change
-- you need to decide what should be recorded instead of writing a new `WORKLOG`
+- you need to decide when to create, absorb, or delete an in-progress `WORKLOG`
 
 ## 기록 원칙 / Recording Policy
 
@@ -49,6 +49,9 @@ Read this document when:
 - `git`
   - 시간순 변경 이력
   - 무엇을 바꿨는지
+- 진행 중 `WORKLOG`
+  - 현재 스프린트에서 어떤 순서로 시도하고 있는지
+  - 아직 흡수되지 않은 작업 메모와 추적 정보
 - source-of-truth 문서
   - 왜 그렇게 바꿨는지
   - 현재 구조와 규칙이 무엇인지
@@ -57,7 +60,7 @@ Read this document when:
   - 어떤 검증을 했는지
   - 무엇이 통과했고 무엇이 아직 비어 있는지
 
-즉, 기본값은 `새 WORKLOG 작성`이 아니라 `기준 문서 흡수 + 테스트/검증 반영`이다.
+즉, 기본값은 `진행 중엔 WORKLOG로 추적하고, 종료 시 기준 문서에 흡수한 뒤 삭제`다.
 
 ### English
 
@@ -66,6 +69,9 @@ The default split is:
 - `git`
   - chronological change history
   - what changed
+- active `WORKLOG`
+  - the sequence of attempts during the current sprint
+  - temporary tracking notes that have not yet been absorbed
 - source-of-truth docs
   - why it changed
   - what the current structure and rules now are
@@ -74,7 +80,7 @@ The default split is:
   - what was verified
   - what passed and what still remains uncovered
 
-The default is therefore not `write a new WORKLOG`, but `absorb into canonical docs + reflect in tests and validation`.
+The default is therefore `track with an active WORKLOG during the sprint, then absorb into canonical docs and delete it at sprint close`.
 
 ## 어떤 정보를 어디에 흡수할지 / Where Durable Knowledge Goes
 
@@ -122,43 +128,31 @@ The default is therefore not `write a new WORKLOG`, but `absorb into canonical d
   - [`MVP_VALIDATION_NOTES.md`](./MVP_VALIDATION_NOTES.md)
   - `tests/e2e/*`
 
-## WORKLOG 정책 / WORKLOG Policy
+## WORKLOG 수명 주기 / WORKLOG Lifecycle
 
 ### 한국어
 
-앞으로 `WORKLOG`는 기본 산출물이 아니다.
+앞으로 `WORKLOG`는 진행 중 스프린트의 임시 추적 문서다.
 
 원칙은 다음과 같다.
 
-- 스프린트 구현 내용은 먼저 기준 문서에 흡수한다.
-- 일반적인 작업 경과 설명은 `git`과 커밋 메시지로 충분하다.
-- 새 `WORKLOG`는 예외적으로만 남긴다.
-
-예외적으로 historical note를 남길 수 있는 경우는 아래뿐이다.
-
-- 실기 Windows/macOS 검증처럼 `git diff`로 남지 않는 수동 장비 이슈
-- 릴리스 사고, 배포 장애, 외부 서비스 장애처럼 시간축이 중요한 incident
-- 외부 레퍼런스 조사처럼 코드 변경 없이도 나중에 다시 읽어야 하는 분석
-
-이 경우에도 먼저 source-of-truth 문서를 갱신하고, historical note는 보조 증거로만 둔다.
+- 스프린트가 시작되면 필요 시 `WORKLOG`를 만들어 진행 경로를 추적한다.
+- 스프린트가 진행되는 동안만 `WORKLOG`를 유지한다.
+- 스프린트가 닫히기 전에 지속 정보는 source-of-truth 문서와 검증 문서에 흡수한다.
+- 흡수와 검증 반영이 끝나면 해당 `WORKLOG`는 삭제한다.
+- 닫힌 스프린트의 `WORKLOG`가 저장소에 남아 있으면 문서 부채로 본다.
 
 ### English
 
-Going forward, a `WORKLOG` is not a default deliverable.
+Going forward, a `WORKLOG` is a temporary tracking document for an active sprint.
 
 The rules are:
 
-- sprint implementation details should be absorbed into canonical docs first
-- ordinary progress narration should live in `git` and commit history
-- new `WORKLOG`s should exist only as exceptions
-
-Those exceptions are limited to:
-
-- manual device validation that does not live in `git diff`, such as real Windows or macOS runs
-- incidents where time ordering matters, such as release failures, deployment failures, or external-service outages
-- external reference analysis that still needs to be reread later even without code changes
-
-Even in those cases, canonical docs should be updated first, and the historical note should remain secondary evidence only.
+- create a `WORKLOG` when an active sprint needs traceability
+- keep it only while the sprint is in progress
+- before the sprint closes, absorb durable knowledge into source-of-truth docs and validation docs
+- delete the `WORKLOG` once absorption and validation updates are complete
+- if a closed sprint `WORKLOG` remains in the repository, treat it as documentation debt
 
 ## 스프린트 종료 시 필수 출력 / Required Sprint Outputs
 
@@ -170,6 +164,7 @@ Even in those cases, canonical docs should be updated first, and the historical 
 2. 관련 source-of-truth 문서 갱신
 3. 테스트 또는 검증 결과
 4. 다음 스프린트 입력
+5. 진행 중 `WORKLOG`가 있었다면 흡수 후 삭제
 
 상황에 따라 추가한다.
 
@@ -190,6 +185,7 @@ Each sprint should leave behind:
 2. updated source-of-truth docs
 3. test or validation results
 4. next-sprint inputs
+5. deletion of the active `WORKLOG` if one existed
 
 Add these when needed:
 

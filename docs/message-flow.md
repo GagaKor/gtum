@@ -9,7 +9,7 @@
 목적은 다음과 같다.
 
 - 사용자가 보는 흐름과 시스템이 처리하는 흐름을 같은 문서에서 맞춘다.
-- request payload, approval boundary, restore 경로를 `WORKLOG` 대신 기준 문서로 남긴다.
+- request payload, approval boundary, restore 경로를 진행 중 `WORKLOG`가 아니라 기준 문서에 남긴다.
 - UI 변경과 runtime contract 변경이 어느 지점에서 만나야 하는지 분명히 한다.
 
 ### English
@@ -19,7 +19,7 @@ This document is the source of truth for the major user-facing and runtime-facin
 Its goals are:
 
 - align what the user sees with what the system actually does
-- preserve request payloads, approval boundaries, and restore behavior in canonical docs instead of `WORKLOG`s
+- preserve request payloads, approval boundaries, and restore behavior in canonical docs rather than leaving them inside temporary sprint `WORKLOG`s
 - make it clear where UI changes and runtime-contract changes must meet
 
 ## 언제 읽는 문서인가 / When To Read This Document
@@ -236,7 +236,7 @@ The current E2E-aligned flows are covered through:
 - UI와 runtime이 만나는 payload shape
 - restore, approval, execution처럼 다시 설명될 가능성이 높은 경계
 
-반대로 일회성 실행 기록은 여기 대신 `git`, 검증 메모, 예외적인 historical note로 남긴다.
+반대로 일회성 진행 메모는 진행 중 `WORKLOG`에 둘 수 있지만, 스프린트 종료 후에는 여기나 다른 기준 문서에 흡수한 뒤 `WORKLOG`에서 제거한다.
 
 ### English
 
@@ -246,4 +246,4 @@ This document should capture only durable flow knowledge:
 - payload shapes where UI and runtime meet
 - boundaries that will need to be re-explained, such as restore, approval, and execution
 
-One-off execution notes belong in `git`, validation notes, or exceptional historical notes instead.
+One-off progress notes may live in an active `WORKLOG`, but they should be absorbed into canonical docs before sprint close rather than retained as long-term history.

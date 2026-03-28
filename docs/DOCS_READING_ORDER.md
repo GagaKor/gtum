@@ -103,20 +103,19 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 ### 지금 무엇을 먼저 해야 할지 문제일 때
 
 1. `docs/sprint-plan.md`
-2. 현재 스프린트 체크리스트
+2. 현재 스프린트 체크리스트 또는 진행 중 `WORKLOG`
 3. `docs/mvp-backlog.md`
 4. `docs/MVP_VALIDATION_NOTES.md`
 
-다음 작업을 정하기 전, 현재 스프린트 문서, 검증 메모, UI task history에서 이미 시도한 경로와 반복 실패를 먼저 확인한다.
+다음 작업을 정하기 전, 현재 스프린트 문서, 진행 중 `WORKLOG`, 검증 메모, UI task history에서 이미 시도한 경로와 반복 실패를 먼저 확인한다.
 
 ### 이미 밟아온 작업 경로를 검토하고 문제점을 찾을 때
 
 1. `docs/sprint-plan.md`
-2. 현재 스프린트 체크리스트
+2. 현재 스프린트 체크리스트 또는 진행 중 `WORKLOG`
 3. `docs/MVP_VALIDATION_NOTES.md`
 4. `docs/agent-team-topology.md`
 5. 필요 시 UI task history
-6. 필요 시 historical `docs/WORKLOG_*.md`
 
 ### 릴리스, 빌드, CI가 문제일 때
 
@@ -125,7 +124,7 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 
 ### 최신 상태와 직전 맥락이 필요할 때
 
-1. 현재 스프린트 체크리스트
+1. 현재 스프린트 체크리스트 또는 진행 중 `WORKLOG`
 2. `docs/sprint-plan.md`
 3. `docs/MVP_VALIDATION_NOTES.md`
 4. 필요 시 UI task history
@@ -187,20 +186,19 @@ After choosing the docs, do not edit immediately. First split the work into `pla
 ### When the issue is what to do next
 
 1. `docs/sprint-plan.md`
-2. the current sprint checklist
+2. the current sprint checklist or active `WORKLOG`
 3. `docs/mvp-backlog.md`
 4. `docs/MVP_VALIDATION_NOTES.md`
 
-Before choosing the next task, review the current sprint docs, validation notes, and UI task history for the path already taken and repeated failures first.
+Before choosing the next task, review the current sprint docs, active `WORKLOG`, validation notes, and UI task history for the path already taken and repeated failures first.
 
 ### When the issue is reviewing the path already taken and finding problems
 
 1. `docs/sprint-plan.md`
-2. the current sprint checklist
+2. the current sprint checklist or active `WORKLOG`
 3. `docs/MVP_VALIDATION_NOTES.md`
 4. `docs/agent-team-topology.md`
 5. UI task history if needed
-6. historical `docs/WORKLOG_*.md` only if needed
 
 ### When the issue is release, build, or CI
 
@@ -209,7 +207,7 @@ Before choosing the next task, review the current sprint docs, validation notes,
 
 ### When you need the latest state and recent context
 
-1. the current sprint checklist
+1. the current sprint checklist or active `WORKLOG`
 2. `docs/sprint-plan.md`
 3. `docs/MVP_VALIDATION_NOTES.md`
 4. UI task history if needed
@@ -223,7 +221,7 @@ Before choosing the next task, review the current sprint docs, validation notes,
 1. `docs/DOCS_READING_ORDER.md`
 2. `docs/README.md`
 3. 현재 작업 유형에 맞는 source of truth 1개 또는 2개
-4. 현재 스프린트 문서 또는 `docs/MVP_VALIDATION_NOTES.md`
+4. 현재 스프린트 문서, 진행 중 `WORKLOG`, 또는 `docs/MVP_VALIDATION_NOTES.md`
 
 그래도 방향이 안 잡히면 그때만 아래 `전체 복구 순서`로 넓힌다.
 
@@ -234,7 +232,7 @@ If context grows long enough that earlier reasoning starts to drift, recover in 
 1. `docs/DOCS_READING_ORDER.md`
 2. `docs/README.md`
 3. one or two source-of-truth docs that match the current task type
-4. the current sprint doc or `docs/MVP_VALIDATION_NOTES.md`
+4. the current sprint doc, active `WORKLOG`, or `docs/MVP_VALIDATION_NOTES.md`
 
 Only if direction is still unclear should you expand into the full recovery order below.
 

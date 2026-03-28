@@ -10,7 +10,7 @@
 
 - 현재 코드 기준의 실제 구조를 빠르게 파악하게 한다.
 - 프론트엔드, 런타임, provider, 저장 계층의 경계를 분명히 한다.
-- 스프린트 중 생긴 구조 결정을 `WORKLOG`가 아니라 기준 문서로 흡수한다.
+- 스프린트 중 생긴 구조 결정은 진행 중 `WORKLOG`에 잠시 기록할 수 있지만, 닫히기 전 반드시 기준 문서로 흡수한다.
 
 ### English
 
@@ -20,7 +20,7 @@ Its goals are:
 
 - make the real code structure easy to recover quickly
 - clarify boundaries between frontend, runtime, provider, and persistence layers
-- absorb durable structural decisions into canonical docs instead of accumulating them in `WORKLOG`s
+- allow temporary sprint tracking in a `WORKLOG`, but absorb durable structural decisions into canonical docs before sprint close
 
 ## 언제 읽는 문서인가 / When To Read This Document
 
@@ -296,7 +296,7 @@ Restore is therefore split into two layers:
 - 승인 전에는 runtime이 임의 명령을 실행하지 않는다.
 - `Codex` real path는 `Codex CLI`와 ChatGPT session 검증을 통과해야 한다.
 - `Windows`는 첫 실사용 검증 기준이며, path/shell 차이는 `platform` 계층에서 흡수해야 한다.
-- `WORKLOG`는 더 이상 active source of truth가 아니고, 지속 가치 있는 구조 변경은 이 문서나 [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), [`technical-design.md`](./technical-design.md)에 흡수한다.
+- `WORKLOG`는 진행 중 스프린트의 임시 추적 문서일 뿐 source of truth가 아니며, 닫힌 스프린트의 구조 변경은 이 문서나 [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), [`technical-design.md`](./technical-design.md)에 흡수한 뒤 `WORKLOG`를 삭제한다.
 
 ### English
 
@@ -304,4 +304,4 @@ Restore is therefore split into two layers:
 - the runtime does not execute arbitrary commands before user approval
 - the real `Codex` path must pass `Codex CLI` and ChatGPT-session validation
 - `Windows` is the first daily-use validation baseline, and path/shell differences should be absorbed in the `platform` layer
-- `WORKLOG`s are no longer an active source of truth; durable structural changes should be absorbed into this doc or into [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), and [`technical-design.md`](./technical-design.md)
+- a `WORKLOG` is only a temporary in-sprint trace, not a source of truth; once the sprint closes, structural changes should be absorbed into this doc or into [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), and [`technical-design.md`](./technical-design.md), and then the `WORKLOG` should be deleted

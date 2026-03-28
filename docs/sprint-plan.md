@@ -51,7 +51,7 @@ Read this document when:
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
 - 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
 - 각 스프린트의 마지막에는 새로 발견된 후속 작업을 다음 스프린트 문서나 백로그에 추가한다.
-- 모든 작업은 먼저 서브에이전트를 포함한 `planner + orchestrator + designer + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 예외가 있으면 `docs/development-guide.md` 기준으로 historical note 여부를 판단한다.
+- 모든 작업은 먼저 서브에이전트를 포함한 `planner + orchestrator + designer + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 필요하면 진행 중 스프린트용 `WORKLOG`를 만든다.
 - 각 스프린트 동안 `planner`와 `designer`는 다음 스프린트 초안, 레퍼런스 분석, 디자인 문서도 병렬로 남긴다.
 - 각 스프린트는 이전 스프린트의 작업 경로, 실패, 우회, 반복 마찰을 검토하고 다음 개선안으로 연결해야 한다.
 - `planner`와 `designer`는 현재 스프린트 문서, task history, 검증 메모를 읽고 문제 분석 메모를 병렬 산출물로 남긴다.
@@ -67,7 +67,7 @@ Read this document when:
 - each sprint should leave a clean foundation for the next one
 - finish each sprint with a practical UI E2E pass added or updated for the delivered flow
 - finish each sprint by adding newly discovered follow-up work into the next sprint plan or backlog
-- first decompose every task into the sub-agent split `planner + orchestrator + designer + frontend + backend + QA + tester`, decide any historical-note exception under `docs/development-guide.md`, and keep that split whenever frontend, runtime, and validation change together
+- first decompose every task into the sub-agent split `planner + orchestrator + designer + frontend + backend + QA + tester`, and create an active sprint `WORKLOG` when temporary traceability is needed
 - during each sprint, `planner` and `designer` should also leave behind the next-sprint draft, reference analysis, and design documentation in parallel
 - each sprint should review the prior path taken, including failures, detours, and repeated friction, and turn that into next-sprint improvements
 - `planner` and `designer` should read the current sprint docs, task history, and validation notes and leave behind explicit problem-analysis notes
@@ -86,6 +86,7 @@ Read this document when:
 4. 다음 스프린트에 들어가야 할 작업 항목 추가
 5. 이번 스프린트에서 밟은 경로, 실패, 우회, 반복 문제 요약
 6. 그 문제를 다음 스프린트에서 어떻게 개선할지에 대한 `planner`와 `designer` 메모
+7. 진행 중 `WORKLOG`가 있었다면 흡수 후 삭제
 
 이때 다음 스프린트 작업은 아래 중 한 곳 이상에 반영한다.
 
@@ -117,6 +118,7 @@ Each sprint should be considered closed only when it includes:
 4. newly discovered work items added for the next sprint
 5. a summary of the path taken in the sprint, including failures, detours, and recurring friction
 6. explicit `planner` and `designer` notes describing how those issues should be improved in the next sprint
+7. deletion of the active `WORKLOG` if one existed
 
 Those next-sprint items should be written into at least one of:
 

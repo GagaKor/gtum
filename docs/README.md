@@ -12,8 +12,7 @@
 - [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
 - [문서 읽기 순서 / Docs Reading Order](./DOCS_READING_ORDER.md)
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
-- [Sprint 0 체크리스트 / Sprint 0 Checklist](./sprint-0-checklist.md)
-- [Sprint 9 체크리스트 / Sprint 9 Checklist](./sprint-9-checklist.md)
+- [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
@@ -48,7 +47,7 @@
 - 릴리스, 빌드, 배포, CI/CD
   - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - 최신 실행 맥락과 체크리스트
-  - 현재 스프린트 체크리스트, [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md), UI task history를 읽어 이미 수행한 경로, 실패, 보류, 다음 개선 포인트를 먼저 확인한다.
+  - 현재 스프린트 체크리스트 또는 진행 중 `WORKLOG`, [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md), UI task history를 읽어 이미 수행한 경로, 실패, 보류, 다음 개선 포인트를 먼저 확인한다.
 
 ## 문서 역할 / What To Read When
 
@@ -63,7 +62,7 @@
 - [메시지 흐름 / Message Flow](./message-flow.md)
   - 프로젝트 열기, file focus, provider connect, request, approval, restore 흐름을 볼 때 읽는다.
 - [개발 가이드 / Development Guide](./development-guide.md)
-  - 구현 규칙, 문서 흡수 기준, `WORKLOG` 대신 무엇을 남길지 판단할 때 읽는다.
+  - 구현 규칙, 문서 흡수 기준, 진행 중 `WORKLOG`의 생성/삭제 기준을 판단할 때 읽는다.
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
   - MVP 범위, 완료조건, 우선순위, 제외 범위를 확인할 때 읽는다.
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
@@ -111,7 +110,7 @@
 - 기본값은 전체 문서 재독이 아니라 `AGENTS.md + docs/README.md + docs/DOCS_READING_ORDER.md`를 먼저 읽고 필요한 문서만 추가로 읽는 것이다.
 - 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
 - `planner`와 `designer`는 매 스프린트마다 작업 경로 요약, 문제점, 다음 개선안을 문서로 남긴다.
-- 지속 정보는 source-of-truth 문서에 흡수하고, `WORKLOG`는 예외적인 historical note로만 취급한다.
+- 진행 중 스프린트는 `WORKLOG`로 추적할 수 있지만, 닫힌 스프린트의 `WORKLOG`는 source-of-truth 문서에 흡수한 뒤 삭제한다.
 
 ## 현재 결정 / Current Decisions
 
@@ -130,9 +129,9 @@
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다
 - 스프린트 종료 시 `Playwright` 기반 UI E2E와 다음 스프린트 작업 추가를 함께 진행한다
-- 현재 구현 구조와 흐름은 `architecture`, `message-flow`, `development-guide`를 통해 유지하고, historical `WORKLOG`는 active routing에서 제외한다
+- 현재 구현 구조와 흐름은 `architecture`, `message-flow`, `development-guide`를 통해 유지하고, 닫힌 스프린트의 `WORKLOG`는 저장소에 남기지 않는다
 
-## Historical Notes
+## Sprint Trace
 
-- 기존 `docs/WORKLOG_*.md` 파일은 과거 경로를 복구해야 할 때만 참고하는 historical note다.
-- 새 일반 스프린트 작업은 기본적으로 `WORKLOG`를 추가하지 않고, 관련 source-of-truth 문서와 검증 메모에 흡수한다.
+- 진행 중 스프린트에서는 임시 `WORKLOG`를 둘 수 있다.
+- 스프린트 종료 시 지속 정보는 관련 기준 문서에 흡수하고, 해당 `WORKLOG`와 오래된 체크리스트는 삭제한다.

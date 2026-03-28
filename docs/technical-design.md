@@ -51,7 +51,7 @@ Read this document when:
 - [`message-flow.md`](./message-flow.md)
   - request envelope, approval, restore, 주요 사용자 흐름
 - [`development-guide.md`](./development-guide.md)
-  - 구현 규칙, 문서 흡수 기준, `WORKLOG` 예외 정책
+  - 구현 규칙, 문서 흡수 기준, `WORKLOG` 수명 주기 정책
 
 ### English
 
@@ -62,7 +62,7 @@ This document defines technical direction and boundaries. Read these alongside i
 - [`message-flow.md`](./message-flow.md)
   - request envelope, approval, restore, and major user flows
 - [`development-guide.md`](./development-guide.md)
-  - implementation rules, doc-absorption policy, and the `WORKLOG` exception policy
+  - implementation rules, doc-absorption policy, and the `WORKLOG` lifecycle policy
 
 ## 설계 기준 / Design Constraints
 
