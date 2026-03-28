@@ -1,5 +1,6 @@
 mod runtime {
     pub mod auth;
+    pub mod codex;
     pub mod filesystem;
     pub mod platform;
     pub mod pty;
@@ -11,6 +12,7 @@ use runtime::auth::{
     AgentAuthManager, AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProvider,
     CompleteAgentLoginRequest,
 };
+use runtime::codex::{AgentSuggestionResponse, RequestAgentSuggestionsRequest};
 use runtime::filesystem::ProjectOverview;
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
@@ -139,6 +141,21 @@ fn complete_agent_login(
 }
 
 #[tauri::command]
+fn request_agent_suggestions(
+    auth_state: tauri::State<'_, AgentAuthManager>,
+    request: RequestAgentSuggestionsRequest,
+) -> Result<Vec<AgentSuggestionResponse>, String> {
+    let _ = auth_state.require_connected_provider(request.provider)?;
+
+    match request.provider {
+        AgentProvider::Codex => runtime::codex::request_codex_suggestions(request),
+        AgentProvider::Claude => Err(
+            "Claude real-provider support is deferred for the first daily-use release.".into(),
+        ),
+    }
+}
+
+#[tauri::command]
 fn disconnect_agent_provider(
     state: tauri::State<'_, AgentAuthManager>,
     provider: AgentProvider,
@@ -258,6 +275,7 @@ pub fn run() {
             list_agent_connections,
             begin_agent_login,
             complete_agent_login,
+            request_agent_suggestions,
             disconnect_agent_provider,
             agent_auth_runtime_snapshot,
             read_workspace_runtime_snapshot,

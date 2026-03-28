@@ -8,7 +8,7 @@
 
 목적은 다음과 같다.
 
-- 에이전트 역할을 `orchestrator`, `frontend`, `backend`, `tester` 네 축으로 고정한다.
+- 에이전트 역할을 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 다섯 축으로 고정한다.
 - 큰 작업을 병렬로 나누되, 충돌 없이 다시 통합하는 기준을 제공한다.
 - 각 역할이 무엇을 읽고, 무엇을 수정하고, 무엇을 검증하는지 명확히 한다.
 - 문서와 코드, 테스트가 같이 움직이도록 기본 handoff 규칙을 남긴다.
@@ -19,7 +19,7 @@ This document defines the default multi-agent team topology for development work
 
 Its goals are:
 
-- fix the default role split to `orchestrator`, `frontend`, `backend`, and `tester`
+- fix the default role split to `orchestrator`, `frontend`, `backend`, `QA`, and `tester`
 - provide a way to parallelize larger tasks without integration chaos
 - make it explicit what each role reads, edits, and validates
 - keep code, docs, and tests moving together through clear handoff rules
@@ -28,7 +28,7 @@ Its goals are:
 
 ### 한국어
 
-기본 팀은 아래 네 역할로 구성한다.
+기본 팀은 아래 다섯 역할로 구성한다.
 
 - `Orchestrator`
   - 작업 목표를 해석하고, 문서와 코드 기준선을 맞추고, 역할별 작업을 분해한다.
@@ -36,14 +36,16 @@ Its goals are:
   - `src/` 중심 UI, 상태, 사용자 흐름, 프론트 검증을 담당한다.
 - `Backend`
   - `src-tauri/` 중심 런타임, 파일 시스템, PTY, provider, 시스템 계약을 담당한다.
+- `QA`
+  - 완료조건, 수용 기준, 역할 간 handoff 품질, 문서/계약 정합성 확인을 담당한다.
 - `Tester`
   - `tests/`, 재현 절차, 회귀 확인, E2E와 aging 관점의 검증을 담당한다.
 
-작업이 작을 때는 한 에이전트가 여러 역할을 겸할 수 있다. 다만 작업이 프론트와 런타임, 또는 구현과 검증을 동시에 건드리면 이 네 역할을 분리하는 것을 기본값으로 본다.
+모든 작업은 먼저 이 다섯 역할 기준으로 서브에이전트 팀빌딩한다. 작업이 작을 때는 한 에이전트가 여러 역할을 겸할 수 있지만, 그 경우에도 누가 `QA` 판단을 하고 누가 `Tester` 검증을 맡는지는 명시해야 한다.
 
 ### English
 
-The default team has four roles:
+The default team has five roles:
 
 - `Orchestrator`
   - interprets the goal, aligns docs and code, and decomposes the work
@@ -51,10 +53,12 @@ The default team has four roles:
   - owns UI, state, user flows, and frontend validation around `src/`
 - `Backend`
   - owns runtime, filesystem, PTY, provider, and system contracts around `src-tauri/`
+- `QA`
+  - owns acceptance criteria, handoff quality, and doc/contract consistency checks
 - `Tester`
   - owns `tests/`, repro steps, regression checks, and E2E plus aging-style validation
 
-For very small tasks, one agent may cover multiple roles. Once work spans frontend and runtime, or implementation and validation, this four-role split should become the default.
+Every task should first be decomposed into these five sub-agent roles. For very small tasks, one agent may cover multiple roles, but the QA decision and tester validation responsibilities should still be assigned explicitly.
 
 ## 역할별 책임 / Role Responsibilities
 
@@ -99,6 +103,18 @@ For very small tasks, one agent may cover multiple roles. Once work spans fronte
   - Tauri command 추가/수정
   - PTY, filesystem, auth, workspace, provider 로직
   - frontend가 의존할 snapshot/contract 안정화
+
+#### `QA`
+
+- 주 소유 범위:
+  - 완료조건 정의
+  - 수용 기준과 검증 우선순위
+  - 역할 간 handoff 품질과 문서/계약 정합성
+- 직접 맡는다:
+  - 작업 시작 시 acceptance 기준 정리
+  - frontend/backend 변경이 source of truth 문서와 맞는지 교차 확인
+  - tester가 실행할 검증 포인트와 우선순위 정리
+  - release readiness와 잔여 리스크 판단 보조
 
 #### `Tester`
 
@@ -154,6 +170,18 @@ For very small tasks, one agent may cover multiple roles. Once work spans fronte
   - PTY, filesystem, auth, workspace, and provider logic
   - stabilizing snapshots and contracts that frontend consumes
 
+#### `QA`
+
+- primary ownership:
+  - acceptance criteria
+  - validation priorities and acceptance summaries
+  - cross-role handoff quality and doc/contract consistency
+- owns directly:
+  - defining acceptance criteria at task start
+  - cross-checking frontend/backend changes against source-of-truth docs
+  - translating acceptance goals into concrete validation focus for the tester
+  - helping judge release readiness and residual risk
+
 #### `Tester`
 
 - primary ownership:
@@ -171,20 +199,22 @@ For very small tasks, one agent may cover multiple roles. Once work spans fronte
 ### 한국어
 
 1. `Orchestrator`가 요청을 읽고 관련 문서와 코드 기준선을 확인한다.
-2. `Orchestrator`가 작업을 `frontend`, `backend`, `tester` 단위로 나눈다.
-3. `Frontend`와 `Backend`는 서로 다른 파일 소유권으로 병렬 작업한다.
-4. `Tester`는 구현과 병렬로 검증 시나리오, 회귀 포인트, 필요한 재현 절차를 준비한다.
-5. 구현이 모이면 `Tester`가 실제 검증을 수행하고 결과를 정리한다.
-6. `Orchestrator`가 결과를 통합하고, 문서 갱신 여부와 남은 리스크를 정리한다.
+2. `Orchestrator`가 작업을 `frontend`, `backend`, `QA`, `tester` 단위로 나누고 파일 소유권을 먼저 정한다.
+3. `QA`는 구현과 병렬로 완료조건, acceptance 기준, handoff 체크포인트를 정리한다.
+4. `Frontend`와 `Backend`는 서로 다른 파일 소유권으로 병렬 작업한다.
+5. `Tester`는 `QA` 기준을 바탕으로 검증 시나리오, 회귀 포인트, 필요한 재현 절차를 준비하고 실행한다.
+6. `QA`가 결과를 acceptance 기준에 대조해 남은 리스크와 release readiness를 정리한다.
+7. `Orchestrator`가 결과를 통합하고, 문서 갱신 여부와 남은 리스크를 정리한다.
 
 ### English
 
 1. The `Orchestrator` reads the request and checks the relevant doc and code baseline.
-2. The `Orchestrator` splits the work into `frontend`, `backend`, and `tester` slices.
-3. `Frontend` and `Backend` work in parallel with separate file ownership.
-4. `Tester` prepares validation scenarios, regression focus, and repro steps in parallel with implementation.
-5. Once implementation lands, `Tester` performs the actual validation and summarizes the result.
-6. The `Orchestrator` integrates outcomes and closes the loop on docs and remaining risks.
+2. The `Orchestrator` splits the work into `frontend`, `backend`, `QA`, and `tester` slices and locks file ownership first.
+3. `QA` defines acceptance criteria and handoff checkpoints in parallel with implementation.
+4. `Frontend` and `Backend` work in parallel with separate file ownership.
+5. `Tester` prepares and executes validation scenarios, regression focus, and repro steps from the QA criteria.
+6. `QA` reviews the result against acceptance criteria and summarizes release readiness plus residual risk.
+7. The `Orchestrator` integrates outcomes and closes the loop on docs and remaining risks.
 
 ## 파일 소유권 규칙 / File Ownership Rules
 
@@ -194,10 +224,12 @@ For very small tasks, one agent may cover multiple roles. Once work spans fronte
   - 기본적으로 `src/`만 수정한다.
 - `Backend`
   - 기본적으로 `src-tauri/`만 수정한다.
+- `QA`
+  - 기본적으로 검증 기준 문서, 체크리스트, 검증 메모를 수정한다.
 - `Tester`
   - 기본적으로 `tests/`와 검증 관련 문서만 수정한다.
 - `Orchestrator`
-  - 문서, 통합 지점, 충돌 조정 파일을 맡는다.
+  - source of truth 문서, 통합 지점, 충돌 조정 파일을 맡는다.
 
 같은 파일을 두 역할이 동시에 수정해야 할 것 같다면 먼저 `Orchestrator`가 구조를 다시 나눈다. 병렬성보다 충돌 회피가 우선이다.
 
@@ -207,10 +239,12 @@ For very small tasks, one agent may cover multiple roles. Once work spans fronte
   - should edit `src/` by default
 - `Backend`
   - should edit `src-tauri/` by default
+- `QA`
+  - should edit acceptance docs, checklists, and validation notes by default
 - `Tester`
   - should edit `tests/` and validation docs by default
 - `Orchestrator`
-  - owns docs, integration points, and conflict resolution
+  - owns source-of-truth docs, integration points, and conflict resolution
 
 If two roles appear to need the same file at the same time, the `Orchestrator` should split the work again first. Avoiding collisions matters more than maximizing parallelism.
 
@@ -220,12 +254,16 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 
 - `Backend -> Frontend`
   - 새 command, snapshot, enum, status field, contract 변화가 있으면 이름과 의미를 먼저 고정한다.
-- `Frontend -> Tester`
+- `Frontend -> QA`
   - 사용자 기준 클릭 경로와 기대 결과를 짧게 넘긴다.
-- `Backend -> Tester`
-  - mock/runtime 차이, 플랫폼 리스크, 재현 조건을 짧게 넘긴다.
-- `Tester -> Orchestrator`
-  - 통과 여부, 실패 조건, 미검증 영역, 후속 권고를 남긴다.
+- `Backend -> QA`
+  - contract 변화, 플랫폼 리스크, 재현 조건을 짧게 넘긴다.
+- `QA -> Tester`
+  - acceptance 기준, 우선 회귀 포인트, 실패 시 분류 기준을 넘긴다.
+- `Tester -> QA`
+  - 통과 여부, 실패 조건, 최소 repro, 미검증 영역을 남긴다.
+- `QA -> Orchestrator`
+  - acceptance 충족 여부, release readiness, 후속 권고를 남긴다.
 
 핵심은 긴 설명보다 재현 가능한 계약과 검증 조건을 넘기는 것이다.
 
@@ -233,12 +271,16 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 
 - `Backend -> Frontend`
   - lock the names and meanings of any new command, snapshot, enum, status field, or contract change first
-- `Frontend -> Tester`
+- `Frontend -> QA`
   - hand off the user-facing click path and expected outcome in short form
-- `Backend -> Tester`
-  - hand off mock/runtime differences, platform risks, and repro conditions in short form
-- `Tester -> Orchestrator`
-  - report pass/fail status, failure conditions, unverified areas, and follow-up recommendations
+- `Backend -> QA`
+  - hand off contract changes, platform risks, and repro conditions in short form
+- `QA -> Tester`
+  - hand off acceptance criteria, regression priorities, and failure classification rules
+- `Tester -> QA`
+  - report pass/fail status, failure conditions, minimal repros, and unverified areas
+- `QA -> Orchestrator`
+  - report acceptance status, release readiness, and follow-up recommendations
 
 The goal is not long prose. The goal is to pass along reproducible contracts and validation conditions.
 
@@ -258,6 +300,9 @@ The goal is not long prose. The goal is to pass along reproducible contracts and
 - `Backend`
   - 런타임/계약 변경 구현
   - 필요한 mock 또는 snapshot 정리
+- `QA`
+  - acceptance 기준 정의
+  - handoff와 문서/계약 정합성 확인
 - `Tester`
   - E2E 또는 회귀 시나리오 추가
   - 테스트 결과와 재현 절차 정리
@@ -276,69 +321,78 @@ When a new task arrives, start by checking this decomposition:
 - `Backend`
   - implement runtime and contract changes
   - align any required mock or snapshot behavior
+- `QA`
+  - define acceptance criteria
+  - check handoff quality and doc/contract consistency
 - `Tester`
   - add E2E or regression coverage
   - summarize validation results and repro steps
 
-## 언제 네 역할을 모두 쓰는가 / When To Use All Four Roles
+## 언제 다섯 역할을 유지하는가 / When To Keep All Five Roles
 
 ### 한국어
 
-아래 중 둘 이상에 해당하면 네 역할 편성을 기본값으로 사용한다.
+모든 작업은 먼저 다섯 역할 편성으로 분해한다. 아래 중 하나라도 해당하면 다섯 역할을 유지한다.
 
 - UI와 런타임 계약이 함께 바뀐다.
 - `src/`와 `src-tauri/`를 동시에 수정해야 한다.
 - 새 E2E 시나리오가 필요하다.
 - 회귀 위험이 높다.
 - 문서 source of truth도 같이 갱신해야 한다.
+- acceptance 기준과 실제 검증을 분리해야 한다.
 
 ### English
 
-Default to all four roles when at least two of the following are true:
+Start from all five roles for every task. Keep all five roles when any of the following are true:
 
 - UI and runtime contracts both change
 - both `src/` and `src-tauri/` need edits
 - a new E2E scenario is needed
 - regression risk is high
 - source-of-truth docs also need updates
+- acceptance review should stay separate from test execution
 
-## 언제 축소하는가 / When To Collapse Roles
+## 예외적으로 축소하는가 / When To Collapse Roles Exceptionally
 
 ### 한국어
 
+기본값은 다섯 역할 유지이며, 아래는 예외적으로 역할을 줄일 때의 기준이다.
+
 - 문서만 수정하는 작업
-  - `Orchestrator` 단독 또는 `Orchestrator + Tester`
+  - `Orchestrator + QA` 또는 `Orchestrator + QA + Tester`
 - 순수 프론트 작업
-  - `Orchestrator + Frontend + Tester`
+  - `Orchestrator + Frontend + QA + Tester`
 - 순수 런타임 작업
-  - `Orchestrator + Backend + Tester`
+  - `Orchestrator + Backend + QA + Tester`
 - 아주 작은 수정
-  - 한 에이전트가 구현하고, 별도 검증 관점만 체크한다.
+  - 한 에이전트가 구현할 수 있지만, `QA` 판단과 `Tester` 검증 책임은 분리해 명시한다.
 
 ### English
 
+The default is to keep all five roles. The following cases describe exceptional role collapse only.
+
 - docs-only work
-  - `Orchestrator` alone or `Orchestrator + Tester`
+  - `Orchestrator + QA` or `Orchestrator + QA + Tester`
 - frontend-only work
-  - `Orchestrator + Frontend + Tester`
+  - `Orchestrator + Frontend + QA + Tester`
 - runtime-only work
-  - `Orchestrator + Backend + Tester`
+  - `Orchestrator + Backend + QA + Tester`
 - very small fixes
-  - one agent may implement while still checking validation from a separate perspective
+  - one agent may implement, but QA judgment and tester validation should still be assigned separately
 
 ## 검증 원칙 / Validation Rules
 
 ### 한국어
 
 - 구현 에이전트가 자기 작업을 설명하는 것만으로 완료로 보지 않는다.
-- `Tester` 관점의 검증 결과가 있어야 스프린트를 닫는다.
+- `QA`의 acceptance 판단과 `Tester` 관점의 검증 결과가 함께 있어야 스프린트를 닫는다.
 - 새 사용자 흐름은 가능한 범위에서 `Playwright` E2E에 남긴다.
 - MVP 또는 안정성 관련 변경은 필요 시 `aging test` 후보로 기록한다.
 
 ### English
 
 - implementation is not complete just because the implementing agent says it is
-- a sprint should close only with validation from the `Tester` perspective
+- a sprint should close only with both QA acceptance review and tester validation
 - new user-facing flows should leave behind `Playwright` E2E coverage whenever practical
 - MVP or stability-sensitive changes should be recorded for aging-test consideration when needed
 

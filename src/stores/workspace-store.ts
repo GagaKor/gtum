@@ -53,7 +53,7 @@ type WorkspaceState = {
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   activeProject: 'gtum',
-  activeContext: 'Sprint 2 Terminal Workspace',
+  activeContext: 'Daily-use Terminal Workspace',
   activeProjectPath: '',
   projectPathInput: '',
   recentProjects: loadRecentProjects(),
@@ -88,7 +88,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   selectTerminalTab: (activeTerminalTabId) => set({ activeTerminalTabId }),
   captureTerminalContext: (agentContext) =>
     set({
-      activeContext: agentContext ? 'Sprint 2 Agent Context Ready' : 'Sprint 2 Terminal Workspace',
+      activeContext: agentContext ? 'Daily-use Agent Context Ready' : 'Daily-use Terminal Workspace',
       agentContext,
     }),
 }))

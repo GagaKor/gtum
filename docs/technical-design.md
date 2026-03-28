@@ -36,6 +36,7 @@ Its purpose is to:
 - 터미널 렌더링은 `xterm.js`
 - 상태 관리는 `Zustand`
 - 지원 플랫폼은 `Ubuntu`, `Windows`, `macOS`
+- 첫 실사용 기준 플랫폼은 `Windows`
 - 에이전트 제공자는 초기 기준 `Codex`, `Claude`
 - 인증 방식은 API 토큰 수동 입력이 아니라 OAuth 또는 공식 로그인 흐름 우선
 
@@ -49,6 +50,7 @@ This document assumes the following decisions:
 - terminal rendering: `xterm.js`
 - state management: `Zustand`
 - supported platforms: `Ubuntu`, `Windows`, `macOS`
+- first daily-use baseline platform: `Windows`
 - initial agent providers: `Codex`, `Claude`
 - authentication should prefer OAuth or official sign-in flows over manual API token entry
 
@@ -446,6 +448,8 @@ The terminal should be treated as a long-lived session object, not just a text v
 
 지원 플랫폼이 `Ubuntu`, `Windows`, `macOS`인 만큼 OS 차이를 분리하는 추상화가 필요하다.
 
+구조적 지원 범위는 세 플랫폼 전체를 포함하지만, 첫 실사용 기준 흐름과 UX 마찰 평가는 Windows를 우선 기준으로 둔다.
+
 #### 추상화 대상
 
 - 기본 셸 탐지
@@ -461,10 +465,13 @@ The terminal should be treated as a long-lived session object, not just a text v
 - 플랫폼 분기는 Rust 런타임 계층에 최대한 모은다.
 - 프론트엔드에는 정규화된 정보만 전달한다.
 - OS별 예외 처리는 기능 구현 시점이 아니라 기본 인프라 단계에서 정의한다.
+- Windows의 경로, 셸, 폴더 선택기, 줄바꿈 차이는 첫 실사용 기준 항목으로 우선 검증한다.
 
 ### English
 
 Because `gtum` supports `Ubuntu`, `Windows`, and `macOS`, OS differences need explicit abstraction.
+
+The structural support scope still covers all three platforms, but the first daily-use flow and UX-friction baseline are evaluated on Windows first.
 
 #### What Must Be Abstracted
 
@@ -481,6 +488,7 @@ Because `gtum` supports `Ubuntu`, `Windows`, and `macOS`, OS differences need ex
 - platform branching should live primarily in the Rust runtime layer
 - only normalized information should be exposed to the frontend
 - OS-specific exception handling should be designed into the infrastructure layer early
+- Windows path handling, shell behavior, folder-picker behavior, and newline differences should be validated first as part of the initial daily-use baseline
 
 ## Git 워크플로우 설계 / Git Workflow Design
 
@@ -787,15 +795,17 @@ The initial candidate channel is:
   - `src/` 범위 UI와 상태 변경 담당
 - `Backend Worker`
   - `src-tauri/` 범위 runtime과 contract 변경 담당
+- `QA Worker`
+  - 완료조건, acceptance 기준, handoff 품질, 문서/계약 정합성 담당
 - `Tester Worker`
   - `tests/` 범위 E2E, 회귀, repro 정리 담당
 
-기본 스케줄링은 위 네 역할을 우선으로 하고, 필요한 경우에만 탐색 전용 워커나 리뷰 전용 워커를 추가한다.
+기본 스케줄링은 위 다섯 역할을 서브에이전트 기준으로 먼저 편성하고, 필요한 경우에만 탐색 전용 워커나 리뷰 전용 워커를 추가한다.
 
 #### 실행 흐름
 
 1. 사용자가 작업을 요청한다.
-2. `Conductor`가 계획을 세운다.
+2. `Conductor`가 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할 기준으로 먼저 팀을 구성하며 계획을 세운다.
 3. `Task Scheduler`가 `fast`, `balanced`, `deep` 정책을 적용한다.
 4. 각 워커가 provider adapter를 통해 요청을 수행한다.
 5. 결과는 공통 이벤트 형식으로 정규화되어 UI로 전달된다.
@@ -804,6 +814,7 @@ The initial candidate channel is:
 
 - `Frontend Worker`는 기본적으로 `src-tauri/`를 수정하지 않는다.
 - `Backend Worker`는 기본적으로 `src/`를 수정하지 않는다.
+- `QA Worker`는 기본적으로 acceptance 문서, 체크리스트, 검증 메모를 맡는다.
 - `Tester Worker`는 `tests/`와 검증 산출물에 집중한다.
 - `Orchestrator Worker`는 문서, 통합, 충돌 조정을 맡는다.
 
@@ -841,15 +852,17 @@ Multi-agent execution should be orchestrated in the application layer.
   - owns UI and state changes inside `src/`
 - `Backend Worker`
   - owns runtime and contract changes inside `src-tauri/`
+- `QA Worker`
+  - owns acceptance criteria, handoff quality, and doc/contract consistency
 - `Tester Worker`
   - owns E2E, regression, and repro work inside `tests/`
 
-Default scheduling should start from these four roles and add exploration-only or review-only workers only when needed.
+Default scheduling should start from these five sub-agent roles and add exploration-only or review-only workers only when needed.
 
 #### Execution Flow
 
 1. the user submits a task
-2. the `Conductor` builds a plan
+2. the `Conductor` builds a plan by first forming `orchestrator`, `frontend`, `backend`, `QA`, and `tester` roles
 3. the `Task Scheduler` applies `fast`, `balanced`, or `deep` policy
 4. workers execute through provider adapters
 5. results are normalized into a shared event format and sent to the UI
@@ -858,6 +871,7 @@ Default scheduling should start from these four roles and add exploration-only o
 
 - `Frontend Worker` should avoid editing `src-tauri/` by default.
 - `Backend Worker` should avoid editing `src/` by default.
+- `QA Worker` should focus on acceptance docs, checklists, and validation notes.
 - `Tester Worker` should focus on `tests/` and validation artifacts.
 - `Orchestrator Worker` owns docs, integration, and conflict resolution.
 

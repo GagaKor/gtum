@@ -28,11 +28,11 @@ Its purpose is to:
 
 ### 한국어
 
-`gtum`의 MVP는 Ubuntu, Windows, macOS에서 로컬 프로젝트를 열고, 멀티 탭 터미널을 사용하며, Codex 또는 Claude 계정을 로그인 방식으로 연결해 프로젝트와 터미널 맥락을 읽는 에이전트의 제안을 승인 기반으로 실행할 수 있는 데스크톱 앱이다.
+`gtum`의 MVP는 Ubuntu, Windows, macOS를 구조적으로 지원하면서, 첫 실사용 기준은 Windows에 두고, 로컬 프로젝트를 열고 멀티 탭 터미널을 사용하며 에이전트 제안을 승인 기반으로 실행할 수 있는 데스크톱 앱이다.
 
 ### English
 
-The MVP of `gtum` is a desktop app for Ubuntu, Windows, and macOS where users can open local projects, work with multi-tab terminals, connect Codex or Claude through login-based flows, and execute agent suggestions with project and terminal awareness under user approval.
+The MVP of `gtum` is a desktop app that structurally supports Ubuntu, Windows, and macOS, uses Windows as the first daily-use baseline, lets users open local projects, work with multi-tab terminals, and execute agent suggestions with project and terminal awareness under user approval.
 
 ## MVP가 풀어야 할 핵심 가치 / Core MVP Value
 
@@ -66,7 +66,7 @@ The MVP is not successful merely by being "an agent app with terminals." It must
 6. 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽어 제안을 생성할 수 있다.
 7. 사용자가 제안된 명령을 검토하고 승인 후 실행할 수 있다.
 8. 작업 이력과 기본적인 에이전트 상태를 UI에서 확인할 수 있다.
-9. 앱이 Ubuntu, Windows, macOS를 지원하는 구조로 동작한다.
+9. 앱이 Ubuntu, Windows, macOS를 지원하는 구조로 동작하고, 첫 실사용 기준 흐름은 Windows에서 검증된다.
 10. 현재 테스트 중인 터미널 로그를 에이전트 제안 흐름에 연결할 수 있다.
 11. 핵심 사용자 흐름이 UI E2E 검증으로 확인된다.
 12. 일정 시간 이상 지속 실행 또는 반복 사용 후에도 핵심 흐름이 깨지지 않는 `aging test` 결과가 확보된다.
@@ -83,7 +83,7 @@ The MVP is considered complete when all of the following are true:
 6. an agent can read project context and current terminal output to generate suggestions
 7. users can review and approve suggested commands before execution
 8. task history and basic agent state are visible in the UI
-9. the app works within a cross-platform architecture targeting Ubuntu, Windows, and macOS
+9. the app works within a cross-platform architecture targeting Ubuntu, Windows, and macOS, and the first daily-use flow is validated on Windows
 10. live logs from active testing terminals can be attached to agent suggestion flows
 11. core user flows are covered by UI end-to-end verification
 12. `aging test` evidence shows that core flows remain stable after sustained runtime or repeated use
@@ -708,18 +708,19 @@ Acceptance Criteria:
 
 목표:
 
-- Ubuntu, Windows, macOS 기준으로 구조적 호환성을 검증한다.
+- Ubuntu, Windows, macOS 기준의 구조적 호환성을 유지하되, 첫 실사용 기준은 Windows에 둔다.
 
 백로그 항목:
 
-- 셸 탐지 검증
-- 기본 경로 처리 검증
+- Windows 기준 셸 탐지 검증
+- Windows 기준 기본 경로 처리 검증
 - PTY 동작 차이 확인
-- 로그인 콜백 흐름 차이 점검
+- 비-Windows 플랫폼 제약 정리
 
 완료조건:
 
 - 세 플랫폼 모두에서 주요 구조가 깨지지 않는다는 근거가 있다.
+- Windows 기준 핵심 흐름 검증 메모가 있다.
 - 최소한 플랫폼별 알려진 제약과 우회 방식이 문서화된다.
 
 #### English
@@ -728,18 +729,19 @@ Priority: `P1`
 
 Goal:
 
-- validate structural compatibility across Ubuntu, Windows, and macOS
+- preserve structural compatibility across Ubuntu, Windows, and macOS while using Windows as the first daily-use baseline
 
 Backlog:
 
-- shell detection validation
-- path handling validation
-- PTY behavior checks
-- login callback flow checks
+- validate shell detection against the Windows baseline
+- validate path handling against the Windows baseline
+- check PTY behavior differences
+- document non-Windows platform constraints
 
 Acceptance Criteria:
 
 - there is evidence that the major architecture holds across all three platforms
+- Windows baseline flow notes exist for the core path
 - at minimum, platform-specific constraints and workarounds are documented
 
 ### 14. 외부 채널 리포트 및 원격 명령 / External Report and Remote Command Channels
@@ -1076,19 +1078,20 @@ Acceptance Criteria:
 
 목표:
 
-- Windows/macOS를 포함한 실기 기준 사용성 검증을 쌓는다.
+- Windows를 첫 실사용 기준으로 삼아 실기 사용성 근거를 쌓고, 나머지 플랫폼은 smoke와 제약 정리 중심으로 검증한다.
 
 백로그 항목:
 
-- Windows 실기 로그인/프로젝트 열기 검증
-- macOS 실기 프로젝트/터미널 검증
-- 설치 파일 실행 확인
+- Windows 실기 프로젝트 열기/PTY/에이전트 승인/복원 검증
+- Windows 설치 파일 실행 확인
+- macOS 기본 프로젝트/터미널 smoke 검증
 - 알려진 제약 정리
 
 완료조건:
 
-- 세 플랫폼의 실사용 이슈가 최소 1회 이상 기록된다.
-- 알려진 문제와 우회 방식이 문서화된다.
+- Windows에서 첫 실사용 기준 핵심 흐름 이슈가 최소 1회 이상 기록된다.
+- Windows 중심 알려진 문제와 우회 방식이 문서화된다.
+- macOS는 기본 smoke 결과 또는 제약이 정리된다.
 
 #### English
 
@@ -1096,19 +1099,20 @@ Priority: `P1`
 
 Goal:
 
-- build real-device usability evidence for Windows and macOS in addition to Ubuntu
+- build Windows-first real-device usability evidence, while validating the remaining platforms mainly through smoke coverage and documented constraints
 
 Backlog:
 
-- verify login/project-open flow on Windows
-- verify project/terminal flow on macOS
-- confirm installable artifact execution
+- verify project-open, PTY, agent approval, and restore flow on Windows
+- confirm installable artifact execution on Windows
+- verify the basic project/terminal smoke flow on macOS
 - document known constraints
 
 Acceptance Criteria:
 
-- real usage issues are recorded for all three platforms at least once
-- known issues and workarounds are documented
+- Windows first-daily-use issues are recorded for the core flow at least once
+- Windows-focused known issues and workarounds are documented
+- macOS smoke results or constraints are documented
 
 ### 22. 워크스페이스 리디자인 실행 / Workspace Redesign Execution
 

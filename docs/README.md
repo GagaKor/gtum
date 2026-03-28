@@ -31,13 +31,13 @@
 - 한국어와 영어는 항상 같은 의미와 최신 상태를 유지해야 한다.
 - 한국어는 사람 중심, 영어는 에이전트 중심 참조 문서로 사용한다.
 - 컨텍스트가 길어질 때마다 `docs/DOCS_READING_ORDER.md`를 기준으로 다시 문서를 읽는다.
-- 멀티 에이전트 작업은 기본적으로 `orchestrator + frontend + backend + tester` 팀 편성을 따른다.
+- 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `orchestrator + frontend + backend + QA + tester`다.
 
 ## 현재 결정 / Current Decisions
 
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
-- 기본 개발 운영 모델은 `orchestrator`, `frontend`, `backend`, `tester` 역할 분리다
-- 지원 플랫폼은 `Ubuntu + Windows + macOS`
+- 기본 개발 운영 모델은 서브에이전트 기반 멀티 에이전트 구조이며, `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할 분리를 우선 사용한다
+- 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
 - 에이전트 제공자는 우선 `Codex + Claude`, 인증은 `OAuth 기반 로그인`을 우선한다
 - 현재 Sprint 5 기준으로 task history, workspace restore, execution mode, aging test까지 포함한 MVP 흐름이 구현되어 있다
 - Sprint 7에서는 폴더 선택기 중심 프로젝트 열기, UI 정보 구조 재배치, provider auth mock/prototype/real 구분이 반영되어 있다

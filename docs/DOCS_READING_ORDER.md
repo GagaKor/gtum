@@ -42,6 +42,28 @@ If you feel lost, reread documents in this order:
 9. `docs/release-build-ci.md`
 10. the current sprint checklist or worklog
 
+## 작업 시작 전 팀빌딩 규칙 / Team Formation Before Execution
+
+### 한국어
+
+의미 있는 구현 작업이나 source of truth 문서 변경을 시작하기 전에는 아래 순서를 먼저 수행한다.
+
+1. `AGENTS.md`
+2. `docs/agent-team-topology.md`
+3. `docs/sprint-plan.md`
+
+그 다음 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 역할로 먼저 팀을 나누고 파일 소유권과 handoff를 정한다.
+
+### English
+
+Before starting non-trivial implementation work or source-of-truth documentation changes, do this first:
+
+1. `AGENTS.md`
+2. `docs/agent-team-topology.md`
+3. `docs/sprint-plan.md`
+
+Then split the work into `orchestrator`, `frontend`, `backend`, `QA`, and `tester` roles first, and lock file ownership plus handoff expectations before editing.
+
 ## 컨텍스트 초과 시 규칙 / Rule For Context Overflow
 
 ### 한국어
@@ -93,9 +115,10 @@ The purpose of this rule is to restore direction from documentation rather than 
 ### 역할 분담이 헷갈릴 때
 
 1. `docs/agent-team-topology.md`
-2. `docs/frontend-design-benchmarks.md`
-3. `docs/technical-design.md`
-4. `AGENTS.md`
+2. `AGENTS.md`
+3. `docs/sprint-plan.md`
+4. `docs/frontend-design-benchmarks.md`
+5. `docs/technical-design.md`
 
 ### 지금 무엇부터 만들어야 할지 헷갈릴 때
 
@@ -133,9 +156,10 @@ The purpose of this rule is to restore direction from documentation rather than 
 ### When role ownership feels unclear
 
 1. `docs/agent-team-topology.md`
-2. `docs/frontend-design-benchmarks.md`
-3. `docs/technical-design.md`
-4. `AGENTS.md`
+2. `AGENTS.md`
+3. `docs/sprint-plan.md`
+4. `docs/frontend-design-benchmarks.md`
+5. `docs/technical-design.md`
 
 ### When it is unclear what to build next
 
@@ -163,6 +187,7 @@ The purpose of this rule is to restore direction from documentation rather than 
 문서를 다시 읽기 전에 아래 질문을 스스로 확인하면 좋다.
 
 - 지금 내가 풀려는 문제가 제품 문제인가, 구현 문제인가, 실행 순서 문제인가
+- 지금 이 작업을 `orchestrator`, `frontend`, `backend`, `QA`, `tester` 중 어떤 역할로 나눌 것인가
 - 지금 작업이 MVP에 직접 들어가는가
 - 지금 작업이 활성 터미널 로그 활용이라는 핵심 가치를 강화하는가
 - 지금 작업이 어느 스프린트에 속하는가
@@ -172,6 +197,7 @@ The purpose of this rule is to restore direction from documentation rather than 
 Before rereading, it helps to ask:
 
 - is the current confusion about product direction, implementation, or execution order
+- how should this task be split across `orchestrator`, `frontend`, `backend`, `QA`, and `tester`
 - is this task directly inside the MVP scope
 - does this task strengthen the core value of using active terminal logs
 - which sprint does this task belong to

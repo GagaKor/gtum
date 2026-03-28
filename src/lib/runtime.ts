@@ -76,6 +76,9 @@ export type TerminalSessionLogs = {
 export type AgentProviderId = 'codex' | 'claude'
 export type AgentConnectionStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 export type AgentConnectionKind = 'mock' | 'prototype' | 'real'
+export type ExecutionMode = 'fast' | 'balanced' | 'deep'
+export type AgentExecutionTarget = 'current_tab' | 'new_tab'
+export type AgentSuggestionConfidence = 'low' | 'medium' | 'high'
 
 export type AgentConnectionSnapshot = {
   provider: AgentProviderId
@@ -83,7 +86,8 @@ export type AgentConnectionSnapshot = {
   status: AgentConnectionStatus
   connectionKind: AgentConnectionKind
   accountLabel: string | null
-  scopes: string[]
+  requiredScopes: string[]
+  expiresAt: number | null
   callbackUrl: string | null
   authUrl: string | null
   connectedAt: number | null
@@ -98,30 +102,31 @@ export type CompleteAgentLoginRequest = {
   failReason?: string
 }
 
-export type AgentExecutionTarget = 'current_tab' | 'new_tab'
-
 export type AgentTaskRequest = {
   provider: AgentProviderId
-  task: string
   projectName: string
   projectPath: string
-  activeTabTitle: string | null
   activeTabId: string | null
-  activeLogLines: string[]
+  activeTabTitle: string | null
+  lastNLogLines: string[]
+  userTask: string
+  executionMode: ExecutionMode
 }
 
 export type AgentSuggestion = {
   id: string
   provider: AgentProviderId
-  title: string
-  rationale: string
+  summary: string
   command: string
   preferredTarget: AgentExecutionTarget
+  confidence: AgentSuggestionConfidence
+  error: string | null
 }
 
 export type TelegramLinkStatus = 'disconnected' | 'pending' | 'connected' | 'error'
 export type TelegramReportStatus = 'queued' | 'sent' | 'failed'
 export type TelegramRemoteCommandStatus = 'pending' | 'approved' | 'rejected' | 'executed'
+export type TelegramRemoteCommandTarget = 'current_tab' | 'new_tab'
 
 export type TelegramBridgeSnapshot = {
   status: TelegramLinkStatus
@@ -142,8 +147,6 @@ export type TelegramReportSnapshot = {
   createdAt: number
   deliveredAt: number | null
 }
-
-export type TelegramRemoteCommandTarget = 'current_tab' | 'new_tab'
 
 export type TelegramRemoteCommandSnapshot = {
   commandId: string
@@ -188,21 +191,53 @@ export type ResolveTelegramRemoteCommandRequest = {
   resolutionNote?: string
 }
 
-const mockTree: FileTreeNode = {
-  name: 'demo-project',
-  path: '/mock/demo-project',
+const MOCK_AGENT_CONNECTIONS_KEY = 'gtum.mock-agent-connections'
+const PREVIEW_AGENT_CONNECTIONS_KEY = 'gtum.preview-agent-connections'
+const BROWSER_TELEGRAM_STATE_KEY = 'gtum.browser-telegram-state'
+const mockProviderLabels: Record<AgentProviderId, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+}
+
+const defaultMockProjectPath = '/mock/demo-project'
+const defaultPreviewProjectPath = 'C:/Users/demo/demo-project'
+
+const hasTauriRuntime = () =>
+  typeof window !== 'undefined' &&
+  typeof (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== 'undefined'
+
+const isMockRuntime = () => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  return new URLSearchParams(window.location.search).get('e2eMock') === '1'
+}
+
+const isPreviewContractRuntime = () => typeof window !== 'undefined' && !hasTauriRuntime() && !isMockRuntime()
+
+const usesBrowserRuntime = () => isMockRuntime() || isPreviewContractRuntime()
+
+const currentBrowserProjectPath = () => (isPreviewContractRuntime() ? defaultPreviewProjectPath : defaultMockProjectPath)
+
+const currentBrowserBranch = () =>
+  isPreviewContractRuntime() ? 'feature/windows-real-use' : 'feature/mock-project-open'
+
+const buildBrowserTree = (rootPath: string): FileTreeNode => ({
+  name: rootPath.split(/[\\/]/).filter(Boolean).at(-1) || 'demo-project',
+  path: rootPath,
   kind: 'directory',
   truncated: false,
   children: [
     {
       name: 'src',
-      path: '/mock/demo-project/src',
+      path: `${rootPath}/src`,
       kind: 'directory',
       truncated: false,
       children: [
         {
           name: 'App.tsx',
-          path: '/mock/demo-project/src/App.tsx',
+          path: `${rootPath}/src/App.tsx`,
           kind: 'file',
           truncated: false,
           children: [],
@@ -211,22 +246,15 @@ const mockTree: FileTreeNode = {
     },
     {
       name: 'package.json',
-      path: '/mock/demo-project/package.json',
+      path: `${rootPath}/package.json`,
       kind: 'file',
       truncated: false,
       children: [],
     },
   ],
-}
+})
 
-const MOCK_AGENT_CONNECTIONS_KEY = 'gtum.mock-agent-connections'
-const MOCK_TELEGRAM_STATE_KEY = 'gtum.mock-telegram-state'
-const mockProviderLabels: Record<AgentProviderId, string> = {
-  codex: 'Codex',
-  claude: 'Claude',
-}
-
-const createDefaultMockTelegramState = (): TelegramRuntimeSnapshot => ({
+const createDefaultBrowserTelegramState = (): TelegramRuntimeSnapshot => ({
   storagePath: null,
   bridge: {
     status: 'disconnected',
@@ -242,124 +270,153 @@ const createDefaultMockTelegramState = (): TelegramRuntimeSnapshot => ({
   remoteCommands: [],
 })
 
-const isMockRuntime = () => {
-  if (typeof window === 'undefined') {
-    return false
-  }
+const requiredScopesForProvider = (provider: AgentProviderId) =>
+  provider === 'codex'
+    ? ['responses:create', 'project-context:read', 'terminal-context:read']
+    : ['provider:deferred']
 
-  return new URLSearchParams(window.location.search).get('e2eMock') === '1'
-}
-
-const createDefaultMockConnections = (): AgentConnectionSnapshot[] =>
+const createDefaultBrowserConnections = (): AgentConnectionSnapshot[] =>
   (['codex', 'claude'] as AgentProviderId[]).map((provider) => ({
     provider,
     displayName: mockProviderLabels[provider],
     status: 'disconnected',
-    connectionKind: 'mock',
+    connectionKind: isMockRuntime() ? 'mock' : provider === 'codex' ? 'real' : 'prototype',
     accountLabel: null,
-    scopes: [],
-    callbackUrl: null,
-    authUrl: null,
+    requiredScopes: requiredScopesForProvider(provider),
+    expiresAt: null,
+    callbackUrl: isMockRuntime() ? `gtum://auth/callback?provider=${provider}` : null,
+    authUrl: isMockRuntime() ? `https://mock.gtum.local/auth/${provider}` : null,
     connectedAt: null,
     updatedAt: Date.now(),
     lastError: null,
   }))
 
-const loadMockConnections = () => {
+const browserConnectionStorageKey = () =>
+  isMockRuntime() ? MOCK_AGENT_CONNECTIONS_KEY : PREVIEW_AGENT_CONNECTIONS_KEY
+
+const loadBrowserConnections = () => {
   if (typeof window === 'undefined') {
-    return createDefaultMockConnections()
+    return createDefaultBrowserConnections()
   }
 
   try {
-    const saved = window.localStorage.getItem(MOCK_AGENT_CONNECTIONS_KEY)
+    const saved = window.localStorage.getItem(browserConnectionStorageKey())
     if (!saved) {
-      return createDefaultMockConnections()
+      return createDefaultBrowserConnections()
     }
 
     const parsed = JSON.parse(saved) as AgentConnectionSnapshot[]
-    return createDefaultMockConnections().map(
+    return createDefaultBrowserConnections().map(
       (defaultEntry) =>
-        parsed.find((entry) => entry.provider === defaultEntry.provider) ?? defaultEntry,
+        parsed.find((entry) => entry.provider === defaultEntry.provider)
+        ? {
+            ...defaultEntry,
+            ...parsed.find((entry) => entry.provider === defaultEntry.provider),
+            requiredScopes:
+              parsed.find((entry) => entry.provider === defaultEntry.provider)?.requiredScopes ??
+              defaultEntry.requiredScopes,
+          }
+        : defaultEntry,
     )
   } catch {
-    return createDefaultMockConnections()
+    return createDefaultBrowserConnections()
   }
 }
 
-const persistMockConnections = (connections: AgentConnectionSnapshot[]) => {
+const persistBrowserConnections = (connections: AgentConnectionSnapshot[]) => {
   if (typeof window === 'undefined') {
     return
   }
 
-  window.localStorage.setItem(MOCK_AGENT_CONNECTIONS_KEY, JSON.stringify(connections))
+  window.localStorage.setItem(browserConnectionStorageKey(), JSON.stringify(connections))
 }
 
-const loadMockTelegramState = () => {
+const loadBrowserTelegramState = () => {
   if (typeof window === 'undefined') {
-    return createDefaultMockTelegramState()
+    return createDefaultBrowserTelegramState()
   }
 
   try {
-    const saved = window.localStorage.getItem(MOCK_TELEGRAM_STATE_KEY)
+    const saved = window.localStorage.getItem(BROWSER_TELEGRAM_STATE_KEY)
     if (!saved) {
-      return createDefaultMockTelegramState()
+      return createDefaultBrowserTelegramState()
     }
 
     const parsed = JSON.parse(saved) as TelegramRuntimeSnapshot
     return {
-      ...createDefaultMockTelegramState(),
+      ...createDefaultBrowserTelegramState(),
       ...parsed,
       bridge: {
-        ...createDefaultMockTelegramState().bridge,
+        ...createDefaultBrowserTelegramState().bridge,
         ...parsed.bridge,
       },
       reports: parsed.reports ?? [],
       remoteCommands: parsed.remoteCommands ?? [],
     }
   } catch {
-    return createDefaultMockTelegramState()
+    return createDefaultBrowserTelegramState()
   }
 }
 
-const persistMockTelegramState = (snapshot: TelegramRuntimeSnapshot) => {
+const persistBrowserTelegramState = (snapshot: TelegramRuntimeSnapshot) => {
   if (typeof window === 'undefined') {
     return
   }
 
-  window.localStorage.setItem(MOCK_TELEGRAM_STATE_KEY, JSON.stringify(snapshot))
+  window.localStorage.setItem(BROWSER_TELEGRAM_STATE_KEY, JSON.stringify(snapshot))
 }
 
-let nextMockTerminalId = 2
-let mockTerminalSessions: TerminalSessionSnapshot[] = [
-  {
-    sessionId: 1,
-    name: 'workspace',
-    cwd: '/mock/demo-project',
-    shell: 'bash',
-    shellArgs: ['-i'],
-    processId: 1001,
-    status: 'running',
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    exitCode: null,
-    logLineCount: 4,
-    maxLogEntries: 400,
-    lastEvent: 'session created',
-  },
-]
-
-const mockTerminalLogs: Record<number, string[]> = {
-  1: [
-    '$ sprint-2:start',
-    '[gtum] terminal ready',
-    '$ npm run test:watch',
-    'PASS src/app-shell.spec.ts',
-  ],
+const createInitialBrowserTerminalSessions = (): TerminalSessionSnapshot[] => {
+  const cwd = currentBrowserProjectPath()
+  return [
+    {
+      sessionId: 1,
+      name: 'workspace',
+      cwd,
+      shell: isPreviewContractRuntime() ? 'pwsh' : 'bash',
+      shellArgs: isPreviewContractRuntime() ? ['-NoLogo'] : ['-i'],
+      processId: 1001,
+      status: 'running',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      exitCode: null,
+      logLineCount: 4,
+      maxLogEntries: 400,
+      lastEvent: 'session created',
+    },
+  ]
 }
 
-const refreshMockSession = (sessionId: number) => {
-  const lines = mockTerminalLogs[sessionId] || []
-  mockTerminalSessions = mockTerminalSessions.map((session) =>
+const createInitialBrowserTerminalLogs = (): Record<number, string[]> => ({
+  1: isPreviewContractRuntime()
+    ? [
+        'PS> pnpm test -- --watch=false',
+        'FAIL src/app-shell.spec.ts',
+        'The process exited with code 1.',
+        'Open the active logs and ask Codex for the next command.',
+      ]
+    : [
+        '$ sprint-2:start',
+        '[gtum] terminal ready',
+        '$ npm run test:watch',
+        'PASS src/app-shell.spec.ts',
+      ],
+})
+
+let nextBrowserTerminalId = 2
+let browserTerminalSessions = createInitialBrowserTerminalSessions()
+let browserTerminalLogs = createInitialBrowserTerminalLogs()
+let browserAgentConnections = createDefaultBrowserConnections()
+let browserTelegramState = createDefaultBrowserTelegramState()
+
+if (typeof window !== 'undefined' && usesBrowserRuntime()) {
+  browserAgentConnections = loadBrowserConnections()
+  browserTelegramState = loadBrowserTelegramState()
+}
+
+const refreshBrowserSession = (sessionId: number) => {
+  const lines = browserTerminalLogs[sessionId] || []
+  browserTerminalSessions = browserTerminalSessions.map((session) =>
     session.sessionId === sessionId
       ? {
           ...session,
@@ -370,22 +427,23 @@ const refreshMockSession = (sessionId: number) => {
   )
 }
 
-let mockAgentConnections = createDefaultMockConnections()
-let mockTelegramState = createDefaultMockTelegramState()
-
-if (typeof window !== 'undefined' && isMockRuntime()) {
-  mockAgentConnections = loadMockConnections()
-  mockTelegramState = loadMockTelegramState()
-}
-
 export const usesMockRuntime = isMockRuntime
+export const usesPreviewContractRuntime = isPreviewContractRuntime
 
 export const getRuntimeInfo = async () => {
   if (isMockRuntime()) {
     return {
       app_name: 'gtum',
       platform: 'mock-web',
-      mode: 'e2e',
+      mode: 'e2e-mock',
+    } satisfies RuntimeInfo
+  }
+
+  if (isPreviewContractRuntime()) {
+    return {
+      app_name: 'gtum',
+      platform: 'windows-preview',
+      mode: 'preview-contract',
     } satisfies RuntimeInfo
   }
 
@@ -393,25 +451,22 @@ export const getRuntimeInfo = async () => {
 }
 
 export const readProjectOverview = async (path: string) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
+    const resolvedPath = path || currentBrowserProjectPath()
     return {
       metadata: {
-        name: path.split('/').filter(Boolean).at(-1) || 'demo-project',
-        path: path || '/mock/demo-project',
+        name: resolvedPath.split(/[\\/]/).filter(Boolean).at(-1) || 'demo-project',
+        path: resolvedPath,
         exists: true,
         isDirectory: true,
       },
-      tree: {
-        ...mockTree,
-        name: path.split('/').filter(Boolean).at(-1) || mockTree.name,
-        path: path || mockTree.path,
-      },
+      tree: buildBrowserTree(resolvedPath),
       git: {
         isRepository: true,
-        branch: 'feature/mock-project-open',
+        branch: currentBrowserBranch(),
         branchType: 'feature',
         isDirty: true,
-        changedFilesCount: 3,
+        changedFilesCount: isPreviewContractRuntime() ? 2 : 3,
       },
     } satisfies ProjectOverview
   }
@@ -420,8 +475,8 @@ export const readProjectOverview = async (path: string) => {
 }
 
 export const selectProjectFolder = async (defaultPath?: string) => {
-  if (isMockRuntime()) {
-    return defaultPath?.trim() || '/mock/demo-project'
+  if (usesBrowserRuntime()) {
+    return defaultPath?.trim() || currentBrowserProjectPath()
   }
 
   try {
@@ -439,15 +494,16 @@ export const selectProjectFolder = async (defaultPath?: string) => {
 }
 
 export const createTerminalSession = async (request: CreateTerminalSessionRequest) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const now = Date.now()
-    const sessionId = nextMockTerminalId++
+    const sessionId = nextBrowserTerminalId++
+    const cwd = request.cwd || currentBrowserProjectPath()
     const session: TerminalSessionSnapshot = {
       sessionId,
       name: request.name || `tab-${sessionId}`,
-      cwd: request.cwd || '/mock/demo-project',
-      shell: 'bash',
-      shellArgs: ['-i'],
+      cwd,
+      shell: isPreviewContractRuntime() ? 'pwsh' : 'bash',
+      shellArgs: isPreviewContractRuntime() ? ['-NoLogo'] : ['-i'],
       processId: 1000 + sessionId,
       status: 'running',
       createdAt: now,
@@ -458,8 +514,11 @@ export const createTerminalSession = async (request: CreateTerminalSessionReques
       lastEvent: 'session created',
     }
 
-    mockTerminalSessions = [...mockTerminalSessions, session]
-    mockTerminalLogs[sessionId] = [`$ cd ${session.cwd}`, '[gtum] terminal ready']
+    browserTerminalSessions = [...browserTerminalSessions, session]
+    browserTerminalLogs[sessionId] = [
+      isPreviewContractRuntime() ? `PS> Set-Location "${cwd}"` : `$ cd ${cwd}`,
+      '[gtum] terminal ready',
+    ]
     return session
   }
 
@@ -467,16 +526,16 @@ export const createTerminalSession = async (request: CreateTerminalSessionReques
 }
 
 export const listTerminalSessions = async () => {
-  if (isMockRuntime()) {
-    return mockTerminalSessions
+  if (usesBrowserRuntime()) {
+    return browserTerminalSessions
   }
 
   return invoke<TerminalSessionSnapshot[]>('list_terminal_sessions')
 }
 
 export const renameTerminalSession = async (sessionId: number, name: string) => {
-  if (isMockRuntime()) {
-    mockTerminalSessions = mockTerminalSessions.map((session) =>
+  if (usesBrowserRuntime()) {
+    browserTerminalSessions = browserTerminalSessions.map((session) =>
       session.sessionId === sessionId
         ? {
             ...session,
@@ -487,17 +546,17 @@ export const renameTerminalSession = async (sessionId: number, name: string) => 
         : session,
     )
 
-    return mockTerminalSessions.find((session) => session.sessionId === sessionId)!
+    return browserTerminalSessions.find((session) => session.sessionId === sessionId)!
   }
 
   return invoke<TerminalSessionSnapshot>('rename_terminal_session', { sessionId, name })
 }
 
 export const closeTerminalSession = async (sessionId: number) => {
-  if (isMockRuntime()) {
-    const session = mockTerminalSessions.find((entry) => entry.sessionId === sessionId) ?? null
-    mockTerminalSessions = mockTerminalSessions.filter((entry) => entry.sessionId !== sessionId)
-    delete mockTerminalLogs[sessionId]
+  if (usesBrowserRuntime()) {
+    const session = browserTerminalSessions.find((entry) => entry.sessionId === sessionId) ?? null
+    browserTerminalSessions = browserTerminalSessions.filter((entry) => entry.sessionId !== sessionId)
+    delete browserTerminalLogs[sessionId]
     return session
   }
 
@@ -505,12 +564,12 @@ export const closeTerminalSession = async (sessionId: number) => {
 }
 
 export const readTerminalSessionLogs = async (sessionId: number, limit = 120) => {
-  if (isMockRuntime()) {
-    const entries = (mockTerminalLogs[sessionId] || []).slice(-limit)
+  if (usesBrowserRuntime()) {
+    const entries = (browserTerminalLogs[sessionId] || []).slice(-limit)
     return {
       sessionId,
       status:
-        mockTerminalSessions.find((entry) => entry.sessionId === sessionId)?.status || 'terminated',
+        browserTerminalSessions.find((entry) => entry.sessionId === sessionId)?.status || 'terminated',
       limit,
       logLineCount: entries.length,
       truncated: false,
@@ -523,11 +582,16 @@ export const readTerminalSessionLogs = async (sessionId: number, limit = 120) =>
 }
 
 export const executeTerminalSessionCommand = async (sessionId: number, command: string) => {
-  if (isMockRuntime()) {
-    const lines = [...(mockTerminalLogs[sessionId] || []), `$ ${command}`, '[mock] command executed']
-    mockTerminalLogs[sessionId] = lines
-    refreshMockSession(sessionId)
-    return mockTerminalSessions.find((entry) => entry.sessionId === sessionId) ?? null
+  if (usesBrowserRuntime()) {
+    const prompt = isPreviewContractRuntime() ? 'PS>' : '$'
+    const completionLine = isPreviewContractRuntime() ? '[preview] command executed' : '[mock] command executed'
+    browserTerminalLogs[sessionId] = [
+      ...(browserTerminalLogs[sessionId] || []),
+      `${prompt} ${command}`,
+      completionLine,
+    ]
+    refreshBrowserSession(sessionId)
+    return browserTerminalSessions.find((entry) => entry.sessionId === sessionId) ?? null
   }
 
   return invoke<TerminalSessionSnapshot>('execute_terminal_session_command', { sessionId, command })
@@ -538,15 +602,14 @@ export const appendMockTerminalLine = async (sessionId: number, input: string) =
     return
   }
 
-  const lines = [...(mockTerminalLogs[sessionId] || []), input, '[mock] output received']
-  mockTerminalLogs[sessionId] = lines
-  refreshMockSession(sessionId)
+  browserTerminalLogs[sessionId] = [...(browserTerminalLogs[sessionId] || []), input, '[mock] output received']
+  refreshBrowserSession(sessionId)
 }
 
 export const listAgentConnections = async () => {
-  if (isMockRuntime()) {
-    mockAgentConnections = loadMockConnections()
-    return mockAgentConnections
+  if (usesBrowserRuntime()) {
+    browserAgentConnections = loadBrowserConnections()
+    return browserAgentConnections
   }
 
   return invoke<AgentConnectionSnapshot[]>('list_agent_connections')
@@ -555,26 +618,60 @@ export const listAgentConnections = async () => {
 export const beginAgentLogin = async (provider: AgentProviderId, requestedScopes: string[] = []) => {
   if (isMockRuntime()) {
     const now = Date.now()
-    const callbackUrl = `gtum://auth/callback?provider=${provider}`
-    const authUrl = `https://mock.gtum.local/auth/${provider}`
-
-    mockAgentConnections = loadMockConnections().map((entry) =>
+    browserAgentConnections = loadBrowserConnections().map((entry) =>
       entry.provider === provider
         ? {
             ...entry,
             status: 'pending',
             connectionKind: 'mock',
-            scopes: requestedScopes,
-            callbackUrl,
-            authUrl,
+            requiredScopes: requestedScopes.length > 0 ? requestedScopes : entry.requiredScopes,
+            callbackUrl: `gtum://auth/callback?provider=${provider}`,
+            authUrl: `https://mock.gtum.local/auth/${provider}`,
             updatedAt: now,
             lastError: null,
           }
         : entry,
     )
+    persistBrowserConnections(browserAgentConnections)
+    return browserAgentConnections.find((entry) => entry.provider === provider)!
+  }
 
-    persistMockConnections(mockAgentConnections)
-    return mockAgentConnections.find((entry) => entry.provider === provider)!
+  if (isPreviewContractRuntime()) {
+    const now = Date.now()
+    browserAgentConnections = loadBrowserConnections().map((entry) => {
+      if (entry.provider !== provider) {
+        return entry
+      }
+
+      if (provider === 'codex') {
+        return {
+          ...entry,
+          status: 'connected',
+          connectionKind: 'real',
+          accountLabel: 'Codex Windows Preview',
+          requiredScopes: requestedScopes.length > 0 ? requestedScopes : entry.requiredScopes,
+          expiresAt: null,
+          callbackUrl: null,
+          authUrl: null,
+          connectedAt: now,
+          updatedAt: now,
+          lastError: null,
+        }
+      }
+
+      return {
+        ...entry,
+        status: 'error',
+        connectionKind: 'prototype',
+        accountLabel: null,
+        callbackUrl: null,
+        authUrl: null,
+        updatedAt: now,
+        lastError: 'Claude real-provider support is deferred for the first daily-use release.',
+      }
+    })
+    persistBrowserConnections(browserAgentConnections)
+    return browserAgentConnections.find((entry) => entry.provider === provider)!
   }
 
   return invoke<AgentConnectionSnapshot>('begin_agent_login', { provider, requestedScopes })
@@ -583,8 +680,7 @@ export const beginAgentLogin = async (provider: AgentProviderId, requestedScopes
 export const completeAgentLogin = async (request: CompleteAgentLoginRequest) => {
   if (isMockRuntime()) {
     const now = Date.now()
-
-    mockAgentConnections = loadMockConnections().map((entry) =>
+    browserAgentConnections = loadBrowserConnections().map((entry) =>
       entry.provider === request.provider
         ? {
             ...entry,
@@ -598,83 +694,134 @@ export const completeAgentLogin = async (request: CompleteAgentLoginRequest) => 
           }
         : entry,
     )
-
-    persistMockConnections(mockAgentConnections)
-    return mockAgentConnections.find((entry) => entry.provider === request.provider)!
+    persistBrowserConnections(browserAgentConnections)
+    return browserAgentConnections.find((entry) => entry.provider === request.provider)!
   }
 
   return invoke<AgentConnectionSnapshot>('complete_agent_login', { request })
 }
 
 export const disconnectAgentProvider = async (provider: AgentProviderId) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const nextConnection = {
       provider,
       displayName: mockProviderLabels[provider],
       status: 'disconnected',
-      connectionKind: 'mock',
+      connectionKind: isMockRuntime() ? 'mock' : provider === 'codex' ? 'real' : 'prototype',
       accountLabel: null,
-      scopes: [],
-      callbackUrl: null,
-      authUrl: null,
+      requiredScopes: requiredScopesForProvider(provider),
+      expiresAt: null,
+      callbackUrl: isMockRuntime() ? `gtum://auth/callback?provider=${provider}` : null,
+      authUrl: isMockRuntime() ? `https://mock.gtum.local/auth/${provider}` : null,
       connectedAt: null,
       updatedAt: Date.now(),
       lastError: null,
     } satisfies AgentConnectionSnapshot
 
-    mockAgentConnections = loadMockConnections().map((entry) =>
+    browserAgentConnections = loadBrowserConnections().map((entry) =>
       entry.provider === provider ? nextConnection : entry,
     )
-    persistMockConnections(mockAgentConnections)
+    persistBrowserConnections(browserAgentConnections)
     return nextConnection
   }
 
   return invoke<AgentConnectionSnapshot>('disconnect_agent_provider', { provider })
 }
 
+const buildBrowserSuggestion = (request: AgentTaskRequest): AgentSuggestion => {
+  const task = request.userTask.trim() || 'Investigate the current workspace state'
+  const joinedLogs = request.lastNLogLines.join('\n').toLowerCase()
+  const lowerTask = task.toLowerCase()
+
+  if (request.provider !== 'codex') {
+    return {
+      id: `suggestion-${Date.now()}`,
+      provider: request.provider,
+      summary: 'This provider is not enabled in the first daily-use release.',
+      command: '',
+      preferredTarget: 'current_tab',
+      confidence: 'low',
+      error: 'Claude remains a prototype while Codex is the first real provider path.',
+    }
+  }
+
+  if (lowerTask.includes('force error') || lowerTask.includes('permission')) {
+    return {
+      id: `suggestion-${Date.now()}`,
+      provider: request.provider,
+      summary: 'Codex could not produce a safe command from the current request.',
+      command: '',
+      preferredTarget: 'current_tab',
+      confidence: 'low',
+      error: 'Refine the task or attach a clearer failing log segment before asking again.',
+    }
+  }
+
+  const command =
+    lowerTask.includes('lint')
+      ? 'npm run lint'
+      : lowerTask.includes('build')
+        ? 'npm run build'
+        : lowerTask.includes('test') || joinedLogs.includes('fail')
+          ? 'npm run test -- --runInBand'
+          : 'git status --short'
+
+  return {
+    id: `suggestion-${Date.now()}`,
+    provider: request.provider,
+    summary: `Codex suggests running "${command}" next for "${task}".`,
+    command,
+    preferredTarget: command.includes('git status') || request.executionMode === 'deep' ? 'new_tab' : 'current_tab',
+    confidence: request.executionMode === 'deep' ? 'high' : request.executionMode === 'fast' ? 'medium' : 'high',
+    error: null,
+  }
+}
+
 export const requestAgentSuggestions = async (
   request: AgentTaskRequest,
 ): Promise<AgentSuggestion[]> => {
-  const safeTask = request.task.trim() || 'Investigate the current workspace state'
-  const recentLog = request.activeLogLines.at(-1) ?? 'No recent terminal output'
-  const providerLabel = mockProviderLabels[request.provider]
+  if (usesBrowserRuntime()) {
+    return [buildBrowserSuggestion(request)]
+  }
 
-  return [
-    {
-      id: `${request.provider}-rerun`,
-      provider: request.provider,
-      title: `${providerLabel} suggests a focused rerun`,
-      rationale: `Based on ${request.projectName} and the latest log line "${recentLog}", rerun the current workflow in the active tab to confirm the state.`,
-      command:
-        request.activeLogLines.length > 0 ? 'npm run test -- --runInBand' : 'git status --short',
-      preferredTarget: 'current_tab',
-    },
-    {
-      id: `${request.provider}-inspect`,
-      provider: request.provider,
-      title: `${providerLabel} suggests a fresh inspection tab`,
-      rationale: `Use a separate tab to inspect task "${safeTask}" without disturbing the current terminal session.`,
-      command: 'git status --short && git diff --stat',
-      preferredTarget: 'new_tab',
-    },
-  ]
+  return invoke<AgentSuggestion[]>('request_agent_suggestions', { request })
 }
 
 export const readTelegramRuntimeSnapshot = async () => {
-  if (isMockRuntime()) {
-    mockTelegramState = loadMockTelegramState()
-    return mockTelegramState
+  if (usesBrowserRuntime()) {
+    browserTelegramState = loadBrowserTelegramState()
+    return browserTelegramState
   }
 
   return invoke<TelegramRuntimeSnapshot>('read_telegram_runtime_snapshot')
 }
 
 export const beginTelegramLink = async () => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
+    if (isPreviewContractRuntime()) {
+      const nextSnapshot: TelegramRuntimeSnapshot = {
+        ...loadBrowserTelegramState(),
+        bridge: {
+          ...loadBrowserTelegramState().bridge,
+          status: 'connected',
+          chatLabel: '@gtum_preview',
+          callbackUrl: null,
+          authUrl: null,
+          connectedAt: Date.now(),
+          updatedAt: Date.now(),
+          lastError: null,
+        },
+      }
+
+      browserTelegramState = nextSnapshot
+      persistBrowserTelegramState(nextSnapshot)
+      return nextSnapshot.bridge
+    }
+
     const nextSnapshot: TelegramRuntimeSnapshot = {
-      ...loadMockTelegramState(),
+      ...loadBrowserTelegramState(),
       bridge: {
-        ...loadMockTelegramState().bridge,
+        ...loadBrowserTelegramState().bridge,
         status: 'pending',
         callbackUrl: 'gtum://telegram/callback',
         authUrl: 'https://mock.telegram.local/gtum/connect',
@@ -683,8 +830,8 @@ export const beginTelegramLink = async () => {
       },
     }
 
-    mockTelegramState = nextSnapshot
-    persistMockTelegramState(nextSnapshot)
+    browserTelegramState = nextSnapshot
+    persistBrowserTelegramState(nextSnapshot)
     return nextSnapshot.bridge
   }
 
@@ -692,9 +839,9 @@ export const beginTelegramLink = async () => {
 }
 
 export const completeTelegramLink = async (request: CompleteTelegramLinkRequest) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const now = Date.now()
-    const state = loadMockTelegramState()
+    const state = loadBrowserTelegramState()
     const nextBridge: TelegramBridgeSnapshot = {
       ...state.bridge,
       status: request.failReason ? 'error' : 'connected',
@@ -704,11 +851,11 @@ export const completeTelegramLink = async (request: CompleteTelegramLinkRequest)
       lastError: request.failReason || null,
     }
 
-    mockTelegramState = {
+    browserTelegramState = {
       ...state,
       bridge: nextBridge,
     }
-    persistMockTelegramState(mockTelegramState)
+    persistBrowserTelegramState(browserTelegramState)
     return nextBridge
   }
 
@@ -716,17 +863,17 @@ export const completeTelegramLink = async (request: CompleteTelegramLinkRequest)
 }
 
 export const disconnectTelegramBridge = async () => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const nextSnapshot = {
-      ...loadMockTelegramState(),
+      ...loadBrowserTelegramState(),
       bridge: {
-        ...createDefaultMockTelegramState().bridge,
+        ...createDefaultBrowserTelegramState().bridge,
         updatedAt: Date.now(),
       },
     }
 
-    mockTelegramState = nextSnapshot
-    persistMockTelegramState(nextSnapshot)
+    browserTelegramState = nextSnapshot
+    persistBrowserTelegramState(nextSnapshot)
     return nextSnapshot.bridge
   }
 
@@ -734,7 +881,7 @@ export const disconnectTelegramBridge = async () => {
 }
 
 export const createTelegramReport = async (request: CreateTelegramReportRequest) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const now = Date.now()
     const report: TelegramReportSnapshot = {
       reportId: `telegram-report-${now}`,
@@ -744,12 +891,12 @@ export const createTelegramReport = async (request: CreateTelegramReportRequest)
       createdAt: now,
       deliveredAt: now,
     }
-    const state = loadMockTelegramState()
-    mockTelegramState = {
+    const state = loadBrowserTelegramState()
+    browserTelegramState = {
       ...state,
       reports: [report, ...state.reports].slice(0, 8),
     }
-    persistMockTelegramState(mockTelegramState)
+    persistBrowserTelegramState(browserTelegramState)
     return report
   }
 
@@ -757,7 +904,7 @@ export const createTelegramReport = async (request: CreateTelegramReportRequest)
 }
 
 export const queueTelegramRemoteCommand = async (request: QueueTelegramRemoteCommandRequest) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const now = Date.now()
     const remoteCommand: TelegramRemoteCommandSnapshot = {
       commandId: `telegram-command-${now}`,
@@ -770,12 +917,12 @@ export const queueTelegramRemoteCommand = async (request: QueueTelegramRemoteCom
       resolvedAt: null,
       resolutionNote: null,
     }
-    const state = loadMockTelegramState()
-    mockTelegramState = {
+    const state = loadBrowserTelegramState()
+    browserTelegramState = {
       ...state,
       remoteCommands: [remoteCommand, ...state.remoteCommands].slice(0, 12),
     }
-    persistMockTelegramState(mockTelegramState)
+    persistBrowserTelegramState(browserTelegramState)
     return remoteCommand
   }
 
@@ -783,9 +930,9 @@ export const queueTelegramRemoteCommand = async (request: QueueTelegramRemoteCom
 }
 
 export const resolveTelegramRemoteCommand = async (request: ResolveTelegramRemoteCommandRequest) => {
-  if (isMockRuntime()) {
+  if (usesBrowserRuntime()) {
     const now = Date.now()
-    const state = loadMockTelegramState()
+    const state = loadBrowserTelegramState()
     const remoteCommands = state.remoteCommands.map((entry) =>
       entry.commandId === request.commandId
         ? {
@@ -797,11 +944,11 @@ export const resolveTelegramRemoteCommand = async (request: ResolveTelegramRemot
         : entry,
     )
 
-    mockTelegramState = {
+    browserTelegramState = {
       ...state,
       remoteCommands,
     }
-    persistMockTelegramState(mockTelegramState)
+    persistBrowserTelegramState(browserTelegramState)
     return remoteCommands.find((entry) => entry.commandId === request.commandId)!
   }
 

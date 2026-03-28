@@ -84,48 +84,53 @@ impl AgentAuthManager {
     ) -> AgentConnectionSnapshot {
         let mut store = self.store.lock().unwrap();
         let now = unix_timestamp_ms();
-        let scopes = requested_scopes.unwrap_or_default();
-        let login_id = format!("{}-{}", provider.as_key(), store.next_login_id);
-        store.next_login_id = store.next_login_id.saturating_add(1);
-
-        let state = format!("{}-{}", login_id, now);
-        let callback_url = format!(
-            "gtum://auth/callback?provider={}&state={state}",
-            provider.as_key()
-        );
-        let auth_url = format!(
-            "https://auth.gtum.local/{}/start?state={state}",
-            provider.as_key()
-        );
-        let login = AgentPendingLoginSnapshot {
-            login_id: login_id.clone(),
-            provider,
-            state: state.clone(),
-            callback_url: callback_url.clone(),
-            auth_url: Some(auth_url.clone()),
-            scopes: scopes.clone(),
-            created_at: now,
-            expires_at: now.saturating_add(15 * 60 * 1000),
-            consumed_at: None,
-            last_error: None,
-        };
-
-        store.pending_logins.insert(state.clone(), login);
+        let required_scopes = requested_scopes
+            .filter(|scopes| !scopes.is_empty())
+            .unwrap_or_else(|| provider.required_scopes());
 
         let snapshot = store
             .connections
             .entry(provider.as_key().into())
             .or_insert_with(|| AgentConnectionSnapshot::disconnected(provider));
 
-        snapshot.status = AgentConnectionStatus::Pending;
-        snapshot.scopes = scopes;
-        snapshot.callback_url = Some(callback_url);
-        snapshot.auth_url = Some(auth_url);
-        snapshot.active_login_id = Some(login_id);
-        snapshot.active_login_state = Some(state);
+        snapshot.connection_kind = provider.default_connection_kind();
+        snapshot.required_scopes = required_scopes;
+        snapshot.callback_url = None;
+        snapshot.auth_url = None;
+        snapshot.active_login_id = None;
+        snapshot.active_login_state = None;
         snapshot.last_login_attempt_at = Some(now);
         snapshot.updated_at = now;
+        snapshot.expires_at = None;
         snapshot.last_error = None;
+
+        match provider {
+            AgentProvider::Codex => match crate::runtime::codex::codex_account_label() {
+                Some(account_label) => {
+                    snapshot.status = AgentConnectionStatus::Connected;
+                    snapshot.account_label = Some(account_label);
+                    snapshot.account_email = None;
+                    snapshot.connected_at = Some(now);
+                }
+                None => {
+                    snapshot.status = AgentConnectionStatus::Error;
+                    snapshot.account_label = None;
+                    snapshot.account_email = None;
+                    snapshot.connected_at = None;
+                    snapshot.last_error = Some(
+                        "Set OPENAI_API_KEY in the desktop environment to connect Codex.".into(),
+                    );
+                }
+            },
+            AgentProvider::Claude => {
+                snapshot.status = AgentConnectionStatus::Error;
+                snapshot.account_label = None;
+                snapshot.account_email = None;
+                snapshot.connected_at = None;
+                snapshot.last_error =
+                    Some("Claude real-provider support is deferred for the first daily-use release.".into());
+            }
+        }
 
         let result = snapshot.clone();
         if let Err(error) = self.persist_locked(&store) {
@@ -138,6 +143,13 @@ impl AgentAuthManager {
         &self,
         request: CompleteAgentLoginRequest,
     ) -> Result<AgentConnectionSnapshot, String> {
+        if request.provider.default_connection_kind() == AgentConnectionKind::Real {
+            return Err(
+                "Callback-based provider login is no longer used for the desktop real-provider path."
+                    .into(),
+            );
+        }
+
         let mut store = self.store.lock().unwrap();
         let now = unix_timestamp_ms();
         let callback_state = {
@@ -182,11 +194,12 @@ impl AgentAuthManager {
             snapshot.active_login_state = Some(pending.state.clone());
             snapshot.callback_url = Some(pending.callback_url.clone());
             snapshot.auth_url = pending.auth_url.clone();
-            snapshot.scopes = if request.requested_scopes.is_empty() {
+            snapshot.required_scopes = if request.requested_scopes.is_empty() {
                 pending.scopes.clone()
             } else {
                 request.requested_scopes.clone()
             };
+            snapshot.expires_at = Some(pending.expires_at);
 
             if let Some(ref fail_reason) = fail_reason {
                 snapshot.status = AgentConnectionStatus::Error;
@@ -262,12 +275,39 @@ impl AgentAuthManager {
         }
     }
 
+    pub fn require_connected_provider(
+        &self,
+        provider: AgentProvider,
+    ) -> Result<AgentConnectionSnapshot, String> {
+        let store = self.store.lock().unwrap();
+        let snapshot = store
+            .connections
+            .get(provider.as_key())
+            .cloned()
+            .unwrap_or_else(|| AgentConnectionSnapshot::disconnected(provider));
+
+        if snapshot.status != AgentConnectionStatus::Connected {
+            return Err(match snapshot.last_error {
+                Some(message) => message,
+                None => format!("{} is not connected.", snapshot.display_name),
+            });
+        }
+
+        Ok(snapshot)
+    }
+
     fn normalize_store(&self, store: &mut AgentAuthStore) {
         for provider in [AgentProvider::Codex, AgentProvider::Claude] {
-            store
+            let snapshot = store
                 .connections
                 .entry(provider.as_key().into())
                 .or_insert_with(|| AgentConnectionSnapshot::disconnected(provider));
+
+            snapshot.display_name = provider.display_name().into();
+            snapshot.connection_kind = provider.default_connection_kind();
+            if snapshot.required_scopes.is_empty() {
+                snapshot.required_scopes = provider.required_scopes();
+            }
         }
     }
 
@@ -301,17 +341,35 @@ pub enum AgentProvider {
 }
 
 impl AgentProvider {
-    fn as_key(&self) -> &'static str {
+    pub fn as_key(&self) -> &'static str {
         match self {
             Self::Codex => "codex",
             Self::Claude => "claude",
         }
     }
 
-    fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> &'static str {
         match self {
             Self::Codex => "Codex",
             Self::Claude => "Claude",
+        }
+    }
+
+    fn default_connection_kind(&self) -> AgentConnectionKind {
+        match self {
+            Self::Codex => AgentConnectionKind::Real,
+            Self::Claude => AgentConnectionKind::Prototype,
+        }
+    }
+
+    fn required_scopes(&self) -> Vec<String> {
+        match self {
+            Self::Codex => vec![
+                "responses:create".into(),
+                "project-context:read".into(),
+                "terminal-context:read".into(),
+            ],
+            Self::Claude => vec!["provider:deferred".into()],
         }
     }
 }
@@ -342,10 +400,17 @@ pub struct AgentConnectionSnapshot {
     pub connection_kind: AgentConnectionKind,
     pub account_label: Option<String>,
     pub account_email: Option<String>,
-    pub scopes: Vec<String>,
+    #[serde(default, alias = "scopes")]
+    pub required_scopes: Vec<String>,
+    #[serde(default)]
+    pub expires_at: Option<u64>,
+    #[serde(default)]
     pub callback_url: Option<String>,
+    #[serde(default)]
     pub auth_url: Option<String>,
+    #[serde(default)]
     pub active_login_id: Option<String>,
+    #[serde(default)]
     pub active_login_state: Option<String>,
     pub connected_at: Option<u64>,
     pub last_login_attempt_at: Option<u64>,
@@ -359,10 +424,11 @@ impl AgentConnectionSnapshot {
             provider,
             display_name: provider.display_name().into(),
             status: AgentConnectionStatus::Disconnected,
-            connection_kind: AgentConnectionKind::Prototype,
+            connection_kind: provider.default_connection_kind(),
             account_label: None,
             account_email: None,
-            scopes: Vec::new(),
+            required_scopes: provider.required_scopes(),
+            expires_at: None,
             callback_url: None,
             auth_url: None,
             active_login_id: None,

@@ -9,28 +9,22 @@ async function ensureCodexConnected(page: Page) {
 
   await page.getByRole('radio', { name: 'Codex' }).check()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
-  await page.getByRole('button', { name: 'Complete Mock Callback' }).dispatchEvent('click')
   await expect(page.getByTestId('provider-card-codex')).toContainText('Connected')
 }
 
 async function runCoreFlow(page: Page, iteration: number) {
-  await page.getByRole('button', { name: 'Append Sample Log' }).click()
-  await page
-    .getByTestId('terminal-workspace')
-    .getByRole('button', { name: /Use Active Log|Refresh Agent Context/ })
-    .click()
   await page.getByLabel('Task Request').fill(`repeat sprint flow iteration ${iteration}`)
-  await page.getByRole('button', { name: 'Request Suggestion' }).click()
+  await page.getByRole('button', { name: 'Ask Codex' }).click()
 
   const suggestion = page.getByTestId('suggestion-card-codex').first()
   await suggestion.getByRole('button', { name: 'Approve In Current Tab' }).click()
 
   await expect(suggestion).toContainText('approved-current-tab')
-  await expect(page.getByRole('tabpanel')).toContainText('[agent:codex] npm run build')
+  await expect(page.getByRole('tabpanel')).toContainText('PS> npm run test -- --runInBand')
 }
 
 test('repeats the core workspace flow across reloads with restored state', async ({ page }) => {
-  await page.goto('/?e2eMock=1')
+  await page.goto('/')
 
   await page.getByRole('radio', { name: 'Deep' }).check()
   await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
@@ -40,7 +34,7 @@ test('repeats the core workspace flow across reloads with restored state', async
     if (iteration > 1) {
       await page.reload()
       await expect(page.getByTestId('execution-mode-panel')).toContainText('Deep')
-      await expect(page.getByText('/mock/demo-project', { exact: true }).first()).toBeVisible()
+      await expect(page.getByText('C:/Users/demo/demo-project', { exact: true }).first()).toBeVisible()
       await ensureCodexConnected(page)
     }
 

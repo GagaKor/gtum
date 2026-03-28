@@ -134,6 +134,8 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
    초기 버전은 원격 인프라 없이도 로컬 개발 환경에서 충분히 가치 있어야 한다.
 5. 안전한 자동화
    읽기는 쉽게, 실행은 통제 가능하게 설계한다.
+6. 팀빌딩 우선
+   의미 있는 작업은 단일 에이전트보다 서브에이전트를 포함한 멀티 에이전트 팀빌딩을 기본값으로 삼고, `orchestrator + frontend + backend + QA + tester` 분업을 먼저 적용한다.
 
 ### English
 
@@ -147,6 +149,8 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
    The first version should be valuable in local development environments without remote infrastructure.
 5. Safe automation
    Reading should be easy, execution should remain controlled.
+6. Team-building first
+   Non-trivial work should default to multi-agent team formation with sub-agents, starting from the `orchestrator + frontend + backend + QA + tester` split before any narrower path.
 
 ## 대상 사용자 / Target Users
 
@@ -172,6 +176,8 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 - Windows
 - macOS
 
+개발 편의상 Ubuntu를 주요 개발 환경으로 사용할 수 있지만, 첫 실사용 판단과 UX 마찰 측정은 Windows를 기준으로 삼는다.
+
 초기 설계와 구현은 처음부터 크로스 플랫폼을 전제로 해야 한다.
 
 - 특정 운영체제 전용 셸 동작에 지나치게 의존하지 않는다.
@@ -185,6 +191,8 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 - Ubuntu
 - Windows
 - macOS
+
+Ubuntu may remain the primary development environment, but first daily-use validation and UX-friction assessment are anchored on Windows.
 
 The architecture and implementation should be cross-platform from the start.
 
@@ -653,7 +661,7 @@ In the MVP, command execution and file edits should both require user approval.
 4. 에이전트들은 병렬로 탐색, 구현, 테스트, 리뷰를 수행한다.
 5. 상위 오케스트레이터가 결과를 모으고 최종 결정을 내린다.
 
-#### 추천 역할 분리
+#### 기본 역할 분리
 
 - `Orchestrator`
   - 전체 작업 분해, 우선순위 설정, 문서 기준선 정렬, 결과 통합
@@ -661,10 +669,12 @@ In the MVP, command execution and file edits should both require user approval.
   - `src/` 중심 UI, 상태, 사용자 흐름 구현
 - `Backend`
   - `src-tauri/` 중심 runtime, contract, provider, 시스템 로직 구현
+- `QA`
+  - 완료조건, 수용 기준, handoff 품질, 문서/계약 정합성 확인
 - `Tester`
   - E2E, 회귀, 재현 절차, aging 관점 검증
 
-기본 운영 모델은 위 네 역할을 우선으로 사용하고, 필요할 때만 탐색 전용 또는 리뷰 전용 역할을 추가한다.
+기본 운영 모델은 위 다섯 역할로 항상 먼저 팀빌딩하고, 필요할 때만 탐색 전용 또는 리뷰 전용 역할을 추가한다.
 
 #### 설계 원칙
 
@@ -673,6 +683,7 @@ In the MVP, command execution and file edits should both require user approval.
 - 공유 프로젝트 컨텍스트는 동일하게 보되, 쓰기 권한은 역할마다 제한한다.
 - 테스트와 리뷰는 구현과 병렬로 수행할 수 있지만, 최종 병합 판단은 중앙에서 수행한다.
 - 에이전트 수를 늘리는 것보다 작업 분해 품질이 더 중요하다.
+- 작은 작업이라도 먼저 `orchestrator + frontend + backend + QA + tester` 기준으로 분해를 시도한다.
 
 #### 프로젝트 컨텍스트 예시
 
@@ -705,7 +716,7 @@ The core idea is:
 4. Agents work in parallel on exploration, implementation, testing, and review.
 5. The orchestrator gathers results and makes the final decision.
 
-#### Suggested Role Split
+#### Default Role Split
 
 - `Orchestrator`
   - decomposes work, prioritizes tasks, aligns the doc baseline, and integrates results
@@ -713,10 +724,12 @@ The core idea is:
   - implements UI, state, and user-facing flow changes around `src/`
 - `Backend`
   - implements runtime, contract, provider, and system logic around `src-tauri/`
+- `QA`
+  - owns acceptance criteria, handoff quality, and doc/contract consistency checks
 - `Tester`
   - validates E2E behavior, regressions, repro steps, and aging-sensitive areas
 
-The default operating model should use these four roles first, and only add read-only exploration or review specialists when needed.
+The default operating model should always build the team from these five roles first, and only add read-only exploration or review specialists when needed.
 
 #### Design Principles
 
@@ -725,7 +738,7 @@ The default operating model should use these four roles first, and only add read
 - share the same project context, but limit write permissions by role
 - testing and review can run in parallel with implementation, but final integration should remain centralized
 - increasing the number of agents matters less than improving task decomposition quality
-- default the implementation team to `orchestrator + frontend + backend + tester` before adding more specialized roles
+- attempt decomposition with `orchestrator + frontend + backend + QA + tester` before adding more specialized roles
 
 #### Example Project Context
 
@@ -1054,6 +1067,7 @@ The first version should focus on the smallest complete experience.
 플랫폼 기준은 다음과 같다.
 
 - 1차 지원 플랫폼: `Ubuntu`, `Windows`, `macOS`
+- 첫 실사용 기준: `Windows`
 - 구현 원칙: 처음부터 크로스 플랫폼 기준으로 설계
 
 에이전트 연결 기준은 다음과 같다.
@@ -1122,6 +1136,7 @@ The implementation stack for the first version of `gtum` is finalized as:
 Platform targets are:
 
 - first-class desktop targets: `Ubuntu`, `Windows`, `macOS`
+- first daily-use baseline: `Windows`
 - implementation rule: design for cross-platform behavior from day one
 
 Agent connection rules are:

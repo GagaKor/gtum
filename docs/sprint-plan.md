@@ -35,7 +35,7 @@ Its purpose is to:
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
 - 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
 - 각 스프린트의 마지막에는 새로 발견된 후속 작업을 다음 스프린트 문서나 백로그에 추가한다.
-- 프론트엔드, 런타임, 검증이 함께 변하는 작업은 기본적으로 `orchestrator + frontend + backend + tester` 편성으로 나눈다.
+- 모든 작업은 먼저 서브에이전트를 포함한 `orchestrator + frontend + backend + QA + tester` 팀빌딩으로 분해하고, 예외가 있으면 `WORKLOG`에 남긴다.
 - 프론트엔드 개편은 `VS Code`, `conductor`, `cmux` 레퍼런스와 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
 - 프론트엔드 구조는 사람이 아니라 에이전트가 지속적으로 수정하기 쉬운지까지 기준으로 본다.
 
@@ -48,7 +48,7 @@ Its purpose is to:
 - each sprint should leave a clean foundation for the next one
 - finish each sprint with a practical UI E2E pass added or updated for the delivered flow
 - finish each sprint by adding newly discovered follow-up work into the next sprint plan or backlog
-- when frontend, runtime, and validation all change together, default the team split to `orchestrator + frontend + backend + tester`
+- first decompose every task into the sub-agent split `orchestrator + frontend + backend + QA + tester`, record any exception in the `WORKLOG`, and keep that split whenever frontend, runtime, and validation change together
 - review frontend redesign work against `VS Code`, `conductor`, `cmux`, and `docs/frontend-design-benchmarks.md`
 - treat agent editability as a first-class frontend design and implementation constraint
 
@@ -74,6 +74,7 @@ Its purpose is to:
 
 - 명확한 frontend 소유 범위
 - 명확한 backend 소유 범위
+- QA acceptance 메모
 - tester 검증 메모
 - 문서나 계약이 바뀐 경우 orchestrator 통합 메모
 
@@ -97,6 +98,7 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
 
 - clear frontend ownership
 - clear backend ownership
+- explicit QA acceptance notes
 - explicit tester verification notes
 - orchestrator-level integration notes when docs or contracts changed
 

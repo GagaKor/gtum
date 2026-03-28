@@ -7,6 +7,7 @@ import {
   disconnectAgentProvider,
   type AgentConnectionSnapshot,
   type AgentProviderId,
+  type AgentSuggestion as RuntimeAgentSuggestion,
   appendMockTerminalLine,
   beginTelegramLink,
   completeTelegramLink,
@@ -24,6 +25,7 @@ import {
   listAgentConnections,
   listTerminalSessions,
   queueTelegramRemoteCommand,
+  requestAgentSuggestions,
   resolveTelegramRemoteCommand,
   selectProjectFolder,
   type TelegramRemoteCommandSnapshot,
@@ -33,6 +35,7 @@ import {
   type TerminalSessionSnapshot,
   renameTerminalSession,
   closeTerminalSession,
+  type ExecutionMode,
   usesMockRuntime,
 } from './lib/runtime'
 
@@ -42,16 +45,15 @@ type AgentSuggestion = {
   id: string
   provider: AgentProviderId
   providerLabel: string
-  request: string
   summary: string
   command: string
   projectLabel: string
   terminalLabel: string
   attachedLogLines: number
-  status: 'pending' | 'approved-current-tab' | 'approved-new-tab'
+  confidence: RuntimeAgentSuggestion['confidence']
+  error: string | null
+  status: 'pending' | 'approved-current-tab' | 'approved-new-tab' | 'error'
 }
-
-type ExecutionMode = 'fast' | 'balanced' | 'deep'
 
 type TaskHistoryEntry = {
   id: string
@@ -115,10 +117,10 @@ const formatProviderStatusLabel = (status: AgentConnectionSnapshot['status']) =>
   status === 'connected'
     ? 'Connected'
     : status === 'pending'
-      ? 'Needs Approval'
+      ? 'Pending'
       : status === 'error'
         ? 'Attention Needed'
-        : 'Needs Login'
+        : 'Needs Connection'
 
 const formatProviderUxKindLabel = (kind: AgentConnectionSnapshot['connectionKind']) =>
   kind === 'mock' ? 'Mock' : kind === 'prototype' ? 'Prototype' : 'Real'
@@ -133,19 +135,19 @@ const formatProviderHint = (
 
   if (connection.status === 'connected') {
     return kind === 'real'
-      ? 'Official provider session is connected.'
+      ? 'Real Codex provider access is ready for suggestion requests.'
       : `${formatProviderUxKindLabel(kind)} provider session is connected for workspace testing.`
   }
 
   if (connection.status === 'pending') {
     return kind === 'mock'
       ? 'Mock callback is ready for the next auth step.'
-      : 'Desktop callback flow is ready for the next auth step.'
+      : 'Provider connection is pending.'
   }
 
   return kind === 'real'
-    ? 'Connect this provider to request live agent suggestions.'
-    : `${formatProviderUxKindLabel(kind)} provider flow is available for testing before real integration.`
+    ? 'Connect this provider to enable live Codex suggestions from terminal context.'
+    : `${formatProviderUxKindLabel(kind)} provider flow remains secondary while the first real path focuses on Codex.`
 }
 
 const buildProviderUiContract = (connection: AgentConnectionSnapshot): ProviderUiContract => {
@@ -569,7 +571,7 @@ function App() {
     const snapshot: AgentContextSnapshot = {
       tabId: String(activeSession.sessionId),
       tabTitle: activeSession.name,
-      lines: terminalLogs.entries.slice(-8),
+      lines: terminalLogs.entries.slice(-50),
       capturedAt: new Date().toISOString(),
     }
 
@@ -609,11 +611,21 @@ function App() {
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
       setSelectedProvider(provider)
-      setActiveContext(`Sprint 4 ${snapshot.displayName} login started`)
+      setActiveContext(
+        snapshot.status === 'connected'
+          ? `Daily-use ${snapshot.displayName} connected`
+          : snapshot.status === 'error'
+            ? `Daily-use ${snapshot.displayName} connection blocked`
+            : `Daily-use ${snapshot.displayName} connection pending`,
+      )
       recordTask(
-        `${snapshot.displayName} login started`,
-        `Requested scopes: ${snapshot.scopes.join(', ') || 'none'}`,
-        'pending',
+        snapshot.status === 'connected'
+          ? `${snapshot.displayName} connected`
+          : snapshot.status === 'error'
+            ? `${snapshot.displayName} connection blocked`
+            : `${snapshot.displayName} connection pending`,
+        snapshot.lastError ?? `Required scopes: ${snapshot.requiredScopes.join(', ') || 'none'}`,
+        snapshot.status === 'connected' ? 'done' : snapshot.status === 'error' ? 'error' : 'pending',
       )
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
@@ -628,7 +640,7 @@ function App() {
       setAgentConnections((current) =>
         current.map((entry) => (entry.provider === snapshot.provider ? snapshot : entry)),
       )
-      setActiveContext(`Sprint 4 ${snapshot.displayName} disconnected`)
+      setActiveContext(`Daily-use ${snapshot.displayName} disconnected`)
       recordTask(`${snapshot.displayName} disconnected`, 'Provider session cleared.', 'done')
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : String(error))
@@ -918,29 +930,17 @@ function App() {
     }
   }
 
-  const buildAgentSuggestion = (provider: AgentConnectionSnapshot, request: string): AgentSuggestion => {
-    const normalizedRequest = request.trim()
-    const attachedLogLines =
-      executionMode === 'fast' ? Math.min(agentContext?.lines.length ?? 0, 4) : agentContext?.lines.length ?? 0
-    const commandBase =
-      normalizedRequest.toLowerCase().includes('test')
-        ? 'npm run test -- --runInBand'
-        : normalizedRequest.toLowerCase().includes('lint')
-          ? 'npm run lint'
-          : 'npm run build'
-
-    return {
-      id: `suggestion-${Date.now()}`,
-      provider: provider.provider,
-      providerLabel: provider.displayName,
-      request: normalizedRequest,
-      summary: `${provider.displayName} suggests running "${commandBase}" for "${normalizedRequest}".`,
-      command: commandBase,
-      projectLabel: projectOverview?.metadata.name ?? activeProject,
-      terminalLabel: agentContext?.tabTitle ?? activeSession?.name ?? 'workspace',
-      attachedLogLines,
-      status: 'pending',
+  const buildLiveContextSnapshot = () => {
+    if (activeSession && terminalLogs) {
+      return {
+        tabId: String(activeSession.sessionId),
+        tabTitle: activeSession.name,
+        lines: terminalLogs.entries.slice(-50),
+        capturedAt: new Date().toISOString(),
+      } satisfies AgentContextSnapshot
     }
+
+    return agentContext
   }
 
   const draftTelegramReport = () => {
@@ -985,7 +985,7 @@ function App() {
     recordTask('Telegram report queued', 'Draft prepared for external channel handoff.', 'done')
   }
 
-  const submitAgentRequest = () => {
+  const submitAgentRequest = async () => {
     const normalizedRequest = agentRequestInput.trim()
     const connectedProvider = agentConnections.find(
       (connection) =>
@@ -1002,18 +1002,59 @@ function App() {
       return
     }
 
+    const liveContextSnapshot = buildLiveContextSnapshot()
+
+    if (liveContextSnapshot) {
+      captureTerminalContext(liveContextSnapshot)
+    }
+
     setAgentRequestError(null)
-    const suggestion = buildAgentSuggestion(connectedProvider, normalizedRequest)
-    setAgentSuggestions((current) => [suggestion, ...current].slice(0, 6))
-    setActiveContext(`Sprint 4 ${connectedProvider.displayName} suggestion ready`)
-    recordTask(
-      `${connectedProvider.displayName} suggestion requested`,
-      `${normalizedRequest} • mode ${formatModeLabel(executionMode)}`,
-      'done',
-    )
+
+    try {
+      const suggestions = await requestAgentSuggestions({
+        provider: connectedProvider.provider,
+        projectName: projectOverview?.metadata.name ?? activeProject,
+        projectPath: projectOverview?.metadata.path ?? activeProjectPath,
+        activeTabId: liveContextSnapshot?.tabId ?? (activeSession ? String(activeSession.sessionId) : null),
+        activeTabTitle: liveContextSnapshot?.tabTitle ?? activeSession?.name ?? null,
+        lastNLogLines: liveContextSnapshot?.lines ?? [],
+        userTask: normalizedRequest,
+        executionMode,
+      })
+
+      const mappedSuggestions: AgentSuggestion[] = suggestions.map((suggestion) => ({
+        id: suggestion.id,
+        provider: suggestion.provider,
+        providerLabel: connectedProvider.displayName,
+        summary: suggestion.summary,
+        command: suggestion.command,
+        projectLabel: projectOverview?.metadata.name ?? activeProject,
+        terminalLabel: liveContextSnapshot?.tabTitle ?? activeSession?.name ?? 'workspace',
+        attachedLogLines: liveContextSnapshot?.lines.length ?? 0,
+        confidence: suggestion.confidence,
+        error: suggestion.error,
+        status: suggestion.error ? 'error' : 'pending',
+      }))
+
+      setAgentSuggestions((current) => [...mappedSuggestions, ...current].slice(0, 6))
+      setActiveContext(`Daily-use ${connectedProvider.displayName} suggestion ready`)
+      recordTask(
+        `${connectedProvider.displayName} suggestion requested`,
+        `${normalizedRequest} • ${mappedSuggestions[0]?.attachedLogLines ?? 0} log line(s) • ${formatModeLabel(executionMode)}`,
+        mappedSuggestions.some((entry) => entry.error) ? 'error' : 'done',
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setAgentRequestError(message)
+      recordTask(`${connectedProvider.displayName} suggestion failed`, message, 'error')
+    }
   }
 
   const approveSuggestion = async (suggestion: AgentSuggestion, target: AgentSuggestionTarget) => {
+    if (suggestion.status !== 'pending' || suggestion.error || !suggestion.command) {
+      return
+    }
+
     try {
       if (target === 'current-tab' && activeTerminalTabId) {
         if (usesMockRuntime()) {
@@ -1061,8 +1102,8 @@ function App() {
       )
       setActiveContext(
         target === 'current-tab'
-          ? `Sprint 4 ${suggestion.providerLabel} approved in current tab`
-          : `Sprint 4 ${suggestion.providerLabel} approved in new tab`,
+          ? `Daily-use ${suggestion.providerLabel} approved in current tab`
+          : `Daily-use ${suggestion.providerLabel} approved in new tab`,
       )
       recordTask(
         `${suggestion.providerLabel} suggestion approved`,
@@ -1082,10 +1123,11 @@ function App() {
     : 'No Git repository detected'
 
   const activeSession = terminalSessions.find((session) => String(session.sessionId) === activeTerminalTabId)
+  const requestContextSnapshot = buildLiveContextSnapshot()
   const providerRequestPreview = {
     project: projectOverview?.metadata.name ?? activeProject,
-    terminal: agentContext?.tabTitle ?? activeSession?.name ?? 'No active terminal',
-    lines: agentContext?.lines.length ?? 0,
+    terminal: requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No active terminal',
+    lines: requestContextSnapshot?.lines.length ?? 0,
   }
   const selectedConnection = agentConnections.find((connection) => connection.provider === selectedProvider)
   const selectedProviderSummary = selectedConnection
@@ -1094,7 +1136,7 @@ function App() {
   const selectedProviderContract = selectedConnection ? buildProviderUiContract(selectedConnection) : null
   const telegramPendingCommands =
     telegramSnapshot?.remoteCommands.filter((entry) => entry.status === 'pending') ?? []
-  const attachedLogCount = agentContext?.lines.length ?? 0
+  const attachedLogCount = requestContextSnapshot?.lines.length ?? 0
   const canCaptureActiveLog = Boolean(activeSession && terminalLogs)
   const canSubmitAgentSuggestion =
     Boolean(selectedProviderContract?.canRequestSuggestion) && agentRequestInput.trim().length > 0
@@ -1103,7 +1145,7 @@ function App() {
     : 'Open a project to start'
   const workspaceHeroDetail = activeProjectPath
     ? `${summarizePath(activeProjectPath)} • ${gitLabel}`
-    : 'Choose a project, open a terminal tab, capture active logs, then request agent help.'
+    : 'Choose a project, connect Codex, ask from the active terminal, then approve the next command.'
 
   return (
     <div className="app-shell">
@@ -1226,7 +1268,7 @@ function App() {
               + New Tab
             </button>
             <button onClick={() => captureAgentContextFromActiveTab()} disabled={!canCaptureActiveLog}>
-              {attachedLogCount > 0 ? 'Refresh Active Log Context' : 'Capture Active Log'}
+              {agentContext ? 'Refresh Pinned Log Snapshot' : 'Pin Active Log Snapshot'}
             </button>
           </div>
         </header>
@@ -1243,7 +1285,7 @@ function App() {
             </span>
             <span className="pill">Mode: {formatModeLabel(executionMode)}</span>
             <span className={`pill ${attachedLogCount > 0 ? 'soft success' : 'soft'}`}>
-              Log Context: {attachedLogCount > 0 ? `${attachedLogCount} lines attached` : 'Not Attached'}
+              Log Context: {attachedLogCount > 0 ? `${attachedLogCount} line(s) ready` : 'Waiting for terminal output'}
             </span>
           </section>
 
@@ -1285,7 +1327,7 @@ function App() {
               <div className="terminal-actions">
                 <button onClick={() => void createTab()} disabled={!activeProjectPath}>+ New Tab</button>
                 <button onClick={() => captureAgentContextFromActiveTab()} disabled={!canCaptureActiveLog}>
-                  {attachedLogCount > 0 ? 'Refresh Agent Context' : 'Use Active Log'}
+                  {agentContext ? 'Refresh Pinned Log' : 'Pin Active Log'}
                 </button>
                 {usesMockRuntime() ? (
                   <button onClick={() => void simulateMockActivity()}>Append Sample Log</button>
@@ -1311,7 +1353,7 @@ function App() {
                 <span>{activeSession ? activeSession.name : 'No active tab'}</span>
                 <span>{activeSession ? formatTerminalStatusLabel(activeSession.status) : 'Idle'}</span>
                 <span>{activeSession?.cwd ?? 'no cwd'}</span>
-                <span>{attachedLogCount > 0 ? `${attachedLogCount} context line(s)` : 'context pending'}</span>
+                <span>{attachedLogCount > 0 ? `${attachedLogCount} request line(s)` : 'request context pending'}</span>
               </div>
               <div className="terminal-line">$ sprint-9:workspace-redesign</div>
               {(terminalLogs?.entries || []).length > 0 ? (
@@ -1340,21 +1382,35 @@ function App() {
                     <p>{activeProjectPath ? summarizePath(activeProjectPath) : 'Open a project folder first.'}</p>
                   </div>
                 </div>
-                <div className={`flow-step ${activeSession ? 'done' : activeProjectPath ? 'current' : ''}`}>
+                <div
+                  className={`flow-step ${
+                    selectedProviderContract?.canRequestSuggestion ? 'done' : activeProjectPath ? 'current' : ''
+                  }`}
+                >
                   <span className="flow-step-index">2</span>
                   <div>
-                    <strong>Terminal</strong>
-                    <p>{activeSession ? `${activeSession.name} is active.` : 'Create or select a terminal tab.'}</p>
+                    <strong>Codex</strong>
+                    <p>
+                      {selectedProviderContract?.canRequestSuggestion
+                        ? `${selectedConnection?.displayName ?? 'Codex'} is connected for live suggestions.`
+                        : 'Connect Codex to unlock the request and approval flow.'}
+                    </p>
                   </div>
                 </div>
-                <div className={`flow-step ${attachedLogCount > 0 ? 'done' : activeSession ? 'current' : ''}`}>
+                <div
+                  className={`flow-step ${
+                    attachedLogCount > 0 ? 'done' : selectedProviderContract?.canRequestSuggestion ? 'current' : ''
+                  }`}
+                >
                   <span className="flow-step-index">3</span>
                   <div>
-                    <strong>Context</strong>
+                    <strong>Terminal + Context</strong>
                     <p>
                       {attachedLogCount > 0
-                        ? `${attachedLogCount} active log line(s) attached from ${agentContext?.tabTitle ?? activeSession?.name}.`
-                        : 'Capture active terminal logs for the next agent request.'}
+                        ? `${attachedLogCount} active log line(s) will be sent from ${requestContextSnapshot?.tabTitle ?? activeSession?.name}.`
+                        : activeSession
+                          ? `${activeSession.name} is active. The latest output will auto-attach when logs appear.`
+                          : 'Create or select a terminal tab to prepare active logs.'}
                     </p>
                   </div>
                 </div>
@@ -1374,16 +1430,16 @@ function App() {
 
             <article className="card workspace-flow-card" data-testid="active-log-buffer">
               <span className="label">Active Log Buffer</span>
-              <strong>{agentContext?.tabTitle ?? activeSession?.name ?? 'No Session'}</strong>
+              <strong>{requestContextSnapshot?.tabTitle ?? activeSession?.name ?? 'No Session'}</strong>
               <p>
-                The selected terminal tab should explain exactly what the next agent request will read.
+                The next request will auto-attach the latest active terminal lines. Pinning keeps the exact slice visible.
               </p>
               <div className="context-block">
-                {(agentContext?.lines ?? (terminalLogs?.entries || []).slice(-8)).map((line, index) => (
+                {(requestContextSnapshot?.lines ?? []).map((line, index) => (
                   <code key={`active-log-${index}`}>{line}</code>
                 ))}
-                {(agentContext?.lines ?? (terminalLogs?.entries || []).slice(-8)).length === 0 ? (
-                  <p>No captured lines yet. Use the active terminal toolbar action to attach context.</p>
+                {(requestContextSnapshot?.lines ?? []).length === 0 ? (
+                  <p>No active terminal lines yet. Run a command or pin the current log snapshot.</p>
                 ) : null}
               </div>
             </article>
@@ -1654,7 +1710,7 @@ function App() {
                       </div>
                       <div className="status-pill-row">
                         <span className="status-badge scopes">
-                          scopes: {connection.scopes.length > 0 ? connection.scopes.join(', ') : 'none'}
+                          scopes: {connection.requiredScopes.length > 0 ? connection.requiredScopes.join(', ') : 'none'}
                         </span>
                       </div>
                       {selectedProvider === connection.provider ? (
@@ -1675,20 +1731,20 @@ function App() {
 
             <article className="card agent-stage-card">
               <span className="label">Step 2 · Context</span>
-              <strong>{agentContext ? agentContext.tabTitle : 'No Captured Logs'}</strong>
+              <strong>{requestContextSnapshot ? requestContextSnapshot.tabTitle : 'No Active Logs Yet'}</strong>
               <p>
-                UI behavior should match backend state: captured logs unlock richer request context, missing logs keep the request lighter.
+                The request uses the active terminal by default and keeps the latest 50 lines ready for Codex.
               </p>
-              {agentContext ? (
+              {requestContextSnapshot ? (
                 <div className="context-block" data-testid="agent-context-buffer">
-                  <span className="context-meta">{agentContext.capturedAt}</span>
-                  {agentContext.lines.map((line, index) => (
-                    <code key={`${agentContext.tabId}-${index}`}>{line}</code>
+                  <span className="context-meta">{requestContextSnapshot.capturedAt}</span>
+                  {requestContextSnapshot.lines.map((line, index) => (
+                    <code key={`${requestContextSnapshot.tabId}-${index}`}>{line}</code>
                   ))}
                 </div>
               ) : (
                 <div className="context-block" data-testid="agent-context-buffer">
-                  <p>Capture active terminal logs to hand the latest output to an agent.</p>
+                  <p>Once the active terminal has output, gtum will auto-attach the latest 50 lines for the next request.</p>
                 </div>
               )}
             </article>
@@ -1697,7 +1753,7 @@ function App() {
               <span className="label">Step 3 · Request Contract</span>
               <strong>{providerRequestPreview.project}</strong>
               <p>{providerRequestPreview.terminal}</p>
-              <p>{providerRequestPreview.lines} captured line(s) prepared for provider requests.</p>
+              <p>{providerRequestPreview.lines} active log line(s) prepared for the provider request.</p>
             </article>
 
             <article className="card agent-stage-card" data-testid="execution-mode-panel">
@@ -1721,17 +1777,17 @@ function App() {
               </div>
               <p>
                 {executionMode === 'fast'
-                  ? 'Attach a compact active-log slice for quick suggestions.'
+                  ? 'Ask quickly with a shorter, lighter review path.'
                   : executionMode === 'balanced'
-                    ? 'Use the default active-log slice for normal review.'
-                  : 'Keep the fullest active-log context for deeper review.'}
+                    ? 'Use the default review path with the active terminal context.'
+                  : 'Use the fullest review path before approving the next command.'}
               </p>
             </article>
 
             <article className="card agent-stage-card" data-testid="agent-request-panel">
               <span className="label">Step 4 · Request</span>
               <strong>{selectedConnection?.displayName ?? 'No Provider Selected'}</strong>
-              <p>Submit a task request using the selected provider, project metadata, and active log buffer.</p>
+              <p>Submit a task request using the selected provider, project metadata, and the latest active terminal logs.</p>
               <label className="field-block">
                 <span className="label">Task Request</span>
                 <textarea
@@ -1743,13 +1799,13 @@ function App() {
                 />
               </label>
               <div className="terminal-actions">
-                <button onClick={() => submitAgentRequest()} disabled={!canSubmitAgentSuggestion}>
-                  Request Suggestion
+                <button onClick={() => void submitAgentRequest()} disabled={!canSubmitAgentSuggestion}>
+                  {selectedProvider === 'codex' ? 'Ask Codex' : 'Request Suggestion'}
                 </button>
               </div>
               {!selectedProviderContract?.canRequestSuggestion ? (
                 <p className="provider-selection-note">
-                  Connect the selected provider before the request step becomes active.
+                  Connect Codex before the request step becomes active.
                 </p>
               ) : null}
               {agentRequestError ? <p className="error-text">{agentRequestError}</p> : null}
@@ -1768,22 +1824,23 @@ function App() {
                     >
                       <strong>{suggestion.providerLabel}</strong>
                       <p>{suggestion.summary}</p>
-                      <code>{suggestion.command}</code>
+                      {suggestion.command ? <code>{suggestion.command}</code> : null}
                       <p>
                         {suggestion.projectLabel} • {suggestion.terminalLabel} •{' '}
                         {suggestion.attachedLogLines} log line(s)
                       </p>
-                      <p>Status: {suggestion.status}</p>
+                      <p>Status: {suggestion.status} • confidence: {suggestion.confidence}</p>
+                      {suggestion.error ? <p className="error-text">{suggestion.error}</p> : null}
                       <div className="terminal-actions">
                         <button
                           onClick={() => void approveSuggestion(suggestion, 'current-tab')}
-                          disabled={suggestion.status !== 'pending'}
+                          disabled={suggestion.status !== 'pending' || !suggestion.command || Boolean(suggestion.error)}
                         >
                           Approve In Current Tab
                         </button>
                         <button
                           onClick={() => void approveSuggestion(suggestion, 'new-tab')}
-                          disabled={suggestion.status !== 'pending'}
+                          disabled={suggestion.status !== 'pending' || !suggestion.command || Boolean(suggestion.error)}
                         >
                           Approve In New Tab
                         </button>
@@ -1791,7 +1848,7 @@ function App() {
                     </div>
                   ))
                 ) : (
-                  <p>Connect a provider and submit a task request to generate mock suggestions.</p>
+                  <p>Connect Codex and submit a task request to generate the next real command suggestion.</p>
                 )}
               </div>
             </article>
