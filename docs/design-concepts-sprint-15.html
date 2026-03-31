@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gtum Sprint 15 Design Concepts</title>
+    <style>
+      :root {
+        --paper: #f7f3ec;
+        --ink: #1e1814;
+        --muted: #665c53;
+        --line: rgba(30, 24, 20, 0.16);
+        --panel: rgba(255, 255, 255, 0.82);
+        --a: #b6572d;
+        --b: #2d6175;
+        --c: #6a7c2b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(182, 87, 45, 0.08), transparent 24%),
+          linear-gradient(180deg, #fff8ef, var(--paper));
+        color: var(--ink);
+      }
+
+      .page {
+        width: min(1400px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 32px 0 56px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 26px;
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .hero h1 {
+        font-size: clamp(32px, 6vw, 58px);
+        line-height: 0.98;
+        letter-spacing: -0.04em;
+      }
+
+      .hero p {
+        max-width: 860px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .legend {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 22px;
+      }
+
+      .legend-card,
+      .concept {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 22px;
+        backdrop-filter: blur(8px);
+      }
+
+      .legend-card {
+        padding: 16px 18px;
+      }
+
+      .legend-card strong {
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .legend-card p {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .concepts {
+        display: grid;
+        gap: 18px;
+      }
+
+      .concept {
+        padding: 20px;
+        display: grid;
+        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .concept-meta {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+      }
+
+      .concept-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        color: #fff;
+        font-weight: 700;
+      }
+
+      .concept-meta h2 {
+        font-size: 30px;
+        letter-spacing: -0.04em;
+      }
+
+      .concept-meta p {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: rgba(30, 24, 20, 0.08);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .wireframe {
+        border-radius: 20px;
+        border: 1px solid rgba(30, 24, 20, 0.12);
+        background: #fff;
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .chrome {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto auto;
+        gap: 8px;
+      }
+
+      .bar,
+      .slot,
+      .pane,
+      .stack,
+      .timeline {
+        border: 1px solid rgba(30, 24, 20, 0.12);
+        border-radius: 14px;
+        background: rgba(249, 247, 244, 0.88);
+      }
+
+      .bar,
+      .slot {
+        min-height: 44px;
+        padding: 10px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+      }
+
+      .layout-a,
+      .layout-b,
+      .layout-c {
+        min-height: 360px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .layout-a {
+        grid-template-columns: 260px minmax(0, 1fr) 280px;
+      }
+
+      .layout-b {
+        grid-template-columns: 220px minmax(0, 1.2fr) 320px;
+      }
+
+      .layout-c {
+        grid-template-columns: minmax(0, 1fr) 320px;
+      }
+
+      .rail,
+      .inspector,
+      .main,
+      .mission,
+      .support {
+        display: grid;
+        gap: 10px;
+      }
+
+      .rail,
+      .inspector,
+      .timeline {
+        padding: 12px;
+      }
+
+      .rail-label,
+      .pane-label {
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+      }
+
+      .pane {
+        padding: 12px;
+        min-height: 110px;
+      }
+
+      .pane.tall {
+        min-height: 220px;
+      }
+
+      .split {
+        display: grid;
+        gap: 10px;
+      }
+
+      .split.equal {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .split.terminal-heavy {
+        grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+      }
+
+      .stack {
+        padding: 12px;
+        min-height: 72px;
+      }
+
+      .timeline {
+        min-height: 360px;
+      }
+
+      .concept-a .badge { background: var(--a); }
+      .concept-b .badge { background: var(--b); }
+      .concept-c .badge { background: var(--c); }
+
+      .concept-a .wireframe {
+        box-shadow: inset 0 0 0 1px rgba(182, 87, 45, 0.12);
+      }
+
+      .concept-b .wireframe {
+        box-shadow: inset 0 0 0 1px rgba(45, 97, 117, 0.12);
+      }
+
+      .concept-c .wireframe {
+        box-shadow: inset 0 0 0 1px rgba(106, 124, 43, 0.14);
+      }
+
+      @media (max-width: 1100px) {
+        .legend,
+        .concept {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <span class="eyebrow">gtum Sprint 15 Design Drafts</span>
+        <h1>이해 가능한 화면 구조를 먼저 고르는 단계</h1>
+        <p>
+          현재 UI는 기능은 많지만 무엇을 먼저 보고 어떤 흐름으로 움직여야 하는지가 약합니다.
+          아래 시안은 같은 기능을 서로 다른 서사와 정보 계층으로 재배치한 안입니다.
+        </p>
+      </section>
+
+      <section class="legend">
+        <article class="legend-card">
+          <strong>문제 1</strong>
+          <p>첫 액션보다 상태 카드가 먼저 읽힙니다.</p>
+        </article>
+        <article class="legend-card">
+          <strong>문제 2</strong>
+          <p>`project / code / terminal / agent / debug` 우선순위가 흐립니다.</p>
+        </article>
+        <article class="legend-card">
+          <strong>문제 3</strong>
+          <p>요청과 승인이 무엇을 근거로 이뤄지는지 서사가 약합니다.</p>
+        </article>
+        <article class="legend-card">
+          <strong>선택 기준</strong>
+          <p>`안정적 구현`, `터미널 중심`, `이해 가능성` 중 무엇을 최우선으로 둘지 고릅니다.</p>
+        </article>
+        <article class="legend-card">
+          <strong>권장안</strong>
+          <p>`A. Editor Spine`을 기본으로 하고, `C`의 상단 단계 바를 얹는 혼합형이 가장 현실적입니다.</p>
+        </article>
+      </section>
+
+      <section class="concepts">
+        <article class="concept concept-a">
+          <div class="concept-meta">
+            <div class="concept-title">
+              <span class="badge">A</span>
+              <h2>Editor Spine</h2>
+            </div>
+            <p>가장 균형형입니다. 코드와 터미널을 중앙의 동급 surface로 두고, 오른쪽은 요청과 승인만 맡습니다.</p>
+            <div class="chips">
+              <span class="chip">가장 안전한 구현</span>
+              <span class="chip">VS Code 친화적</span>
+              <span class="chip">editor-like 확장 쉬움</span>
+            </div>
+            <p><strong>좋은 경우:</strong> 코드 읽기, 테스트 확인, 승인 전 검토를 모두 중요하게 볼 때.</p>
+          </div>
+          <div class="wireframe">
+            <div class="chrome">
+              <div class="bar">Project / Path / Current Task</div>
+              <div class="slot">Provider</div>
+              <div class="slot">Mode</div>
+              <div class="slot">Step 3/6</div>
+            </div>
+            <div class="layout-a">
+              <div class="rail">
+                <div class="pane-label">Project Rail</div>
+                <div class="stack">Open Folder / Recent</div>
+                <div class="stack">Repository Summary</div>
+                <div class="pane tall">File Tree</div>
+              </div>
+              <div class="main">
+                <div class="split equal">
+                  <div class="pane tall">
+                    <div class="pane-label">Code Surface</div>
+                  </div>
+                  <div class="pane tall">
+                    <div class="pane-label">Terminal + Test Output</div>
+                  </div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Trace / Problems / Task History</div>
+                </div>
+              </div>
+              <div class="inspector">
+                <div class="pane">
+                  <div class="pane-label">Request Context</div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Ask / Approve</div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Suggestions</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="concept concept-b">
+          <div class="concept-meta">
+            <div class="concept-title">
+              <span class="badge">B</span>
+              <h2>Operator Deck</h2>
+            </div>
+            <p>터미널과 실행 상태를 가장 크게 다룹니다. 코드는 디버깅 근거로 붙고, agent rail은 review queue처럼 읽힙니다.</p>
+            <div class="chips">
+              <span class="chip">cmux에 가까움</span>
+              <span class="chip">log-driven workflow</span>
+              <span class="chip">빠른 디버깅</span>
+            </div>
+            <p><strong>좋은 경우:</strong> 테스트, 빌드, 재실행, command review가 가장 중요한 사용 패턴일 때.</p>
+          </div>
+          <div class="wireframe">
+            <div class="chrome">
+              <div class="bar">Run Status / Last Failure / Active Command</div>
+              <div class="slot">Queue</div>
+              <div class="slot">Provider</div>
+              <div class="slot">Hotkeys</div>
+            </div>
+            <div class="layout-b">
+              <div class="rail">
+                <div class="pane-label">Project / Code Index</div>
+                <div class="stack">Open / Recent</div>
+                <div class="pane tall">Tree + Outline</div>
+              </div>
+              <div class="main">
+                <div class="split terminal-heavy">
+                  <div class="pane tall">
+                    <div class="pane-label">Code Peek / File Context</div>
+                  </div>
+                  <div class="pane tall">
+                    <div class="pane-label">Primary Terminal</div>
+                  </div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Secondary Tabs / Rerun / Diff / Log Pins</div>
+                </div>
+              </div>
+              <div class="inspector">
+                <div class="pane">
+                  <div class="pane-label">Approval Queue</div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Agent Suggestions</div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Execution History</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="concept concept-c">
+          <div class="concept-meta">
+            <div class="concept-title">
+              <span class="badge">C</span>
+              <h2>Guided Runbook</h2>
+            </div>
+            <p>한 번에 한 작업 흐름을 가장 선명하게 보여주는 구조입니다. 지금 뭘 해야 하는지와 왜 그 단계인지가 먼저 보입니다.</p>
+            <div class="chips">
+              <span class="chip">가장 이해 쉬움</span>
+              <span class="chip">onboarding 친화적</span>
+              <span class="chip">기획 흐름이 잘 보임</span>
+            </div>
+            <p><strong>좋은 경우:</strong> 새로운 사용자가 “도대체 여기서 뭘 해야 하지?”라는 느낌 없이 바로 따라와야 할 때.</p>
+          </div>
+          <div class="wireframe">
+            <div class="chrome">
+              <div class="bar">Step 1 Open → Step 2 Read → Step 3 Run → Step 4 Ask → Step 5 Approve → Step 6 Verify</div>
+              <div class="slot">Current Mission</div>
+              <div class="slot">Provider</div>
+              <div class="slot">Mode</div>
+            </div>
+            <div class="layout-c">
+              <div class="mission">
+                <div class="pane">
+                  <div class="pane-label">Current Task Narrative</div>
+                </div>
+                <div class="split equal">
+                  <div class="pane tall">
+                    <div class="pane-label">Code Surface</div>
+                  </div>
+                  <div class="pane tall">
+                    <div class="pane-label">Terminal + Active Logs</div>
+                  </div>
+                </div>
+                <div class="pane">
+                  <div class="pane-label">Next Action / One Clear CTA</div>
+                </div>
+              </div>
+              <div class="timeline">
+                <div class="pane-label">Approval Timeline / Trace</div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

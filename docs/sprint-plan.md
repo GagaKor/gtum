@@ -1708,8 +1708,8 @@ Sprint 14 initial backlog:
 
 ### 한국어
 
-다음 단계로는 `Sprint 14` 위에서 `WorkspaceStage`를 `code-stage / terminal-stage / workspace-support`로 한 번 더 나누고, symbol/range anchor, richer outline navigation, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
+다음 단계로는 먼저 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)에서 메인 화면 구조를 고르고, 그 기준으로 `Sprint 14` 위에서 `WorkspaceStage`를 `code-stage / terminal-stage / workspace-support`로 한 번 더 나누고, symbol/range anchor, richer outline navigation, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
 
 ### English
 
-The next step should be to build on `Sprint 14` by splitting `WorkspaceStage` further into `code-stage / terminal-stage / workspace-support`, then add symbol/range anchors, richer outline navigation, and stronger real Windows validation so the editor-like surface becomes a materially better code-tracing tool.
+The next step should start by choosing a main workbench direction from [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md), then build on `Sprint 14` by splitting `WorkspaceStage` further into `code-stage / terminal-stage / workspace-support`, followed by symbol/range anchors, richer outline navigation, and stronger real Windows validation so the editor-like surface becomes a materially better code-tracing tool.

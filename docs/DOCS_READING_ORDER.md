@@ -109,8 +109,9 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 ### 프론트엔드 UI/UX가 문제일 때
 
 1. `docs/frontend-design-benchmarks.md`
-2. 필요 시 `docs/ui-ux-wireframes.md`
-3. 필요 시 `docs/technical-design.md`
+2. UI 방향 자체를 골라야 하면 `docs/design-concepts-sprint-15.md`
+3. 필요 시 `docs/ui-ux-wireframes.md`
+4. 필요 시 `docs/technical-design.md`
 
 ### 구현 규칙이나 문서 흡수 기준이 문제일 때
 
@@ -192,8 +193,9 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 ### When the issue is frontend UI/UX
 
 1. `docs/frontend-design-benchmarks.md`
-2. `docs/ui-ux-wireframes.md` if needed
-3. `docs/technical-design.md` if needed
+2. `docs/design-concepts-sprint-15.md` when the screen direction itself needs to be chosen
+3. `docs/ui-ux-wireframes.md` if needed
+4. `docs/technical-design.md` if needed
 
 ### When the issue is implementation rules or doc-absorption policy
 
