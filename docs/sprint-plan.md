@@ -1732,8 +1732,8 @@ Sprint 14 initial backlog:
 
 ### 한국어
 
-다음 단계로는 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)의 정제 시안을 기준으로 `Sprint 14` 위에서 `WorkspaceStage`를 `editor-stage / agent-workbench / workspace-support` 중심으로 다시 나누고, 빈 workbench + `+` 탭 모델, terminal mode tab, richer outline navigation, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
+다음 단계로는 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)의 정제 시안을 기준으로 `Sprint 14` 위에서 `WorkspaceStage`를 `left rail / split workbench / agent workspace` 중심으로 다시 나누고, 빈 workbench + `+` 탭 모델, 상하좌우 pane split, 좌측 프로젝트 관리, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
 
 ### English
 
-The next step should use the refined baseline in [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md) to rebuild `WorkspaceStage` around `editor-stage / agent-workbench / workspace-support`, then add the empty-workbench `+` tab model, a terminal-mode tab, richer outline navigation, and stronger real Windows validation so the product feels closer to a conductor-style IDE instead of a terminal-first shell.
+The next step should use the refined baseline in [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md) to rebuild `WorkspaceStage` around a `left rail / split workbench / agent workspace`, then add the empty-workbench `+` tab model, horizontal and vertical pane splits, left-side project management, and stronger real Windows validation so the product feels closer to a conductor-style IDE instead of a terminal-first shell.

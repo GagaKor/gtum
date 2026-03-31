@@ -78,7 +78,9 @@ The current UI contains many capabilities, but the workflow is not visually clea
 
 - `VS Code`의 구조적 정보 계층, `conductor`의 에이전트 흐름, `cmux`의 탭형 터미널 강점을 함께 참고한다.
 - editor와 agent management를 메인 작업 영역으로 둔다.
-- 터미널은 기본 메인 영역이 아니라 `Code / Diff / Trace / Tests / Terminal` 같은 mode tab으로 제공한다.
+- 터미널은 하단 패널이 아니라 workbench 안의 탭 또는 pane으로 제공한다.
+- 중앙 workbench는 상하좌우 분할이 가능해야 한다.
+- 프로젝트 열기와 전환은 상단보다 좌측 rail에서 관리한다.
 - 프로젝트 열기, 코드 읽기, 에이전트 운영, 필요 시 터미널 전환 순서가 화면 구조에서 드러나야 한다.
 - 사용자가 지금 해야 할 첫 액션을 항상 쉽게 찾을 수 있어야 한다.
 - 보조 정보는 접거나 2선으로 내린다.
@@ -90,7 +92,9 @@ The current UI contains many capabilities, but the workflow is not visually clea
 
 - reference the structural hierarchy of `VS Code`, the agent workflow of `conductor`, and the tabbed-terminal strength of `cmux`
 - make the editor and agent-management surfaces the main working area
-- provide the terminal through a `Code / Diff / Trace / Tests / Terminal` style mode-tab rather than a permanently dominant pane
+- provide the terminal as a tab or pane inside the workbench rather than through a bottom panel or permanently dominant area
+- make horizontal and vertical workbench splits a first-class capability
+- move project opening and switching into the left rail instead of a top project-tab manager
 - let the structure visually express the order of project open, code reading, agent operation, and optional terminal switching
 - keep the first action easy to discover at all times
 - collapse or demote supporting information
@@ -127,49 +131,53 @@ The default workflow should follow this order:
 ### 한국어
 
 - 상단 바
-  - 현재 프로젝트 이름과 경로 요약
   - 현재 작업 요약
   - provider 상태
   - 활성 에이전트
+  - split 또는 layout 상태
 - 좌측 패널
   - activity bar
   - 접기/펼치기 가능한 side panel
+  - 프로젝트 열기와 전환
   - 파일 트리, 검색, Git, outline
 - 중앙 메인
   - 비어 있는 상태에서 시작 가능한 workbench
   - 열린 editor tabs
   - `+`로 추가하는 code / terminal / diff / preview / test 탭
+  - 상하좌우 pane 분할
 - 우측 패널
   - 에이전트 작업창
   - 작업 요청과 답변
   - task status, approval queue, handoff
-- 하단 접이식 패널
-  - 기본은 닫힘
-  - 문제, 실행결과, 작업 기록
+- 하단 패널
+  - 기본 레이아웃에서는 제거
+  - 필요한 결과는 중앙 탭 또는 우측 맥락 영역으로 보낸다
 - 구현 구조는 가능하면 `widgets/project-sidebar`, `widgets/workspace-stage`, `widgets/agent-sidebar`처럼 화면 zone과 같은 단위로 나눈다.
 
 ### English
 
 - top bar
-  - current project name and compact path
   - current task summary
   - provider state
   - active agent
+  - split or layout status
 - left panel
   - activity bar
   - collapsible side panel
+  - project opening and switching
   - file tree, search, Git, and outline
 - center main
   - an empty-capable workbench
   - open editor tabs
   - code / terminal / diff / preview / test tabs added from `+`
+  - horizontal and vertical pane splits
 - right panel
   - agent work window
   - requests and replies
   - task status, approval queue, and handoff
-- bottom collapsible panel
-  - closed by default
-  - problems, run results, and work history
+- bottom panel
+  - removed from the default layout
+  - move needed results into center tabs or right-side contextual surfaces
 - when splitting implementation structure, prefer boundaries that match these screen zones such as `widgets/project-sidebar`, `widgets/workspace-stage`, and `widgets/agent-sidebar`
 
 ## 데스크톱 기본 와이어프레임 / Desktop Primary Wireframe
@@ -178,15 +186,14 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | 프로젝트: my-app | 현재 작업: failing test 확인 | 연결: Codex | 활성 에이전트: backend  |
-+--------+---------------------+------------------------------------------+----------------------+
-| 파일   | 파일 트리            | [ 빈 워크벤치 ] [ + ]                     | 에이전트 작업창      |
-| 검색   | 검색 / 변경점 / 구조 +------------------------------------------+----------------------+
-| 변경점 |                     |     코드 탭 / 터미널 탭 / 비교 탭         | 작업 요청            |
-| 구조   |                     |     테스트 탭 / 미리보기 탭               | 답변 / 상태          |
-|        |                     |                                          | 승인 대기            |
-+--------+---------------------+------------------------------------------+----------------------+
-| 하단 drawer: 문제 | 실행 결과 | 작업 기록                                                     |
+| gtum | 현재 작업: failing test 확인 | 연결: Codex | 승인 대기: 2 | 활성 에이전트: backend      |
++--------+---------------------+----------------------+-------------------+----------------------+
+| 프로젝트| 프로젝트 목록        | auth.ts | login.test.ts | +               | 에이전트 작업창      |
+| 탐색기  | 파일 트리 / 검색     +----------------------+-------------------+----------------------+
+| 검색    | 변경점 / 구조        | ACTIVE CODE EDITOR   | TERMINAL PANE     | 작업 요청            |
+| 소스관리|                     | code + breadcrumbs   | test output       | 답변 / 상태          |
+| 구조    |                     |                      | shell prompt      | 승인 카드            |
++--------+---------------------+----------------------+-------------------+----------------------+
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -194,15 +201,14 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project: my-app | Current task: inspect failing test | Connection: Codex | Active agent: backend |
-+--------+---------------------+------------------------------------------+----------------------+
-| Files  | Tree                | [ Empty Workbench ] [ + ]                 | Agent Work Window    |
-| Search | Search / Changes /  +------------------------------------------+----------------------+
-| Changes| Outline             | Code / Terminal / Diff / Test / Preview  | Request Input        |
-| Outline|                     | tab types created from `+`               | Replies / Status     |
-|        |                     |                                          | Approval Queue       |
-+--------+---------------------+------------------------------------------+----------------------+
-| Bottom drawer: Problems | Run Results | History                                                 |
+| gtum | Current task: inspect failing test | Connection: Codex | Pending approvals: 2 | Active agent: backend |
++--------+---------------------+----------------------+-------------------+----------------------+
+| Proj.  | Project List        | auth.ts | login.test.ts | +               | Agent Work Window    |
+| Files  | Tree / Search       +----------------------+-------------------+----------------------+
+| Search | Changes / Outline   | ACTIVE CODE EDITOR   | TERMINAL PANE     | Request Input        |
+| Source |                     | code + breadcrumbs   | test output       | Replies / Status     |
+| Outline|                     |                      | shell prompt      | Approval Cards       |
++--------+---------------------+----------------------+-------------------+----------------------+
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -212,14 +218,14 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | 프로젝트: 없음 | 현재 작업: 없음 | 연결: 미연결 | 활성 에이전트: 없음                        |
+| gtum | 현재 작업: 없음 | 연결: 미연결 | 승인 대기: 0 | 활성 에이전트: 없음                    |
 +--------+---------------------+------------------------------------------+----------------------+
-| 탐색기 | 최근 프로젝트        |              빈 작업 공간                 | 에이전트 작업실      |
-| 검색   | - my-app            |   프로젝트를 열고 + 버튼으로 탭을 추가   | 연결 후 요청 가능    |
-| 소스관리| - docs-site        |   [ + 코드 탭 ] [ + 터미널 탭 ]          | 응답 없음            |
-| 구조   |                     |                                          | 승인 없음            |
+| 프로젝트| 최근 프로젝트        |              빈 작업 공간                 | 에이전트 작업실      |
+| 탐색기  | - my-app            |   프로젝트를 선택하고 + 버튼으로 탭 추가 | 연결 후 요청 가능    |
+| 검색    | - docs-site         |   [ + 코드 탭 ] [ + 터미널 탭 ]          | 응답 없음            |
+| 소스관리| 파일 트리 / 검색     |   [ 좌우 분할 ] [ 상하 분할 ]             | 승인 없음            |
+| 구조    |                     |                                          |                      |
 +--------+---------------------+------------------------------------------+----------------------+
-| 결과 서랍: 실행결과 | 작업흐름 | 터미널 세션 | 테스트 | Telegram | Runtime / Debug          |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -227,14 +233,14 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project: none | Current task: none | Connection: disconnected | Active agent: none      |
+| gtum | Current task: none | Connection: disconnected | Pending approvals: 0 | Active agent: none   |
 +--------+---------------------+------------------------------------------+----------------------+
-| Explore| Recent Projects     |              Empty Workbench              | Agent Workspace      |
-| Search | - my-app            |   Open a project and add tabs from +      | Requests after       |
-| Source | - docs-site         |   [ + Code Tab ] [ + Terminal Tab ]       | connection           |
-| Outline|                     |                                          | No replies yet       |
+| Proj.  | Recent Projects     |              Empty Workbench              | Agent Workspace      |
+| Files  | - my-app            |   Select a project and add tabs from +    | Requests after       |
+| Search | - docs-site         |   [ + Code Tab ] [ + Terminal Tab ]       | connection           |
+| Source | Tree / Search       |   [ Split Left/Right ] [ Split Up/Down ]  | No replies yet       |
+| Outline|                     |                                          |                      |
 +--------+---------------------+------------------------------------------+----------------------+
-| Results Drawer: Runs | Trace | Terminal Sessions | Tests | Telegram | Runtime / Debug        |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -260,24 +266,28 @@ The default workflow should follow this order:
 
 - `Open Project`를 네이티브 폴더 선택기로 바꾼다.
 - 첫 화면의 주 CTA를 `Open Folder` 하나로 단순화한다.
-- 터미널을 가장 큰 영역으로 확실하게 올린다.
-- Telegram, runtime/debug는 기본 접힘 상태로 둔다.
+- 프로젝트 열기와 전환을 좌측 rail로 옮긴다.
+- 중앙 workbench에 pane split을 넣는다.
+- 터미널은 하단이 아니라 workbench pane 탭으로 연다.
+- Telegram, runtime/debug는 기본 구조에서 빼거나 overlay 수준으로 내린다.
 - provider 카드에 `mock`, `prototype`, `real` 상태를 분명하게 표시한다.
 - callback URL과 내부 상태 문자열을 기본 화면에서 숨긴다.
-- 어떤 탭의 로그가 에이전트 요청에 연결되는지 더 분명하게 보이게 한다.
+- 어떤 pane과 어떤 탭의 로그가 에이전트 요청에 연결되는지 더 분명하게 보이게 한다.
 - 큰 카드 묶음을 줄이고, `VS Code` 스타일의 패널 구조와 상태바 감각을 강화한다.
 - 에이전트 요청과 승인 흐름은 `conductor`처럼 단계가 읽히게 만든다.
-- 탭 전환과 터미널 집중도는 `cmux`처럼 가볍고 빠르게 유지한다.
+- 탭 전환, pane 분할, 터미널 집중도는 `cmux`처럼 가볍고 빠르게 유지한다.
 
 ### English
 
 - replace `Open Project` with a native folder picker
 - simplify the primary CTA on the initial screen to `Open Folder`
-- make the terminal the clearly largest surface
-- keep Telegram and runtime/debug collapsed by default
+- move project opening and switching into the left rail
+- add pane splits to the center workbench
+- open terminal work as a workbench pane tab rather than through a bottom area
+- remove Telegram and runtime/debug from the default structure or demote them to overlay-level surfaces
 - mark provider cards clearly with `mock`, `prototype`, and `real`
 - hide callback URLs and internal state strings from the default screen
-- make it clearer which tab log is attached to the agent request
+- make it clearer which pane and tab log is attached to the agent request
 
 ## 구현 참고 / Implementation Notes
 
