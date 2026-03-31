@@ -118,9 +118,9 @@
       .pill,
       .mini,
       .tab {
-        min-height: 44px;
-        padding: 10px 12px;
-        font-size: 12px;
+        min-height: 34px;
+        padding: 6px 10px;
+        font-size: 11px;
         font-weight: 800;
         color: var(--mist);
       }
@@ -228,6 +228,10 @@
           <strong>오른쪽</strong>
           <p>상태판이 아니라 `에이전트 작업창`입니다. 요청, 답변, 상태, 승인 항목이 모두 있습니다.</p>
         </article>
+        <article class="note">
+          <strong>탭 모양</strong>
+          <p>탭은 큰 버튼이 아니라 `VS Code`처럼 낮고 가로로 긴 형태로 보여야 합니다.</p>
+        </article>
       </section>
 
       <section class="frame">
@@ -259,8 +263,9 @@
           <div class="center">
             <div class="tabs">
               <div class="tab active">auth.ts</div>
-              <div class="tab">terminal #1</div>
+              <div class="tab">term #1</div>
               <div class="tab">diff</div>
+              <div class="tab">tests</div>
               <div class="tab">+</div>
             </div>
             <div class="split">
@@ -296,6 +301,10 @@
         <article class="callout">
           <h3>탭 이동</h3>
           <p>코드 탭, 터미널 탭, diff 탭은 pane 간 이동할 수 있어야 합니다. pane를 닫으면 남은 pane이 공간을 회수합니다.</p>
+        </article>
+        <article class="callout">
+          <h3>Diff / Test / Preview 의미</h3>
+          <p>`Diff`는 변경 코드 비교, `Test`는 구조화된 테스트 결과, `Preview`는 Markdown이나 렌더링된 결과 화면 미리보기입니다.</p>
         </article>
         <article class="callout">
           <h3>프로젝트 관리는 왼쪽</h3>

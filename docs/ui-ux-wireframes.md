@@ -145,6 +145,7 @@ The default workflow should follow this order:
   - 열린 editor tabs
   - `+`로 추가하는 code / terminal / diff / preview / test 탭
   - 상하좌우 pane 분할
+  - 낮고 가로로 긴 compact tab UI
 - 우측 패널
   - 에이전트 작업창
   - 작업 요청과 답변
@@ -171,6 +172,7 @@ The default workflow should follow this order:
   - open editor tabs
   - code / terminal / diff / preview / test tabs added from `+`
   - horizontal and vertical pane splits
+  - compact horizontal tabs instead of large mode buttons
 - right panel
   - agent work window
   - requests and replies

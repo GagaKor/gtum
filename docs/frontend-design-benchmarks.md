@@ -107,6 +107,10 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 프로젝트 열기와 전환 같은 project management는 상단이 아니라 좌측 rail에서 이뤄져야 한다.
 - 중앙 workbench는 처음에 비어 있어야 하며, `+` 버튼으로 `코드`, `터미널`, `비교`, `테스트`, `미리보기` 같은 탭을 연다고 이해돼야 한다.
 - 중앙 workbench는 `VS Code`처럼 상하좌우 pane 분할을 지원해야 한다.
+- workbench 탭은 큰 CTA 버튼이 아니라 `VS Code`처럼 낮고 가로로 긴 compact tab 형태여야 한다.
+- `비교` 탭은 변경 코드 비교용이다.
+- `테스트` 탭은 raw shell 대신 구조화된 테스트 결과와 실패 목록을 보여주는 탭이다.
+- `미리보기` 탭은 Markdown, HTML, 렌더링 결과 같은 preview surface다.
 - agent board는 실제로 일을 주고 답변을 받고 승인하는 `에이전트 작업창`처럼 읽혀야 한다.
 - terminal은 상단 고정 모드 버튼이 아니라 `+`로 여는 workbench tab 타입이어야 하며, 기본 화면을 점유하는 주인공은 아니어야 한다.
 - 하단 패널은 기본 구조에서 제거하고, 필요 정보는 pane 또는 overlay로 푼다.
@@ -128,6 +132,10 @@ For the current active slice, the frontend should follow these rules:
 - project opening and switching should live in the left rail rather than in a top project-tab strip
 - the center workbench should begin empty and make it obvious that `Code`, `Terminal`, `Diff`, `Test`, and `Preview` are tab types created from a `+` action
 - the center workbench should support `VS Code`-style horizontal and vertical pane splits
+- workbench tabs should read as compact horizontal tabs rather than large CTA buttons
+- the `Diff` tab is for changed-code comparison
+- the `Test` tab is for structured test results and failing-test focus views rather than raw shell output
+- the `Preview` tab is for rendered surfaces such as Markdown, HTML, or generated output previews
 - the agent board should read like an `agent work window` where users assign work, read replies, and approve actions
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - remove the default bottom panel from the primary layout and solve needed details through panes or overlays
