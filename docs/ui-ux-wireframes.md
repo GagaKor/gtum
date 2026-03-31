@@ -87,6 +87,14 @@ The current UI contains many capabilities, but the workflow is not visually clea
 - `mock`, `prototype`, `real`은 상태 뱃지로 명확히 구분하되, mock 정보가 화면 전체를 점유하지 않게 한다.
 - 디버그 정보와 내부 callback 값은 기본 화면이 아니라 보조 영역에 둔다.
 - 카드 나열형 대시보드보다 패널 기반 워크스페이스를 우선한다.
+- 와이어프레임 단계에서도 실제 파일명, 실제 탭 라벨, 실제 로그, 실제 요청/응답처럼 `작업 밀도`가 보이게 그린다.
+- editor, terminal, agent panel은 동일한 박스 반복처럼 보이지 않도록 명도와 재질 차이를 둔다.
+- wireframe이 실제 UI로 넘어갈 때는 설명 박스보다 `실제 파일명`, `line number`, `prompt`, `approval 근거` 같은 데이터를 먼저 넣는다.
+- 탭, split gutter, active line, approval action처럼 사용성에 직접 영향을 주는 요소부터 현실적인 크기와 상태 표현을 잡는다.
+- wireframe 단계에서도 큰 설명 박스만 두지 않고, 실제 파일명, 코드 줄, 로그, agent reply처럼 보이는 현실적인 surface를 함께 설계한다.
+- 전체 비주얼은 지나치게 차갑고 generic한 SaaS 톤보다, 촉감이 있는 desktop productivity tool 쪽을 우선한다.
+- wireframe 단계에서도 설명용 빈 박스보다 실제 파일명, 코드 줄, 테스트 출력, agent reply 같은 현실적인 예시를 넣는다.
+- 좌측 rail, side panel, 중앙 editor, terminal pane, 우측 agent panel은 같은 박스 스타일 반복이 아니라 각자 다른 밀도와 재질감을 가져야 한다.
 
 ### English
 
@@ -101,6 +109,10 @@ The current UI contains many capabilities, but the workflow is not visually clea
 - distinguish `mock`, `prototype`, and `real` with explicit badges without letting mock states dominate the screen
 - keep debug information and raw callback values out of the default primary UI
 - prefer a panel-based workspace over a card-dashboard layout
+- even wireframes should show realistic work density through real tab labels, file names, logs, and request/reply states
+- do not make the editor, terminal, and agent panel read like repeated identical boxes
+- when moving from wireframe to visual mock, replace descriptive boxes with realistic file names, line numbers, prompts, and approval evidence
+- prioritize realistic sizing and state treatment for tabs, split gutters, active lines, and approval actions before adding decorative polish
 
 ## 핵심 사용자 흐름 / Core User Flow
 
@@ -140,20 +152,25 @@ The default workflow should follow this order:
   - 접기/펼치기 가능한 side panel
   - 프로젝트 열기와 전환
   - 파일 트리, 검색, Git, outline
+  - `Explorer`, `Outline`, `Source Control`은 섹션 단위로 각각 접고 펼칠 수 있어야 함
 - 중앙 메인
   - 비어 있는 상태에서 시작 가능한 workbench
   - 열린 editor tabs
   - `+`로 추가하는 code / terminal / diff / preview / test 탭
   - 상하좌우 pane 분할
   - 낮고 가로로 긴 compact tab UI
+  - box label만 있는 placeholder가 아니라 실제 editor와 terminal 디테일을 보여주는 mock
 - 우측 패널
   - 에이전트 작업창
   - 작업 요청과 답변
   - task status, approval queue, handoff
+  - 분리된 카드 나열이 아니라 `mission summary -> thread -> approval -> composer`가 이어지는 단일 surface
+  - approval은 기본적으로 `승인 대기 n`과 compact option rows로 보이고, 선택된 항목만 상세 card가 펼쳐진다
 - 하단 패널
   - 기본 레이아웃에서는 제거
   - 필요한 결과는 중앙 탭 또는 우측 맥락 영역으로 보낸다
 - 구현 구조는 가능하면 `widgets/project-sidebar`, `widgets/workspace-stage`, `widgets/agent-sidebar`처럼 화면 zone과 같은 단위로 나눈다.
+- visual mock은 `Light`와 `Dark`를 섞은 단일 화면이 아니라, 각각 독립된 theme version으로 보여주는 것을 우선한다.
 
 ### English
 

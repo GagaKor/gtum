@@ -94,6 +94,50 @@ Frontend UI work must explicitly reference these three products:
 
 The goal is not visual copying. The goal is to extract the right product qualities and combine them inside `gtum`.
 
+## 최근 디자인 흐름 번역 / Current Trend Translation
+
+### 한국어
+
+최근 `Figma`와 `Canva`가 보여주는 생산성 도구 흐름은 아래처럼 번역한다.
+
+- `AI`는 별도 모드나 장식이 아니라 실제 work surface 안에 자연스럽게 섞인다.
+- 정보는 촘촘하게 담되, 화면을 동일한 카드로 잘게 쪼개지 않는다.
+- 깊이감은 필요하지만 과장된 glassmorphism보다 얕은 그림자, 낮은 radius, 약한 질감 정도로 제한한다.
+- 실제 파일명, 실제 상태, 실제 로그, 실제 approval 근거를 보여줘서 설명 박스보다 앱처럼 읽히게 한다.
+- 시각적 포인트는 tab state, active line, split gutter, approval action처럼 작업성이 직접 걸린 곳에만 쓴다.
+
+### English
+
+Translate current `Figma` and `Canva` productivity patterns into `gtum` as follows:
+
+- keep `AI` inside the real work surface rather than isolating it as a decorative mode
+- keep density high without fragmenting the screen into many same-priority cards
+- use depth sparingly through soft shadows, low radii, and subtle texture instead of exaggerated glass effects
+- prefer real file names, live state, logs, and approval evidence over explanatory placeholder boxes
+- spend visual emphasis on tab state, active lines, split gutters, and approval actions where usability depends on it
+
+## 최근 트렌드 흡수 기준 / Trend Absorption Rules
+
+### 한국어
+
+최근 `Figma`와 `Canva` 쪽 흐름을 해석하면 아래 기준을 반드시 반영해야 한다.
+
+- AI로 초안을 빠르게 만들수록 최종 UI는 더 높은 craft와 더 나은 handoff 감각을 보여야 한다.
+- 지나치게 매끈한 SaaS 카드 대시보드보다 `thought trace`, `presence`, `human-in-the-loop`가 느껴지는 surface가 더 중요하다.
+- 따라서 mock과 구현 모두 `설명 박스`보다 `실제 파일명`, `실제 로그`, `실제 대화`, `실제 승인 카드`, `실제 상태`를 보여주는 방향으로 간다.
+- 질감은 필요하지만 과한 장식은 금지한다. `IDE readability`와 `task clarity`를 해치면 안 된다.
+- 큰 radius와 균일한 카드 반복보다 `activity rail / side panel / editor / terminal / agent workspace`의 역할 차이가 시각적으로 분리돼야 한다.
+
+### English
+
+Recent `Figma` and `Canva` signals should be interpreted like this:
+
+- as AI accelerates ideation, the final UI should show stronger craft and handoff quality
+- instead of over-polished SaaS dashboards, surfaces should preserve thought trace, presence, and human-in-the-loop clarity
+- both mocks and implementation should prefer real file names, logs, replies, approval cards, and states over empty explanation boxes
+- texture is allowed, but not at the expense of IDE readability or task clarity
+- instead of repeating identical rounded cards, the activity rail, side panel, editor, terminal, and agent workspace should feel like distinct roles
+
 ## 현재 구현 슬라이스 기준 / Current Delivery Slice
 
 ### 한국어
@@ -104,6 +148,7 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - code viewer는 사이드바가 아니라 메인 영역의 기본 surface여야 한다.
 - agent board는 단순 채팅창이 아니라 roster, task status, plan, approval queue를 보여주는 메인 surface여야 한다.
 - 좌측은 `VS Code`처럼 activity bar와 side panel로 나뉘고, 접기/펼치기와 폭 조절이 가능해야 한다.
+- side panel 내부의 `Explorer`, `Outline`, `Source Control`은 각각 독립적인 collapsible section이어야 한다.
 - 프로젝트 열기와 전환 같은 project management는 상단이 아니라 좌측 rail에서 이뤄져야 한다.
 - 중앙 workbench는 처음에 비어 있어야 하며, `+` 버튼으로 `코드`, `터미널`, `비교`, `테스트`, `미리보기` 같은 탭을 연다고 이해돼야 한다.
 - 중앙 workbench는 `VS Code`처럼 상하좌우 pane 분할을 지원해야 한다.
@@ -111,7 +156,13 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - `비교` 탭은 변경 코드 비교용이다.
 - `테스트` 탭은 raw shell 대신 구조화된 테스트 결과와 실패 목록을 보여주는 탭이다.
 - `미리보기` 탭은 Markdown, HTML, 렌더링 결과 같은 preview surface다.
+- 중앙 시안은 단순 placeholder 박스가 아니라 실제 editor, terminal, diff, approval detail이 들어간 현실적인 밀도로 보여야 한다.
+- editor는 breadcrumbs, line number, active line, syntax color, minimap 같은 최소한의 읽기 디테일을 가져야 한다.
+- terminal은 prompt, command, success/error output, running indicator가 보여야 한다.
 - agent board는 실제로 일을 주고 답변을 받고 승인하는 `에이전트 작업창`처럼 읽혀야 한다.
+- 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> approval -> composer`가 이어지는 하나의 작업 surface처럼 보여야 한다.
+- approval UI는 항상 큰 카드로 열려 있지 않고, 기본은 `승인 대기 n` 형태의 compact summary row여야 한다.
+- approval queue는 여러 후보를 compact row 목록으로 보여주고, 선택된 항목만 상세 승인 카드와 실행 버튼이 펼쳐지는 구조가 맞다.
 - terminal은 상단 고정 모드 버튼이 아니라 `+`로 여는 workbench tab 타입이어야 하며, 기본 화면을 점유하는 주인공은 아니어야 한다.
 - 하단 패널은 기본 구조에서 제거하고, 필요 정보는 pane 또는 overlay로 푼다.
 - approval rail은 editor와 agent board를 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
@@ -120,6 +171,12 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - binary와 large-file fallback은 에러처럼 보이지 않고 bounded preview mode처럼 읽혀야 한다.
 - task history, Telegram, runtime/debug는 2선 영역에 둔다.
 - 구조를 `FSD`로 나누더라도 기준 단위는 `project rail / workspace stage / agent rail` 같은 workbench zone이어야 한다.
+- 초기 mock이라도 빈 설명 박스보다 실제 파일명, 코드 줄, 테스트 출력, agent reply가 보이는 realistic surface를 우선한다.
+- 전체 톤은 차갑고 generic한 SaaS 카드보다, 약간의 촉감과 layer가 있는 desktop productivity tool 쪽이 맞다.
+- 좌측 rail, side panel, editor pane, terminal pane, agent panel은 모두 같은 박스 스타일을 재사용하지 않는다.
+- 탭, pill, badge는 작고 조밀해야 하며, 큰 둥근 CTA 블록처럼 보이면 안 된다.
+- 한 mock 안에서 light/dark surface를 섞지 않는다. `Light version`, `Dark version`은 각각 완결된 token 체계를 가져야 한다.
+- design preview와 구현 기본 레이아웃은 common laptop width에서 주요 영역이 잘리지 않아야 하며, 필요 시 responsive reflow나 panel drop을 우선한다.
 
 ### English
 
@@ -144,6 +201,34 @@ For the current active slice, the frontend should follow these rules:
 - line-anchor state and restore state should stay legible to users rather than hidden as internal implementation
 - binary and large-file fallback should read like bounded preview modes, not generic errors
 - task history, Telegram, and runtime/debug belong in secondary zones
+
+## 최근 디자인 트렌드 흡수 기준 / Current Design Trend Guardrails
+
+### 한국어
+
+- `AI product`처럼 보여야 한다는 이유로 generic neon gradient나 과한 미래지향 장식을 붙이지 않는다.
+- 추상 설명 카드보다 `실제 파일명`, `실제 명령`, `실제 응답`, `실제 승인 항목`을 보여주는 쪽을 우선한다.
+- 큰 둥근 박스를 여러 개 나열하는 대신, 더 얇고 밀도 높은 desktop surface를 만든다.
+- editor, terminal, agent panel은 같은 박스 재질을 공유하지 말고 역할에 따라 명도와 질감을 분리한다.
+- 탭은 버튼처럼 보이면 안 되고, `VS Code`처럼 낮고 가로로 긴 compact tab이어야 한다.
+- radius는 과하게 키우지 않고, workbench 계열은 대체로 `10-18px` 범위에서 통제한다.
+- palette는 `따뜻한 중성 배경 + 제한된 accent + 명확한 상태색`을 기본으로 하고, purple-heavy SaaS 톤을 피한다.
+- mock이나 preview 단계에서도 line number, breadcrumb, stdout/stderr, approval action처럼 실제 정보 밀도를 보여준다.
+- 왼쪽 rail과 side panel은 `실제 tree row`와 `section header`를 보여줘야 하며, 설명용 빈 박스로 남으면 안 된다.
+- 오른쪽 agent workspace는 단순 카드 스택이 아니라 `대화 thread + approval + composer`가 함께 보이는 구조여야 한다.
+
+### English
+
+- do not default to generic neon gradients or overly futuristic ornament just because the product uses AI
+- prefer real file names, commands, replies, and approval items over abstract explanatory cards
+- replace large rounded-box dashboards with denser desktop-like surfaces
+- do not make editor, terminal, and agent panels feel like the same material; separate them through tone and texture
+- tabs should read as low-profile horizontal tabs rather than CTA buttons
+- keep radius values restrained, usually within a `10-18px` range for workbench surfaces
+- use a `warm neutral base + restrained accent + clear status colors` palette instead of a purple-heavy SaaS look
+- even in mock form, show realistic density such as line numbers, breadcrumbs, stdout/stderr, and approval actions
+- the left rail and side panel should show real tree rows and section headers, not empty placeholder blocks
+- the right agent workspace should combine a conversation thread, approvals, and a composer rather than becoming another passive card stack
 
 ## 제품별로 배워야 할 점 / What To Borrow From Each Product
 
@@ -172,6 +257,30 @@ For the current active slice, the frontend should follow these rules:
 - 로그와 실행 상태를 읽는 경험이 끊기지 않는 점
 - 터미널을 선택했을 때는 강력하지만, 기본 화면을 terminal-first로 몰아가지 않는 기준
 - 터미널 세션과 로그 경로를 끊지 않고 되짚어볼 수 있는 흐름
+
+## 최근 디자인 트렌드 해석 / Current Trend Interpretation
+
+### 한국어
+
+- `Figma` 계열 흐름에서 배울 점은 `AI를 쓰더라도 결과물의 craft는 더 높아져야 한다`는 점이다.
+- `Canva` 계열 흐름에서 배울 점은 `지나치게 완벽한 광택보다 인간적인 흔적과 촉감이 더 설득력 있다`는 점이다.
+- 그래서 `gtum`은 유행성 gradient 쇼케이스가 아니라, 실제 업무 밀도가 느껴지는 workbench여야 한다.
+- trend를 적용할 때도 아래 기준을 지킨다.
+  - 실사용 탭 라벨을 쓴다.
+  - 실제 코드와 출력 구조를 보여준다.
+  - 영역마다 재질감과 밀도를 다르게 둔다.
+  - 거대한 카드 대시보드로 회귀하지 않는다.
+
+### English
+
+- one useful signal from recent `Figma` directions is that AI-assisted workflows still raise the bar for craft
+- one useful signal from recent `Canva` directions is that human texture and visible thought traces are more persuasive than sterile polish
+- as a result, `gtum` should feel like a dense real workbench rather than a decorative trend showcase
+- trend application still follows these rules
+  - use realistic tab labels
+  - show real code and output structures
+  - differentiate each zone through density and material
+  - do not regress into a large-card dashboard
 
 ### English
 
@@ -222,6 +331,7 @@ For the current active slice, the frontend should follow these rules:
 - 사용자는 현재 상태뿐 아니라 이미 밟은 승인, 실패, 재시도 경로를 한눈에 복기할 수 있어야 한다.
 - task history와 실행 이력은 단순 로그가 아니라 문제 분석이 가능한 timeline 또는 trace 형태로 읽혀야 한다.
 - 에이전트가 안정적으로 수정하기 어렵다면 React 추상화보다 더 단순한 `TypeScript` 중심 구조를 우선할 수 있다.
+- 큰 네모 placeholder가 화면을 설명하는 수준에서 멈추면 안 되고, 실제 작업 surface처럼 보여야 한다.
 
 ### English
 

@@ -3,198 +3,1154 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>gtum Split Mission Control</title>
+    <title>gtum Mission Control Themes</title>
     <style>
       :root {
-        --paper: #f3e6d4;
-        --ink: #171412;
-        --mist: #6e615a;
-        --ember: #c95c27;
-        --line: rgba(23, 20, 18, 0.14);
-        --panel: rgba(255, 251, 244, 0.9);
+        --page-bg: #f4ecdf;
+        --page-ink: #171717;
+        --page-muted: #6d645b;
+        --page-line: rgba(23, 23, 23, 0.1);
+        --page-card: rgba(255, 251, 245, 0.8);
+        --page-accent: #d0612b;
       }
 
-      * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
 
       body {
         margin: 0;
-        color: var(--ink);
+        min-height: 100vh;
+        color: var(--page-ink);
         font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
         background:
-          radial-gradient(circle at top left, rgba(201, 92, 39, 0.1), transparent 24%),
-          linear-gradient(180deg, #fff8ef, var(--paper));
+          radial-gradient(circle at top left, rgba(208, 97, 43, 0.12), transparent 24%),
+          radial-gradient(circle at top right, rgba(78, 119, 104, 0.08), transparent 20%),
+          linear-gradient(180deg, #faf5ee 0%, var(--page-bg) 54%, #ebe1d2 100%);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.22;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+        background-size: 18px 18px;
+        mask-image: radial-gradient(circle at center, black 26%, transparent 88%);
+      }
+
+      h1,
+      h2,
+      h3,
+      h4,
+      p {
+        margin: 0;
       }
 
       .page {
-        width: min(1460px, calc(100vw - 40px));
+        width: min(1580px, calc(100vw - 32px));
         margin: 0 auto;
-        padding: 28px 0 52px;
+        padding: 24px 0 42px;
       }
-
-      h1, h2, h3, p { margin: 0; }
 
       .hero {
         display: grid;
         gap: 12px;
-        margin-bottom: 22px;
+        margin-bottom: 18px;
       }
 
       .eyebrow {
-        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--page-muted);
+        font-size: 11px;
         font-weight: 800;
-        letter-spacing: 0.14em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
-        color: var(--mist);
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 24px;
+        height: 1px;
+        background: rgba(109, 100, 91, 0.5);
       }
 
       .hero h1 {
-        font-size: clamp(34px, 6vw, 58px);
+        max-width: 1020px;
+        font-size: clamp(30px, 4vw, 54px);
         line-height: 0.96;
-        letter-spacing: -0.04em;
+        letter-spacing: -0.05em;
       }
 
       .hero p {
-        max-width: 980px;
-        color: var(--mist);
-        line-height: 1.64;
+        max-width: 1050px;
+        color: var(--page-muted);
+        font-size: 15px;
+        line-height: 1.66;
       }
 
-      .notes,
-      .callouts {
+      .meta-grid,
+      .rules {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 12px;
       }
 
-      .note,
-      .callout,
-      .frame {
-        border: 1px solid var(--line);
+      .meta-card,
+      .rule-card,
+      .theme-wrap {
+        border: 1px solid rgba(255, 255, 255, 0.74);
         border-radius: 22px;
-        background: var(--panel);
-        backdrop-filter: blur(10px);
+        background: var(--page-card);
+        backdrop-filter: blur(18px);
+        box-shadow: 0 18px 44px rgba(47, 36, 24, 0.09);
       }
 
-      .note,
-      .callout {
-        padding: 16px 18px;
+      .meta-card,
+      .rule-card {
+        padding: 14px 16px;
       }
 
-      .note strong,
-      .callout h3 {
+      .meta-card strong,
+      .rule-card strong {
         display: block;
         margin-bottom: 6px;
+        font-size: 13px;
       }
 
-      .note p,
-      .callout p {
-        color: var(--mist);
-        line-height: 1.55;
-        font-size: 14px;
+      .meta-card p,
+      .rule-card p {
+        color: var(--page-muted);
+        font-size: 13px;
+        line-height: 1.58;
       }
 
-      .frame {
-        margin: 18px 0;
-        padding: 18px;
+      .themes {
         display: grid;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .theme-wrap {
+        padding: 16px;
+      }
+
+      .theme-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
         gap: 14px;
+        margin-bottom: 12px;
       }
 
-      .header {
+      .theme-copy {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) repeat(4, auto);
-        gap: 8px;
+        gap: 4px;
       }
 
-      .pill,
-      .mini,
-      .pane,
-      .tab {
-        border: 1px solid rgba(23, 20, 18, 0.12);
-        border-radius: 14px;
-        background: rgba(249, 247, 244, 0.95);
+      .theme-copy h2 {
+        font-size: 16px;
       }
 
-      .pill,
-      .mini,
-      .tab {
-        min-height: 34px;
-        padding: 6px 10px;
+      .theme-copy p {
+        color: var(--page-muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .theme-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.68);
+        border: 1px solid var(--page-line);
+        color: var(--page-muted);
         font-size: 11px;
         font-weight: 800;
-        color: var(--mist);
       }
 
-      .layout {
-        display: grid;
-        grid-template-columns: 56px 250px minmax(0, 1fr) 320px;
-        gap: 12px;
-        min-height: 490px;
+      .shell {
+        --shell-bg: #fcfaf5;
+        --shell-bg-2: #f6efe5;
+        --shell-panel: rgba(255, 252, 247, 0.94);
+        --shell-panel-2: rgba(252, 247, 241, 0.96);
+        --shell-panel-3: rgba(255, 255, 255, 0.86);
+        --shell-ink: #17181c;
+        --shell-muted: #6a6f79;
+        --shell-line: rgba(23, 24, 28, 0.1);
+        --shell-line-strong: rgba(23, 24, 28, 0.16);
+        --shell-accent: #d0612b;
+        --shell-accent-soft: rgba(208, 97, 43, 0.12);
+        --shell-success: #17735a;
+        --shell-warn: #8d6526;
+        --shell-danger: #b34f4d;
+        --shell-rail: #161b24;
+        --shell-rail-soft: #232b39;
+        --shell-tab: rgba(255, 255, 255, 0.68);
+        --shell-tab-active: #fffdfa;
+        --shell-editor: #fbf7f1;
+        --shell-terminal: #121721;
+        --shell-terminal-ink: #dae8ff;
+        --shell-terminal-dim: #8da1be;
+        --shell-shadow:
+          0 28px 90px rgba(40, 31, 20, 0.14),
+          0 10px 28px rgba(40, 31, 20, 0.08);
+        position: relative;
+        overflow: hidden;
+        border-radius: 24px;
+        border: 1px solid rgba(255, 255, 255, 0.82);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 243, 235, 0.92)),
+          var(--shell-bg);
+        box-shadow: var(--shell-shadow);
       }
 
-      .activity,
-      .side,
-      .center,
-      .agent {
+      .shell.dark {
+        --shell-bg: #12161d;
+        --shell-bg-2: #0d1118;
+        --shell-panel: rgba(20, 24, 32, 0.94);
+        --shell-panel-2: rgba(14, 18, 25, 0.96);
+        --shell-panel-3: rgba(31, 38, 50, 0.86);
+        --shell-ink: #edf1f9;
+        --shell-muted: #9ba6ba;
+        --shell-line: rgba(237, 241, 249, 0.09);
+        --shell-line-strong: rgba(237, 241, 249, 0.16);
+        --shell-accent: #e48a4d;
+        --shell-accent-soft: rgba(228, 138, 77, 0.16);
+        --shell-success: #53bb96;
+        --shell-warn: #d0a55a;
+        --shell-danger: #de7a76;
+        --shell-rail: #0f1319;
+        --shell-rail-soft: #171d27;
+        --shell-tab: rgba(255, 255, 255, 0.04);
+        --shell-tab-active: rgba(255, 255, 255, 0.08);
+        --shell-editor: #161b24;
+        --shell-terminal: #0b0f15;
+        --shell-terminal-ink: #deebff;
+        --shell-terminal-dim: #7f92af;
+        --shell-shadow:
+          0 28px 90px rgba(4, 6, 10, 0.44),
+          0 10px 28px rgba(4, 6, 10, 0.26);
+        border-color: rgba(255, 255, 255, 0.08);
+        background:
+          radial-gradient(circle at top right, rgba(228, 138, 77, 0.06), transparent 22%),
+          linear-gradient(180deg, rgba(24, 29, 38, 0.98), rgba(12, 16, 22, 0.98));
+      }
+
+      .shell-header {
         display: grid;
+        grid-template-columns: auto minmax(0, 1fr) repeat(4, auto);
         gap: 10px;
+        align-items: center;
+        min-height: 48px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.04);
       }
 
-      .activity .mini {
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        color: var(--shell-ink);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .brand img {
+        width: 22px;
+        height: 22px;
+      }
+
+      .header-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .header-chip strong {
+        color: var(--shell-ink);
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--shell-success);
+        box-shadow: 0 0 0 4px rgba(83, 187, 150, 0.12);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 56px 300px minmax(0, 1fr) 380px;
+        min-height: clamp(660px, 74vh, 820px);
+      }
+
+      .activity-rail {
+        display: grid;
+        grid-template-rows: repeat(5, 44px) 1fr repeat(2, 44px);
+        gap: 10px;
+        padding: 12px 10px;
+        background: linear-gradient(180deg, var(--shell-rail) 0%, var(--shell-rail-soft) 100%);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .activity-button {
+        position: relative;
         display: grid;
         place-items: center;
-        min-height: 58px;
+        border-radius: 13px;
+        color: #93a0b7;
+        background: rgba(255, 255, 255, 0.04);
         font-size: 11px;
+        font-weight: 700;
       }
 
-      .side .mini,
-      .agent .mini {
-        min-height: 58px;
+      .activity-button.active {
+        background: linear-gradient(180deg, rgba(208, 97, 43, 0.26), rgba(208, 97, 43, 0.18));
+        color: white;
       }
 
-      .pane {
+      .activity-button.active::before {
+        content: "";
+        position: absolute;
+        left: -10px;
+        width: 3px;
+        height: 20px;
+        border-radius: 999px;
+        background: var(--shell-accent);
+      }
+
+      .side-panel,
+      .workbench,
+      .agent-panel {
+        padding: 14px;
+        min-width: 0;
+      }
+
+      .side-panel {
+        border-right: 1px solid var(--shell-line);
+        background: linear-gradient(180deg, var(--shell-panel), var(--shell-panel-2));
+      }
+
+      .workbench {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+          var(--shell-bg-2);
+      }
+
+      .agent-panel {
+        border-left: 1px solid var(--shell-line);
+        background: linear-gradient(180deg, var(--shell-panel), var(--shell-panel-2));
+      }
+
+      .agent-panel {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .panel-head > div,
+      .mission-headline > strong {
+        min-width: 0;
+      }
+
+      .panel-head strong {
+        color: var(--shell-ink);
+        font-size: 13px;
+      }
+
+      .panel-head span {
+        color: var(--shell-muted);
+        font-size: 12px;
+      }
+
+      .control-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .project-card,
+      .tree-section,
+      .pane,
+      .bubble,
+      .approval-card,
+      .composer {
+        border: 1px solid var(--shell-line);
+        border-radius: 16px;
+        background: var(--shell-panel-3);
+      }
+
+      .project-card {
+        margin-bottom: 12px;
         padding: 12px;
       }
 
-      .pane.tall { min-height: 294px; }
-
-      .tabs {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
+      .project-card strong {
+        display: block;
+        color: var(--shell-ink);
+        font-size: 13px;
       }
 
-      .tab.active {
-        background: rgba(201, 92, 39, 0.12);
-        color: var(--ink);
+      .project-card span {
+        display: block;
+        margin-top: 4px;
+        color: var(--shell-muted);
+        font-size: 11px;
+        line-height: 1.5;
       }
 
-      .split {
+      .tree-stack {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
         gap: 10px;
       }
 
-      .label {
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--mist);
+      .tree-section {
+        overflow: hidden;
       }
 
-      @media (max-width: 1180px) {
-        .layout {
-          grid-template-columns: 56px 1fr;
+      .tree-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 42px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--shell-line);
+      }
+
+      .tree-toggle strong {
+        color: var(--shell-ink);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .tree-toggle span {
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .tree-toggle.collapsed {
+        border-bottom: 0;
+      }
+
+      .tree-body {
+        display: grid;
+        gap: 6px;
+        padding: 10px;
+      }
+
+      .tree-section.collapsed .tree-body {
+        display: none;
+      }
+
+      .tree-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 8px;
+        border-radius: 10px;
+        color: var(--shell-ink);
+        font-size: 12px;
+      }
+
+      .tree-row.selected {
+        background: var(--shell-accent-soft);
+      }
+
+      .tree-row.subtle {
+        color: var(--shell-muted);
+      }
+
+      .tree-row .indent {
+        width: 12px;
+        flex: 0 0 12px;
+      }
+
+      .tree-row .tail {
+        margin-left: auto;
+        color: var(--shell-muted);
+        font-size: 11px;
+      }
+
+      .tabbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 40px;
+        margin-bottom: 10px;
+        padding: 4px;
+        border: 1px solid var(--shell-line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 11px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        background: var(--shell-tab);
+        color: var(--shell-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .tab.active {
+        background: var(--shell-tab-active);
+        border-color: var(--shell-line);
+        color: var(--shell-ink);
+      }
+
+      .tab.dirty::after {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--shell-accent);
+      }
+
+      .plus-tab {
+        margin-left: auto;
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--shell-muted);
+        font-weight: 700;
+      }
+
+      .pane-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.16fr) 8px minmax(330px, 0.84fr);
+        min-height: 0;
+      }
+
+      .gutter {
+        position: relative;
+      }
+
+      .gutter::before {
+        content: "";
+        position: absolute;
+        inset: 50% auto auto 50%;
+        width: 4px;
+        height: 88px;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+        background: var(--shell-line-strong);
+      }
+
+      .pane {
+        overflow: hidden;
+      }
+
+      .pane-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 40px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--shell-line);
+      }
+
+      .pane-header span {
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .editor {
+        display: grid;
+        grid-template-columns: 52px minmax(0, 1fr) 16px;
+        min-height: clamp(460px, 56vh, 640px);
+        background: var(--shell-editor);
+      }
+
+      .line-numbers,
+      .code,
+      .mini-map {
+        padding-top: 14px;
+      }
+
+      .line-numbers {
+        padding-right: 10px;
+        border-right: 1px solid var(--shell-line);
+        color: var(--shell-muted);
+        font: 12px/1.8 "IBM Plex Mono", monospace;
+        text-align: right;
+      }
+
+      .code {
+        padding-left: 16px;
+        padding-right: 18px;
+        color: var(--shell-ink);
+        font: 12px/1.8 "IBM Plex Mono", monospace;
+      }
+
+      .code-line {
+        display: block;
+        white-space: pre;
+      }
+
+      .code-line.active {
+        margin-left: -8px;
+        padding-left: 8px;
+        border-radius: 8px;
+        background: var(--shell-accent-soft);
+      }
+
+      .token-keyword {
+        color: #8e4fc3;
+      }
+
+      .dark .token-keyword {
+        color: #c797ff;
+      }
+
+      .token-func {
+        color: #236aa1;
+      }
+
+      .dark .token-func {
+        color: #73c7ff;
+      }
+
+      .token-string {
+        color: #b35d2f;
+      }
+
+      .dark .token-string {
+        color: #f3b775;
+      }
+
+      .token-comment {
+        color: #908881;
+      }
+
+      .dark .token-comment {
+        color: #8792a8;
+      }
+
+      .mini-map {
+        position: relative;
+      }
+
+      .mini-map::before,
+      .mini-map::after {
+        content: "";
+        position: absolute;
+        right: 4px;
+        width: 5px;
+        border-radius: 999px;
+      }
+
+      .mini-map::before {
+        top: 16px;
+        height: 220px;
+        background: var(--shell-line-strong);
+      }
+
+      .mini-map::after {
+        top: 86px;
+        height: 50px;
+        background: rgba(208, 97, 43, 0.56);
+      }
+
+      .terminal {
+        min-height: clamp(460px, 56vh, 640px);
+        padding: 14px 16px 16px;
+        background:
+          radial-gradient(circle at top right, rgba(101, 145, 240, 0.08), transparent 26%),
+          linear-gradient(180deg, var(--shell-terminal), #0b0f15);
+        color: var(--shell-terminal-ink);
+        font: 12px/1.7 "IBM Plex Mono", monospace;
+      }
+
+      .run-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--shell-terminal-dim);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .run-chip::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #f1ba52;
+      }
+
+      .term-line {
+        color: var(--shell-terminal-ink);
+      }
+
+      .term-line.dim {
+        color: var(--shell-terminal-dim);
+      }
+
+      .term-line.success {
+        color: #77d4ab;
+      }
+
+      .term-line.error {
+        color: #ff9c96;
+      }
+
+      .agent-panel .panel-head {
+        margin-bottom: 12px;
+      }
+
+      .mission-surface {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto auto;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+        border: 1px solid var(--shell-line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .mission-brief,
+      .approval-dock,
+      .composer-dock {
+        padding: 12px;
+      }
+
+      .mission-brief {
+        border-bottom: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .mission-headline {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .mission-headline strong {
+        color: var(--shell-ink);
+        font-size: 13px;
+      }
+
+      .mission-headline span,
+      .mission-summary {
+        color: var(--shell-muted);
+        font-size: 12px;
+        line-height: 1.55;
+        overflow-wrap: anywhere;
+      }
+
+      .mission-summary {
+        margin-bottom: 10px;
+      }
+
+      .roster {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .roster-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .roster-chip::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--shell-success);
+      }
+
+      .thread {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+      }
+
+      .thread-stream {
+        min-height: 0;
+        padding: 12px;
+        border-bottom: 1px solid var(--shell-line);
+        overflow: auto;
+      }
+
+      .bubble,
+      .approval-card,
+      .composer {
+        padding: 12px;
+      }
+
+      .bubble.user {
+        background: var(--shell-accent-soft);
+      }
+
+      .bubble {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .bubble-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .bubble p,
+      .approval-card p,
+      .composer p {
+        color: var(--shell-ink);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .inline-list {
+        margin: 8px 0 0 18px;
+        color: var(--shell-muted);
+        font-size: 12px;
+        line-height: 1.58;
+      }
+
+      .approval-card h4 {
+        margin-bottom: 8px;
+        color: var(--shell-ink);
+        font-size: 13px;
+      }
+
+      .approval-dock {
+        border-bottom: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .composer-dock {
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .approval-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 38px;
+        padding: 0 10px;
+        border: 1px solid var(--shell-line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .approval-toggle strong {
+        color: var(--shell-ink);
+        font-size: 12px;
+      }
+
+      .approval-toggle span {
+        color: var(--shell-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .approval-queue {
+        display: grid;
+        gap: 8px;
+      }
+
+      .approval-item {
+        display: grid;
+        gap: 4px;
+        padding: 10px 12px;
+        border: 1px solid var(--shell-line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .approval-item.selected {
+        background: var(--shell-accent-soft);
+      }
+
+      .approval-item-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .approval-item strong {
+        color: var(--shell-ink);
+        font-size: 12px;
+      }
+
+      .approval-item span,
+      .approval-item p {
+        color: var(--shell-muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .approval-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .approval-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 20px;
+        padding: 0 7px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--shell-muted);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .approval-dock.collapsed .approval-detail {
+        display: none;
+      }
+
+      .approval-dock.collapsed {
+        padding: 10px 12px;
+      }
+
+      .approval-dock.expanded {
+        padding: 10px 12px 12px;
+      }
+
+      .approval-dock.expanded .approval-detail {
+        margin-top: 10px;
+      }
+
+      .command {
+        display: block;
+        margin: 10px 0;
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(14, 18, 26, 0.94);
+        color: #eff5ff;
+        font: 12px/1.5 "IBM Plex Mono", monospace;
+      }
+
+      .approval-actions,
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .context-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .context-chip {
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: var(--shell-accent-soft);
+        color: var(--shell-accent);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .composer-box {
+        min-height: 86px;
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--shell-muted);
+        font-size: 13px;
+        line-height: 1.58;
+      }
+
+      .action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--shell-ink);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .action.primary {
+        background: var(--shell-accent);
+        border-color: transparent;
+        color: white;
+      }
+
+      .micro {
+        color: var(--shell-muted);
+        font-size: 11px;
+      }
+
+      @media (max-width: 1520px) {
+        .workspace {
+          grid-template-columns: 52px 276px minmax(0, 1fr) 344px;
         }
 
-        .center,
-        .agent {
+        .shell-header {
+          grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+        }
+
+        .shell-header .header-chip:last-child {
+          display: none;
+        }
+      }
+
+      @media (max-width: 1360px) {
+        .workspace {
+          grid-template-columns: 52px 264px minmax(0, 1fr);
+        }
+
+        .agent-panel {
+          grid-column: 2 / 4;
+          border-left: 0;
+          border-top: 1px solid var(--shell-line);
+        }
+      }
+
+      @media (max-width: 1080px) {
+        .shell-header {
+          grid-template-columns: auto minmax(0, 1fr) auto auto;
+        }
+
+        .workspace {
+          grid-template-columns: 56px minmax(0, 1fr);
+        }
+
+        .side-panel,
+        .workbench,
+        .agent-panel {
           grid-column: span 2;
         }
 
-        .split {
+        .pane-grid {
           grid-template-columns: 1fr;
+        }
+
+        .gutter {
+          display: none;
+        }
+
+        .shell-header .header-chip:nth-last-child(-n + 2) {
+          display: none;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .page {
+          width: calc(100vw - 16px);
+          padding: 14px 0 28px;
+        }
+
+        .theme-wrap {
+          padding: 10px;
+        }
+
+        .shell-header {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .activity-rail {
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          grid-template-rows: none;
+          padding: 10px;
+          gap: 8px;
+        }
+
+        .activity-button.active::before {
+          left: 50%;
+          top: -10px;
+          width: 20px;
+          height: 3px;
+          transform: translateX(-50%);
+        }
+
+        .side-panel,
+        .workbench,
+        .agent-panel {
+          grid-column: auto;
         }
       }
     </style>
@@ -202,117 +1158,533 @@
   <body>
     <div class="page">
       <section class="hero">
-        <span class="eyebrow">gtum Refined Design Baseline</span>
-        <h1>Split Mission Control Workspace</h1>
+        <span class="eyebrow">gtum theme baseline · consistent light and dark</span>
+        <h1>한 화면에서 라이트와 다크를 섞지 않고, 각각 완결된 workbench로 보여주는 기준안</h1>
         <p>
-          하단 패널은 제거하고, 중앙 workbench 자체가 분할 가능한 구조로 바뀝니다. 프로젝트 관리는 왼쪽으로,
-          실제 대화와 작업 위임은 오른쪽 `에이전트 작업창`으로 옮깁니다. 터미널은 고정 메인 패널이 아니라
-          `+`로 여는 탭이지만, 열리면 코드 옆에 바로 나란히 둘 수 있어야 합니다.
+          이번 기준은 `라이트 버전`과 `다크 버전`을 따로 완성하는 것입니다. 한 mock 안에서 editor, terminal,
+          sidebar가 제각각 다른 모드처럼 보이면 안 됩니다. 또한 왼쪽 `Explorer`와 `Outline`은 고정 박스가 아니라
+          `독립적으로 접고 펴는 토글 섹션`이어야 하고, 이 상태가 화면에서 바로 읽혀야 합니다.
         </p>
       </section>
 
-      <section class="notes">
-        <article class="note">
-          <strong>상단</strong>
-          <p>프로젝트 탭은 두지 않습니다. `현재 작업`, `연결 상태`, `활성 에이전트`, `승인 대기`만 남깁니다.</p>
+      <section class="meta-grid">
+        <article class="meta-card">
+          <strong>Light Theme</strong>
+          <p>따뜻한 중성 배경, 낮은 대비의 surface, 밝은 editor, 어두운 terminal로 구성하되 전체 시스템은 라이트 모드로 통일합니다.</p>
         </article>
-        <article class="note">
-          <strong>왼쪽</strong>
-          <p>`프로젝트`, `탐색기`, `검색`, `소스`, `아웃라인`을 VS Code처럼 접고 펼칩니다.</p>
+        <article class="meta-card">
+          <strong>Dark Theme</strong>
+          <p>차갑지만 과도하게 네온스럽지 않은 밀도 높은 dark shell을 사용하고, 모든 panel과 editor가 같은 dark system 안에서 움직이게 만듭니다.</p>
         </article>
-        <article class="note">
-          <strong>중앙</strong>
-          <p>빈 workbench에서 시작하고 `+`로 탭을 만든 뒤, 상하좌우 분할로 코드를 나란히 봅니다.</p>
-        </article>
-        <article class="note">
-          <strong>오른쪽</strong>
-          <p>상태판이 아니라 `에이전트 작업창`입니다. 요청, 답변, 상태, 승인 항목이 모두 있습니다.</p>
-        </article>
-        <article class="note">
-          <strong>탭 모양</strong>
-          <p>탭은 큰 버튼이 아니라 `VS Code`처럼 낮고 가로로 긴 형태로 보여야 합니다.</p>
+        <article class="meta-card">
+          <strong>Left Panel Toggle</strong>
+          <p>`Explorer`, `Outline`, `Source Control`은 각각 독립 토글입니다. 펼침/접힘 상태가 chevron과 내용 유무로 명확해야 합니다.</p>
         </article>
       </section>
 
-      <section class="frame">
-        <div class="header">
-          <div class="pill">gtum | 현재 작업: 로그인 오류 분석</div>
-          <div class="pill">연결: Codex</div>
-          <div class="pill">활성 에이전트: 3</div>
-          <div class="pill">승인 대기: 2</div>
-          <div class="pill">모드: Balanced</div>
-        </div>
-
-        <div class="layout">
-          <div class="activity">
-            <div class="mini">프로젝트</div>
-            <div class="mini">탐색기</div>
-            <div class="mini">검색</div>
-            <div class="mini">소스</div>
-            <div class="mini">구조</div>
+      <section class="themes">
+        <article class="theme-wrap">
+          <div class="theme-head">
+            <div class="theme-copy">
+              <h2>Light Mission Control</h2>
+              <p>사용자가 처음 보기 쉬운 기본 테마. 밝은 editor와 도구 친화적인 중성 톤을 유지합니다.</p>
+            </div>
+            <span class="theme-badge">Primary default candidate</span>
           </div>
 
-          <div class="side">
-            <div class="mini">프로젝트 목록 / 최근 프로젝트</div>
-            <div class="mini">파일 / 검색 / Git / 구조</div>
-            <div class="pane tall">
-              <div class="label">접기 / 펼치기 가능한 Side Panel</div>
-            </div>
-          </div>
-
-          <div class="center">
-            <div class="tabs">
-              <div class="tab active">auth.ts</div>
-              <div class="tab">term #1</div>
-              <div class="tab">diff</div>
-              <div class="tab">tests</div>
-              <div class="tab">+</div>
-            </div>
-            <div class="split">
-              <div class="pane tall">
-                <div class="label">Code Pane</div>
+          <div class="shell light">
+            <div class="shell-header">
+              <div class="brand">
+                <img src="../public/brand/gtum-mark.svg" alt="gtum mark" />
+                <span>gtum mission workspace</span>
               </div>
-              <div class="pane tall">
-                <div class="label">Terminal / Diff Pane</div>
-              </div>
+              <div></div>
+              <div class="header-chip"><span class="dot"></span><strong>Codex connected</strong></div>
+              <div class="header-chip">현재 작업: restore bug</div>
+              <div class="header-chip">활성 에이전트 3</div>
+              <div class="header-chip">승인 대기 1</div>
             </div>
+
+            <div class="workspace">
+              <aside class="activity-rail">
+                <div class="activity-button active">Proj</div>
+                <div class="activity-button">Files</div>
+                <div class="activity-button">Find</div>
+                <div class="activity-button">Git</div>
+                <div class="activity-button">Tree</div>
+                <div></div>
+                <div class="activity-button">AI</div>
+                <div class="activity-button">Run</div>
+              </aside>
+
+              <aside class="side-panel">
+                <div class="panel-head">
+                  <div>
+                    <strong>프로젝트 / 탐색기</strong>
+                    <span>좌측 rail에서 관리</span>
+                  </div>
+                  <span class="control-chip">toggle sections</span>
+                </div>
+
+                <div class="project-card">
+                  <strong>gtum</strong>
+                  <span>`dev` · 선택 파일 `src/features/auth/model.ts` · 마지막 실행 `npm run test:e2e`</span>
+                </div>
+
+                <div class="tree-stack">
+                  <section class="tree-section">
+                    <div class="tree-toggle">
+                      <strong>Explorer</strong>
+                      <span>▾ 펼침</span>
+                    </div>
+                    <div class="tree-body">
+                      <div class="tree-row subtle">▾ src</div>
+                      <div class="tree-row subtle"><span class="indent"></span>▾ features</div>
+                      <div class="tree-row selected"><span class="indent"></span><span class="indent"></span>▾ auth<span class="tail">2 changes</span></div>
+                      <div class="tree-row"><span class="indent"></span><span class="indent"></span><span class="indent"></span>• model.ts</div>
+                      <div class="tree-row"><span class="indent"></span><span class="indent"></span><span class="indent"></span>• provider.ts</div>
+                      <div class="tree-row subtle"><span class="indent"></span><span class="indent"></span>▸ state.ts</div>
+                    </div>
+                  </section>
+
+                  <section class="tree-section collapsed">
+                    <div class="tree-toggle collapsed">
+                      <strong>Outline</strong>
+                      <span>▸ 접힘</span>
+                    </div>
+                    <div class="tree-body"></div>
+                  </section>
+
+                  <section class="tree-section">
+                    <div class="tree-toggle">
+                      <strong>Source Control</strong>
+                      <span>▾ 펼침</span>
+                    </div>
+                    <div class="tree-body">
+                      <div class="tree-row">M docs/design-concepts-sprint-15.html</div>
+                      <div class="tree-row">M docs/frontend-design-benchmarks.md</div>
+                      <div class="tree-row subtle">A src/widgets/workbench/ui/PaneTabs.tsx</div>
+                    </div>
+                  </section>
+                </div>
+              </aside>
+
+              <main class="workbench">
+                <div class="tabbar">
+                  <div class="tab active dirty">model.ts</div>
+                  <div class="tab">login.spec.ts</div>
+                  <div class="tab">terminal: npm run test:e2e</div>
+                  <div class="tab">diff: restore flow</div>
+                  <div class="plus-tab">+</div>
+                </div>
+
+                <div class="pane-grid">
+                  <section class="pane">
+                    <div class="pane-header">
+                      <span>src / features / auth / model.ts</span>
+                      <span>Split Right</span>
+                    </div>
+                    <div class="editor">
+                      <div class="line-numbers">34<br />35<br />36<br />37<br />38<br />39<br />40<br />41<br />42<br />43<br />44<br />45</div>
+                      <div class="code">
+                        <span class="code-line"><span class="token-keyword">export</span> <span class="token-keyword">async</span> <span class="token-keyword">function</span> <span class="token-func">connectCodexSession</span>() {</span>
+                        <span class="code-line">  <span class="token-keyword">const</span> <span class="token-func">authState</span> = <span class="token-keyword">await</span> <span class="token-func">loadStoredSession</span>();</span>
+                        <span class="code-line active">  <span class="token-keyword">if</span> (!<span class="token-func">authState</span>?.token) <span class="token-keyword">return</span> <span class="token-string">"needs-login"</span>;</span>
+                        <span class="code-line">  <span class="token-keyword">const</span> <span class="token-func">diagnostics</span> = <span class="token-keyword">await</span> <span class="token-func">runCodexPreflight</span>();</span>
+                        <span class="code-line">  <span class="token-keyword">if</span> (!<span class="token-func">diagnostics</span>.ok) <span class="token-keyword">return</span> <span class="token-func">mapDiagnostics</span>(<span class="token-func">diagnostics</span>);</span>
+                        <span class="code-line">  <span class="token-keyword">return</span> { state: <span class="token-string">"connected"</span>, accountLabel: <span class="token-string">"Codex CLI"</span> };</span>
+                        <span class="code-line">}</span>
+                        <span class="code-line"><span class="token-comment">// line anchor는 suggestion context에 같이 실립니다.</span></span>
+                      </div>
+                      <div class="mini-map"></div>
+                    </div>
+                  </section>
+
+                  <div class="gutter"></div>
+
+                  <section class="pane">
+                    <div class="pane-header">
+                      <span>terminal / npm run test:e2e</span>
+                      <span>Split Down</span>
+                    </div>
+                    <div class="terminal">
+                      <div class="run-chip">agent opened this pane for repro</div>
+                      <div class="term-line">$ npm run test:e2e</div>
+                      <div class="term-line dim">Running Windows baseline profile...</div>
+                      <div class="term-line success">✓ provider-auth.spec.ts passed</div>
+                      <div class="term-line error">✕ restore should keep active line anchor</div>
+                      <div class="term-line dim">expected 36, received undefined</div>
+                      <div class="term-line">context: src/features/auth/model.ts:36</div>
+                    </div>
+                  </section>
+                </div>
+              </main>
+
+              <aside class="agent-panel">
+                <div class="panel-head">
+                  <div>
+                    <strong>에이전트 작업창</strong>
+                    <span>thread 중심 작업창</span>
+                  </div>
+                  <span class="control-chip">mission active</span>
+                </div>
+
+                <div class="mission-surface">
+                  <div class="mission-brief">
+                    <div class="mission-headline">
+                      <strong>Mission: restore line anchor after reload</strong>
+                      <span>active</span>
+                    </div>
+                    <p class="mission-summary">선택 파일과 최근 로그를 한 작업 단위로 묶고, 같은 흐름 안에서 답변과 승인까지 이어집니다.</p>
+                    <div class="roster">
+                      <span class="roster-chip">planner</span>
+                      <span class="roster-chip">backend</span>
+                      <span class="roster-chip">frontend</span>
+                      <span class="roster-chip">QA</span>
+                    </div>
+                  </div>
+
+                  <div class="thread-stream">
+                    <div class="thread">
+                      <article class="bubble user">
+                        <div class="bubble-head"><span>사용자 요청</span><span>09:41</span></div>
+                        <p>reload 뒤 line anchor가 사라지는 이유를 찾고, 필요한 수정만 approval로 올려줘.</p>
+                      </article>
+
+                      <article class="bubble">
+                        <div class="bubble-head"><span>backend agent</span><span>running</span></div>
+                        <p>restore serializer에서 `activeFileLine`이 누락됩니다. UI 계약은 유지하고 persistence만 보강하면 됩니다.</p>
+                        <ul class="inline-list">
+                          <li>문제 위치: workspace restore payload</li>
+                          <li>검증: provider-auth, agent-request-flow</li>
+                        </ul>
+                      </article>
+                    </div>
+                  </div>
+
+                  <div class="approval-dock collapsed">
+                    <div class="approval-toggle">
+                      <strong>승인 대기 3</strong>
+                      <span>필요할 때 보기 ▸</span>
+                    </div>
+                    <div class="approval-queue" style="margin-top: 10px;">
+                      <div class="approval-item selected">
+                        <div class="approval-item-head">
+                          <strong>restore.activeFileLine 복원</strong>
+                          <span>추천</span>
+                        </div>
+                        <p>workspace session payload에 line anchor를 다시 저장합니다.</p>
+                        <div class="approval-meta">
+                          <span class="approval-badge">backend</span>
+                          <span class="approval-badge">low risk</span>
+                          <span class="approval-badge">current tab</span>
+                        </div>
+                      </div>
+                      <div class="approval-item">
+                        <div class="approval-item-head">
+                          <strong>새 탭에서 restore 검증</strong>
+                          <span>검증</span>
+                        </div>
+                        <p>승인 전 재현 테스트를 별도 터미널 탭에서 실행합니다.</p>
+                      </div>
+                      <div class="approval-item">
+                        <div class="approval-item-head">
+                          <strong>approval replay trace 추가</strong>
+                          <span>보류</span>
+                        </div>
+                        <p>복원 경로를 task history trace에 같이 남깁니다.</p>
+                      </div>
+                    </div>
+                    <div class="approval-detail">
+                      <article class="approval-card">
+                        <h4>승인 대기 제안</h4>
+                        <p>reload 이후에도 선택 파일과 line anchor를 복원하도록 serializer에 필드를 추가합니다.</p>
+                        <code class="command">apply restore.activeFileLine to workspace session payload</code>
+                        <div class="approval-actions">
+                          <span class="action primary">승인 실행</span>
+                          <span class="action">새 탭 검증</span>
+                        </div>
+                      </article>
+                    </div>
+                  </div>
+
+                  <div class="composer-dock">
+                    <article class="composer">
+                      <div class="context-row">
+                        <span class="context-chip">file: model.ts</span>
+                        <span class="context-chip">line: 36</span>
+                        <span class="context-chip">logs: last 50</span>
+                      </div>
+                      <div class="composer-box">선택 코드와 현재 로그를 기준으로, reload 이후 line anchor가 사라지는 원인만 찾아서 수정 제안을 만들어줘.</div>
+                      <div class="composer-actions">
+                        <span class="micro">Explicit context, no hidden state.</span>
+                        <span class="action primary">작업 요청 보내기</span>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-wrap">
+          <div class="theme-head">
+            <div class="theme-copy">
+              <h2>Dark Mission Control</h2>
+              <p>밤 작업, 장시간 코드 읽기, terminal 집중 상황에 맞춘 대안 테마. 같은 정보 구조를 유지한 채 색 체계만 바꿉니다.</p>
+            </div>
+            <span class="theme-badge">Optional dark variant</span>
           </div>
 
-          <div class="agent">
-            <div class="mini">에이전트 작업창</div>
-            <div class="pane">
-              <div class="label">작업 요청</div>
+          <div class="shell dark">
+            <div class="shell-header">
+              <div class="brand">
+                <img src="../public/brand/gtum-mark.svg" alt="gtum mark" />
+                <span>gtum mission workspace</span>
+              </div>
+              <div></div>
+              <div class="header-chip"><span class="dot"></span><strong>Codex connected</strong></div>
+              <div class="header-chip">현재 작업: approval review</div>
+              <div class="header-chip">활성 에이전트 4</div>
+              <div class="header-chip">승인 대기 2</div>
             </div>
-            <div class="pane">
-              <div class="label">현재 대화 / 답변</div>
-            </div>
-            <div class="pane">
-              <div class="label">상태 / 승인 대기 / 담당 에이전트</div>
+
+            <div class="workspace">
+              <aside class="activity-rail">
+                <div class="activity-button active">Proj</div>
+                <div class="activity-button">Files</div>
+                <div class="activity-button">Find</div>
+                <div class="activity-button">Git</div>
+                <div class="activity-button">Tree</div>
+                <div></div>
+                <div class="activity-button">AI</div>
+                <div class="activity-button">Run</div>
+              </aside>
+
+              <aside class="side-panel">
+                <div class="panel-head">
+                  <div>
+                    <strong>프로젝트 / 탐색기</strong>
+                    <span>dark system with collapsible sections</span>
+                  </div>
+                  <span class="control-chip">outline open</span>
+                </div>
+
+                <div class="project-card">
+                  <strong>gtum</strong>
+                  <span>`dev` · active task `approval review` · selected `src/app/App.tsx`</span>
+                </div>
+
+                <div class="tree-stack">
+                  <section class="tree-section collapsed">
+                    <div class="tree-toggle collapsed">
+                      <strong>Explorer</strong>
+                      <span>▸ 접힘</span>
+                    </div>
+                    <div class="tree-body"></div>
+                  </section>
+
+                  <section class="tree-section">
+                    <div class="tree-toggle">
+                      <strong>Outline</strong>
+                      <span>▾ 펼침</span>
+                    </div>
+                    <div class="tree-body">
+                      <div class="tree-row selected">renderWorkspaceShell<span class="tail">active</span></div>
+                      <div class="tree-row subtle">SidebarHeader</div>
+                      <div class="tree-row subtle">WorkbenchTabs</div>
+                      <div class="tree-row subtle">AgentWorkspace</div>
+                      <div class="tree-row subtle">ApprovalComposer</div>
+                    </div>
+                  </section>
+
+                  <section class="tree-section">
+                    <div class="tree-toggle">
+                      <strong>Source Control</strong>
+                      <span>▾ 펼침</span>
+                    </div>
+                    <div class="tree-body">
+                      <div class="tree-row">M src/app/App.tsx</div>
+                      <div class="tree-row">M src/widgets/agent-panel/ui/AgentPanel.tsx</div>
+                      <div class="tree-row subtle">A src/shared/ui/ThemeTokens.ts</div>
+                    </div>
+                  </section>
+                </div>
+              </aside>
+
+              <main class="workbench">
+                <div class="tabbar">
+                  <div class="tab active dirty">App.tsx</div>
+                  <div class="tab">PaneTabs.tsx</div>
+                  <div class="tab">terminal: pnpm test</div>
+                  <div class="tab">diff: agent workspace</div>
+                  <div class="plus-tab">+</div>
+                </div>
+
+                <div class="pane-grid">
+                  <section class="pane">
+                    <div class="pane-header">
+                      <span>src / app / App.tsx</span>
+                      <span>Split Right</span>
+                    </div>
+                    <div class="editor">
+                      <div class="line-numbers">118<br />119<br />120<br />121<br />122<br />123<br />124<br />125<br />126<br />127<br />128<br />129</div>
+                      <div class="code">
+                        <span class="code-line"><span class="token-keyword">return</span> (</span>
+                        <span class="code-line">  &lt;<span class="token-func">WorkspaceShell</span></span>
+                        <span class="code-line">    <span class="token-func">leftRail</span>={<span class="token-string">&lt;ProjectSidebar /&gt;</span>}</span>
+                        <span class="code-line active">    <span class="token-func">centerStage</span>={<span class="token-string">&lt;SplitWorkbench /&gt;</span>}</span>
+                        <span class="code-line">    <span class="token-func">rightRail</span>={<span class="token-string">&lt;AgentWorkspace /&gt;</span>}</span>
+                        <span class="code-line">  /&gt;</span>
+                        <span class="code-line">);</span>
+                        <span class="code-line"><span class="token-comment">// theme는 light/dark가 완전히 분리된 토큰을 사용합니다.</span></span>
+                      </div>
+                      <div class="mini-map"></div>
+                    </div>
+                  </section>
+
+                  <div class="gutter"></div>
+
+                  <section class="pane">
+                    <div class="pane-header">
+                      <span>terminal / pnpm test</span>
+                      <span>Preview diff</span>
+                    </div>
+                    <div class="terminal">
+                      <div class="run-chip">focused terminal split</div>
+                      <div class="term-line">$ pnpm test</div>
+                      <div class="term-line dim">watch mode off · agent-selected pane</div>
+                      <div class="term-line success">✓ theme contract keeps light/dark isolated</div>
+                      <div class="term-line success">✓ outline toggle preserves width</div>
+                      <div class="term-line error">✕ explorer reopen animation missing</div>
+                      <div class="term-line dim">todo: add micro motion, keep split stable</div>
+                    </div>
+                  </section>
+                </div>
+              </main>
+
+              <aside class="agent-panel">
+                <div class="panel-head">
+                  <div>
+                    <strong>에이전트 작업창</strong>
+                    <span>thread 중심 작업창</span>
+                  </div>
+                  <span class="control-chip">review queue</span>
+                </div>
+
+                <div class="mission-surface">
+                  <div class="mission-brief">
+                    <div class="mission-headline">
+                      <strong>Mission: separate light and dark theme systems</strong>
+                      <span>review queue</span>
+                    </div>
+                    <p class="mission-summary">요청, 응답, 승인, 다음 입력이 하나의 mission 흐름으로 이어지도록 묶습니다.</p>
+                    <div class="roster">
+                      <span class="roster-chip">planner</span>
+                      <span class="roster-chip">designer</span>
+                      <span class="roster-chip">frontend</span>
+                      <span class="roster-chip">tester</span>
+                    </div>
+                  </div>
+
+                  <div class="thread-stream">
+                    <div class="thread">
+                      <article class="bubble user">
+                        <div class="bubble-head"><span>사용자 요청</span><span>22:14</span></div>
+                        <p>light와 dark를 각각 일관된 버전으로 만들고, 좌측 `Explorer`와 `Outline`은 토글로 접히는 구조를 보여줘.</p>
+                      </article>
+
+                      <article class="bubble">
+                        <div class="bubble-head"><span>designer agent</span><span>ready</span></div>
+                        <p>두 테마 모두 같은 구조를 유지하되, 색 시스템만 다르게 분리했습니다. `Explorer`와 `Outline`도 각각 독립 토글입니다.</p>
+                      </article>
+                    </div>
+                  </div>
+
+                  <div class="approval-dock expanded">
+                    <div class="approval-toggle">
+                      <strong>승인 대기 3</strong>
+                      <span>열림 ▾</span>
+                    </div>
+                    <div class="approval-queue" style="margin-top: 10px;">
+                      <div class="approval-item">
+                        <div class="approval-item-head">
+                          <strong>theme token 분리</strong>
+                          <span>primary</span>
+                        </div>
+                        <p>light/dark token을 분리해 혼합 surface를 제거합니다.</p>
+                        <div class="approval-meta">
+                          <span class="approval-badge">frontend</span>
+                          <span class="approval-badge">medium scope</span>
+                        </div>
+                      </div>
+                      <div class="approval-item selected">
+                        <div class="approval-item-head">
+                          <strong>side panel toggle 상태 고정</strong>
+                          <span>selected</span>
+                        </div>
+                        <p>Explorer와 Outline의 접힘 상태를 UI 계약으로 고정합니다.</p>
+                        <div class="approval-meta">
+                          <span class="approval-badge">designer</span>
+                          <span class="approval-badge">low risk</span>
+                          <span class="approval-badge">right panel review</span>
+                        </div>
+                      </div>
+                      <div class="approval-item">
+                        <div class="approval-item-head">
+                          <strong>micro motion 추가</strong>
+                          <span>optional</span>
+                        </div>
+                        <p>토글 re-open 시 가벼운 motion을 더해도 split은 유지합니다.</p>
+                      </div>
+                    </div>
+                    <div class="approval-detail">
+                      <article class="approval-card">
+                        <h4>승인 대기 제안</h4>
+                        <p>theme token을 분리하고, side panel section toggle state를 UI 기준으로 고정합니다.</p>
+                        <code class="command">introduce isolated theme tokens + collapsible side-panel sections</code>
+                        <div class="approval-actions">
+                          <span class="action primary">승인 실행</span>
+                          <span class="action">diff 먼저 보기</span>
+                        </div>
+                      </article>
+                    </div>
+                  </div>
+
+                  <div class="composer-dock">
+                    <article class="composer">
+                      <div class="context-row">
+                        <span class="context-chip">theme: dark</span>
+                        <span class="context-chip">outline: expanded</span>
+                        <span class="context-chip">explorer: collapsed</span>
+                      </div>
+                      <div class="composer-box">현재 dark 테마 기준으로 정보 밀도는 유지하고, contrast만 조금 더 다듬어줘. 가시성은 유지하되 neon 톤은 피하고 싶어.</div>
+                      <div class="composer-actions">
+                        <span class="micro">Structure stays same across themes.</span>
+                        <span class="action primary">작업 요청 보내기</span>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </aside>
             </div>
           </div>
-        </div>
+        </article>
       </section>
 
-      <section class="callouts">
-        <article class="callout">
-          <h3>Split Right / Left / Up / Down</h3>
-          <p>활성 탭을 기준으로 상하좌우 분할을 지원합니다. 각 pane은 독립적인 탭 스택을 가집니다.</p>
+      <section class="rules" style="margin-top: 18px;">
+        <article class="rule-card">
+          <strong>테마 규칙</strong>
+          <p>한 버전 안에서는 라이트와 다크 surface가 섞이지 않습니다. editor, sidebar, agent workspace, tabs가 모두 같은 theme token을 공유해야 합니다.</p>
         </article>
-        <article class="callout">
-          <h3>탭 이동</h3>
-          <p>코드 탭, 터미널 탭, diff 탭은 pane 간 이동할 수 있어야 합니다. pane를 닫으면 남은 pane이 공간을 회수합니다.</p>
+        <article class="rule-card">
+          <strong>토글 규칙</strong>
+          <p>좌측 `Explorer`, `Outline`, `Source Control`은 각각 독립 토글입니다. 접히면 body가 사라지고, chevron과 라벨만 남아야 합니다.</p>
         </article>
-        <article class="callout">
-          <h3>Diff / Test / Preview 의미</h3>
-          <p>`Diff`는 변경 코드 비교, `Test`는 구조화된 테스트 결과, `Preview`는 Markdown이나 렌더링된 결과 화면 미리보기입니다.</p>
-        </article>
-        <article class="callout">
-          <h3>프로젝트 관리는 왼쪽</h3>
-          <p>상단에서 프로젝트를 관리하지 않습니다. 프로젝트 전환과 파일 구조 진입은 왼쪽 rail에서 처리합니다.</p>
-        </article>
-        <article class="callout">
-          <h3>하단 제거</h3>
-          <p>결과를 보고 싶으면 중앙에서 새 탭이나 split pane으로 엽니다. 기본 하단 패널은 두지 않습니다.</p>
+        <article class="rule-card">
+          <strong>정보 밀도 규칙</strong>
+          <p>시안은 큰 placeholder box가 아니라 실제 파일명, 코드 줄, 로그, agent reply, approval card로 채워진 상태여야 합니다.</p>
         </article>
       </section>
     </div>

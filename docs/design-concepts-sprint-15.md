@@ -12,6 +12,68 @@
 - 좌측은 `VS Code`처럼 접고 펴는 activity bar + side panel 구조이며, 프로젝트 관리도 여기서 맡는다.
 - 상단은 프로젝트 탭을 두지 않고, `현재 작업`, `연결 상태`, `활성 에이전트`, `승인 대기` 같은 얇은 상태 헤더만 남긴다.
 
+## 최근 트렌드 흡수 기준
+
+- `Figma` 쪽에서 가져올 점
+  - AI로 빠르게 만들더라도 결과물은 더 높은 `craft`와 더 나은 구현 연결성을 요구한다.
+  - 따라서 mock은 추상 박스보다 `실제 탭`, `실제 파일명`, `실제 코드`, `실제 응답 카드`를 먼저 보여줘야 한다.
+- `Canva` 쪽에서 가져올 점
+  - 너무 완벽하고 광택 나는 SaaS 카드보다 인간적인 흔적과 촉감이 느껴지는 layered surface가 더 자연스럽다.
+  - 따라서 색과 질감은 `따뜻한 중성 배경 + 제한된 accent + 부드러운 겹 레이어` 쪽이 맞다.
+- `gtum` 적용 원칙
+  - 큰 둥근 네모 설명 박스를 줄인다.
+  - 설명 라벨보다 `실제 작업 흔적`을 먼저 보여준다.
+  - editor, terminal, agent surface는 서로 다른 재질과 밀도를 가져야 한다.
+  - 지나치게 glossy하거나 neon한 AI 대시보드 톤은 피한다.
+
+## 현실적인 사이즈 가이드
+
+- 전체 앱 프레임
+  - 데스크톱 기준 폭 `1440-1560px`
+  - 높이는 `calc(100vh - 24px)` 근처의 거의 full-height 앱처럼 보이게 한다.
+- 상단 헤더
+  - `44-48px`
+  - 큰 상태 카드 대신 얇은 status strip으로 보이게 한다.
+- 좌측 activity bar
+  - `52-56px`
+- 좌측 side panel
+  - 기본 `280-320px`
+  - 최소 `240px`
+  - 최대 `360px`
+- 중앙 workbench
+  - 최소 `760px` 이상 확보
+  - 기본 split은 `코드 60% / 보조 pane 40%`
+- workbench 탭
+  - 높이 `30-32px`
+  - 큰 버튼이 아니라 compact tab처럼 보여야 한다.
+- 우측 agent workspace
+  - 기본 `360-400px`
+  - 최소 `320px`
+  - 최대 `440px`
+- pane 간 gutter
+  - `6-8px`
+  - radius는 과하지 않게 `10-12px` 정도를 기본으로 둔다.
+
+## 테마 기준
+
+- 시안은 `Light`와 `Dark`를 섞은 한 화면이 아니라, `완결된 2개 버전`으로 보여준다.
+- 한 버전 안에서
+  - editor
+  - sidebar
+  - agent workspace
+  - tab bar
+  - terminal
+  이 서로 다른 모드처럼 보이면 안 된다.
+- `Light`
+  - 따뜻한 중성 배경
+  - 밝은 editor
+  - 낮은 대비의 panel
+  - 제한된 accent
+- `Dark`
+  - 차갑지만 과하게 neon하지 않은 dark shell
+  - editor, panel, tab, agent surface가 같은 dark token 체계 안에 있어야 한다.
+- terminal은 각 테마 안에서 더 어둡게 보일 수 있지만, `다른 앱을 붙인 것처럼` 이질적으로 보이면 안 된다.
+
 ## 용어 정리
 
 - `Project / Branch / Active File`
@@ -49,9 +111,15 @@
     - `소스`
     - `아웃라인`
   - 클릭 시 side panel이 열리고, 다시 누르면 접힌다.
+  - side panel 안의 `Explorer`, `Outline`, `Source Control`도 각각 독립적으로 접고 펼칠 수 있어야 한다.
+  - 즉, 왼쪽 전체만 접는 것이 아니라 섹션 단위 토글이 있어야 한다.
 - 목적
   - 프로젝트 전환과 파일 구조 관리
   - 검색, Git, outline 접근
+- 시안 표현 기준
+  - `Explorer`는 펼침 상태 예시를 보여준다.
+  - `Outline`은 접힘 상태 예시를 같이 보여주거나, 반대로 하나는 접힘, 하나는 펼침으로 상태 차이가 보여야 한다.
+  - chevron과 본문 유무만 봐도 접힘/펼침이 읽혀야 한다.
 
 ### 3. Center Workbench
 
@@ -90,6 +158,11 @@
     - 왼쪽 `코드`, 오른쪽 `터미널`
     - 위 `코드`, 아래 `테스트`
     - 왼쪽 `코드`, 오른쪽 `Diff`
+  - mock 단계에서도 실제 탭 라벨을 쓴다.
+    - 예시
+      - `auth.ts`
+      - `terminal: npm run test:e2e`
+      - `diff: auth flow`
 
 ### 4. Split 동작 규칙
 
@@ -115,6 +188,18 @@
   - 어떤 에이전트가 무엇을 맡았는지 확인
 - 의도
   - 단순 상태판이 아니라 실제로 `일을 주고 답을 받는 메인 인터랙션 창`이어야 한다.
+  - 여러 카드가 따로 노는 구조가 아니라 `하나의 mission surface`처럼 읽혀야 한다.
+  - 즉, 아래 순서가 한 덩어리로 이어져야 한다.
+    - mission header / summary
+    - assigned agent roster
+    - conversation thread
+    - approval dock
+    - composer dock
+  - 시안에서도 요청, 답변, 승인, 다음 입력이 모두 같은 작업 흐름 안에 있어야 한다.
+  - approval은 보통 `하나의 카드`보다 `승인 대기 n개 옵션 queue`로 보이는 쪽이 맞다.
+  - 기본은 `승인 대기 n`과 각 옵션의 compact row 목록을 먼저 보여준다.
+  - 사용자가 선택한 항목만 상세 명령과 실행 버튼이 펼쳐진다.
+  - 즉, 기본 읽기 흐름은 `thread + composer`가 중심이고, approval은 secondary option이어야 한다.
 
 ## 첫 진입 상태 / Empty State
 
@@ -151,6 +236,9 @@
 - 하단 고정 패널
 - 상태만 잔뜩 보여주는 passive `Mission Board`
 - 터미널을 기본 화면 중심에 고정하는 terminal-first 레이아웃
+- 한 화면 안에서 라이트와 다크 surface가 섞여 보이는 혼합 테마
+- `Explorer`, `Outline`이 고정 블록처럼만 보이고 토글 상태가 드러나지 않는 왼쪽 패널
+- 오른쪽 패널이 서로 unrelated한 카드 스택처럼 보여 하나의 기능처럼 읽히지 않는 상태
 
 ## 지금 기준의 구현 방향
 
