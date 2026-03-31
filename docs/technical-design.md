@@ -305,6 +305,9 @@ docs/
 - 프론트엔드 구현은 프레임워크 관용성보다 에이전트가 수정하기 쉬운 단순한 `TypeScript` 구조를 우선할 수 있다.
 - FSD-style 분해를 쓰더라도 기본 단위는 card fragment가 아니라 workbench zone이어야 한다.
 - `app -> widgets -> features -> shared` 경계를 쓰더라도 `editor + agent-workbench`의 co-primary surface와 `tabbed terminal mode` 기준은 그대로 유지해야 한다.
+- 중앙 workbench는 빈 상태, `+` 탭 생성, 상하좌우 pane split, pane 간 탭 이동을 모두 1급 기능으로 본다.
+- 프로젝트 열기와 전환은 상단 project-tab manager보다 좌측 rail에서 처리하는 방향을 우선한다.
+- 기본 레이아웃에서 하단 panel은 제거 가능한 대상으로 보고, 필요한 결과는 pane이나 contextual surface로 푼다.
 
 #### 상태 관리 원칙
 
