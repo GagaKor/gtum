@@ -148,24 +148,32 @@ The default workflow should follow this order:
   - 활성 에이전트
   - split 또는 layout 상태
 - 좌측 패널
-  - activity bar
+  - icon-only activity bar
   - 접기/펼치기 가능한 side panel
   - 프로젝트 열기와 전환
   - 파일 트리, 검색, Git, outline
+  - `프로젝트` icon은 현재 프로젝트와 최근 프로젝트를 보여주는 project switcher 모드다
+  - `탐색기` icon은 file tree를 여는 mode다
+  - 하단 고정 icon은 `설정`이다
   - `Explorer`, `Outline`, `Source Control`은 섹션 단위로 각각 접고 펼칠 수 있어야 함
+  - rail icon에 hover하면 명칭 tooltip이 보여야 함
 - 중앙 메인
   - 비어 있는 상태에서 시작 가능한 workbench
   - 열린 editor tabs
   - `+`로 추가하는 code / terminal / diff / preview / test 탭
   - 상하좌우 pane 분할
   - 낮고 가로로 긴 compact tab UI
+  - split 이후에는 각 pane이 자기 탭바를 가진다
   - box label만 있는 placeholder가 아니라 실제 editor와 terminal 디테일을 보여주는 mock
 - 우측 패널
   - 에이전트 작업창
   - 작업 요청과 답변
-  - task status, approval queue, handoff
-  - 분리된 카드 나열이 아니라 `mission summary -> thread -> approval -> composer`가 이어지는 단일 surface
-  - approval은 기본적으로 `승인 대기 n`과 compact option rows로 보이고, 선택된 항목만 상세 card가 펼쳐진다
+  - task status, pending queue, handoff
+  - 분리된 카드 나열이 아니라 `mission summary -> thread -> composer -> pending dock`가 이어지는 단일 surface
+  - thread와 composer가 오른쪽 패널에서 가장 먼저 눈에 띄어야 한다
+  - approval은 기본적으로 `승인 대기 n`과 slim footer 또는 compact drawer로 보이고, 선택된 항목만 상세 card가 펼쳐진다
+  - approval은 과거 기록이 아니라 현재 pending action만 보여준다
+  - 내부 텍스트는 가로 스크롤보다 줄바꿈을 우선하고, 읽지 못한 채 잘리는 정보가 없어야 한다
 - 하단 패널
   - 기본 레이아웃에서는 제거
   - 필요한 결과는 중앙 탭 또는 우측 맥락 영역으로 보낸다

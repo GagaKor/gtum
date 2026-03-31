@@ -146,26 +146,39 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 
 - 중앙 workbench는 `Editor + Agent Management`의 co-primary surface여야 한다.
 - code viewer는 사이드바가 아니라 메인 영역의 기본 surface여야 한다.
-- agent board는 단순 채팅창이 아니라 roster, task status, plan, approval queue를 보여주는 메인 surface여야 한다.
+- agent board는 단순 채팅창이 아니라 roster, task status, plan, pending action을 함께 다루는 메인 surface여야 한다.
 - 좌측은 `VS Code`처럼 activity bar와 side panel로 나뉘고, 접기/펼치기와 폭 조절이 가능해야 한다.
+- activity rail은 글자 약어보다 icon-only가 기본이고, hover 시 명칭 tooltip이 나오는 패턴이 맞다.
+- activity rail은 오른쪽 agent workspace나 중앙 terminal과 중복되는 `에이전트`, `실행` 전용 icon을 두지 않고, 하단에는 `설정` icon을 두는 편이 맞다.
 - side panel 내부의 `Explorer`, `Outline`, `Source Control`은 각각 독립적인 collapsible section이어야 한다.
+- side panel tree는 큰 행 높이보다 compact typography와 짧은 row height를 우선해, 더 적은 세로 공간으로 읽히게 해야 한다.
 - 프로젝트 열기와 전환 같은 project management는 상단이 아니라 좌측 rail에서 이뤄져야 한다.
+- `프로젝트` icon은 project switcher 모드로 연결되고, 현재 프로젝트, 최근 프로젝트, `Open Folder`, 전환 액션을 보여줘야 한다.
+- `탐색기` icon은 file tree / outline / source control 같은 코드 탐색 모드로 연결돼야 한다.
 - 중앙 workbench는 처음에 비어 있어야 하며, `+` 버튼으로 `코드`, `터미널`, `비교`, `테스트`, `미리보기` 같은 탭을 연다고 이해돼야 한다.
 - 중앙 workbench는 `VS Code`처럼 상하좌우 pane 분할을 지원해야 한다.
 - workbench 탭은 큰 CTA 버튼이 아니라 `VS Code`처럼 낮고 가로로 긴 compact tab 형태여야 한다.
+- split 상태에서는 전역 탭바 하나보다, 각 pane이 own tab strip과 own tab stack을 가지는 구조가 맞다.
+- center의 pane tab strip과 pane header는 코드 본문보다 한 단계 작고 얇아야 하며, 정보보다 전환 조작으로 읽혀야 한다.
 - `비교` 탭은 변경 코드 비교용이다.
 - `테스트` 탭은 raw shell 대신 구조화된 테스트 결과와 실패 목록을 보여주는 탭이다.
 - `미리보기` 탭은 Markdown, HTML, 렌더링 결과 같은 preview surface다.
 - 중앙 시안은 단순 placeholder 박스가 아니라 실제 editor, terminal, diff, approval detail이 들어간 현실적인 밀도로 보여야 한다.
 - editor는 breadcrumbs, line number, active line, syntax color, minimap 같은 최소한의 읽기 디테일을 가져야 한다.
 - terminal은 prompt, command, success/error output, running indicator가 보여야 한다.
-- agent board는 실제로 일을 주고 답변을 받고 승인하는 `에이전트 작업창`처럼 읽혀야 한다.
-- 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> approval -> composer`가 이어지는 하나의 작업 surface처럼 보여야 한다.
-- approval UI는 항상 큰 카드로 열려 있지 않고, 기본은 `승인 대기 n` 형태의 compact summary row여야 한다.
-- approval queue는 여러 후보를 compact row 목록으로 보여주고, 선택된 항목만 상세 승인 카드와 실행 버튼이 펼쳐지는 구조가 맞다.
+- agent board는 실제로 일을 주고 답변을 받고 제안을 보내는 `에이전트 작업창`처럼 읽혀야 한다.
+- 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> composer -> pending dock`가 이어지는 하나의 작업 surface처럼 보여야 한다.
+- thread와 composer가 항상 오른쪽 패널에서 가장 눈에 띄고 사용성이 좋은 영역이어야 한다.
+- approval UI는 항상 큰 카드로 열려 있지 않고, 기본은 `승인 대기 n` 형태의 slim footer 또는 compact drawer여야 한다.
+- approval queue는 여러 후보를 compact row 또는 small pill 목록으로 보여주고, 사용자가 열었을 때만 상세 승인 카드와 실행 버튼이 펼쳐지는 구조가 맞다.
+- approval 영역은 `과거 승인 기록`이 아니라 `현재 pending action`만 보여주는 것이 맞다.
+- 과거 승인이나 이미 끝난 결정은 approval UI가 아니라 task history / trace 같은 secondary zone으로 내려야 한다.
+- agent workspace 내부 카드, queue row, command block, context chip은 기본적으로 가로 스크롤보다 줄바꿈을 우선해야 한다.
+- 사용자가 일부 텍스트를 읽지 못한 채 잘리는 상태는 금지한다.
+- agent workspace도 side panel처럼 compact typography와 짧은 row height를 우선해, 세로 공간을 과도하게 먹지 않게 해야 한다.
 - terminal은 상단 고정 모드 버튼이 아니라 `+`로 여는 workbench tab 타입이어야 하며, 기본 화면을 점유하는 주인공은 아니어야 한다.
 - 하단 패널은 기본 구조에서 제거하고, 필요 정보는 pane 또는 overlay로 푼다.
-- approval rail은 editor와 agent board를 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
+- pending dock은 editor와 agent board를 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
 - 첫 code-reading slice는 read-only viewer까지만 포함한다.
 - line anchor와 restore 상태는 숨은 내부 상태가 아니라 사용자가 다시 읽을 수 있는 정보여야 한다.
 - binary와 large-file fallback은 에러처럼 보이지 않고 bounded preview mode처럼 읽혀야 한다.
@@ -176,6 +189,7 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - 좌측 rail, side panel, editor pane, terminal pane, agent panel은 모두 같은 박스 스타일을 재사용하지 않는다.
 - 탭, pill, badge는 작고 조밀해야 하며, 큰 둥근 CTA 블록처럼 보이면 안 된다.
 - 한 mock 안에서 light/dark surface를 섞지 않는다. `Light version`, `Dark version`은 각각 완결된 token 체계를 가져야 한다.
+- `Light version`에서는 rail과 terminal도 light family 안에 있어야 하며, dark shell이 섞여 보이면 안 된다.
 - design preview와 구현 기본 레이아웃은 common laptop width에서 주요 영역이 잘리지 않아야 하며, 필요 시 responsive reflow나 panel drop을 우선한다.
 
 ### English
@@ -248,7 +262,7 @@ For the current active slice, the frontend should follow these rules:
 - 계획, 실행, 승인, 결과가 이어지는 흐름형 UX
 - 무엇이 자동이고 무엇이 승인 필요인지 분명하게 보이는 표현
 - 에이전트 orchestration은 강하지만 코드 읽기 surface 불편함은 반복하지 않는 기준
-- 작업 경로와 승인/실패 이력을 문제 분석에 쓸 수 있게 드러내는 방식
+- 현재 pending action과 별도 task history/trace를 분리해 문제 분석에 쓰게 하는 방식
 
 #### `cmux`에서 배울 점
 
@@ -297,7 +311,7 @@ For the current active slice, the frontend should follow these rules:
 - a UI that makes agent and task state scannable at a glance
 - flow-oriented UX across planning, execution, approval, and result
 - explicit distinction between what is automatic and what requires approval
-- visible traces of prior approvals, failures, and retries that can drive improvement
+- a clear split between current pending actions and secondary task history or trace for finished decisions
 - keep the orchestration strengths without inheriting uncomfortable code-reading surfaces
 
 #### What to borrow from `cmux`
@@ -328,7 +342,7 @@ For the current active slice, the frontend should follow these rules:
 - 디버그 정보, mock 세부정보, callback 값은 기본 화면의 주인공이 되면 안 된다.
 - 코드 읽기, 흐름 추적, 테스트 확인은 AI 대화창보다 먼저 보이거나 최소한 같은 급의 작업 surface를 가져야 한다.
 - 에이전트 대화는 보조 surface일 수 있지만, 코드 보기가 사이드바나 하단 패널에 종속되면 안 된다.
-- 사용자는 현재 상태뿐 아니라 이미 밟은 승인, 실패, 재시도 경로를 한눈에 복기할 수 있어야 한다.
+- 사용자는 현재 pending action은 메인 UI에서 빠르게 보고, 이미 끝난 승인, 실패, 재시도 경로는 task history나 trace에서 복기할 수 있어야 한다.
 - task history와 실행 이력은 단순 로그가 아니라 문제 분석이 가능한 timeline 또는 trace 형태로 읽혀야 한다.
 - 에이전트가 안정적으로 수정하기 어렵다면 React 추상화보다 더 단순한 `TypeScript` 중심 구조를 우선할 수 있다.
 - 큰 네모 placeholder가 화면을 설명하는 수준에서 멈추면 안 되고, 실제 작업 surface처럼 보여야 한다.
@@ -351,7 +365,7 @@ For the current active slice, the frontend should follow these rules:
 - debug data, mock details, and raw callback values must not dominate the default UI
 - code reading, flow tracing, and test inspection should be at least as first-class as the AI conversation surface
 - AI chat may be secondary, but code viewing must not be trapped inside a sidebar-only or bottom-panel-only interaction model
-- users should be able to reread approvals, failures, retries, and detours without manually reconstructing the story from scattered logs
+- users should see current pending actions in the main surface and revisit completed approvals, failures, retries, and detours in task history or trace
 - task history should be readable as a scannable timeline or trace, not just as raw transcript fragments
 - if React abstractions make agent-driven maintenance harder, prefer a simpler `TypeScript`-first structure over framework purity
 - if the frontend adopts an FSD-style split, keep the boundaries aligned with workbench zones rather than decorative card fragments
@@ -410,7 +424,7 @@ For the current active slice, the frontend should follow these rules:
 4. 카드 수를 줄이고 패널 구조로 바꿀 수 없는가
 5. debug/mock 정보를 한 단계 더 뒤로 보낼 수 없는가
 6. 에이전트 대화와 별개로 사용자가 코드를 읽고 흐름을 따라가기 편한 editor-like surface가 있는가
-7. 사용자가 승인, 실패, 재시도 경로를 별도 추리 없이 복기하고 문제를 파악할 수 있는가
+7. 사용자가 현재 pending action과 종료된 결정 이력을 헷갈리지 않고, task history나 trace에서 문제를 파악할 수 있는가
 
 ### English
 
@@ -422,4 +436,4 @@ Before shipping frontend work, check:
 4. can this be expressed with fewer cards and stronger panel layout
 5. can debug or mock details be pushed one level further back
 6. does the user still have an editor-like surface for reading code and tracing flow apart from the agent conversation
-7. can the user quickly reread approvals, failures, retries, and detours to diagnose recurring problems
+7. can the user distinguish current pending actions from finished decisions and diagnose recurring problems through task history or trace
