@@ -300,11 +300,11 @@ docs/
 - smoke test와 기능별 시나리오를 구분하고, 스프린트 종료 시 smoke test는 항상 통과 상태를 목표로 한다.
 - Tauri 데스크톱 런타임과 웹 프론트엔드 검증을 분리하되, 가능한 한 같은 사용자 흐름 이름을 유지한다.
 - 프론트엔드 레이아웃과 상호작용은 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
-- 디자인 검토 시 `VS Code`, `conductor`, `cmux` 대비 정보 계층과 터미널 중심성이 유지되는지 확인한다.
+- 디자인 검토 시 `VS Code`의 editor hierarchy, `conductor`의 agent workflow, `cmux`의 tabbed terminal strength가 유지되는지 확인한다.
 - UI는 task history와 실행 이력이 사용자가 밟아온 승인, 실패, 재시도 경로를 재구성할 수 있을 정도로 남는지 확인한다.
 - 프론트엔드 구현은 프레임워크 관용성보다 에이전트가 수정하기 쉬운 단순한 `TypeScript` 구조를 우선할 수 있다.
 - FSD-style 분해를 쓰더라도 기본 단위는 card fragment가 아니라 workbench zone이어야 한다.
-- `app -> widgets -> features -> shared` 경계를 쓰더라도 `code + terminal`의 dual-primary surface는 그대로 유지해야 한다.
+- `app -> widgets -> features -> shared` 경계를 쓰더라도 `editor + agent-workbench`의 co-primary surface와 `tabbed terminal mode` 기준은 그대로 유지해야 한다.
 
 #### 상태 관리 원칙
 
@@ -354,11 +354,11 @@ The frontend should be organized by feature domain.
 - separate smoke tests from feature-specific scenarios, and aim to keep smoke tests green at the end of every sprint
 - separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
 - review frontend layout and interaction quality against `docs/frontend-design-benchmarks.md`
-- check whether the UI still preserves the hierarchy of `VS Code`, the workflow clarity of `conductor`, and the terminal-first emphasis of `cmux`
+- check whether the UI still preserves the editor hierarchy of `VS Code`, the agent-workflow clarity of `conductor`, and the tabbed-terminal strength of `cmux`
 - make sure task history and execution history remain legible enough for users to reconstruct approvals, failures, and retries
 - prefer frontend implementation patterns that are easy for agents to edit, even if that means reducing framework-heavy abstractions in favor of simpler `TypeScript` structures
 - when using an FSD-style split, prefer workbench-zone boundaries over fragmenting the UI into many small dashboard cards
-- keep the dual-primary `code + terminal` surface intact while decomposing widgets and features
+- keep the co-primary `editor + agent-workbench` surface intact while decomposing widgets and features, and keep the terminal as a strong switchable mode
 
 ## 테스트 전략 / Testing Strategy
 
@@ -559,7 +559,7 @@ The first code-reading slice should start as a read-only viewer rather than a fu
 
 #### Goals
 
-- keep the terminal and code surface visible together in the main workspace
+- keep the editor surface primary while leaving the terminal reachable through workbench mode tabs
 - promote the selected file into first-class agent-request context
 - let the approval review restate which file context the suggestion was based on
 

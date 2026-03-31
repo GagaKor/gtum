@@ -40,6 +40,30 @@ Read this document when:
 - you need to determine what should be built next or which sprint is the active planning baseline
 - you need to confirm deliverables, closing criteria, or handoff into the next sprint
 
+## 현재 기준 메모 / Current Baseline Note
+
+### 한국어
+
+이 문서에는 과거 스프린트 기록이 함께 들어 있으므로, 예전 `terminal-first` 표현이 남아 있을 수 있다.
+
+현재 UI 방향의 source of truth는 과거 스프린트 기록보다 아래 문서가 우선한다.
+
+- [product-plan.md](/home/kwon/project/gtum/docs/product-plan.md)
+- [frontend-design-benchmarks.md](/home/kwon/project/gtum/docs/frontend-design-benchmarks.md)
+- [ui-ux-wireframes.md](/home/kwon/project/gtum/docs/ui-ux-wireframes.md)
+- [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)
+
+### English
+
+This document also contains historical sprint records, so older `terminal-first` phrasing may remain in past sprint sections.
+
+For the current UI direction, treat the following documents as higher priority than historical sprint wording:
+
+- [product-plan.md](/home/kwon/project/gtum/docs/product-plan.md)
+- [frontend-design-benchmarks.md](/home/kwon/project/gtum/docs/frontend-design-benchmarks.md)
+- [ui-ux-wireframes.md](/home/kwon/project/gtum/docs/ui-ux-wireframes.md)
+- [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)
+
 ## 장문 문서 라우팅 / Long-Doc Routing
 
 ### 한국어
@@ -70,7 +94,7 @@ This document exceeds 200 lines. Do not read every sprint by default.
 
 - `P0` 항목을 먼저 잠근다.
 - 리스크가 큰 항목은 가능한 한 초반 스프린트에서 검증한다.
-- "에이전트 UI"보다 "활성 터미널 로그를 읽고 연결하는 흐름"을 더 우선한다.
+- 기본 화면에서는 `editor + agent orchestration`을 먼저 잠그고, 터미널은 필요 시 강하게 전환해 쓰는 mode로 설계한다.
 - 스프린트마다 사용자에게 보이는 가치가 하나 이상 있어야 한다.
 - 각 스프린트는 다음 스프린트의 기반을 남겨야 한다.
 - 각 스프린트의 마지막에는 가능한 범위의 UI E2E 검증을 추가하거나 갱신한다.
@@ -86,7 +110,7 @@ This document exceeds 200 lines. Do not read every sprint by default.
 
 - lock down `P0` items first
 - validate high-risk items as early as possible
-- prioritize "reading and attaching live terminal logs" above superficial agent UI polish
+- lock down the `editor + agent orchestration` baseline first, and design the terminal as a strong switchable mode rather than the default dominant surface
 - each sprint should deliver at least one visible user-facing value
 - each sprint should leave a clean foundation for the next one
 - finish each sprint with a practical UI E2E pass added or updated for the delivered flow
@@ -1708,8 +1732,8 @@ Sprint 14 initial backlog:
 
 ### 한국어
 
-다음 단계로는 먼저 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)에서 메인 화면 구조를 고르고, 그 기준으로 `Sprint 14` 위에서 `WorkspaceStage`를 `code-stage / terminal-stage / workspace-support`로 한 번 더 나누고, symbol/range anchor, richer outline navigation, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
+다음 단계로는 먼저 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)에서 `editor + agent board + tabbed terminal mode` 기준의 메인 화면 구조를 고르고, 그 기준으로 `Sprint 14` 위에서 `WorkspaceStage`를 `editor-stage / agent-workbench / workspace-support` 중심으로 다시 나누고, terminal mode tab, richer outline navigation, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
 
 ### English
 
-The next step should start by choosing a main workbench direction from [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md), then build on `Sprint 14` by splitting `WorkspaceStage` further into `code-stage / terminal-stage / workspace-support`, followed by symbol/range anchors, richer outline navigation, and stronger real Windows validation so the editor-like surface becomes a materially better code-tracing tool.
+The next step should start by choosing an `editor + agent board + tabbed terminal mode` direction from [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md), then build on `Sprint 14` by splitting `WorkspaceStage` further into `editor-stage / agent-workbench / workspace-support`, followed by a terminal-mode tab, richer outline navigation, and stronger real Windows validation so the product feels closer to a conductor-style IDE instead of a terminal-first shell.

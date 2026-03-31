@@ -70,15 +70,16 @@ The current UI contains many capabilities, but the workflow is not visually clea
 - the first user action is not obvious
 - project, terminal, agent, Telegram, and debug information compete at once
 - development-facing details such as `mock`, `prototype`, and raw callbacks sit too close to normal user-facing areas
-- the screen falls short of the structural clarity of `VS Code`, the workflow readability of `conductor`, and the terminal-first focus of `cmux`
+- the screen falls short of the structural clarity of `VS Code`, the workflow readability of `conductor`, and the tabbed-terminal strength of `cmux`
 
 ## 설계 원칙 / Design Principles
 
 ### 한국어
 
-- `VS Code`의 구조적 정보 계층, `conductor`의 에이전트 흐름, `cmux`의 터미널 중심성을 함께 참고한다.
-- 터미널을 메인 작업 영역으로 둔다.
-- 프로젝트 열기, 터미널 작업, 에이전트 요청 순서가 화면 구조에서 드러나야 한다.
+- `VS Code`의 구조적 정보 계층, `conductor`의 에이전트 흐름, `cmux`의 탭형 터미널 강점을 함께 참고한다.
+- editor와 agent management를 메인 작업 영역으로 둔다.
+- 터미널은 기본 메인 영역이 아니라 `Code / Diff / Trace / Tests / Terminal` 같은 mode tab으로 제공한다.
+- 프로젝트 열기, 코드 읽기, 에이전트 운영, 필요 시 터미널 전환 순서가 화면 구조에서 드러나야 한다.
 - 사용자가 지금 해야 할 첫 액션을 항상 쉽게 찾을 수 있어야 한다.
 - 보조 정보는 접거나 2선으로 내린다.
 - `mock`, `prototype`, `real`은 상태 뱃지로 명확히 구분하되, mock 정보가 화면 전체를 점유하지 않게 한다.
@@ -87,9 +88,10 @@ The current UI contains many capabilities, but the workflow is not visually clea
 
 ### English
 
-- reference the structural hierarchy of `VS Code`, the agent workflow of `conductor`, and the terminal-first feel of `cmux`
-- make the terminal the main working surface
-- let the structure visually express the order of project open, terminal work, and agent request
+- reference the structural hierarchy of `VS Code`, the agent workflow of `conductor`, and the tabbed-terminal strength of `cmux`
+- make the editor and agent-management surfaces the main working area
+- provide the terminal through a `Code / Diff / Trace / Tests / Terminal` style mode-tab rather than a permanently dominant pane
+- let the structure visually express the order of project open, code reading, agent operation, and optional terminal switching
 - keep the first action easy to discover at all times
 - collapse or demote supporting information
 - distinguish `mock`, `prototype`, and `real` with explicit badges without letting mock states dominate the screen
@@ -103,20 +105,22 @@ The current UI contains many capabilities, but the workflow is not visually clea
 기본 작업 흐름은 아래 순서를 따른다.
 
 1. 프로젝트를 연다.
-2. 필요한 터미널 탭을 만든다.
-3. 코드와 로그를 본다.
-4. 에이전트에게 요청한다.
-5. 제안을 검토하고 승인 실행한다.
+2. 코드를 읽고 필요한 파일을 고른다.
+3. 에이전트에게 작업을 요청하거나 task를 배정한다.
+4. plan, status, approval queue를 검토한다.
+5. 필요할 때 `Terminal` 탭으로 전환해 실행과 로그를 본다.
+6. 결과를 검토하고 승인 실행하거나 다음 task로 넘긴다.
 
 ### English
 
 The default workflow should follow this order:
 
 1. open a project
-2. create the needed terminal tabs
-3. inspect code and logs
-4. send a request to an agent
-5. review and approve execution
+2. read code and pick the needed file context
+3. request work from an agent or assign a task
+4. review the plan, status, and approval queue
+5. switch into the `Terminal` tab when execution or logs are needed
+6. review results and approve execution or hand off the next task
 
 ## 화면 구조 제안 / Proposed Screen Structure
 
@@ -124,50 +128,52 @@ The default workflow should follow this order:
 
 - 상단 바
   - 현재 프로젝트 이름과 경로 요약
-  - 활성 터미널 탭
+  - 현재 task 또는 active agent 요약
   - provider 상태
   - 실행 모드
 - 좌측 패널
   - 프로젝트 열기 버튼
   - 최근 프로젝트
-  - 파일 트리
+  - 파일 트리와 outline
 - 중앙 메인
-  - 터미널 탭 바
-  - 활성 터미널
-  - 빠른 액션
+  - editor tabs
+  - 활성 코드 surface
+  - `Code / Diff / Trace / Tests / Terminal` mode tab
 - 우측 패널
-  - 에이전트 요청 입력
-  - 연결된 provider 상태
-  - 제안 카드와 승인 액션
+  - agent roster
+  - task status와 plan
+  - approval queue와 handoff
 - 하단 접이식 패널
-  - 작업 이력
-  - Telegram
-  - runtime/debug
+  - trace와 review history
+  - test results
+  - terminal sessions
+  - Telegram과 runtime/debug
 - 구현 구조는 가능하면 `widgets/project-sidebar`, `widgets/workspace-stage`, `widgets/agent-sidebar`처럼 화면 zone과 같은 단위로 나눈다.
 
 ### English
 
 - top bar
   - current project name and compact path
-  - active terminal tab
+  - current task or active-agent summary
   - provider state
   - execution mode
 - left panel
   - open-project action
   - recent projects
-  - file tree
+  - file tree and outline
 - center main
-  - terminal tab bar
-  - active terminal
-  - quick actions
+  - editor tabs
+  - active code surface
+  - `Code / Diff / Trace / Tests / Terminal` mode tab
 - right panel
-  - agent request input
-  - connected provider state
-  - suggestion cards and approval actions
+  - agent roster
+  - task status and plan
+  - approval queue and handoff
 - bottom collapsible panel
-  - task history
-  - Telegram
-  - runtime/debug
+  - trace and review history
+  - test results
+  - terminal sessions
+  - Telegram and runtime/debug
 - when splitting implementation structure, prefer boundaries that match these screen zones such as `widgets/project-sidebar`, `widgets/workspace-stage`, and `widgets/agent-sidebar`
 
 ## 데스크톱 기본 와이어프레임 / Desktop Primary Wireframe
@@ -176,22 +182,19 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project: my-app | Active Tab: tests | Provider: Codex (prototype) | Mode: Balanced      |
+| gtum | Project: my-app | Task: fix failing tests | Provider: Codex | Active Agent: backend     |
 +------------------------------+------------------------------------------------+--------------------+
-| Open Project                 | Tabs: app | tests | server | +                | Agent              |
+| Open Project                 | Tabs: app.ts | auth.rs | diff | terminal      | Agents             |
 | Recent Projects              +------------------------------------------------+--------------------+
-| - my-app                     |                                                | Request            |
-| - docs-site                  |                ACTIVE TERMINAL                 | [textarea]         |
+| - my-app                     |                                                | backend / frontend |
+| - docs-site                  |                ACTIVE EDITOR                   | planner / QA       |
 |                              |                                                |                    |
-| File Tree                    |                test output / logs              | Context            |
-| src/                         |                                                | Project attached   |
-| tests/                       |                                                | Tab: tests         |
-| package.json                 |                                                | Active log: on     |
-|                              |                                                |                    |
-|                              |                                                | Suggestions        |
-|                              |                                                | [review card]      |
+| File Tree / Outline          |                code surface                    | Plan / Queue       |
+| src/                         |                                                | pending approvals  |
+| tests/                       +------------------------------------------------+--------------------+
+| package.json                 | Mode: Code | Diff | Trace | Tests | Terminal | Result / Handoff   |
 +------------------------------+------------------------------------------------+--------------------+
-| Task History | Telegram | Runtime / Debug (collapsed by default)                                 |
+| Trace / Review History | Test Results | Terminal Sessions | Telegram | Runtime / Debug          |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -199,22 +202,19 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project: my-app | Active Tab: tests | Provider: Codex (prototype) | Mode: Balanced      |
+| gtum | Project: my-app | Task: fix failing tests | Provider: Codex | Active Agent: backend     |
 +------------------------------+------------------------------------------------+--------------------+
-| Open Project                 | Tabs: app | tests | server | +                | Agent              |
+| Open Project                 | Tabs: app.ts | auth.rs | diff | terminal      | Agents             |
 | Recent Projects              +------------------------------------------------+--------------------+
-| - my-app                     |                                                | Request            |
-| - docs-site                  |                ACTIVE TERMINAL                 | [textarea]         |
+| - my-app                     |                                                | backend / frontend |
+| - docs-site                  |                ACTIVE EDITOR                   | planner / QA       |
 |                              |                                                |                    |
-| File Tree                    |                test output / logs              | Context            |
-| src/                         |                                                | Project attached   |
-| tests/                       |                                                | Tab: tests         |
-| package.json                 |                                                | Active log: on     |
-|                              |                                                |                    |
-|                              |                                                | Suggestions        |
-|                              |                                                | [review card]      |
+| File Tree / Outline          |                code surface                    | Plan / Queue       |
+| src/                         |                                                | pending approvals  |
+| tests/                       +------------------------------------------------+--------------------+
+| package.json                 | Mode: Code | Diff | Trace | Tests | Terminal | Result / Handoff   |
 +------------------------------+------------------------------------------------+--------------------+
-| Task History | Telegram | Runtime / Debug (collapsed by default)                                 |
+| Trace / Review History | Test Results | Terminal Sessions | Telegram | Runtime / Debug          |
 +--------------------------------------------------------------------------------------------------+
 ```
 

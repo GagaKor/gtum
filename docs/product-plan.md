@@ -78,7 +78,7 @@ This document exceeds 200 lines. Do not read it end to end by default. Use only 
 
 ### 한국어
 
-`gtum`은 프로젝트, 터미널, AI 에이전트를 하나의 로컬 데스크톱 워크스페이스에서 함께 다루기 위한 제품이다.
+`gtum`은 프로젝트, 코드 에디터, AI 에이전트, 그리고 필요할 때 강하게 전환해 쓰는 터미널 세션을 하나의 로컬 데스크톱 워크스페이스에서 함께 다루기 위한 제품이다.
 
 이 제품은 다음 세 가지 감각을 결합하는 것을 목표로 한다.
 
@@ -86,7 +86,7 @@ This document exceeds 200 lines. Do not read it end to end by default. Use only 
 - `cmux`의 터미널 멀티플렉싱 감각
 - 프로젝트와 터미널 상태를 함께 읽는 에이전트 협업 레이어
 
-즉, 단순한 터미널 에뮬레이터가 아니라 프로젝트 중심으로 작업을 조직하고, 탭 단위로 실행 흐름을 분리하며, 에이전트가 그 맥락을 이해하고 도와주는 작업 환경을 만드는 것이 핵심이다.
+즉, 단순한 터미널 에뮬레이터가 아니라 `VS Code`처럼 코드를 읽기 쉬운 editor surface와 `conductor`처럼 에이전트를 관리하는 orchestration surface를 중심에 두고, 필요할 때 강한 터미널 mode로 전환하는 작업 환경을 만드는 것이 핵심이다.
 
 이 제품은 개인적인 실제 사용 경험에서 나온 문제를 해결하려는 시도이기도 하다.
 
@@ -97,7 +97,7 @@ This document exceeds 200 lines. Do not read it end to end by default. Use only 
 
 ### English
 
-`gtum` is a local desktop workspace for managing projects, terminals, and AI agents together.
+`gtum` is a local desktop workspace for managing projects, code editors, AI agents, and strong on-demand terminal sessions together.
 
 The product combines:
 
@@ -105,7 +105,7 @@ The product combines:
 - the terminal multiplexing feel of `cmux`
 - an agent collaboration layer that can read both project and terminal state
 
-The goal is not to build another terminal emulator. The goal is to build a project-centric workspace where users organize work by project, separate execution flows by tab, and let agents assist with full context.
+The goal is not to build another terminal emulator. The goal is to center a `VS Code`-like editor surface and a `conductor`-like agent-orchestration surface, while letting users switch into a stronger terminal mode whenever execution work requires it.
 
 This product also comes from direct hands-on frustration with existing tools.
 
@@ -217,14 +217,14 @@ In short, `gtum` aims to reduce the friction of constantly switching between sep
 ### 한국어
 
 - 여러 서비스와 명령을 동시에 다루는 개발자
-- 터미널 중심 작업 흐름 안에서 에이전트 도움을 받고 싶은 사용자
-- 실행, 테스트, 디버깅, 배포 루틴을 프로젝트 단위로 관리하고 싶은 사용자
+- editor 중심으로 코드를 읽으면서 에이전트를 운영하고 싶은 사용자
+- 실행, 테스트, 디버깅, 배포 루틴을 필요할 때 터미널 mode로 전환해 다루고 싶은 사용자
 
 ### English
 
 - developers working across multiple services and commands
-- users who want agent assistance inside terminal-heavy workflows
-- users who want to manage run, test, debug, and deploy routines by project
+- users who want to operate agents while staying inside an editor-first workflow
+- users who want to switch into a strong terminal mode when execution, testing, debugging, or deployment needs it
 
 ## 지원 플랫폼 / Supported Platforms
 
