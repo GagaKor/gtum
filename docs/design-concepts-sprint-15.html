@@ -3,143 +3,119 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>gtum Sprint 15 Design Concepts</title>
+    <title>gtum Sprint 15 Refined Design Baseline</title>
     <style>
       :root {
-        --paper: #f7f3ec;
-        --ink: #1e1814;
-        --muted: #665c53;
-        --line: rgba(30, 24, 20, 0.16);
-        --panel: rgba(255, 255, 255, 0.84);
-        --a: #b6572d;
-        --b: #2d6175;
-        --c: #6a7c2b;
+        --paper: #f3e6d4;
+        --ink: #171412;
+        --shell: #221d1a;
+        --mist: #6e615a;
+        --ember: #c95c27;
+        --line: rgba(23, 20, 18, 0.14);
+        --panel: rgba(255, 250, 243, 0.88);
       }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
 
       body {
         margin: 0;
         font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-        background:
-          radial-gradient(circle at top left, rgba(182, 87, 45, 0.08), transparent 24%),
-          linear-gradient(180deg, #fff8ef, var(--paper));
         color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(201, 92, 39, 0.1), transparent 24%),
+          linear-gradient(180deg, #fff8ef, var(--paper));
       }
 
+      h1, h2, h3, p { margin: 0; }
+
       .page {
-        width: min(1420px, calc(100vw - 40px));
+        width: min(1460px, calc(100vw - 40px));
         margin: 0 auto;
-        padding: 32px 0 56px;
+        padding: 30px 0 56px;
       }
 
       .hero {
         display: grid;
         gap: 12px;
-        margin-bottom: 26px;
+        margin-bottom: 22px;
       }
 
       .eyebrow {
         font-size: 12px;
-        font-weight: 700;
+        font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.14em;
-        color: var(--muted);
-      }
-
-      h1,
-      h2,
-      p {
-        margin: 0;
+        color: var(--mist);
       }
 
       .hero h1 {
-        font-size: clamp(30px, 5vw, 56px);
-        line-height: 1;
+        font-size: clamp(34px, 6vw, 58px);
+        line-height: 0.96;
         letter-spacing: -0.04em;
       }
 
       .hero p {
-        max-width: 900px;
-        color: var(--muted);
+        max-width: 980px;
+        color: var(--mist);
         line-height: 1.6;
       }
 
-      .legend {
+      .summary {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 12px;
         margin-bottom: 22px;
       }
 
-      .legend-card,
-      .concept {
+      .card,
+      .screen {
         border: 1px solid var(--line);
-        background: var(--panel);
         border-radius: 22px;
-        backdrop-filter: blur(8px);
+        background: var(--panel);
+        backdrop-filter: blur(10px);
       }
 
-      .legend-card {
+      .card {
         padding: 16px 18px;
       }
 
-      .legend-card strong {
+      .card strong {
         display: block;
         margin-bottom: 6px;
       }
 
-      .legend-card p {
-        color: var(--muted);
+      .card p {
         font-size: 14px;
         line-height: 1.5;
+        color: var(--mist);
       }
 
-      .concepts {
+      .screens {
         display: grid;
         gap: 18px;
       }
 
-      .concept {
+      .screen {
         padding: 20px;
         display: grid;
-        grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+        grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
         gap: 20px;
       }
 
-      .concept-meta {
+      .meta {
         display: grid;
         gap: 12px;
         align-content: start;
       }
 
-      .concept-title {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 34px;
-        height: 34px;
-        border-radius: 999px;
-        color: #fff;
-        font-weight: 700;
-      }
-
-      .concept-meta h2 {
+      .meta h2 {
         font-size: 30px;
         letter-spacing: -0.04em;
       }
 
-      .concept-meta p {
-        color: var(--muted);
-        line-height: 1.55;
+      .meta p {
+        color: var(--mist);
+        line-height: 1.58;
       }
 
       .chips {
@@ -149,75 +125,123 @@
       }
 
       .chip {
-        border-radius: 999px;
         padding: 6px 10px;
-        background: rgba(30, 24, 20, 0.08);
+        border-radius: 999px;
+        background: rgba(23, 20, 18, 0.08);
         font-size: 12px;
         font-weight: 700;
       }
 
       .wireframe {
+        border: 1px solid rgba(23, 20, 18, 0.12);
         border-radius: 20px;
-        border: 1px solid rgba(30, 24, 20, 0.12);
-        background: #fff;
+        background: white;
         padding: 14px;
         display: grid;
         gap: 12px;
       }
 
-      .chrome {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto auto;
-        gap: 8px;
-      }
-
-      .bar,
-      .slot,
-      .pane,
-      .stack,
-      .board {
-        border: 1px solid rgba(30, 24, 20, 0.12);
+      .topbar,
+      .side,
+      .main,
+      .right,
+      .drawer,
+      .activity,
+      .tabbar,
+      .panel,
+      .empty {
+        border: 1px solid rgba(23, 20, 18, 0.12);
         border-radius: 14px;
-        background: rgba(249, 247, 244, 0.9);
+        background: rgba(249, 247, 244, 0.94);
       }
 
-      .bar,
-      .slot {
+      .topbar,
+      .drawer,
+      .tabbar {
         min-height: 44px;
         padding: 10px 12px;
         font-size: 12px;
-        font-weight: 700;
-        color: var(--muted);
+        font-weight: 800;
+        color: var(--mist);
       }
 
-      .layout-a,
-      .layout-b,
-      .layout-c {
-        min-height: 360px;
+      .layout {
+        min-height: 380px;
         display: grid;
+        grid-template-columns: 76px 220px minmax(0, 1fr) 300px;
         gap: 12px;
       }
 
-      .layout-a,
-      .layout-c {
-        grid-template-columns: 240px minmax(0, 1fr) 320px;
-      }
-
-      .layout-b {
-        grid-template-columns: 220px minmax(0, 1fr) 360px;
-      }
-
-      .rail,
-      .main,
-      .inspector {
+      .activity,
+      .side,
+      .right {
+        padding: 12px;
         display: grid;
         gap: 10px;
       }
 
-      .rail,
-      .inspector,
-      .board {
+      .main {
         padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .activity {
+        align-content: start;
+      }
+
+      .icon {
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--mist);
+      }
+
+      .panel {
+        padding: 12px;
+        min-height: 84px;
+      }
+
+      .panel.tall {
+        min-height: 222px;
+      }
+
+      .empty {
+        min-height: 264px;
+        padding: 22px;
+        display: grid;
+        align-content: center;
+        gap: 14px;
+        text-align: center;
+      }
+
+      .empty strong {
+        font-size: 18px;
+      }
+
+      .empty p {
+        color: var(--mist);
+        line-height: 1.6;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .action {
+        padding: 10px 12px;
+        border-radius: 999px;
+        background: rgba(201, 92, 39, 0.12);
+        border: 1px solid rgba(201, 92, 39, 0.18);
+        font-size: 12px;
+        font-weight: 800;
+        color: var(--shell);
       }
 
       .pane-label {
@@ -225,86 +249,20 @@
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.12em;
-        color: var(--muted);
+        color: var(--mist);
       }
 
-      .pane {
-        padding: 12px;
-        min-height: 92px;
-      }
-
-      .pane.tall {
-        min-height: 240px;
-      }
-
-      .stack {
-        padding: 12px;
-        min-height: 68px;
-      }
-
-      .tab-strip {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 8px;
-      }
-
-      .tab {
-        border-radius: 12px;
-        border: 1px solid rgba(30, 24, 20, 0.12);
-        background: rgba(249, 247, 244, 0.96);
-        padding: 10px 12px;
-        font-size: 12px;
-        font-weight: 700;
-        color: var(--muted);
-        text-align: center;
-      }
-
-      .tab.active {
-        background: rgba(30, 24, 20, 0.08);
-        color: var(--ink);
-      }
-
-      .board {
-        min-height: 240px;
-        display: grid;
-        gap: 10px;
-      }
-
-      .board .stack {
-        min-height: 62px;
-      }
-
-      .footer-strip {
-        min-height: 64px;
-      }
-
-      .concept-a .badge {
-        background: var(--a);
-      }
-
-      .concept-b .badge {
-        background: var(--b);
-      }
-
-      .concept-c .badge {
-        background: var(--c);
-      }
-
-      .concept-a .wireframe {
-        box-shadow: inset 0 0 0 1px rgba(182, 87, 45, 0.12);
-      }
-
-      .concept-b .wireframe {
-        box-shadow: inset 0 0 0 1px rgba(45, 97, 117, 0.14);
-      }
-
-      .concept-c .wireframe {
-        box-shadow: inset 0 0 0 1px rgba(106, 124, 43, 0.14);
-      }
-
-      @media (max-width: 1100px) {
-        .concept {
+      @media (max-width: 1160px) {
+        .screen {
           grid-template-columns: 1fr;
+        }
+
+        .layout {
+          grid-template-columns: 64px 180px minmax(0, 1fr);
+        }
+
+        .right {
+          grid-column: 1 / -1;
         }
       }
     </style>
@@ -312,203 +270,117 @@
   <body>
     <div class="page">
       <section class="hero">
-        <span class="eyebrow">gtum Sprint 15 Design Drafts</span>
-        <h1>에디터와 에이전트 보드가 메인이고, 터미널은 모드인 구조</h1>
+        <span class="eyebrow">gtum Sprint 15 Refined Baseline</span>
+        <h1>에디터와 에이전트 작업창이 메인이고, 터미널은 탭으로 들어가는 구조</h1>
         <p>
-          이번 시안은 방향을 다시 맞춘 버전입니다. 메인은 `VS Code`처럼 읽기 좋은 코드 에디터와
-          `conductor`처럼 상태가 잘 보이는 에이전트 관리이며, 터미널은 항상 전면 고정이 아니라
-          `Code / Diff / Test / Terminal / Preview` 같은 workbench tab으로 들어갑니다.
+          이번 시안은 선택지를 더 만드는 대신 하나의 기준안을 정제한 버전입니다.
+          좌측은 `VS Code`처럼 접고 펴는 activity bar, 중앙은 `+`로 탭을 여는 빈 workbench,
+          우측은 `에이전트에게 일을 주고 답을 받는 창`, 하단은 필요할 때만 여는 기록 drawer입니다.
         </p>
       </section>
 
-      <section class="legend">
-        <article class="legend-card">
-          <strong>이전 시안의 문제</strong>
-          <p>터미널의 배치를 너무 크게 다뤄서, 실제로 중요한 에디터와 agent board 우선순위가 약했습니다.</p>
+      <section class="summary">
+        <article class="card">
+          <strong>버린 것</strong>
+          <p>`Project / Branch / Active File` 같은 설명 없는 전역 토큰과 고정 mode 버튼줄을 버립니다.</p>
         </article>
-        <article class="legend-card">
-          <strong>이번 공통 기준</strong>
-          <p>좌측 explorer, 중앙 editor workbench, 우측 conductor형 agent board, 하단 secondary drawer입니다.</p>
+        <article class="card">
+          <strong>고정한 것</strong>
+          <p>좌측 activity bar, 중앙 empty workbench, 우측 agent work panel, 하단 hidden drawer.</p>
         </article>
-        <article class="legend-card">
+        <article class="card">
           <strong>터미널의 위치</strong>
-          <p>터미널은 메인 무대가 아니라 필요할 때 전환하는 강한 mode입니다. 세션 연속성은 유지합니다.</p>
+          <p>터미널은 기본 주인공이 아니라 `+`로 여는 강한 탭입니다. agent도 쉽게 열 수 있어야 합니다.</p>
         </article>
-        <article class="legend-card">
-          <strong>권장안</strong>
-          <p>`B. Mission Control`이 사용자 요구와 가장 가깝습니다. conductor형 운영감이 가장 강합니다.</p>
+        <article class="card">
+          <strong>오른쪽 패널</strong>
+          <p>상태판이 아니라 실제 요청 입력, 답변, 승인 흐름이 있는 `에이전트 작업창`입니다.</p>
         </article>
       </section>
 
-      <section class="concepts">
-        <article class="concept concept-a">
-          <div class="concept-meta">
-            <div class="concept-title">
-              <span class="badge">A</span>
-              <h2>Editor Board</h2>
-            </div>
-            <p>가장 VS Code에 가까운 구조입니다. 익숙한 editor workbench를 중심에 두고, 오른쪽에 agent board를 붙입니다.</p>
+      <section class="screens">
+        <article class="screen">
+          <div class="meta">
+            <h2>첫 진입 상태</h2>
+            <p>프로젝트를 열고 중앙 workbench에서 필요한 탭을 추가하는 순간이 분명해야 합니다. 용어는 쉽고, 행동은 바로 보여야 합니다.</p>
             <div class="chips">
-              <span class="chip">VS Code familiarity</span>
-              <span class="chip">낮은 구현 리스크</span>
-              <span class="chip">editor-first</span>
+              <span class="chip">empty workbench</span>
+              <span class="chip">plus-driven tabs</span>
+              <span class="chip">agent panel ready</span>
             </div>
-            <p><strong>좋은 경우:</strong> editor experience를 가장 우선하고 싶을 때.</p>
+            <p><strong>핵심:</strong> 처음부터 많은 패널을 설명하지 말고, 무엇을 먼저 해야 하는지 한 번에 보여줍니다.</p>
           </div>
           <div class="wireframe">
-            <div class="chrome">
-              <div class="bar">Project / Branch / Active File</div>
-              <div class="slot">Provider</div>
-              <div class="slot">Agent</div>
-              <div class="slot">Queue</div>
-            </div>
-            <div class="layout-a">
-              <div class="rail">
-                <div class="stack">Explorer / Search</div>
-                <div class="stack">Git / Outline</div>
-                <div class="pane tall">
-                  <div class="pane-label">File Tree</div>
-                </div>
+            <div class="topbar">프로젝트: 없음 | 현재 작업: 없음 | 연결 상태: 미연결 | 활성 에이전트: 없음</div>
+            <div class="layout">
+              <div class="activity">
+                <div class="icon">탐색기</div>
+                <div class="icon">검색</div>
+                <div class="icon">소스</div>
+                <div class="icon">개요</div>
+              </div>
+              <div class="side">
+                <div class="panel"><div class="pane-label">Side Panel</div></div>
+                <div class="panel tall"><div class="pane-label">Explorer / Search</div></div>
               </div>
               <div class="main">
-                <div class="tab-strip">
-                  <div class="tab active">Code</div>
-                  <div class="tab">Diff</div>
-                  <div class="tab">Test</div>
-                  <div class="tab">Terminal</div>
-                  <div class="tab">Preview</div>
-                </div>
-                <div class="pane tall">
-                  <div class="pane-label">Active Code Editor</div>
-                </div>
-              </div>
-              <div class="inspector">
-                <div class="board">
-                  <div class="pane-label">Agent Board</div>
-                  <div class="stack">Active Agent</div>
-                  <div class="stack">Current Plan</div>
-                  <div class="stack">Approval Inbox</div>
-                  <div class="stack">Trace / Retry Path</div>
+                <div class="tabbar">탭 없음 | 우측 + 버튼으로 새 탭 생성</div>
+                <div class="empty">
+                  <strong>빈 작업 공간</strong>
+                  <p>프로젝트를 열고, 필요한 탭을 추가한 다음, 오른쪽 작업창에서 에이전트에게 일을 맡기세요.</p>
+                  <div class="actions">
+                    <div class="action">+ 코드 탭</div>
+                    <div class="action">+ 터미널 탭</div>
+                    <div class="action">+ 테스트 탭</div>
+                  </div>
                 </div>
               </div>
+              <div class="right">
+                <div class="panel"><div class="pane-label">에이전트 작업창</div></div>
+                <div class="panel"><div class="pane-label">작업 요청 입력</div></div>
+                <div class="panel tall"><div class="pane-label">응답 / 승인 없음</div></div>
+              </div>
             </div>
-            <div class="pane footer-strip">
-              <div class="pane-label">Problems / Path Recap / Activity</div>
-            </div>
+            <div class="drawer">실행 기록 / 승인 기록 / 문제 목록  (닫힘)</div>
           </div>
         </article>
 
-        <article class="concept concept-b">
-          <div class="concept-meta">
-            <div class="concept-title">
-              <span class="badge">B</span>
-              <h2>Mission Control</h2>
-            </div>
-            <p>conductor형 agent management를 더 강하게 올린 구조입니다. 중앙 editor는 근거 surface이고, 오른쪽 board가 실제 운영 중심입니다.</p>
+        <article class="screen">
+          <div class="meta">
+            <h2>작업 중 상태</h2>
+            <p>중앙은 code tab이 기본이고, 터미널은 필요할 때 같은 workbench 안에서 열립니다. 오른쪽은 실제로 대화하고 승인하는 작업창입니다.</p>
             <div class="chips">
-              <span class="chip">conductor에 가장 가까움</span>
-              <span class="chip">agent orchestration</span>
-              <span class="chip">recommended</span>
+              <span class="chip">code tab active</span>
+              <span class="chip">terminal tab optional</span>
+              <span class="chip">conversation + approvals</span>
             </div>
-            <p><strong>좋은 경우:</strong> 에이전트 운영과 approval readability를 제품의 핵심으로 둘 때.</p>
+            <p><strong>핵심:</strong> editor-first를 유지하면서도 agent와 terminal 접근성이 떨어지지 않아야 합니다.</p>
           </div>
           <div class="wireframe">
-            <div class="chrome">
-              <div class="bar">Project / Active Task / Current Mission</div>
-              <div class="slot">Agents 3</div>
-              <div class="slot">Pending 2</div>
-              <div class="slot">Review 1</div>
-            </div>
-            <div class="layout-b">
-              <div class="rail">
-                <div class="stack">Explorer / Search</div>
-                <div class="stack">Git / Symbols</div>
-                <div class="pane tall">
-                  <div class="pane-label">File Tree</div>
-                </div>
+            <div class="topbar">프로젝트: my-app | 현재 작업: 로그인 오류 분석 | 연결 상태: Codex | 활성 에이전트: backend</div>
+            <div class="layout">
+              <div class="activity">
+                <div class="icon">탐색기</div>
+                <div class="icon">검색</div>
+                <div class="icon">소스</div>
+                <div class="icon">개요</div>
+              </div>
+              <div class="side">
+                <div class="panel"><div class="pane-label">Explorer</div></div>
+                <div class="panel tall"><div class="pane-label">File Tree / Outline</div></div>
               </div>
               <div class="main">
-                <div class="tab-strip">
-                  <div class="tab active">Code</div>
-                  <div class="tab">Diff</div>
-                  <div class="tab">Test</div>
-                  <div class="tab">Terminal</div>
-                  <div class="tab">Preview</div>
-                </div>
-                <div class="pane tall">
-                  <div class="pane-label">Active Code Editor</div>
-                </div>
+                <div class="tabbar">auth.ts | login.test.ts | terminal | +</div>
+                <div class="panel tall"><div class="pane-label">Active Code Editor</div></div>
               </div>
-              <div class="inspector">
-                <div class="board">
-                  <div class="pane-label">Agent Mission Board</div>
-                  <div class="stack">Agent Roster</div>
-                  <div class="stack">Current Mission</div>
-                  <div class="stack">Approval Queue</div>
-                  <div class="stack">Run Trace / Failures</div>
-                </div>
+              <div class="right">
+                <div class="panel"><div class="pane-label">에이전트 작업창</div></div>
+                <div class="panel"><div class="pane-label">작업 요청 입력</div></div>
+                <div class="panel"><div class="pane-label">현재 대화 / 답변</div></div>
+                <div class="panel"><div class="pane-label">승인 대기 항목</div></div>
               </div>
             </div>
-            <div class="pane footer-strip">
-              <div class="pane-label">Problems / Console / Activity / Notes</div>
-            </div>
-          </div>
-        </article>
-
-        <article class="concept concept-c">
-          <div class="concept-meta">
-            <div class="concept-title">
-              <span class="badge">C</span>
-              <h2>Review Desk</h2>
-            </div>
-            <p>코드, diff, approval evidence를 가장 강하게 붙인 구조입니다. agent 운영보다 review와 검토 안정성에 더 무게를 둡니다.</p>
-            <div class="chips">
-              <span class="chip">approval-heavy</span>
-              <span class="chip">diff review</span>
-              <span class="chip">evidence first</span>
-            </div>
-            <p><strong>좋은 경우:</strong> suggestion review와 approval quality를 가장 크게 보고 싶을 때.</p>
-          </div>
-          <div class="wireframe">
-            <div class="chrome">
-              <div class="bar">Project / Active File / Diff Ready / Last Run</div>
-              <div class="slot">Provider</div>
-              <div class="slot">Pending</div>
-              <div class="slot">Agent</div>
-            </div>
-            <div class="layout-c">
-              <div class="rail">
-                <div class="stack">Explorer / Search</div>
-                <div class="stack">Git / Outline</div>
-                <div class="pane tall">
-                  <div class="pane-label">File Tree</div>
-                </div>
-              </div>
-              <div class="main">
-                <div class="tab-strip">
-                  <div class="tab active">Code</div>
-                  <div class="tab">Diff</div>
-                  <div class="tab">Test</div>
-                  <div class="tab">Terminal</div>
-                  <div class="tab">Preview</div>
-                </div>
-                <div class="pane tall">
-                  <div class="pane-label">Code + Diff Workbench</div>
-                </div>
-              </div>
-              <div class="inspector">
-                <div class="board">
-                  <div class="pane-label">Review Board</div>
-                  <div class="stack">Suggestion Inbox</div>
-                  <div class="stack">Approval Detail</div>
-                  <div class="stack">Trace / Evidence</div>
-                  <div class="stack">Agent Notes</div>
-                </div>
-              </div>
-            </div>
-            <div class="pane footer-strip">
-              <div class="pane-label">Problems / Path Recap / Run Results</div>
-            </div>
+            <div class="drawer">실행 기록 / 승인 기록 / 문제 목록  (필요 시 열기)</div>
           </div>
         </article>
       </section>

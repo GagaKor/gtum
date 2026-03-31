@@ -1,160 +1,137 @@
-# gtum Sprint 15 디자인 시안 / Sprint 15 Design Concepts
+# gtum Sprint 15 정제 시안 / Sprint 15 Refined Design Baseline
 
-## 목적
+## 사용자 의도 한 문장
 
-이 문서는 현재 `gtum` UI 방향을 다시 맞추기 위한 선택용 설계 초안이다.
+`VS Code`처럼 코드를 읽고 탭을 열면서, `conductor`처럼 에이전트에게 일을 주고 답을 받으며, 필요할 때만 강한 터미널 탭으로 전환하는 작업 환경을 만든다.
 
-이번 기준은 명확하다.
+## 이번에 고정하는 방향
 
-- 메인은 `VS Code` 같은 코드 에디터다.
-- 메인은 `conductor` 같은 에이전트 관리다.
-- 터미널은 메인 무대가 아니라 `탭 전환형 workbench mode`다.
+- 메인은 `코드 에디터`와 `에이전트 작업창`이다.
+- 터미널은 메인 화면을 항상 점유하는 주인공이 아니라 `선택형 workbench tab`이다.
+- 좌측은 `VS Code`처럼 접고 펴는 activity bar + side panel 구조다.
+- 우측은 상태판이 아니라 `에이전트에게 일을 주고 답을 받는 창`이다.
+- 하단은 항상 열려 있는 복잡한 잡패널이 아니라, 정말 필요할 때 여는 secondary drawer다.
 
-즉, `cmux`의 가치는 “터미널을 항상 화면 중심에 두는 것”이 아니라, `필요할 때 가볍게 전환되고 세션이 끊기지 않는 강한 터미널 능력`으로 가져와야 한다.
+## 용어 정리
 
-사용자가 한 안을 고르면 해당 방향을 [frontend-design-benchmarks.md](/home/kwon/project/gtum/docs/frontend-design-benchmarks.md), [ui-ux-wireframes.md](/home/kwon/project/gtum/docs/ui-ux-wireframes.md), [sprint-plan.md](/home/kwon/project/gtum/docs/sprint-plan.md)에 흡수한다.
+- `Project / Branch / Active File`
+  - 전역 상단바의 기본 용어로 쓰지 않는다.
+  - `프로젝트`, `현재 작업`, `연결 상태`, `활성 에이전트`처럼 더 쉬운 용어를 쓴다.
+  - `브랜치`와 `현재 파일`은 editor 내부 헤더나 탭 문맥에서만 보여준다.
+- `Agent Mission Board`
+  - `에이전트 작업창`으로 바꾼다.
+  - 역할은 `일 주기 + 답변 받기 + 승인 보기`다.
+- `Problems / Console / Activity / Notes`
+  - 그대로 쓰지 않는다.
+  - 필요 시 `실행 기록`, `승인 기록`, `문제 목록`처럼 목적이 분명한 이름으로 나눈다.
 
-## 왜 이전 시안이 빗나갔는가
+## 영역별 역할 재정의
 
-- 이전 시안은 `터미널 배치`를 메인 의사결정으로 잡았다.
-- 하지만 사용자 요구는 `에디터 + 에이전트 관리`가 메인이고, 터미널은 선택 모드다.
-- 이전 시안은 `conductor`를 흐름 가시성 정도로만 가져왔고, 실제로 중요한 `agent roster / task queue / approval board / trace`를 전면에 두지 못했다.
-- 결과적으로 `cmux`의 성질을 과하게 크게 가져왔고, `conductor + VS Code`의 조합을 충분히 밀어주지 못했다.
+### 1. Top Bar
 
-## 시안 프리뷰 파일
+- 보여주는 것
+  - `프로젝트`
+  - `현재 작업`
+  - `연결 상태`
+  - `활성 에이전트`
+- 하지 않는 것
+  - `Branch`, `Active File` 같은 세부 문맥을 전역 토큰처럼 계속 띄우지 않는다.
 
-- 시각 비교용 HTML
-  - [design-concepts-sprint-15.html](/home/kwon/project/gtum/docs/design-concepts-sprint-15.html)
+### 2. Left Rail
 
-## 공통 전제
+- 구조
+  - `VS Code`처럼 세로 activity bar를 둔다.
+  - 아이콘은 예를 들어 `탐색기`, `검색`, `소스`, `아웃라인`
+  - 클릭 시 side panel이 열리고, 다시 누르면 접힌다.
+- 목적
+  - 파일과 프로젝트 구조를 찾는 곳
+  - 자주 안 쓰는 순간에는 얇게 접어둘 수 있어야 한다.
 
-세 안 모두 아래를 공통으로 가진다.
+### 3. Center Workbench
 
-- 좌측은 `Explorer / Search / Git` 같은 VS Code형 project rail
-- 중앙은 `Code / Diff / Test / Terminal / Preview`를 전환하는 editor workbench
-- 우측은 `Agents / Tasks / Approvals / Trace`를 다루는 conductor형 agent board
-- 하단은 `Problems / Trace / Activity` 같은 secondary drawer
-- 터미널은 workbench tab 또는 mode로 열리며, 항상 전면에 고정되지 않는다
+- 기본 상태
+  - 처음에는 `빈 작업 공간`이다.
+  - 중앙에는 설명과 `+` 액션만 보인다.
+- 탭 생성 방식
+  - 고정된 `Code / Diff / Test / Terminal / Preview` 버튼줄을 항상 띄우지 않는다.
+  - 대신 `+` 버튼으로 필요한 탭을 만든다.
+  - 생성 가능한 탭 예시:
+    - `코드 탭`
+    - `터미널 탭`
+    - `Diff 탭`
+    - `테스트 결과 탭`
+    - `Preview 탭`
+- 의미
+  - 에이전트도 필요한 순간 `터미널 탭`을 열 수 있어야 한다.
+  - 즉, 터미널 접근성은 높지만 기본 화면 구조는 editor-first로 유지한다.
 
-## Concept A. Editor Board
+### 4. Right Panel
 
-- 한 줄 설명
-  - 가장 VS Code에 가까운 기본형 위에 conductor형 agent board를 붙인 안
-- 무엇을 우선하나
-  - 익숙한 editor workflow와 안정적인 정보 계층
-- 레이아웃
+- 이름
+  - `에이전트 작업창`
+- 핵심 역할
+  - 작업 요청 입력
+  - 현재 대화와 응답
+  - 승인 대기 항목
+  - 어떤 에이전트가 무엇을 맡았는지 확인
+- 의도
+  - 단순 상태판이 아니라 실제로 `일을 주고 답을 받는 메인 인터랙션 창`이어야 한다.
 
-```text
-+--------------------------------------------------------------------------------------------------+
-| gtum | Project | Branch | Active File | Provider | Active Agent | Queue | Approval Count        |
-+----------------------------+------------------------------------------+-------------------------+
-| Explorer / Search / Git    | Code | Diff | Test | Terminal | Preview | Agents / Tasks         |
-| File Tree                  +------------------------------------------+-------------------------+
-|                            |              ACTIVE CODE EDITOR          | Active Agent            |
-|                            |              tabs + breadcrumbs          | Current Plan            |
-|                            |                                          | Approval Inbox          |
-|                            |                                          | Trace / Retry Path      |
-+----------------------------+------------------------------------------+-------------------------+
-| Problems / Path Recap / Activity                                                             |
-+--------------------------------------------------------------------------------------------------+
-```
+### 5. Bottom Drawer
 
-- 장점
-  - 가장 익숙하고 설명이 쉽다.
-  - 현재 code viewer를 실제 editor workbench로 키우기 좋다.
-  - 터미널을 `Test`나 `Terminal` 탭으로 자연스럽게 넣을 수 있다.
-- 약점
-  - agent board가 충분히 강하지 않으면 다시 “에디터에 붙은 사이드 패널”처럼 보일 수 있다.
+- 기본값
+  - 닫힘
+- 필요할 때만 연다
+  - `실행 기록`
+  - `승인 기록`
+  - `문제 목록`
+- 버리는 것
+  - 의미가 불명확한 `Console / Activity / Notes` 고정 노출
 
-## Concept B. Mission Control
-
-- 한 줄 설명
-  - conductor형 agent management를 전면으로 올리고, 중앙 editor를 그 작업의 근거 surface로 묶는 안
-- 무엇을 우선하나
-  - agent orchestration, approval queue, task trace, multi-agent 가시성
-- 레이아웃
-
-```text
-+--------------------------------------------------------------------------------------------------+
-| gtum | Project | Branch | Active Task | Provider | Agents 3 | Pending 2 | Needs Review 1        |
-+----------------------+---------------------------------------+-----------------------------------+
-| Explorer / Git       | Code | Diff | Test | Terminal | Preview | Agent Mission Board             |
-| File Tree            +---------------------------------------+-----------------------------------+
-| Symbols / Outline    |             ACTIVE CODE EDITOR        | Agent Roster                      |
-|                      |             breadcrumbs + minimap      | Current Mission                   |
-|                      |                                        | Approval Queue                    |
-|                      |                                        | Run Trace / Retry / Failure Path  |
-+----------------------+---------------------------------------+-----------------------------------+
-| Problems / Console / Activity / Draft Notes                                                     |
-+--------------------------------------------------------------------------------------------------+
-```
-
-- 장점
-  - 사용자 요구와 가장 가깝다.
-  - `conductor`의 장점인 agent visibility와 approval readability를 제대로 살릴 수 있다.
-  - 터미널을 editor tab으로 유지하면서도 실제 실행 근거를 잃지 않는다.
-- 약점
-  - agent board 설계가 약하면 금방 복잡해질 수 있다.
-  - 초기 구현은 `A`보다 약간 무겁다.
-
-## Concept C. Review Desk
-
-- 한 줄 설명
-  - 코드 편집과 승인 검토를 가장 강하게 붙인 review-heavy 구조
-- 무엇을 우선하나
-  - suggestion review, diff inspection, approval safety
-- 레이아웃
+## 첫 진입 상태 / Empty State
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project | Active File | Diff Ready | Pending Approval | Last Run | Active Agent          |
-+----------------------------+------------------------------------------+-------------------------+
-| Explorer / Search / Git    | Code | Diff | Test | Terminal | Preview | Review / Approvals     |
-| File Tree                  +------------------------------------------+-------------------------+
-|                            |         CODE + DIFF WORKBENCH            | Suggestion Inbox        |
-|                            |         selected file + context          | Approval Detail         |
-|                            |                                          | Trace / Evidence        |
-|                            |                                          | Agent Notes             |
-+----------------------------+------------------------------------------+-------------------------+
-| Problems / Path Recap / Run Results                                                            |
+| gtum | 프로젝트: 없음 | 현재 작업: 없음 | 연결 상태: 미연결 | 활성 에이전트: 없음                |
++---------------+------------------------------------------------------+---------------------------+
+| Activity Bar  |                                                      | 에이전트 작업창            |
+| Explorer      |                 빈 작업 공간                         | 연결 후 작업 요청 가능     |
+| Search        |     프로젝트를 열고, + 버튼으로 탭을 추가하세요.      |                           |
+| Source        |     [ + 코드 탭 ] [ + 터미널 탭 ] [ + 테스트 탭 ]      | 최근 응답 / 승인 없음      |
+| Outline       |                                                      |                           |
++---------------+------------------------------------------------------+---------------------------+
+| 실행 기록 / 승인 기록 / 문제 목록  (닫힘)                                                     |
 +--------------------------------------------------------------------------------------------------+
 ```
 
-- 장점
-  - 승인과 근거 검토가 가장 선명하다.
-  - 코드, diff, approval evidence를 한 흐름으로 묶기 쉽다.
-- 약점
-  - 일상적인 “에이전트 운영”보다는 review-heavy 느낌이 강하다.
-  - conductor형 운영감은 `B`보다 약하다.
+## 작업 중 상태 / Working State
 
-## 추천
+```text
++--------------------------------------------------------------------------------------------------+
+| gtum | 프로젝트: my-app | 현재 작업: 로그인 오류 분석 | 연결 상태: Codex | 활성 에이전트: backend |
++---------------+------------------------------------------------------+---------------------------+
+| Activity Bar  | editor tabs: auth.ts | login.test.ts | terminal  | + | 에이전트 작업창        |
+| Explorer      +------------------------------------------------------+---------------------------+
+| Search        |                ACTIVE CODE EDITOR                    | 작업 요청 입력            |
+| Source        |                code + breadcrumbs                    | 현재 대화 / 답변          |
+| Outline       |                                                      | 승인 대기 항목            |
+|               |                                                      | agent별 상태              |
++---------------+------------------------------------------------------+---------------------------+
+| 실행 기록 / 승인 기록 / 문제 목록  (필요 시 열기)                                          |
++--------------------------------------------------------------------------------------------------+
+```
 
-1. 현재 사용자 피드백 기준으로는 `Concept B. Mission Control`이 1순위다.
-2. 이유는 사용자가 원하는 핵심이 `conductor에 더 가까운 구조`이고, 그 위에 `VS Code급 코드 에디터`와 `강화된 터미널 탭`을 얹는 것이기 때문이다.
-3. 가장 현실적인 구현안은 `B`를 기본으로 하되, editor chrome은 `A`처럼 단순하게 가져가는 것이다.
+## 꼭 버려야 할 요소
 
-## 선택 기준
+- 전역 상단에 계속 떠 있는 `Project / Branch / Active File` 토큰
+- 의미 설명 없는 고정 `Code / Diff / Test / Terminal / Preview` 버튼줄
+- 상태만 잔뜩 보여주는 `Mission Board`
+- 의미가 모호한 `Problems / Console / Activity / Notes` 고정 패널
+- 터미널을 기본 화면 중심에 고정하는 terminal-first 레이아웃
 
-- `A`를 고르면
-  - 가장 익숙함
-  - 구현 리스크가 가장 낮음
-  - VS Code형 editor 경험이 가장 강함
-- `B`를 고르면
-  - conductor형 agent 관리가 가장 강함
-  - 사용자가 원하는 방향과 가장 가까움
-  - 다음 스프린트의 제품 정체성을 가장 잘 고정함
-- `C`를 고르면
-  - 승인/검토 UX가 가장 강함
-  - 코드 근거와 diff 리뷰를 묶기 좋음
-  - 운영보다는 review-heavy 제품으로 읽힐 수 있음
+## 지금 기준의 구현 방향
 
-## 내가 보는 최종 권장안
-
-- `1순위`
-  - `B. Mission Control`
-- `현실적 혼합안`
-  - `B. Mission Control + A의 단순한 editor chrome`
-- `A`가 맞는 경우
-  - conductor형 보드보다 editor familiarity를 더 우선할 때
-- `C`가 맞는 경우
-  - approval, diff, evidence review를 제품의 제일 큰 가치로 둘 때
+1. 좌측부터 `activity bar + collapsible side panel`로 바꾼다.
+2. 중앙은 `빈 workbench -> +로 탭 생성` 모델로 바꾼다.
+3. 우측은 `에이전트 작업창`으로 바꿔 실제 요청/응답/승인 흐름을 넣는다.
+4. 하단은 기본 숨김 drawer로 바꾸고, 정말 필요한 기록만 남긴다.

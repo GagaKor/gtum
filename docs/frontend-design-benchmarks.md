@@ -103,7 +103,10 @@ The goal is not visual copying. The goal is to extract the right product qualiti
 - 중앙 workbench는 `Editor + Agent Management`의 co-primary surface여야 한다.
 - code viewer는 사이드바가 아니라 메인 영역의 기본 surface여야 한다.
 - agent board는 단순 채팅창이 아니라 roster, task status, plan, approval queue를 보여주는 메인 surface여야 한다.
-- terminal은 `Code`, `Diff`, `Trace`, `Tests`, `Terminal` 같은 mode tab 또는 dock 안에서 강하게 제공하되, 기본 화면을 점유하는 주인공은 아니어야 한다.
+- 좌측은 `VS Code`처럼 activity bar와 side panel로 나뉘고, 접기/펼치기와 폭 조절이 가능해야 한다.
+- 중앙 workbench는 처음에 비어 있어야 하며, `+` 버튼으로 `코드`, `터미널`, `비교`, `테스트`, `미리보기` 같은 탭을 연다고 이해돼야 한다.
+- agent board는 실제로 일을 주고 답변을 받고 승인하는 `에이전트 작업창`처럼 읽혀야 한다.
+- terminal은 상단 고정 모드 버튼이 아니라 `+`로 여는 workbench tab 타입이어야 하며, 기본 화면을 점유하는 주인공은 아니어야 한다.
 - approval rail은 editor와 agent board를 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
 - 첫 code-reading slice는 read-only viewer까지만 포함한다.
 - line anchor와 restore 상태는 숨은 내부 상태가 아니라 사용자가 다시 읽을 수 있는 정보여야 한다.
@@ -118,7 +121,10 @@ For the current active slice, the frontend should follow these rules:
 - the central workbench should act as a co-primary surface for `Editor + Agent Management`
 - the code viewer should be the default main-workspace surface rather than a sidebar afterthought
 - the agent board should be a first-class surface for roster, task state, plans, and approval queue instead of a simple chat rail
-- the terminal should stay strong inside a `Code`, `Diff`, `Trace`, `Tests`, `Terminal` style mode-tab or dock, without dominating the default screen
+- the left side should follow a `VS Code`-style activity bar plus collapsible side panel
+- the center workbench should begin empty and make it obvious that `Code`, `Terminal`, `Diff`, `Test`, and `Preview` are tab types created from a `+` action
+- the agent board should read like an `agent work window` where users assign work, read replies, and approve actions
+- the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - the approval rail should show which file, line anchor, and logs produced a suggestion without pushing the editor and agent board away
 - the first code-reading slice should stop at a read-only viewer
 - line-anchor state and restore state should stay legible to users rather than hidden as internal implementation
@@ -186,6 +192,12 @@ For the current active slice, the frontend should follow these rules:
 - editor와 agent management는 항상 메인 화면의 중심이어야 한다.
 - 프로젝트, editor, agent flow는 순서가 보이도록 배치해야 한다.
 - 터미널은 한 번의 전환으로 바로 들어갈 수 있어야 하며, 선택 시 충분히 강력해야 한다.
+- 전역 상단 바는 `현재 프로젝트`, `현재 작업`, `연결 상태`, `활성 에이전트`처럼 쉬운 현재 상태 언어를 우선한다.
+- 하단 패널은 기본적으로 닫혀 있어야 하며, `문제`, `실행 결과`, `작업 기록`처럼 의미가 분명한 경우만 남긴다.
+- 좌측 rail은 `activity bar + side panel` 구조로 접고 펼칠 수 있어야 한다.
+- 중앙 workbench는 비어 있는 상태에서 시작할 수 있고, `+`로 코드 탭과 터미널 탭을 추가할 수 있어야 한다.
+- 오른쪽 panel은 단순 상태판이 아니라 실제 작업 요청과 답변이 오가는 `에이전트 작업실`이어야 한다.
+- 하단 panel은 기본 주인공이 아니라 접힌 `결과 서랍`이어야 한다.
 - 정보 계층은 `primary`, `secondary`, `debug` 세 단계 이상으로 나뉘어야 한다.
 - 첫 진입 시 사용자가 해야 할 첫 액션이 한눈에 보여야 한다.
 - 승인 필요 액션과 읽기 전용 상태는 시각적으로 분리되어야 한다.
@@ -201,6 +213,12 @@ For the current active slice, the frontend should follow these rules:
 - the editor and agent-management surface must remain the center of the product
 - project, editor, and agent flow should be visually ordered
 - the terminal should be reachable within one switch and feel powerful when selected
+- the global top bar should prefer simple current-state labels such as `Current Project`, `Current Task`, `Connection`, and `Active Agent`
+- the bottom panel should stay closed by default and keep only clearly named surfaces such as `Problems`, `Run Results`, and `History`
+- the left rail should use a collapsible `activity bar + side panel` structure
+- the center workbench should support an empty state and allow users to add code tabs and terminal tabs from `+`
+- the right panel should be an actual agent workspace for requests and replies rather than a passive status board
+- the bottom panel should default to a collapsed results drawer rather than a constant primary zone
 - information hierarchy should clearly separate `primary`, `secondary`, and `debug` levels
 - the first useful action must be obvious on first entry
 - approval-required actions must be visually distinct from read-only status

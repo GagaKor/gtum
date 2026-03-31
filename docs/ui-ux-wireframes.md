@@ -128,52 +128,48 @@ The default workflow should follow this order:
 
 - 상단 바
   - 현재 프로젝트 이름과 경로 요약
-  - 현재 task 또는 active agent 요약
+  - 현재 작업 요약
   - provider 상태
-  - 실행 모드
+  - 활성 에이전트
 - 좌측 패널
-  - 프로젝트 열기 버튼
-  - 최근 프로젝트
-  - 파일 트리와 outline
+  - activity bar
+  - 접기/펼치기 가능한 side panel
+  - 파일 트리, 검색, Git, outline
 - 중앙 메인
-  - editor tabs
-  - 활성 코드 surface
-  - `Code / Diff / Trace / Tests / Terminal` mode tab
+  - 비어 있는 상태에서 시작 가능한 workbench
+  - 열린 editor tabs
+  - `+`로 추가하는 code / terminal / diff / preview / test 탭
 - 우측 패널
-  - agent roster
-  - task status와 plan
-  - approval queue와 handoff
+  - 에이전트 작업창
+  - 작업 요청과 답변
+  - task status, approval queue, handoff
 - 하단 접이식 패널
-  - trace와 review history
-  - test results
-  - terminal sessions
-  - Telegram과 runtime/debug
+  - 기본은 닫힘
+  - 문제, 실행결과, 작업 기록
 - 구현 구조는 가능하면 `widgets/project-sidebar`, `widgets/workspace-stage`, `widgets/agent-sidebar`처럼 화면 zone과 같은 단위로 나눈다.
 
 ### English
 
 - top bar
   - current project name and compact path
-  - current task or active-agent summary
+  - current task summary
   - provider state
-  - execution mode
+  - active agent
 - left panel
-  - open-project action
-  - recent projects
-  - file tree and outline
+  - activity bar
+  - collapsible side panel
+  - file tree, search, Git, and outline
 - center main
-  - editor tabs
-  - active code surface
-  - `Code / Diff / Trace / Tests / Terminal` mode tab
+  - an empty-capable workbench
+  - open editor tabs
+  - code / terminal / diff / preview / test tabs added from `+`
 - right panel
-  - agent roster
-  - task status and plan
-  - approval queue and handoff
+  - agent work window
+  - requests and replies
+  - task status, approval queue, and handoff
 - bottom collapsible panel
-  - trace and review history
-  - test results
-  - terminal sessions
-  - Telegram and runtime/debug
+  - closed by default
+  - problems, run results, and work history
 - when splitting implementation structure, prefer boundaries that match these screen zones such as `widgets/project-sidebar`, `widgets/workspace-stage`, and `widgets/agent-sidebar`
 
 ## 데스크톱 기본 와이어프레임 / Desktop Primary Wireframe
@@ -182,19 +178,15 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project: my-app | Task: fix failing tests | Provider: Codex | Active Agent: backend     |
-+------------------------------+------------------------------------------------+--------------------+
-| Open Project                 | Tabs: app.ts | auth.rs | diff | terminal      | Agents             |
-| Recent Projects              +------------------------------------------------+--------------------+
-| - my-app                     |                                                | backend / frontend |
-| - docs-site                  |                ACTIVE EDITOR                   | planner / QA       |
-|                              |                                                |                    |
-| File Tree / Outline          |                code surface                    | Plan / Queue       |
-| src/                         |                                                | pending approvals  |
-| tests/                       +------------------------------------------------+--------------------+
-| package.json                 | Mode: Code | Diff | Trace | Tests | Terminal | Result / Handoff   |
-+------------------------------+------------------------------------------------+--------------------+
-| Trace / Review History | Test Results | Terminal Sessions | Telegram | Runtime / Debug          |
+| gtum | 프로젝트: my-app | 현재 작업: failing test 확인 | 연결: Codex | 활성 에이전트: backend  |
++--------+---------------------+------------------------------------------+----------------------+
+| 파일   | 파일 트리            | [ 빈 워크벤치 ] [ + ]                     | 에이전트 작업창      |
+| 검색   | 검색 / 변경점 / 구조 +------------------------------------------+----------------------+
+| 변경점 |                     |     코드 탭 / 터미널 탭 / 비교 탭         | 작업 요청            |
+| 구조   |                     |     테스트 탭 / 미리보기 탭               | 답변 / 상태          |
+|        |                     |                                          | 승인 대기            |
++--------+---------------------+------------------------------------------+----------------------+
+| 하단 drawer: 문제 | 실행 결과 | 작업 기록                                                     |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -202,19 +194,15 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | Project: my-app | Task: fix failing tests | Provider: Codex | Active Agent: backend     |
-+------------------------------+------------------------------------------------+--------------------+
-| Open Project                 | Tabs: app.ts | auth.rs | diff | terminal      | Agents             |
-| Recent Projects              +------------------------------------------------+--------------------+
-| - my-app                     |                                                | backend / frontend |
-| - docs-site                  |                ACTIVE EDITOR                   | planner / QA       |
-|                              |                                                |                    |
-| File Tree / Outline          |                code surface                    | Plan / Queue       |
-| src/                         |                                                | pending approvals  |
-| tests/                       +------------------------------------------------+--------------------+
-| package.json                 | Mode: Code | Diff | Trace | Tests | Terminal | Result / Handoff   |
-+------------------------------+------------------------------------------------+--------------------+
-| Trace / Review History | Test Results | Terminal Sessions | Telegram | Runtime / Debug          |
+| gtum | Project: my-app | Current task: inspect failing test | Connection: Codex | Active agent: backend |
++--------+---------------------+------------------------------------------+----------------------+
+| Files  | Tree                | [ Empty Workbench ] [ + ]                 | Agent Work Window    |
+| Search | Search / Changes /  +------------------------------------------+----------------------+
+| Changes| Outline             | Code / Terminal / Diff / Test / Preview  | Request Input        |
+| Outline|                     | tab types created from `+`               | Replies / Status     |
+|        |                     |                                          | Approval Queue       |
++--------+---------------------+------------------------------------------+----------------------+
+| Bottom drawer: Problems | Run Results | History                                                 |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -224,19 +212,14 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | No project open | Provider: not connected | Mode: Balanced                                |
-+------------------------------+------------------------------------------------+--------------------+
-| Start                        |                                                | Agent              |
-| [Open Folder]                |           Open a project to start             | Connect provider   |
-|                              |   Use the folder picker instead of pasting    | after project open |
-| Recent Projects              |   paths manually.                             |                    |
-| - my-app                     |                                                |                    |
-| - docs-site                  |                                                |                    |
-|                              |                                                |                    |
-| File Tree                    |                                                |                    |
-| (empty)                      |                                                |                    |
-+------------------------------+------------------------------------------------+--------------------+
-| Task History (empty)                                                                       |
+| gtum | 프로젝트: 없음 | 현재 작업: 없음 | 연결: 미연결 | 활성 에이전트: 없음                        |
++--------+---------------------+------------------------------------------+----------------------+
+| 탐색기 | 최근 프로젝트        |              빈 작업 공간                 | 에이전트 작업실      |
+| 검색   | - my-app            |   프로젝트를 열고 + 버튼으로 탭을 추가   | 연결 후 요청 가능    |
+| 소스관리| - docs-site        |   [ + 코드 탭 ] [ + 터미널 탭 ]          | 응답 없음            |
+| 구조   |                     |                                          | 승인 없음            |
++--------+---------------------+------------------------------------------+----------------------+
+| 결과 서랍: 실행결과 | 작업흐름 | 터미널 세션 | 테스트 | Telegram | Runtime / Debug          |
 +--------------------------------------------------------------------------------------------------+
 ```
 
@@ -244,19 +227,14 @@ The default workflow should follow this order:
 
 ```text
 +--------------------------------------------------------------------------------------------------+
-| gtum | No project open | Provider: not connected | Mode: Balanced                                |
-+------------------------------+------------------------------------------------+--------------------+
-| Start                        |                                                | Agent              |
-| [Open Folder]                |           Open a project to start             | Connect provider   |
-|                              |   Use the folder picker instead of pasting    | after project open |
-| Recent Projects              |   paths manually.                             |                    |
-| - my-app                     |                                                |                    |
-| - docs-site                  |                                                |                    |
-|                              |                                                |                    |
-| File Tree                    |                                                |                    |
-| (empty)                      |                                                |                    |
-+------------------------------+------------------------------------------------+--------------------+
-| Task History (empty)                                                                       |
+| gtum | Project: none | Current task: none | Connection: disconnected | Active agent: none      |
++--------+---------------------+------------------------------------------+----------------------+
+| Explore| Recent Projects     |              Empty Workbench              | Agent Workspace      |
+| Search | - my-app            |   Open a project and add tabs from +      | Requests after       |
+| Source | - docs-site         |   [ + Code Tab ] [ + Terminal Tab ]       | connection           |
+| Outline|                     |                                          | No replies yet       |
++--------+---------------------+------------------------------------------+----------------------+
+| Results Drawer: Runs | Trace | Terminal Sessions | Tests | Telegram | Runtime / Debug        |
 +--------------------------------------------------------------------------------------------------+
 ```
 
