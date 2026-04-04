@@ -40,27 +40,55 @@ Read this document when:
 - applying brand assets to entry screens, sidebars, or product-intro surfaces
 - checking whether the visual language still matches the product direction
 
+## 현재 선택 / Current Selection
+
+### 한국어
+
+`Sprint 16` 기준으로 현재 브랜드 기준은 `Concept A`다.
+
+- 선택 이유
+  - 현재 제품 구조인 `left rail + split workbench + agent workspace`를 가장 직접적으로 읽힌다.
+  - 기존 `gtum` 자산과의 연결을 유지하면서도 더 깔끔한 silhouette를 만든다.
+- 현재 active web 자산
+  - [gtum-mark.svg](/home/kwon/project/gtum/public/brand/gtum-mark.svg)
+  - [gtum-logo.svg](/home/kwon/project/gtum/public/brand/gtum-logo.svg)
+- 선택 기록
+  - [logo-concepts-sprint-16.md](/home/kwon/project/gtum/docs/logo-concepts-sprint-16.md)
+
+### English
+
+As of `Sprint 16`, the current brand baseline is `Concept A`.
+
+- Why it was selected
+  - it communicates the current `left rail + split workbench + agent workspace` product structure most directly
+  - it keeps continuity with the existing `gtum` assets while producing a cleaner silhouette
+- current active web assets
+  - [gtum-mark.svg](/home/kwon/project/gtum/public/brand/gtum-mark.svg)
+  - [gtum-logo.svg](/home/kwon/project/gtum/public/brand/gtum-logo.svg)
+- decision record
+  - [logo-concepts-sprint-16.md](/home/kwon/project/gtum/docs/logo-concepts-sprint-16.md)
+
 ## 브랜드 방향 / Brand Direction
 
 ### 한국어
 
 `gtum`의 브랜드는 다음 세 가지 감각을 함께 담아야 한다.
 
-- 프로젝트를 중심으로 작업을 조직하는 워크스페이스
-- 터미널이 중심인 실행 환경
-- 에이전트가 옆에서 신호를 보내고 승인 흐름에 들어오는 협업 레이어
+- 프로젝트 전환과 코드 구조가 읽히는 left rail
+- 코드 읽기와 분할 실행이 함께 가능한 split workbench
+- 에이전트가 신호를 보내고 대화와 pending action이 이어지는 mission workspace
 
-시각 톤은 "차분한 로컬 워크스페이스 + 단단한 실행감 + 따뜻한 집중감"을 목표로 한다.
+시각 톤은 "차분한 editor shell + 구조가 보이는 workbench + 절제된 실행감"을 목표로 한다.
 
 ### English
 
 The `gtum` brand should combine three product feelings:
 
-- a workspace organized around the project
-- a terminal-centered execution environment
-- an agent collaboration layer that signals attention and enters approval flow
+- a left rail that makes project switching and code structure legible
+- a split workbench where code reading and execution can coexist
+- an agent mission workspace where signal, conversation, and pending action stay connected
 
-The intended tone is "calm local workspace + grounded execution + warm focus."
+The intended tone is "calm editor shell + structured workbench + restrained execution energy."
 
 ## 심볼 의미 / Symbol Meaning
 
@@ -72,10 +100,10 @@ The intended tone is "calm local workspace + grounded execution + warm focus."
    워크스페이스와 데스크톱 셸
 2. 왼쪽 세로 레일
    프로젝트 탐색과 구조 인식
-3. 위쪽 두 줄
-   코드 읽기와 editor-like surface
+3. 위쪽 split block
+   editor-like workbench와 분할 구조
 4. 아래쪽 프롬프트와 커맨드 바
-   터미널 실행과 작업 승인
+   terminal 실행과 제안 처리
 5. 오른쪽 위 신호 점
    에이전트, 알림, attention state
 
@@ -87,10 +115,10 @@ The current symbol is designed to read as five parts:
    the workspace shell
 2. left vertical rail
    project navigation and structure
-3. two top bars
-   code reading and the editor-like surface
+3. upper split block
+   the editor-like workbench and split structure
 4. lower prompt and command bar
-   terminal execution and approval flow
+   terminal execution and proposal handling
 5. upper-right signal dot
    the agent, notification, and attention state
 
@@ -99,37 +127,37 @@ The current symbol is designed to read as five parts:
 ### 한국어
 
 - `Ink`
-  - `#171412`
+  - `#17181C`
   - 로고 바탕, 강한 제목, 런처 아이콘 기본 질감
 - `Shell`
-  - `#221D1A`
+  - `#23262D`
   - 보조 바탕, 깊이감
 - `Paper`
-  - `#F3E6D4`
+  - `#F4E8D9`
   - 코드/패널 surface, 밝은 대비
 - `Ember`
-  - `#C95C27`
+  - `#D76632`
   - 실행, 프롬프트, 강조, attention
 - `Mist`
-  - `#6E615A`
+  - `#6A6F79`
   - 보조 텍스트와 설명
 
 ### English
 
 - `Ink`
-  - `#171412`
+  - `#17181C`
   - main logo background, strong headings, launcher-icon base
 - `Shell`
-  - `#221D1A`
+  - `#23262D`
   - secondary background and depth
 - `Paper`
-  - `#F3E6D4`
+  - `#F4E8D9`
   - code/panel surface and bright contrast
 - `Ember`
-  - `#C95C27`
+  - `#D76632`
   - execution, prompt, emphasis, and attention
 - `Mist`
-  - `#6E615A`
+  - `#6A6F79`
   - supporting copy and muted description
 
 ## 자산 위치 / Asset Locations
@@ -144,6 +172,7 @@ The current symbol is designed to read as five parts:
   - [index.html](/home/kwon/project/gtum/index.html)
 - 데스크톱 번들 아이콘 출력 디렉토리
   - [src-tauri/icons](/home/kwon/project/gtum/src-tauri/icons)
+  - 현재 선택된 `Concept A`를 반영한 desktop bundle icon refresh는 후속 작업이다.
 
 ### English
 
@@ -155,6 +184,7 @@ The current symbol is designed to read as five parts:
   - [index.html](/home/kwon/project/gtum/index.html)
 - desktop bundle icon output directory
   - [src-tauri/icons](/home/kwon/project/gtum/src-tauri/icons)
+  - refreshing desktop bundle icons from the selected `Concept A` mark is a follow-up task
 
 ## 사용 원칙 / Usage Rules
 

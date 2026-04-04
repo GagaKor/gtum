@@ -151,12 +151,15 @@ The default workflow should follow this order:
   - icon-only activity bar
   - 접기/펼치기 가능한 side panel
   - 프로젝트 열기와 전환
-  - 파일 트리, 검색, Git, outline
-  - `프로젝트` icon은 현재 프로젝트와 최근 프로젝트를 보여주는 project switcher 모드다
-  - `탐색기` icon은 file tree를 여는 mode다
+  - 프로젝트 허브, text search, Git, active-file outline
+  - view별 상세 기준은 [left-menu-views.md](/home/kwon/project/gtum/docs/left-menu-views.md)를 따른다
+  - `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정`은 모두 light/dark에서 각각 따로 검토 가능한 view여야 한다
+  - `프로젝트` icon은 현재 프로젝트, 최근 프로젝트, 프로젝트 리스트, `+ 폴더 추가`, 현재 프로젝트 tree를 보여주는 mode다
+  - `탐색기` icon은 현재 프로젝트 안의 문구를 찾는 text search mode다
   - 하단 고정 icon은 `설정`이다
-  - `Explorer`, `Outline`, `Source Control`은 섹션 단위로 각각 접고 펼칠 수 있어야 함
+  - project row와 tree row는 길어지면 줄바꿈 대신 `...`로 줄여 보여준다
   - rail icon에 hover하면 명칭 tooltip이 보여야 함
+  - 좁아질 때는 side panel을 먼저 접고, 전체 레이아웃을 바로 세로 적층하지 않는다
 - 중앙 메인
   - 비어 있는 상태에서 시작 가능한 workbench
   - 열린 editor tabs
@@ -165,6 +168,7 @@ The default workflow should follow this order:
   - 낮고 가로로 긴 compact tab UI
   - split 이후에는 각 pane이 자기 탭바를 가진다
   - box label만 있는 placeholder가 아니라 실제 editor와 terminal 디테일을 보여주는 mock
+  - editor pane은 좁아질 때 코드 줄 wrap보다 pane 내부 가로 스크롤을 우선한다
 - 우측 패널
   - 에이전트 작업창
   - 작업 요청과 답변
@@ -174,6 +178,7 @@ The default workflow should follow this order:
   - approval은 기본적으로 `승인 대기 n`과 slim footer 또는 compact drawer로 보이고, 선택된 항목만 상세 card가 펼쳐진다
   - approval은 과거 기록이 아니라 현재 pending action만 보여준다
   - 내부 텍스트는 가로 스크롤보다 줄바꿈을 우선하고, 읽지 못한 채 잘리는 정보가 없어야 한다
+  - mission summary와 사용자 요청 문구는 normal desktop ratio에서도 자연스럽게 여러 줄로 읽혀야 한다
 - 하단 패널
   - 기본 레이아웃에서는 제거
   - 필요한 결과는 중앙 탭 또는 우측 맥락 영역으로 보낸다
@@ -215,11 +220,11 @@ The default workflow should follow this order:
 +--------------------------------------------------------------------------------------------------+
 | gtum | 현재 작업: failing test 확인 | 연결: Codex | 승인 대기: 2 | 활성 에이전트: backend      |
 +--------+---------------------+----------------------+-------------------+----------------------+
-| 프로젝트| 프로젝트 목록        | auth.ts | login.test.ts | +               | 에이전트 작업창      |
-| 탐색기  | 파일 트리 / 검색     +----------------------+-------------------+----------------------+
-| 검색    | 변경점 / 구조        | ACTIVE CODE EDITOR   | TERMINAL PANE     | 작업 요청            |
-| 소스관리|                     | code + breadcrumbs   | test output       | 답변 / 상태          |
-| 구조    |                     |                      | shell prompt      | 승인 카드            |
+| 프로젝트| 현재/최근/리스트/트리 | auth.ts | login.test.ts | +               | 에이전트 작업창      |
+| 탐색기  | search + result      +----------------------+-------------------+----------------------+
+| 소스제어| changed / staged     | ACTIVE CODE EDITOR   | TERMINAL PANE     | 작업 요청            |
+| 아웃라인| active file symbols  | code + breadcrumbs   | test output       | 답변 / 상태          |
+| 설정    | language / about     |                      | shell prompt      | 지금 처리할 제안     |
 +--------+---------------------+----------------------+-------------------+----------------------+
 +--------------------------------------------------------------------------------------------------+
 ```
@@ -230,11 +235,11 @@ The default workflow should follow this order:
 +--------------------------------------------------------------------------------------------------+
 | gtum | Current task: inspect failing test | Connection: Codex | Pending approvals: 2 | Active agent: backend |
 +--------+---------------------+----------------------+-------------------+----------------------+
-| Proj.  | Project List        | auth.ts | login.test.ts | +               | Agent Work Window    |
-| Files  | Tree / Search       +----------------------+-------------------+----------------------+
-| Search | Changes / Outline   | ACTIVE CODE EDITOR   | TERMINAL PANE     | Request Input        |
-| Source |                     | code + breadcrumbs   | test output       | Replies / Status     |
-| Outline|                     |                      | shell prompt      | Approval Cards       |
+| Project| Current / Recent / Tree | auth.ts | login.test.ts | +           | Agent Work Window    |
+| Explorer| Search + Results   +----------------------+-------------------+----------------------+
+| Source | Changed / Staged    | ACTIVE CODE EDITOR   | TERMINAL PANE     | Request Input        |
+| Outline| Active File Symbols | code + breadcrumbs   | test output       | Replies / Status     |
+| Settings| Language / About   |                      | shell prompt      | Pending Actions      |
 +--------+---------------------+----------------------+-------------------+----------------------+
 +--------------------------------------------------------------------------------------------------+
 ```
@@ -247,11 +252,11 @@ The default workflow should follow this order:
 +--------------------------------------------------------------------------------------------------+
 | gtum | 현재 작업: 없음 | 연결: 미연결 | 승인 대기: 0 | 활성 에이전트: 없음                    |
 +--------+---------------------+------------------------------------------+----------------------+
-| 프로젝트| 최근 프로젝트        |              빈 작업 공간                 | 에이전트 작업실      |
-| 탐색기  | - my-app            |   프로젝트를 선택하고 + 버튼으로 탭 추가 | 연결 후 요청 가능    |
-| 검색    | - docs-site         |   [ + 코드 탭 ] [ + 터미널 탭 ]          | 응답 없음            |
-| 소스관리| 파일 트리 / 검색     |   [ 좌우 분할 ] [ 상하 분할 ]             | 승인 없음            |
-| 구조    |                     |                                          |                      |
+| 프로젝트| 현재/최근/리스트     |              빈 작업 공간                 | 에이전트 작업실      |
+| 탐색기  | search input empty  |   프로젝트를 선택하고 + 버튼으로 탭 추가 | 연결 후 요청 가능    |
+| 소스제어| branch / staged     |   [ + 코드 탭 ] [ + 터미널 탭 ]          | 응답 없음            |
+| 아웃라인| active file 없음    |   [ 좌우 분할 ] [ 상하 분할 ]             | 승인 없음            |
+| 설정    | language / about    |                                          |                      |
 +--------+---------------------+------------------------------------------+----------------------+
 +--------------------------------------------------------------------------------------------------+
 ```
@@ -262,11 +267,11 @@ The default workflow should follow this order:
 +--------------------------------------------------------------------------------------------------+
 | gtum | Current task: none | Connection: disconnected | Pending approvals: 0 | Active agent: none   |
 +--------+---------------------+------------------------------------------+----------------------+
-| Proj.  | Recent Projects     |              Empty Workbench              | Agent Workspace      |
-| Files  | - my-app            |   Select a project and add tabs from +    | Requests after       |
-| Search | - docs-site         |   [ + Code Tab ] [ + Terminal Tab ]       | connection           |
-| Source | Tree / Search       |   [ Split Left/Right ] [ Split Up/Down ]  | No replies yet       |
-| Outline|                     |                                          |                      |
+| Project| Current / Recent / List |            Empty Workbench            | Agent Workspace      |
+| Explorer| Search Input Empty |   Select a project and add tabs from +    | Requests after       |
+| Source | Branch / Staged     |   [ + Code Tab ] [ + Terminal Tab ]       | connection           |
+| Outline| No Active File      |   [ Split Left/Right ] [ Split Up/Down ]  | No replies yet       |
+| Settings| Language / About   |                                          |                      |
 +--------+---------------------+------------------------------------------+----------------------+
 +--------------------------------------------------------------------------------------------------+
 ```

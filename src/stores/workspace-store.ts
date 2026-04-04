@@ -47,6 +47,7 @@ type WorkspaceState = {
   setProjectPathInput: (path: string) => void
   rememberProject: (path: string) => void
   togglePanel: (panel: PanelKey) => void
+  setPanelOpen: (panel: PanelKey, isOpen: boolean) => void
   selectTerminalTab: (id: string) => void
   captureTerminalContext: (snapshot: AgentContextSnapshot | null) => void
 }
@@ -83,6 +84,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       panels: {
         ...state.panels,
         [panel]: !state.panels[panel],
+      },
+    })),
+  setPanelOpen: (panel, isOpen) =>
+    set((state) => ({
+      panels: {
+        ...state.panels,
+        [panel]: isOpen,
       },
     })),
   selectTerminalTab: (activeTerminalTabId) => set({ activeTerminalTabId }),

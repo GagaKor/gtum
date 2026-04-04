@@ -8,9 +8,11 @@
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
 - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
+- [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
 - [UI/UX 개선안과 와이어프레임 / UI/UX Improvements and Wireframes](./ui-ux-wireframes.md)
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
 - [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
+- [Sprint 16 로고 결정 / Sprint 16 Logo Decision](./logo-concepts-sprint-16.md)
 - [문서 읽기 순서 / Docs Reading Order](./DOCS_READING_ORDER.md)
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
@@ -44,8 +46,10 @@
 - UI 참고 기준
   - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
   - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
+  - [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
 - 로고, 아이콘, favicon, 브랜드 사용 원칙
   - [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
+  - [Sprint 16 로고 결정 / Sprint 16 Logo Decision](./logo-concepts-sprint-16.md)
 - 릴리스, 빌드, 배포, CI/CD
   - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - 최신 실행 맥락과 체크리스트
@@ -75,8 +79,12 @@
   - UI 구조, 정보 계층, 인터랙션, 금지 패턴을 검토할 때 읽는다.
 - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
   - 현재 UI가 왜 헷갈리는지 설명하고, 다음 메인 화면 구조의 선택안을 고를 때 읽는다.
+- [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
+  - `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정`의 view별 정보 구조와 interaction을 정할 때 읽는다.
 - [브랜드 아이덴티티 / Brand Identity](./brand-identity.md)
   - 로고, 아이콘, favicon, 시각 언어를 다룰 때 읽는다.
+- [Sprint 16 로고 결정 / Sprint 16 Logo Decision](./logo-concepts-sprint-16.md)
+  - 로고 선택 근거와 대안 비교를 다시 확인할 때 읽는다.
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
   - 릴리스, 번들, 태그, 배포, CI/CD를 다룰 때 읽는다.
 
@@ -131,6 +139,8 @@
 - Sprint 12에서는 read-only code surface와 selected-file agent context가 메인 workspace에 반영되어 있다
 - Sprint 13에서는 line anchor, selected-file restore 강화, binary/large-file bounded fallback을 기준으로 editor-like surface를 더 깊게 다듬는다
 - Sprint 14에서는 `FSD` 기준의 `app / widgets / features / shared` 구조로 프론트 orchestration을 분해하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다
+- Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
+- Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다

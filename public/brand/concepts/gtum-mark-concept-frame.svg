@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>gtum concept frame mark</title>
+  <rect x="48" y="48" width="416" height="416" rx="116" fill="#171412"/>
+  <rect x="78" y="78" width="356" height="356" rx="88" fill="#221D1A"/>
+  <rect x="108" y="110" width="58" height="292" rx="22" fill="#F3E6D4"/>
+  <rect x="192" y="126" width="170" height="22" rx="11" fill="#F3E6D4"/>
+  <rect x="192" y="166" width="126" height="22" rx="11" fill="#F3E6D4" opacity="0.72"/>
+  <rect x="192" y="214" width="158" height="12" rx="6" fill="#F3E6D4" opacity="0.16"/>
+  <path d="M204 290L242 320L204 350" stroke="#C95C27" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="256" y="308" width="118" height="20" rx="10" fill="#C95C27"/>
+  <circle cx="360" cy="138" r="18" fill="#C95C27"/>
+  <circle cx="360" cy="138" r="36" stroke="#C95C27" stroke-opacity="0.22" stroke-width="10"/>
+</svg>

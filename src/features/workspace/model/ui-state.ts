@@ -1,6 +1,7 @@
 import type { AgentProviderId, ExecutionMode } from '../../../lib/runtime'
 import type { TaskHistoryEntry } from '../../tasks/model/types'
 import type { TelegramReportState } from '../../telegram/model/types'
+import type { LeftSidebarMode } from './useWorkbenchLayout'
 
 const UI_STATE_KEY = 'gtum.app-ui-state'
 
@@ -10,6 +11,7 @@ export type PersistedUiState = {
   selectedFileLine?: number | null
   selectedProvider?: AgentProviderId
   executionMode?: ExecutionMode
+  leftPanelMode?: LeftSidebarMode
   taskHistory?: TaskHistoryEntry[]
   telegramReport?: TelegramReportState
 }

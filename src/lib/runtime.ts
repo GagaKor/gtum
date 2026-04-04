@@ -48,6 +48,43 @@ export type ProjectFileSnapshot = {
   content: string
 }
 
+export type ProjectSearchMatch = {
+  lineNumber: number
+  lineText: string
+  startColumn: number
+  endColumn: number
+}
+
+export type ProjectSearchResult = {
+  filePath: string
+  displayPath: string
+  matches: ProjectSearchMatch[]
+}
+
+export type SourceControlFileEntry = {
+  path: string
+  displayPath: string
+  stagedStatus: string | null
+  unstagedStatus: string | null
+  summary: string
+}
+
+export type SourceControlOverview = {
+  isRepository: boolean
+  branch: string | null
+  aheadCount: number
+  behindCount: number
+  staged: SourceControlFileEntry[]
+  unstaged: SourceControlFileEntry[]
+}
+
+export type SourceControlDiff = {
+  filePath: string
+  displayPath: string
+  staged: boolean
+  diff: string
+}
+
 export type TerminalSessionStatus = 'running' | 'exited' | 'terminated' | 'failed'
 
 export type CreateTerminalSessionRequest = {
@@ -330,6 +367,15 @@ type BrowserFileFixture = {
   lineCount?: number
 }
 
+type BrowserSourceControlState = {
+  branch: string
+  aheadCount: number
+  behindCount: number
+  staged: SourceControlFileEntry[]
+  unstaged: SourceControlFileEntry[]
+  diffs: Record<string, { staged: string; unstaged: string }>
+}
+
 const normalizeBrowserPath = (value: string) => value.replace(/\\/g, '/').replace(/\/+/g, '/')
 
 const resolveBrowserFilePath = (projectPath: string, filePath: string) => {
@@ -430,6 +476,211 @@ const buildBrowserFileSnapshot = (projectPath: string, filePath: string): Projec
     content,
   }
 }
+
+const createDefaultBrowserSourceControlState = (): BrowserSourceControlState => ({
+  branch: currentBrowserBranch(),
+  aheadCount: isPreviewContractRuntime() ? 2 : 1,
+  behindCount: 0,
+  staged: [
+    {
+      path: 'src/App.tsx',
+      displayPath: 'src/App.tsx',
+      stagedStatus: 'modified',
+      unstagedStatus: null,
+      summary: 'staged modified',
+    },
+  ],
+  unstaged: [
+    {
+      path: 'package.json',
+      displayPath: 'package.json',
+      stagedStatus: null,
+      unstagedStatus: 'modified',
+      summary: 'working tree modified',
+    },
+    {
+      path: 'logs/build-output.log',
+      displayPath: 'logs/build-output.log',
+      stagedStatus: null,
+      unstagedStatus: 'modified',
+      summary: 'working tree modified',
+    },
+  ],
+  diffs: {
+    'src/App.tsx': {
+      staged: [
+        'diff --git a/src/App.tsx b/src/App.tsx',
+        'index 1111111..2222222 100644',
+        '--- a/src/App.tsx',
+        '+++ b/src/App.tsx',
+        '@@',
+        '-      <h1>gtum preview workspace</h1>',
+        '+      <h1>gtum mission workspace</h1>',
+        '-      <p>Read code, inspect logs, and ask Codex from one surface.</p>',
+        '+      <p>Read code, inspect logs, search text, and ask Codex from one surface.</p>',
+      ].join('\n'),
+      unstaged: [
+        'diff --git a/src/App.tsx b/src/App.tsx',
+        'index 2222222..3333333 100644',
+        '--- a/src/App.tsx',
+        '+++ b/src/App.tsx',
+        '@@',
+        '-      <p>Read code, inspect logs, and ask Codex from one surface.</p>',
+        '+      <p>Read code, inspect logs, search text, and approve suggestions from one surface.</p>',
+      ].join('\n'),
+    },
+    'package.json': {
+      staged: '',
+      unstaged: [
+        'diff --git a/package.json b/package.json',
+        'index 4444444..5555555 100644',
+        '--- a/package.json',
+        '+++ b/package.json',
+        '@@',
+        '-    "test": "playwright test"',
+        '+    "test": "playwright test --reporter=line"',
+      ].join('\n'),
+    },
+    'logs/build-output.log': {
+      staged: '',
+      unstaged: [
+        'diff --git a/logs/build-output.log b/logs/build-output.log',
+        'new file mode 100644',
+        '--- /dev/null',
+        '+++ b/logs/build-output.log',
+        '@@',
+        '+[excerpt 1] FAIL src/App.tsx:4:7 expected stable workspace state',
+        '+[excerpt 2] preview truncated before the full build log tail',
+      ].join('\n'),
+    },
+  },
+})
+
+const resolveBrowserSourceControlPath = (projectPath: string, filePath: string) =>
+  resolveBrowserFilePath(projectPath, filePath).replace(`${normalizeBrowserPath(projectPath)}/`, '')
+
+const buildBrowserSearchResults = (projectPath: string, query: string): ProjectSearchResult[] => {
+  const normalizedQuery = query.trim().toLowerCase()
+
+  if (!normalizedQuery) {
+    return []
+  }
+
+  const projectRoot = normalizeBrowserPath(projectPath || currentBrowserProjectPath())
+  const fixtures = buildBrowserFileContents(projectRoot)
+  const results: ProjectSearchResult[] = []
+
+  Object.entries(fixtures).forEach(([path, fixture]) => {
+    const normalizedFixture =
+      typeof fixture === 'string'
+        ? ({
+            content: fixture,
+            isText: true,
+          } satisfies BrowserFileFixture)
+        : fixture
+
+    if (!normalizedFixture.isText) {
+      return
+    }
+
+    const matches = normalizedFixture.content
+      .split('\n')
+      .map((lineText, index) => {
+        const startColumn = lineText.toLowerCase().indexOf(normalizedQuery)
+
+        if (startColumn === -1) {
+          return null
+        }
+
+        return {
+          lineNumber: index + 1,
+          lineText,
+          startColumn,
+          endColumn: startColumn + normalizedQuery.length,
+        } satisfies ProjectSearchMatch
+      })
+      .filter((match): match is ProjectSearchMatch => Boolean(match))
+      .slice(0, 6)
+
+    if (matches.length === 0) {
+      return
+    }
+
+    results.push({
+      filePath: path,
+      displayPath: path.replace(`${projectRoot}/`, ''),
+      matches,
+    })
+  })
+
+  return results.slice(0, 20)
+}
+
+const buildBrowserSourceControlOverview = (projectPath: string): SourceControlOverview => {
+  const projectRoot = normalizeBrowserPath(projectPath || currentBrowserProjectPath())
+
+  return {
+    isRepository: true,
+    branch: browserSourceControlState.branch,
+    aheadCount: browserSourceControlState.aheadCount,
+    behindCount: browserSourceControlState.behindCount,
+    staged: browserSourceControlState.staged.map((entry) => ({
+      ...entry,
+      path: `${projectRoot}/${entry.displayPath}`,
+    })),
+    unstaged: browserSourceControlState.unstaged.map((entry) => ({
+      ...entry,
+      path: `${projectRoot}/${entry.displayPath}`,
+    })),
+  }
+}
+
+const updateBrowserSourceControlEntry = (
+  displayPath: string,
+  nextState: 'stage' | 'unstage',
+) => {
+  const currentStaged = browserSourceControlState.staged.filter((entry) => entry.displayPath !== displayPath)
+  const currentUnstaged = browserSourceControlState.unstaged.filter((entry) => entry.displayPath !== displayPath)
+  const existingEntry =
+    browserSourceControlState.staged.find((entry) => entry.displayPath === displayPath) ??
+    browserSourceControlState.unstaged.find((entry) => entry.displayPath === displayPath)
+
+  if (!existingEntry) {
+    return
+  }
+
+  if (nextState === 'stage') {
+    browserSourceControlState = {
+      ...browserSourceControlState,
+      staged: [
+        ...currentStaged,
+        {
+          ...existingEntry,
+          stagedStatus: existingEntry.stagedStatus ?? existingEntry.unstagedStatus ?? 'modified',
+          unstagedStatus: null,
+          summary: 'staged modified',
+        },
+      ],
+      unstaged: currentUnstaged,
+    }
+    return
+  }
+
+  browserSourceControlState = {
+    ...browserSourceControlState,
+    staged: currentStaged,
+    unstaged: [
+      ...currentUnstaged,
+      {
+        ...existingEntry,
+        stagedStatus: null,
+        unstagedStatus: existingEntry.unstagedStatus ?? existingEntry.stagedStatus ?? 'modified',
+        summary: 'working tree modified',
+      },
+    ],
+  }
+}
+
 
 const createDefaultBrowserTelegramState = (): TelegramRuntimeSnapshot => ({
   storagePath: null,
@@ -586,6 +837,7 @@ let browserTerminalSessions = createInitialBrowserTerminalSessions()
 let browserTerminalLogs = createInitialBrowserTerminalLogs()
 let browserAgentConnections = createDefaultBrowserConnections()
 let browserTelegramState = createDefaultBrowserTelegramState()
+let browserSourceControlState = createDefaultBrowserSourceControlState()
 
 if (typeof window !== 'undefined' && usesBrowserRuntime()) {
   browserAgentConnections = loadBrowserConnections()
@@ -658,6 +910,91 @@ export const readProjectFile = async (projectPath: string, filePath: string) => 
   }
 
   return invoke<ProjectFileSnapshot>('read_project_file', { projectPath, filePath })
+}
+
+export const searchProjectText = async (projectPath: string, query: string) => {
+  if (usesBrowserRuntime()) {
+    return buildBrowserSearchResults(projectPath, query)
+  }
+
+  return invoke<ProjectSearchResult[]>('search_project_text', { projectPath, query })
+}
+
+export const readSourceControlOverview = async (projectPath: string) => {
+  if (usesBrowserRuntime()) {
+    return buildBrowserSourceControlOverview(projectPath)
+  }
+
+  return invoke<SourceControlOverview>('read_source_control_overview', { projectPath })
+}
+
+export const readSourceControlDiff = async (
+  projectPath: string,
+  filePath: string,
+  staged = false,
+) => {
+  if (usesBrowserRuntime()) {
+    const resolvedDisplayPath = resolveBrowserSourceControlPath(projectPath, filePath)
+    const projectRoot = normalizeBrowserPath(projectPath || currentBrowserProjectPath())
+
+    return {
+      filePath: `${projectRoot}/${resolvedDisplayPath}`,
+      displayPath: resolvedDisplayPath,
+      staged,
+      diff:
+        browserSourceControlState.diffs[resolvedDisplayPath]?.[staged ? 'staged' : 'unstaged'] ||
+        'No diff available for this file yet.',
+    } satisfies SourceControlDiff
+  }
+
+  return invoke<SourceControlDiff>('read_source_control_diff', { projectPath, filePath, staged })
+}
+
+export const stageSourceControlFile = async (projectPath: string, filePath: string) => {
+  if (usesBrowserRuntime()) {
+    updateBrowserSourceControlEntry(resolveBrowserSourceControlPath(projectPath, filePath), 'stage')
+    return buildBrowserSourceControlOverview(projectPath)
+  }
+
+  return invoke<SourceControlOverview>('stage_source_control_file', { projectPath, filePath })
+}
+
+export const unstageSourceControlFile = async (projectPath: string, filePath: string) => {
+  if (usesBrowserRuntime()) {
+    updateBrowserSourceControlEntry(resolveBrowserSourceControlPath(projectPath, filePath), 'unstage')
+    return buildBrowserSourceControlOverview(projectPath)
+  }
+
+  return invoke<SourceControlOverview>('unstage_source_control_file', { projectPath, filePath })
+}
+
+export const commitSourceControl = async (projectPath: string, message: string) => {
+  if (usesBrowserRuntime()) {
+    if (!message.trim()) {
+      throw new Error('Enter a commit message before committing staged changes.')
+    }
+
+    browserSourceControlState = {
+      ...browserSourceControlState,
+      aheadCount: browserSourceControlState.aheadCount + Number(browserSourceControlState.staged.length > 0),
+      staged: [],
+    }
+    return buildBrowserSourceControlOverview(projectPath)
+  }
+
+  return invoke<SourceControlOverview>('commit_source_control', { projectPath, message })
+}
+
+export const pushSourceControl = async (projectPath: string) => {
+  if (usesBrowserRuntime()) {
+    browserSourceControlState = {
+      ...browserSourceControlState,
+      aheadCount: 0,
+    }
+    return buildBrowserSourceControlOverview(projectPath)
+  }
+
+  return invoke<SourceControlOverview>('push_source_control', { projectPath })
 }
 
 export const selectProjectFolder = async (defaultPath?: string) => {

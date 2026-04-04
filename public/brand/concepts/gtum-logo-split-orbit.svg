@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="280" viewBox="0 0 980 280" fill="none">
+  <title>gtum logo concept B - split orbit</title>
+  <rect x="24" y="24" width="232" height="232" rx="64" fill="#171412"/>
+  <rect x="52" y="52" width="72" height="176" rx="22" fill="#F4E7D6"/>
+  <rect x="144" y="52" width="84" height="110" rx="24" fill="#F4E7D6"/>
+  <rect x="136" y="56" width="6" height="164" rx="3" fill="#D0612B" opacity="0.3"/>
+  <path d="M154 182L178 202L154 222" stroke="#D0612B" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="192" y="195" width="36" height="14" rx="7" fill="#D0612B"/>
+  <circle cx="198" cy="86" r="13" fill="#D0612B"/>
+  <path d="M166 86C166 68.327 180.327 54 198 54C215.673 54 230 68.327 230 86" stroke="#D0612B" stroke-opacity="0.24" stroke-width="8" stroke-linecap="round"/>
+  <text x="306" y="132" fill="#171412" font-size="112" font-weight="700" font-family="Space Grotesk, IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.05em">gtum</text>
+  <text x="308" y="186" fill="#6E615A" font-size="30" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.01em">split editor agent flow</text>
+</svg>

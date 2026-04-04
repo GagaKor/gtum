@@ -54,6 +54,8 @@
   - `docs/mvp-backlog.md`
 - UI 레퍼런스와 프론트엔드 품질 기준
   - `docs/frontend-design-benchmarks.md`
+- 왼쪽 rail, side panel, project switcher, settings view 기획
+  - `docs/left-menu-views.md`
 - 릴리스, 빌드, 배포, CI/CD
   - `docs/release-build-ci.md`
 - 최신 실행 맥락, 체크리스트, 검증 근거
@@ -84,6 +86,11 @@
 - MVP 범위, 우선순위, 완료조건 변경
   - `docs/mvp-backlog.md`
   - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
+- 왼쪽 rail, side panel, project switcher, settings view 구조 변경
+  - `docs/left-menu-views.md`
+  - `docs/frontend-design-benchmarks.md`
+  - `docs/ui-ux-wireframes.md`
+  - 필요 시 `docs/README.md`
 - 스프린트 순서, 산출물, 완료조건 변경
   - `docs/sprint-plan.md`
   - `docs/mvp-backlog.md`

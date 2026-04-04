@@ -111,7 +111,13 @@ export const useProjectWorkspace = ({
   )
 
   const openProject = useCallback(
-    async (path: string) => {
+    async (
+      path: string,
+      options: {
+        shouldRecord?: boolean
+        nextContext?: string | null
+      } = {},
+    ) => {
       const trimmedPath = path.trim()
 
       if (!trimmedPath) {
@@ -139,7 +145,9 @@ export const useProjectWorkspace = ({
         setActiveProject(overview.metadata.name)
         setActiveProjectPath(overview.metadata.path)
         setProjectPathInput(overview.metadata.path)
-        setActiveContext('Sprint 14 FSD Workspace Ready')
+        if (options.nextContext !== null) {
+          setActiveContext(options.nextContext ?? 'Sprint 14 FSD Workspace Ready')
+        }
         rememberProject(overview.metadata.path)
         setSelectedFilePath(nextSelectedFilePath)
         setFileError(null)
@@ -160,7 +168,9 @@ export const useProjectWorkspace = ({
           setSelectedFileLine(null)
         }
 
-        recordTask('Project opened', overview.metadata.path, 'done')
+        if (options.shouldRecord ?? true) {
+          recordTask('Project opened', overview.metadata.path, 'done')
+        }
       } catch (error) {
         setProjectOverview(null)
         setSelectedFile(null)
@@ -197,6 +207,17 @@ export const useProjectWorkspace = ({
     await openProject(chosenPath)
   }, [activeProjectPath, openProject, projectPathInput, recentProjects, setProjectPathInput])
 
+  const refreshProject = useCallback(async () => {
+    if (!activeProjectPath) {
+      return
+    }
+
+    await openProject(activeProjectPath, {
+      shouldRecord: false,
+      nextContext: null,
+    })
+  }, [activeProjectPath, openProject])
+
   useEffect(() => {
     if (hasRestoredWorkspace.current) {
       return
@@ -228,6 +249,30 @@ export const useProjectWorkspace = ({
       void loadProjectFileSnapshot(projectPath, node.path, { shouldRecord: true })
     },
     [activeProjectPath, loadProjectFileSnapshot, projectOverview?.metadata.path],
+  )
+
+  const openProjectFileAtLine = useCallback(
+    async (filePath: string, lineNumber?: number | null) => {
+      const projectPath = projectOverview?.metadata.path ?? activeProjectPath
+
+      if (!projectPath || !filePath) {
+        return null
+      }
+
+      const snapshot = await loadProjectFileSnapshot(projectPath, filePath, {
+        shouldRecord: true,
+        anchorLine: lineNumber ?? null,
+      })
+
+      if (snapshot && snapshot.isText && lineNumber) {
+        setActiveContext(
+          `Mission Control Focus • ${buildDisplayFileAnchor(snapshot.displayPath, lineNumber)}`,
+        )
+      }
+
+      return snapshot
+    },
+    [activeProjectPath, loadProjectFileSnapshot, projectOverview?.metadata.path, setActiveContext],
   )
 
   const selectCodeLine = useCallback(
@@ -289,8 +334,10 @@ export const useProjectWorkspace = ({
     isFileLoading,
     fileError,
     openProject,
+    refreshProject,
     chooseProjectFolder,
     selectProjectFile,
+    openProjectFileAtLine,
     selectCodeLine,
     clearSelectedLine,
     openLineReference,

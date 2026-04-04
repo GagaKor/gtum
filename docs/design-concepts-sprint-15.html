@@ -200,6 +200,9 @@
         --shell-terminal-soft: #ece4d9;
         --shell-terminal-ink: #415063;
         --shell-terminal-dim: #7c8798;
+        --shell-scrollbar-track: rgba(56, 44, 31, 0.08);
+        --shell-scrollbar-thumb: rgba(106, 111, 121, 0.36);
+        --shell-scrollbar-thumb-hover: rgba(106, 111, 121, 0.56);
         --activity-ink: #6e7785;
         --activity-surface: rgba(255, 255, 255, 0.46);
         --activity-active-ink: #ffffff;
@@ -208,6 +211,7 @@
           0 10px 28px rgba(40, 31, 20, 0.08);
         position: relative;
         overflow: hidden;
+        color-scheme: light;
         border-radius: 24px;
         border: 1px solid rgba(255, 255, 255, 0.82);
         background:
@@ -240,6 +244,9 @@
         --shell-terminal-soft: #090d12;
         --shell-terminal-ink: #deebff;
         --shell-terminal-dim: #7f92af;
+        --shell-scrollbar-track: rgba(255, 255, 255, 0.06);
+        --shell-scrollbar-thumb: rgba(155, 166, 186, 0.34);
+        --shell-scrollbar-thumb-hover: rgba(155, 166, 186, 0.56);
         --activity-ink: #93a0b7;
         --activity-surface: rgba(255, 255, 255, 0.04);
         --activity-active-ink: #ffffff;
@@ -250,32 +257,73 @@
         background:
           radial-gradient(circle at top right, rgba(228, 138, 77, 0.06), transparent 22%),
           linear-gradient(180deg, rgba(24, 29, 38, 0.98), rgba(12, 16, 22, 0.98));
+        color-scheme: dark;
+      }
+
+      .code,
+      .thread-stream {
+        scrollbar-width: thin;
+        scrollbar-color: var(--shell-scrollbar-thumb) var(--shell-scrollbar-track);
+      }
+
+      .code::-webkit-scrollbar,
+      .thread-stream::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      .code::-webkit-scrollbar-track,
+      .thread-stream::-webkit-scrollbar-track {
+        background: var(--shell-scrollbar-track);
+      }
+
+      .code::-webkit-scrollbar-thumb,
+      .thread-stream::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 999px;
+        background: var(--shell-scrollbar-thumb);
+        background-clip: padding-box;
+      }
+
+      .code::-webkit-scrollbar-thumb:hover,
+      .thread-stream::-webkit-scrollbar-thumb:hover {
+        background: var(--shell-scrollbar-thumb-hover);
+        background-clip: padding-box;
       }
 
       .shell-header {
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr) repeat(4, auto);
+        grid-template-columns: max-content minmax(0, 1fr) repeat(4, max-content);
         gap: 10px;
         align-items: center;
         min-height: 48px;
         padding: 12px 14px;
         border-bottom: 1px solid var(--shell-line);
         background: rgba(255, 255, 255, 0.04);
+        overflow: hidden;
       }
 
       .brand {
         display: inline-flex;
         align-items: center;
+        flex-wrap: nowrap;
         gap: 10px;
-        min-width: 0;
+        min-width: max-content;
         color: var(--shell-ink);
         font-size: 13px;
         font-weight: 800;
+        white-space: nowrap;
       }
 
-      .brand img {
+      .brand-mark {
+        flex: 0 0 auto;
         width: 22px;
         height: 22px;
+      }
+
+      .brand span {
+        display: inline-block;
+        white-space: nowrap;
       }
 
       .header-chip {
@@ -307,13 +355,13 @@
 
       .workspace {
         display: grid;
-        grid-template-columns: 56px 300px minmax(0, 1fr) 380px;
-        min-height: clamp(660px, 74vh, 820px);
+        grid-template-columns: 56px 280px minmax(0, 1fr) 408px;
+        min-height: clamp(700px, 76vh, 860px);
       }
 
       .activity-rail {
         display: grid;
-        grid-template-rows: repeat(5, 44px) 1fr 44px;
+        grid-template-rows: repeat(4, 44px) 1fr 44px;
         gap: 10px;
         padding: 12px 10px;
         background: linear-gradient(180deg, var(--shell-rail) 0%, var(--shell-rail-soft) 100%);
@@ -700,6 +748,9 @@
         display: block;
         color: var(--shell-ink);
         font-size: 12px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
 
       .project-card span {
@@ -708,6 +759,9 @@
         color: var(--shell-muted);
         font-size: 10px;
         line-height: 1.4;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
 
       .tree-stack {
@@ -765,6 +819,8 @@
         border-radius: 8px;
         color: var(--shell-ink);
         font-size: 11px;
+        min-width: 0;
+        overflow: hidden;
       }
 
       .tree-row.selected {
@@ -780,10 +836,392 @@
         flex: 0 0 12px;
       }
 
+      .tree-row .row-label {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
       .tree-row .tail {
         margin-left: auto;
+        flex: 0 0 auto;
         color: var(--shell-muted);
         font-size: 10px;
+      }
+
+      .view-gallery {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .view-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(284px, 1fr));
+        gap: 12px;
+      }
+
+      .view-card {
+        overflow: hidden;
+        border: 1px solid var(--page-line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.32);
+      }
+
+      .view-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--page-line);
+      }
+
+      .view-card-head strong {
+        font-size: 13px;
+      }
+
+      .view-card-head span {
+        color: var(--page-muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .view-shell {
+        border-radius: 0;
+        border: 0;
+        box-shadow: none;
+      }
+
+      .view-workspace {
+        display: grid;
+        grid-template-columns: 52px minmax(0, 1fr);
+        min-height: 378px;
+      }
+
+      .view-shell .activity-rail {
+        grid-template-rows: repeat(4, 38px) 1fr 38px;
+        gap: 8px;
+        padding: 10px 8px;
+      }
+
+      .view-shell .activity-button {
+        border-radius: 11px;
+      }
+
+      .view-shell .activity-button.active::before {
+        left: -8px;
+        height: 18px;
+      }
+
+      .view-shell .side-panel {
+        border-right: 0;
+        padding: 10px;
+      }
+
+      .view-shell .panel-head {
+        margin-bottom: 8px;
+      }
+
+      .view-shell .project-card {
+        margin-bottom: 8px;
+      }
+
+      .search-box,
+      .search-stack,
+      .source-stack,
+      .outline-stack,
+      .settings-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .search-input {
+        display: flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--shell-line);
+        border-radius: 10px;
+        background: var(--shell-panel-3);
+        color: var(--shell-ink);
+        font-size: 11px;
+      }
+
+      .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .filter-chip,
+      .value-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--shell-muted);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .result-group,
+      .settings-group,
+      .source-summary,
+      .commit-box {
+        overflow: hidden;
+        border: 1px solid var(--shell-line);
+        border-radius: 14px;
+        background: var(--shell-panel-3);
+      }
+
+      .result-file {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 32px;
+        padding: 0 10px;
+        border-bottom: 1px solid var(--shell-line);
+        color: var(--shell-ink);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .result-hit {
+        display: grid;
+        gap: 4px;
+        padding: 8px 10px;
+        color: var(--shell-muted);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .match {
+        padding: 0 2px;
+        border-radius: 4px;
+        background: var(--shell-accent-soft);
+        color: var(--shell-ink);
+      }
+
+      .source-summary {
+        display: grid;
+        gap: 6px;
+        padding: 10px;
+      }
+
+      .source-summary strong {
+        color: var(--shell-ink);
+        font-size: 12px;
+      }
+
+      .source-summary p {
+        color: var(--shell-muted);
+        font-size: 10px;
+        line-height: 1.45;
+      }
+
+      .commit-box {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .commit-box strong {
+        color: var(--shell-ink);
+        font-size: 11px;
+      }
+
+      .commit-input {
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 10px;
+        border: 1px solid var(--shell-line);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--shell-muted);
+        font-size: 11px;
+      }
+
+      .commit-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .action-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 22px;
+        padding: 0 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .action-chip.primary {
+        background: var(--shell-accent);
+        color: #fff;
+      }
+
+      .action-chip.subtle {
+        border: 1px solid var(--shell-line);
+        color: var(--shell-muted);
+      }
+
+      .symbol-group {
+        overflow: hidden;
+        border: 1px solid var(--shell-line);
+        border-radius: 14px;
+        background: var(--shell-panel-3);
+      }
+
+      .symbol-group-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 10px;
+        border-bottom: 1px solid var(--shell-line);
+      }
+
+      .symbol-group-head strong {
+        color: var(--shell-ink);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .symbol-group-head span {
+        color: var(--shell-muted);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .symbol-body {
+        display: grid;
+        gap: 4px;
+        padding: 8px;
+      }
+
+      .symbol-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+        padding: 0 7px;
+        border-radius: 8px;
+        color: var(--shell-ink);
+        font-size: 11px;
+        overflow: hidden;
+      }
+
+      .symbol-row.active {
+        background: var(--shell-accent-soft);
+      }
+
+      .symbol-row.subtle {
+        color: var(--shell-muted);
+      }
+
+      .symbol-indent {
+        width: 12px;
+        flex: 0 0 12px;
+      }
+
+      .setting-group-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-height: 32px;
+        padding: 0 10px;
+        border-bottom: 1px solid var(--shell-line);
+      }
+
+      .setting-group-head strong {
+        color: var(--shell-ink);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .setting-group-head span {
+        color: var(--shell-muted);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .setting-body {
+        display: grid;
+      }
+
+      .setting-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 10px;
+        border-top: 1px solid var(--shell-line);
+      }
+
+      .setting-row:first-child {
+        border-top: 0;
+      }
+
+      .setting-copy {
+        min-width: 0;
+      }
+
+      .setting-copy strong {
+        display: block;
+        color: var(--shell-ink);
+        font-size: 11px;
+      }
+
+      .setting-copy span {
+        display: block;
+        margin-top: 3px;
+        color: var(--shell-muted);
+        font-size: 10px;
+        line-height: 1.35;
+      }
+
+      .toggle {
+        position: relative;
+        width: 34px;
+        height: 20px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--shell-line);
+      }
+
+      .toggle::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--shell-muted);
+      }
+
+      .toggle.on {
+        background: var(--shell-accent-soft);
+        border-color: rgba(208, 97, 43, 0.22);
+      }
+
+      .toggle.on::after {
+        left: 16px;
+        background: var(--shell-accent);
       }
 
       .tabbar {
@@ -897,6 +1335,7 @@
         grid-template-columns: 52px minmax(0, 1fr) 16px;
         min-height: clamp(460px, 56vh, 640px);
         background: var(--shell-editor);
+        overflow: hidden;
       }
 
       .line-numbers,
@@ -918,11 +1357,17 @@
         padding-right: 18px;
         color: var(--shell-ink);
         font: 12px/1.8 "IBM Plex Mono", monospace;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
       }
 
       .code-line {
         display: block;
         white-space: pre;
+        width: max-content;
+        min-width: 100%;
       }
 
       .code-line.active {
@@ -1087,6 +1532,11 @@
 
       .mission-summary {
         margin-bottom: 8px;
+        display: block;
+        max-width: 100%;
+        white-space: normal;
+        word-break: break-word;
+        hyphens: auto;
       }
 
       .roster {
@@ -1128,7 +1578,7 @@
       }
 
       .thread-stream {
-        min-height: 0;
+        min-height: 180px;
         padding: 12px;
         overflow-x: hidden;
         overflow-y: auto;
@@ -1138,6 +1588,9 @@
       .bubble,
       .approval-card,
       .composer {
+        display: block;
+        width: 100%;
+        max-width: 100%;
         padding: 10px;
         min-width: 0;
         overflow: hidden;
@@ -1172,14 +1625,21 @@
       .bubble p,
       .approval-card p,
       .composer p {
+        display: block;
+        max-width: 100%;
+        white-space: normal;
         color: var(--shell-ink);
         font-size: 12px;
         line-height: 1.5;
         overflow-wrap: anywhere;
         word-break: break-word;
+        hyphens: auto;
       }
 
       .inline-list {
+        display: block;
+        max-width: 100%;
+        white-space: normal;
         margin: 8px 0 0;
         padding-left: 16px;
         color: var(--shell-muted);
@@ -1187,6 +1647,7 @@
         line-height: 1.5;
         overflow-wrap: anywhere;
         word-break: break-word;
+        hyphens: auto;
       }
 
       .approval-card h4 {
@@ -1426,7 +1887,7 @@
 
       @media (max-width: 1520px) {
         .workspace {
-          grid-template-columns: 52px 276px minmax(0, 1fr) 344px;
+          grid-template-columns: 52px 260px minmax(0, 1fr) 372px;
         }
 
         .shell-header {
@@ -1440,13 +1901,15 @@
 
       @media (max-width: 1360px) {
         .workspace {
-          grid-template-columns: 52px 264px minmax(0, 1fr);
+          grid-template-columns: 52px minmax(0, 1fr) 336px;
         }
 
-        .agent-panel {
-          grid-column: 2 / 4;
-          border-left: 0;
-          border-top: 1px solid var(--shell-line);
+        .side-panel {
+          display: none;
+        }
+
+        .workbench {
+          border-left: 1px solid var(--shell-line);
         }
       }
 
@@ -1456,13 +1919,7 @@
         }
 
         .workspace {
-          grid-template-columns: 56px minmax(0, 1fr);
-        }
-
-        .side-panel,
-        .workbench,
-        .agent-panel {
-          grid-column: span 2;
+          grid-template-columns: 48px minmax(0, 1fr) 304px;
         }
 
         .pane-grid {
@@ -1494,33 +1951,47 @@
         }
 
         .workspace {
-          grid-template-columns: 1fr;
+          grid-template-columns: 48px minmax(0, 1fr) 280px;
         }
 
         .activity-rail {
-          grid-template-columns: repeat(7, minmax(0, 1fr));
-          grid-template-rows: none;
-          padding: 10px;
+          grid-template-columns: none;
+          grid-template-rows: repeat(4, 40px) 1fr 40px;
+          padding: 10px 8px;
           gap: 8px;
         }
 
         .activity-button.active::before {
-          left: 50%;
-          top: -10px;
-          width: 20px;
-          height: 3px;
-          transform: translateX(-50%);
+          left: -8px;
+          top: 50%;
+          width: 3px;
+          height: 20px;
+          transform: translateY(-50%);
         }
 
-        .side-panel,
-        .workbench,
-        .agent-panel {
-          grid-column: auto;
+        .side-panel {
+          display: none;
         }
       }
     </style>
   </head>
   <body>
+    <svg width="0" height="0" style="position:absolute;left:-9999px;overflow:hidden" aria-hidden="true" focusable="false">
+      <symbol id="gtum-mark-symbol" viewBox="0 0 512 512">
+        <rect x="44" y="44" width="424" height="424" rx="112" fill="#17181C"/>
+        <rect x="74" y="74" width="364" height="364" rx="88" fill="#23262D"/>
+        <rect x="104" y="108" width="62" height="296" rx="24" fill="#F4E8D9"/>
+        <rect x="196" y="118" width="138" height="58" rx="22" fill="#F4E8D9"/>
+        <rect x="350" y="118" width="58" height="58" rx="22" fill="#F4E8D9" opacity="0.84"/>
+        <rect x="196" y="196" width="212" height="96" rx="30" fill="#2D3440"/>
+        <rect x="222" y="222" width="88" height="14" rx="7" fill="#F4E8D9"/>
+        <rect x="222" y="248" width="132" height="14" rx="7" fill="#F4E8D9" opacity="0.64"/>
+        <path d="M212 338L252 370L212 402" stroke="#D76632" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="278" y="356" width="108" height="22" rx="11" fill="#D76632"/>
+        <circle cx="370" cy="148" r="18" fill="#D76632"/>
+        <circle cx="370" cy="148" r="34" stroke="#D76632" stroke-opacity="0.22" stroke-width="12"/>
+      </symbol>
+    </svg>
     <div class="page">
       <section class="hero">
         <span class="eyebrow">gtum theme baseline · consistent light and dark</span>
@@ -1560,7 +2031,7 @@
           <div class="shell light">
             <div class="shell-header">
               <div class="brand">
-                <img src="../public/brand/gtum-mark.svg" alt="gtum mark" />
+                <svg class="brand-mark" viewBox="0 0 512 512" role="img" aria-label="gtum mark"><use href="#gtum-mark-symbol"></use></svg>
                 <span>gtum mission workspace</span>
               </div>
               <div></div>
@@ -1573,8 +2044,7 @@
             <div class="workspace">
               <aside class="activity-rail">
                 <div class="activity-button active show-tip" data-tip="프로젝트"><span class="activity-icon project"></span></div>
-                <div class="activity-button" data-tip="탐색기"><span class="activity-icon files"><span></span></span></div>
-                <div class="activity-button" data-tip="검색"><span class="activity-icon search"></span></div>
+                <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
                 <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
                 <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
                 <div></div>
@@ -1584,15 +2054,15 @@
               <aside class="side-panel">
                 <div class="panel-head">
                   <div>
-                    <strong>프로젝트 전환</strong>
-                    <span>현재 프로젝트와 최근 프로젝트</span>
+                    <strong>프로젝트</strong>
+                    <span>현재 프로젝트, 최근 프로젝트, 프로젝트 리스트</span>
                   </div>
-                  <span class="control-chip">project view</span>
+                  <span class="control-chip">project hub</span>
                 </div>
 
                 <div class="project-card">
                   <strong>gtum</strong>
-                  <span>`dev` · 현재 작업공간 · 마지막 실행 `npm run test:e2e`</span>
+                  <span>`dev` · current workspace · selected `src/features/auth/model.ts`</span>
                 </div>
 
                 <div class="tree-stack">
@@ -1602,9 +2072,9 @@
                       <span>▾ 펼침</span>
                     </div>
                     <div class="tree-body">
-                      <div class="tree-row selected">gtum<span class="tail">open</span></div>
-                      <div class="tree-row subtle">`dev` · Codex connected</div>
-                      <div class="tree-row subtle">마지막 파일 `src/features/auth/model.ts`</div>
+                      <div class="tree-row selected"><span class="row-label">gtum</span><span class="tail">open</span></div>
+                      <div class="tree-row subtle"><span class="row-label">`dev` · Codex connected · 4 modified files</span></div>
+                      <div class="tree-row subtle"><span class="row-label">last opened `src/features/auth/model.ts`</span></div>
                     </div>
                   </section>
 
@@ -1614,9 +2084,34 @@
                       <span>▾ 펼침</span>
                     </div>
                     <div class="tree-body">
-                      <div class="tree-row">conductor-study<span class="tail">전환</span></div>
-                      <div class="tree-row">cmux-ui-lab<span class="tail">전환</span></div>
-                      <div class="tree-row subtle">vscode-layout-notes<span class="tail">전환</span></div>
+                      <div class="tree-row"><span class="row-label">conductor-study  줄길이 테스트 줄길이 테스트줄 길이 테스트</span><span class="tail">전환</span></div>
+                      <div class="tree-row"><span class="row-label">cmux-ui-lab</span><span class="tail">전환</span></div>
+                      <div class="tree-row subtle"><span class="row-label">vscode-layout-notes</span><span class="tail">전환</span></div>
+                    </div>
+                  </section>
+
+                  <section class="tree-section">
+                    <div class="tree-toggle">
+                      <strong>프로젝트 리스트</strong>
+                      <span>▾ 펼침</span>
+                    </div>
+                    <div class="tree-body">
+                      <div class="tree-row"><span class="row-label">gtum</span><span class="tail">active</span></div>
+                      <div class="tree-row subtle"><span class="row-label">conductor-study</span><span class="tail">saved</span></div>
+                      <div class="tree-row subtle"><span class="row-label">cmux-ui-lab</span><span class="tail">saved</span></div>
+                    </div>
+                  </section>
+
+                  <section class="tree-section">
+                    <div class="tree-toggle">
+                      <strong>현재 프로젝트 트리</strong>
+                      <span>▾ 펼침</span>
+                    </div>
+                    <div class="tree-body">
+                      <div class="tree-row"><span class="row-label">src</span><span class="tail">open</span></div>
+                      <div class="tree-row subtle"><span class="indent"></span><span class="row-label">features</span></div>
+                      <div class="tree-row selected"><span class="indent"></span><span class="row-label">auth/model.ts</span><span class="tail">jump</span></div>
+                      <div class="tree-row subtle"><span class="indent"></span><span class="row-label">workspace/ui-state.ts</span><span class="tail">jump</span></div>
                     </div>
                   </section>
 
@@ -1626,9 +2121,9 @@
                       <span>▾ 펼침</span>
                     </div>
                     <div class="tree-body">
-                      <div class="tree-row">Open Folder…</div>
-                      <div class="tree-row subtle">최근 세션 복원</div>
-                      <div class="tree-row subtle">새 창에서 열기</div>
+                      <div class="tree-row selected"><span class="row-label">+ 폴더 추가</span><span class="tail">open</span></div>
+                      <div class="tree-row subtle"><span class="row-label">최근 세션 복원</span></div>
+                      <div class="tree-row subtle"><span class="row-label">새 창에서 열기</span></div>
                     </div>
                   </section>
                 </div>
@@ -1702,7 +2197,7 @@
                       <strong>Mission: restore line anchor after reload</strong>
                       <span>active</span>
                     </div>
-                    <p class="mission-summary">선택 파일과 최근 로그를 한 작업 단위로 묶고, 같은 흐름 안에서 답변과 지금 처리할 제안까지 이어집니다.</p>
+                    <p class="mission-summary">선택 파일과 최근 로그를 묶어, 같은 흐름에서 답변과 제안까지 이어집니다.</p>
                     <div class="roster">
                       <span class="roster-chip">planner</span>
                       <span class="roster-chip">backend</span>
@@ -1715,7 +2210,7 @@
                     <div class="thread">
                       <article class="bubble user">
                         <div class="bubble-head"><span>사용자 요청</span><span>09:41</span></div>
-                        <p>reload 뒤 line anchor가 사라지는 이유를 찾고, 필요한 수정만 대기 제안으로 올려줘.</p>
+                        <p>reload 뒤 line anchor가 왜 사라지는지 찾고, 수정안만 제안으로 올려줘.</p>
                       </article>
 
                       <article class="bubble">
@@ -1773,7 +2268,7 @@
           <div class="shell dark">
             <div class="shell-header">
               <div class="brand">
-                <img src="../public/brand/gtum-mark.svg" alt="gtum mark" />
+                <svg class="brand-mark" viewBox="0 0 512 512" role="img" aria-label="gtum mark"><use href="#gtum-mark-symbol"></use></svg>
                 <span>gtum mission workspace</span>
               </div>
               <div></div>
@@ -1786,8 +2281,7 @@
             <div class="workspace">
               <aside class="activity-rail">
                 <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
-                <div class="activity-button active show-tip" data-tip="탐색기"><span class="activity-icon files"><span></span></span></div>
-                <div class="activity-button" data-tip="검색"><span class="activity-icon search"></span></div>
+                <div class="activity-button active show-tip" data-tip="탐색기"><span class="activity-icon search"></span></div>
                 <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
                 <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
                 <div></div>
@@ -1797,49 +2291,46 @@
               <aside class="side-panel">
                 <div class="panel-head">
                   <div>
-                    <strong>탐색기 / 구조</strong>
-                    <span>dark files view with collapsible sections</span>
+                    <strong>탐색기</strong>
+                    <span>current-project text search</span>
                   </div>
-                  <span class="control-chip">files view</span>
+                  <span class="control-chip">project search</span>
                 </div>
 
                 <div class="project-card">
                   <strong>gtum</strong>
-                  <span>`dev` · active task `pending review` · selected `src/app/App.tsx` · 프로젝트 전환은 좌측 첫 아이콘</span>
+                  <span>query `theme token` · 6 matches · current project only</span>
                 </div>
 
-                <div class="tree-stack">
-                  <section class="tree-section collapsed">
-                    <div class="tree-toggle collapsed">
-                      <strong>Explorer</strong>
-                      <span>▸ 접힘</span>
-                    </div>
-                    <div class="tree-body"></div>
-                  </section>
+                <div class="search-box">
+                  <div class="search-input">theme token</div>
+                  <div class="filter-row">
+                    <span class="filter-chip">path: src</span>
+                    <span class="filter-chip">case on</span>
+                    <span class="filter-chip">regex off</span>
+                  </div>
+                </div>
 
-                  <section class="tree-section">
-                    <div class="tree-toggle">
-                      <strong>Outline</strong>
-                      <span>▾ 펼침</span>
-                    </div>
-                    <div class="tree-body">
-                      <div class="tree-row selected">renderWorkspaceShell<span class="tail">active</span></div>
-                      <div class="tree-row subtle">SidebarHeader</div>
-                      <div class="tree-row subtle">WorkbenchTabs</div>
-                      <div class="tree-row subtle">AgentWorkspace</div>
-                      <div class="tree-row subtle">ApprovalComposer</div>
+                <div class="search-stack">
+                  <section class="result-group">
+                    <div class="result-file"><span>src/shared/ui/theme-tokens.ts</span><span>3 matches</span></div>
+                    <div class="result-hit">
+                      <span>dark <span class="match">theme token</span> should stay isolated from light.</span>
+                      <span>keep scrollbar colors inside the same <span class="match">theme token</span> family.</span>
                     </div>
                   </section>
 
-                  <section class="tree-section">
-                    <div class="tree-toggle">
-                      <strong>Source Control</strong>
-                      <span>▾ 펼침</span>
+                  <section class="result-group">
+                    <div class="result-file"><span>src/app/App.tsx</span><span>2 matches</span></div>
+                    <div class="result-hit">
+                      <span>inject <span class="match">theme token</span> map before workbench mount.</span>
                     </div>
-                    <div class="tree-body">
-                      <div class="tree-row">M src/app/App.tsx</div>
-                      <div class="tree-row">M src/widgets/agent-panel/ui/AgentPanel.tsx</div>
-                      <div class="tree-row subtle">A src/shared/ui/ThemeTokens.ts</div>
+                  </section>
+
+                  <section class="result-group">
+                    <div class="result-file"><span>docs/frontend-design-benchmarks.md</span><span>1 match</span></div>
+                    <div class="result-hit">
+                      <span>scrollbar should follow the active <span class="match">theme token</span>.</span>
                     </div>
                   </section>
                 </div>
@@ -1913,7 +2404,7 @@
                       <strong>Mission: separate light and dark theme systems</strong>
                       <span>pending actions</span>
                     </div>
-                    <p class="mission-summary">요청, 응답, 지금 처리할 제안, 다음 입력이 하나의 mission 흐름으로 이어지도록 묶습니다.</p>
+                    <p class="mission-summary">요청, 응답, 제안, 다음 입력이 한 mission 흐름으로 이어집니다.</p>
                     <div class="roster">
                       <span class="roster-chip">planner</span>
                       <span class="roster-chip">designer</span>
@@ -1926,7 +2417,7 @@
                     <div class="thread">
                       <article class="bubble user">
                         <div class="bubble-head"><span>사용자 요청</span><span>22:14</span></div>
-                        <p>light와 dark를 각각 일관된 버전으로 만들고, 좌측 `Explorer`와 `Outline`은 토글로 접히는 구조를 보여줘.</p>
+                        <p>light와 dark를 분리하고, 좌측 `Explorer`와 `Outline` 토글 구조를 보여줘.</p>
                       </article>
 
                       <article class="bubble">
@@ -1981,6 +2472,743 @@
         <article class="rule-card">
           <strong>정보 밀도 규칙</strong>
           <p>시안은 큰 placeholder box가 아니라 실제 파일명, 코드 줄, 로그, agent reply, pending summary로 채워진 상태여야 합니다.</p>
+        </article>
+      </section>
+
+      <section class="view-gallery">
+        <article class="theme-wrap">
+          <div class="theme-head">
+            <div class="theme-copy">
+              <h2>Light Left Menu Gallery</h2>
+              <p>라이트 모드에서 `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정`이 각각 어떤 정보 구조로 보여야 하는지 한 번에 비교하는 gallery입니다.</p>
+            </div>
+            <span class="theme-badge">all left-menu views · light</span>
+          </div>
+
+          <div class="view-grid">
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>프로젝트</strong>
+                <span>current + recent + list + tree</span>
+              </div>
+              <div class="shell light view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>프로젝트</strong>
+                        <span>project hub + quick file jump</span>
+                      </div>
+                      <span class="control-chip">project hub</span>
+                    </div>
+                    <div class="project-card">
+                      <strong>gtum</strong>
+                      <span>`dev` · selected `src/features/auth/model.ts` · last run `npm run test:e2e`</span>
+                    </div>
+                    <div class="tree-stack">
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>현재 프로젝트</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">gtum</span><span class="tail">open</span></div>
+                          <div class="tree-row subtle"><span class="row-label">`dev` · Codex connected · 4 modified files</span></div>
+                          <div class="tree-row subtle"><span class="row-label">selected `src/features/auth/model.ts`</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>최근 프로젝트</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">conductor-study</span><span class="tail">전환</span></div>
+                          <div class="tree-row"><span class="row-label">cmux-ui-lab</span><span class="tail">전환</span></div>
+                          <div class="tree-row subtle"><span class="row-label">vscode-layout-notes</span><span class="tail">전환</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>프로젝트 리스트</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">gtum</span><span class="tail">active</span></div>
+                          <div class="tree-row subtle"><span class="row-label">conductor-study</span><span class="tail">saved</span></div>
+                          <div class="tree-row subtle"><span class="row-label">cmux-ui-lab</span><span class="tail">saved</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>현재 프로젝트 트리</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">src</span><span class="tail">open</span></div>
+                          <div class="tree-row subtle"><span class="indent"></span><span class="row-label">features</span></div>
+                          <div class="tree-row selected"><span class="indent"></span><span class="row-label">auth/model.ts</span><span class="tail">jump</span></div>
+                          <div class="tree-row subtle"><span class="indent"></span><span class="row-label">workspace/ui-state.ts</span><span class="tail">jump</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>빠른 동작</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">+ 폴더 추가</span><span class="tail">open</span></div>
+                          <div class="tree-row subtle"><span class="row-label">Open Folder…</span></div>
+                          <div class="tree-row subtle"><span class="row-label">새 창에서 열기</span></div>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>탐색기</strong>
+                <span>query + results + snippets</span>
+              </div>
+              <div class="shell light view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button active show-tip" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>탐색기</strong>
+                        <span>current-project text search</span>
+                      </div>
+                      <span class="control-chip">search</span>
+                    </div>
+                    <div class="search-box">
+                      <div class="search-input">anchor restore</div>
+                      <div class="filter-row">
+                        <span class="filter-chip">path: src</span>
+                        <span class="filter-chip">case off</span>
+                        <span class="filter-chip">regex off</span>
+                      </div>
+                    </div>
+                    <div class="search-stack">
+                      <section class="result-group">
+                        <div class="result-file"><span>src/app/App.tsx</span><span>3 matches</span></div>
+                        <div class="result-hit">
+                          <span><span class="match">anchor</span> state should restore after reload.</span>
+                          <span>open agent request when <span class="match">restore</span> drift appears.</span>
+                        </div>
+                      </section>
+                      <section class="result-group">
+                        <div class="result-file"><span>src/features/workspace/model/ui-state.ts</span><span>2 matches</span></div>
+                        <div class="result-hit">
+                          <span>persist selected file line <span class="match">anchor</span>.</span>
+                          <span>workspace <span class="match">restore</span> snapshot update path.</span>
+                        </div>
+                      </section>
+                      <section class="result-group">
+                        <div class="result-file"><span>docs/sprint-plan.md</span><span>1 match</span></div>
+                        <div class="result-hit">
+                          <span>`Sprint 13` stabilizes line <span class="match">anchor</span> semantics.</span>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>소스제어</strong>
+                <span>branch + staged/unstaged + diff</span>
+              </div>
+              <div class="shell light view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button active show-tip" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>소스제어</strong>
+                        <span>change-driven navigation</span>
+                      </div>
+                      <span class="control-chip">git</span>
+                    </div>
+                    <div class="source-stack">
+                      <div class="source-summary">
+                        <strong>branch: dev</strong>
+                        <p>ahead 2 · staged 2 · unstaged 3 · click file opens diff tab</p>
+                      </div>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>Staged</strong>
+                          <span>▾ 2 files</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">docs/left-menu-views.md</span><span class="tail">A</span></div>
+                          <div class="tree-row selected"><span class="row-label">docs/design-concepts-sprint-15.html</span><span class="tail">M</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>Unstaged</strong>
+                          <span>▾ 3 files</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">public/brand/gtum-logo.svg</span><span class="tail">M</span></div>
+                          <div class="tree-row subtle"><span class="row-label">src/widgets/project-sidebar/ui/ProjectSidebar.tsx</span><span class="tail">M</span></div>
+                          <div class="tree-row subtle"><span class="row-label">docs/ui-ux-wireframes.md</span><span class="tail">M</span></div>
+                        </div>
+                      </section>
+                      <div class="commit-box">
+                        <strong>Commit message</strong>
+                        <div class="commit-input">feat: add left menu gallery preview</div>
+                        <div class="commit-actions">
+                          <span class="action-chip primary">Commit staged</span>
+                          <span class="action-chip subtle">Open diff</span>
+                        </div>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>아웃라인</strong>
+                <span>active file symbols + jump</span>
+              </div>
+              <div class="shell light view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button active show-tip" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>아웃라인</strong>
+                        <span>active file structure only</span>
+                      </div>
+                      <span class="control-chip">symbols</span>
+                    </div>
+                    <div class="project-card">
+                      <strong>src/widgets/workspace-stage/ui/WorkspaceStage.tsx</strong>
+                      <span>cursor line 142 · symbol jump sync with active editor</span>
+                    </div>
+                    <div class="outline-stack">
+                      <section class="symbol-group">
+                        <div class="symbol-group-head">
+                          <strong>Functions</strong>
+                          <span>▾ 4</span>
+                        </div>
+                        <div class="symbol-body">
+                          <div class="symbol-row active"><span class="row-label">renderWorkspaceShell</span><span class="tail">142</span></div>
+                          <div class="symbol-row"><span class="symbol-indent"></span><span class="row-label">buildPaneTabs</span><span class="tail">188</span></div>
+                          <div class="symbol-row"><span class="symbol-indent"></span><span class="row-label">renderCodePane</span><span class="tail">241</span></div>
+                          <div class="symbol-row subtle"><span class="symbol-indent"></span><span class="row-label">renderTerminalPane</span><span class="tail">312</span></div>
+                        </div>
+                      </section>
+                      <section class="symbol-group">
+                        <div class="symbol-group-head">
+                          <strong>Components</strong>
+                          <span>▾ 3</span>
+                        </div>
+                        <div class="symbol-body">
+                          <div class="symbol-row"><span class="row-label">WorkspaceTabs</span><span class="tail">29</span></div>
+                          <div class="symbol-row"><span class="symbol-indent"></span><span class="row-label">SplitGutter</span><span class="tail">74</span></div>
+                          <div class="symbol-row subtle"><span class="symbol-indent"></span><span class="row-label">PaneHeader</span><span class="tail">96</span></div>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>설정</strong>
+                <span>language + extensions + about</span>
+              </div>
+              <div class="shell light view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button active show-tip" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>설정</strong>
+                        <span>language + extensions + program info</span>
+                      </div>
+                      <span class="control-chip">settings</span>
+                    </div>
+                    <div class="settings-stack">
+                      <section class="settings-group">
+                        <div class="setting-group-head">
+                          <strong>Language</strong>
+                          <span>locale</span>
+                        </div>
+                        <div class="setting-body">
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>앱 언어</strong>
+                              <span>한국어를 기본으로 두고, 문서와 UI 표시 언어를 맞춥니다.</span>
+                            </div>
+                            <span class="value-chip">한국어</span>
+                          </div>
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>영문 병기</strong>
+                              <span>핵심 문서와 설정 화면에 bilingual label을 유지합니다.</span>
+                            </div>
+                            <span class="toggle on"></span>
+                          </div>
+                        </div>
+                      </section>
+                      <section class="settings-group">
+                        <div class="setting-group-head">
+                          <strong>Extensions</strong>
+                          <span>plugins</span>
+                        </div>
+                        <div class="setting-body">
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>Canva connector</strong>
+                              <span>brand board와 presentation 작업에 사용합니다.</span>
+                            </div>
+                            <span class="value-chip">Enabled</span>
+                          </div>
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>GitHub connector</strong>
+                              <span>PR, issue, release 흐름을 연결합니다.</span>
+                            </div>
+                            <span class="value-chip">Enabled</span>
+                          </div>
+                        </div>
+                      </section>
+                      <section class="settings-group">
+                        <div class="setting-group-head">
+                          <strong>Program Info</strong>
+                          <span>about</span>
+                        </div>
+                        <div class="setting-body">
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>gtum version</strong>
+                              <span>0.1.0 · Mission Control baseline · Ubuntu dev build</span>
+                            </div>
+                            <span class="value-chip">About</span>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+          </div>
+        </article>
+
+        <article class="theme-wrap">
+          <div class="theme-head">
+            <div class="theme-copy">
+              <h2>Dark Left Menu Gallery</h2>
+              <p>다크 모드에서는 같은 정보 구조를 유지하되, 밀도와 대비를 dark shell에 맞게 조정한 예시를 함께 봅니다.</p>
+            </div>
+            <span class="theme-badge">all left-menu views · dark</span>
+          </div>
+
+          <div class="view-grid">
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>프로젝트</strong>
+                <span>current + recent + list + tree</span>
+              </div>
+              <div class="shell dark view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button active show-tip" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>프로젝트</strong>
+                        <span>dark project hub</span>
+                      </div>
+                      <span class="control-chip">project hub</span>
+                    </div>
+                    <div class="project-card">
+                      <strong>conductor-study</strong>
+                      <span>`feature/mission-control-ui` · selected `apps/web/src/layout.tsx`</span>
+                    </div>
+                    <div class="tree-stack">
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>현재 프로젝트</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">conductor-study</span><span class="tail">open</span></div>
+                          <div class="tree-row subtle"><span class="row-label">feature/mission-control-ui · 7 modified files</span></div>
+                          <div class="tree-row subtle"><span class="row-label">selected `apps/web/src/layout.tsx`</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>최근 프로젝트</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">gtum</span><span class="tail">전환</span></div>
+                          <div class="tree-row"><span class="row-label">cmux-ui-lab</span><span class="tail">전환</span></div>
+                          <div class="tree-row subtle"><span class="row-label">vscode-layout-notes</span><span class="tail">전환</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>프로젝트 리스트</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">conductor-study</span><span class="tail">active</span></div>
+                          <div class="tree-row subtle"><span class="row-label">gtum</span><span class="tail">saved</span></div>
+                          <div class="tree-row subtle"><span class="row-label">cmux-ui-lab</span><span class="tail">saved</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>현재 프로젝트 트리</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">apps</span><span class="tail">open</span></div>
+                          <div class="tree-row subtle"><span class="indent"></span><span class="row-label">web/src</span></div>
+                          <div class="tree-row selected"><span class="indent"></span><span class="row-label">layout.tsx</span><span class="tail">jump</span></div>
+                          <div class="tree-row subtle"><span class="indent"></span><span class="row-label">components/agent-panel.tsx</span><span class="tail">jump</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>빠른 동작</strong>
+                          <span>▾ 펼침</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">+ 폴더 추가</span><span class="tail">open</span></div>
+                          <div class="tree-row subtle"><span class="row-label">Open Folder…</span></div>
+                          <div class="tree-row subtle"><span class="row-label">새 창에서 열기</span></div>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>탐색기</strong>
+                <span>query + results + snippets</span>
+              </div>
+              <div class="shell dark view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button active show-tip" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>탐색기</strong>
+                        <span>dark current-project search</span>
+                      </div>
+                      <span class="control-chip">search</span>
+                    </div>
+                    <div class="search-box">
+                      <div class="search-input">agent workspace</div>
+                      <div class="filter-row">
+                        <span class="filter-chip">path: src/widgets</span>
+                        <span class="filter-chip">regex on</span>
+                        <span class="filter-chip">case on</span>
+                      </div>
+                    </div>
+                    <div class="search-stack">
+                      <section class="result-group">
+                        <div class="result-file"><span>src/widgets/agent-sidebar/ui/AgentPanel.tsx</span><span>4 matches</span></div>
+                        <div class="result-hit">
+                          <span><span class="match">agent workspace</span> should remain thread-first.</span>
+                          <span>keep pending dock below the <span class="match">agent workspace</span> composer.</span>
+                        </div>
+                      </section>
+                      <section class="result-group">
+                        <div class="result-file"><span>docs/frontend-design-benchmarks.md</span><span>2 matches</span></div>
+                        <div class="result-hit">
+                          <span>the right <span class="match">agent workspace</span> should not read like passive cards.</span>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>소스제어</strong>
+                <span>branch + staged/unstaged + diff</span>
+              </div>
+              <div class="shell dark view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button active show-tip" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>소스제어</strong>
+                        <span>dark git review</span>
+                      </div>
+                      <span class="control-chip">git</span>
+                    </div>
+                    <div class="source-stack">
+                      <div class="source-summary">
+                        <strong>branch: feature/mission-control-ui</strong>
+                        <p>ahead 1 · staged 1 · unstaged 4 · click file opens diff tab</p>
+                      </div>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>Staged</strong>
+                          <span>▾ 1 file</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row selected"><span class="row-label">src/widgets/workspace-stage/ui/WorkspaceStage.tsx</span><span class="tail">M</span></div>
+                        </div>
+                      </section>
+                      <section class="tree-section">
+                        <div class="tree-toggle">
+                          <strong>Unstaged</strong>
+                          <span>▾ 4 files</span>
+                        </div>
+                        <div class="tree-body">
+                          <div class="tree-row"><span class="row-label">docs/design-concepts-sprint-15.html</span><span class="tail">M</span></div>
+                          <div class="tree-row subtle"><span class="row-label">public/brand/gtum-mark.svg</span><span class="tail">M</span></div>
+                          <div class="tree-row subtle"><span class="row-label">src/features/agents/model/useAgentSuggestions.ts</span><span class="tail">M</span></div>
+                        </div>
+                      </section>
+                      <div class="commit-box">
+                        <strong>Commit message</strong>
+                        <div class="commit-input">refactor: align mission control panel flows</div>
+                        <div class="commit-actions">
+                          <span class="action-chip primary">Commit staged</span>
+                          <span class="action-chip subtle">Stage all</span>
+                        </div>
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>아웃라인</strong>
+                <span>active file symbols + jump</span>
+              </div>
+              <div class="shell dark view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button active show-tip" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>아웃라인</strong>
+                        <span>dark symbol tree</span>
+                      </div>
+                      <span class="control-chip">symbols</span>
+                    </div>
+                    <div class="project-card">
+                      <strong>src/widgets/agent-sidebar/ui/AgentSidebar.tsx</strong>
+                      <span>active line 88 · sync with current editor tab only</span>
+                    </div>
+                    <div class="outline-stack">
+                      <section class="symbol-group">
+                        <div class="symbol-group-head">
+                          <strong>Sections</strong>
+                          <span>▾ 3</span>
+                        </div>
+                        <div class="symbol-body">
+                          <div class="symbol-row"><span class="row-label">MissionHeader</span><span class="tail">12</span></div>
+                          <div class="symbol-row active"><span class="row-label">ThreadStream</span><span class="tail">88</span></div>
+                          <div class="symbol-row"><span class="row-label">ComposerDock</span><span class="tail">144</span></div>
+                        </div>
+                      </section>
+                      <section class="symbol-group">
+                        <div class="symbol-group-head">
+                          <strong>Helpers</strong>
+                          <span>▾ 2</span>
+                        </div>
+                        <div class="symbol-body">
+                          <div class="symbol-row"><span class="row-label">buildPendingDockCopy</span><span class="tail">176</span></div>
+                          <div class="symbol-row subtle"><span class="row-label">mapThreadBadge</span><span class="tail">204</span></div>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+
+            <article class="view-card">
+              <div class="view-card-head">
+                <strong>설정</strong>
+                <span>language + extensions + about</span>
+              </div>
+              <div class="shell dark view-shell">
+                <div class="view-workspace">
+                  <aside class="activity-rail">
+                    <div class="activity-button" data-tip="프로젝트"><span class="activity-icon project"></span></div>
+                    <div class="activity-button" data-tip="탐색기"><span class="activity-icon search"></span></div>
+                    <div class="activity-button" data-tip="소스 제어"><span class="activity-icon source"><span></span><i></i></span></div>
+                    <div class="activity-button" data-tip="아웃라인"><span class="activity-icon outline"><span></span><i></i></span></div>
+                    <div></div>
+                    <div class="activity-button active show-tip" data-tip="설정"><span class="activity-icon settings"><span></span><i></i></span></div>
+                  </aside>
+                  <aside class="side-panel">
+                    <div class="panel-head">
+                      <div>
+                        <strong>설정</strong>
+                        <span>dark language + extensions + program info</span>
+                      </div>
+                      <span class="control-chip">settings</span>
+                    </div>
+                    <div class="settings-stack">
+                      <section class="settings-group">
+                        <div class="setting-group-head">
+                          <strong>Language</strong>
+                          <span>locale</span>
+                        </div>
+                        <div class="setting-body">
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>앱 언어</strong>
+                              <span>한국어를 기본으로 두고, 설정 화면에서 즉시 전환할 수 있습니다.</span>
+                            </div>
+                            <span class="value-chip">한국어</span>
+                          </div>
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>영문 병기</strong>
+                              <span>기술 문서와 주요 label에 bilingual view를 유지합니다.</span>
+                            </div>
+                            <span class="toggle on"></span>
+                          </div>
+                        </div>
+                      </section>
+                      <section class="settings-group">
+                        <div class="setting-group-head">
+                          <strong>Extensions</strong>
+                          <span>plugins</span>
+                        </div>
+                        <div class="setting-body">
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>Canva connector</strong>
+                              <span>brand board와 시안 정리용 extension입니다.</span>
+                            </div>
+                            <span class="value-chip">Enabled</span>
+                          </div>
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>GitHub connector</strong>
+                              <span>PR, release, issue 흐름을 연결합니다.</span>
+                            </div>
+                            <span class="value-chip">Enabled</span>
+                          </div>
+                        </div>
+                      </section>
+                      <section class="settings-group">
+                        <div class="setting-group-head">
+                          <strong>Program Info</strong>
+                          <span>about</span>
+                        </div>
+                        <div class="setting-body">
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>gtum version</strong>
+                              <span>0.1.0 · Mission Control baseline · dark preview build</span>
+                            </div>
+                            <span class="value-chip">About</span>
+                          </div>
+                          <div class="setting-row">
+                            <div class="setting-copy">
+                              <strong>설치 정보</strong>
+                              <span>Ubuntu dev · Windows first release baseline · license and diagnostics</span>
+                            </div>
+                            <span class="value-chip">Info</span>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </aside>
+                </div>
+              </div>
+            </article>
+          </div>
         </article>
       </section>
     </div>

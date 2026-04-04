@@ -224,6 +224,10 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - line anchor, restore 강화, bounded file fallback
 - `Sprint 14`
   - FSD frontend split과 app-shell orchestration 정리
+- `Sprint 15`
+  - Mission Control형 workbench baseline과 left rail / split workbench / agent workspace 정리
+- `Sprint 16`
+  - Concept A 브랜드 선택과 left-menu view baseline 정리
 
 ### English
 
@@ -257,6 +261,10 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - line anchors, stronger restore, and bounded file fallback
 - `Sprint 14`
   - FSD frontend split and app-shell orchestration cleanup
+- `Sprint 15`
+  - Mission Control workbench baseline plus left rail / split workbench / agent workspace alignment
+- `Sprint 16`
+  - Concept A brand selection and left-menu view baseline cleanup
 
 ## Sprint 0
 
@@ -1626,6 +1634,176 @@ Sprint 14 initial backlog:
 - `P1` extract `useTelegramWorkspace`
 - `P1` prepare the follow-up widget split into `code-stage`, `terminal-stage`, and `workspace-support`
 
+## Sprint 15
+
+### 한국어
+
+목표:
+
+- `Mission Control`형 workbench baseline을 고정하고, `left rail + split workbench + agent workspace`를 현재 UI source of truth로 정리한다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- 하단 패널 제거와 `top header / left rail / split workbench / agent workspace` 구조 고정
+- pane-local tab strip, compact tab, split gutter 기준 확정
+- `thread + composer first`, `pending dock second` 규칙 고정
+- light/dark 분리, scrollbar theme, compact typography 기준 정리
+- left rail을 `프로젝트 / 탐색기 / 소스 / 아웃라인 / 설정` 구조로 정리
+- `프로젝트`를 project hub, `탐색기`를 current-project text search로 재정의
+- responsive에서 전체 vertical stacking보다 panel collapse를 우선하는 규칙 정리
+
+완료조건:
+
+- `Sprint 15` 시안이 더 이상 terminal-first shell처럼 읽히지 않는다.
+- 하단 패널이 기본 구조에서 제거된다.
+- 오른쪽 패널은 `mission summary -> thread -> composer -> pending dock` 흐름으로 읽힌다.
+- 중앙은 pane-local tab strip과 split 가능한 workbench로 정의된다.
+- 관련 source-of-truth 문서가 동기화된다.
+
+리스크:
+
+- 시안 품질이 올라가도 실제 앱 구현이 따라오지 않으면 문서와 제품이 다시 벌어질 수 있다.
+- approval이나 status copy가 과하게 크면 thread 중심 흐름이 다시 무너질 수 있다.
+- responsive에서 panel collapse 우선 규칙이 구현되지 않으면 IDE-like composition이 깨질 수 있다.
+
+Sprint 15 initial backlog:
+
+- `P0` lock `left rail + split workbench + agent workspace` baseline
+- `P0` remove default bottom panel from the primary layout
+- `P0` make the right panel `thread/composer first`
+- `P0` move project switching into the left rail
+- `P0` define pane-local tabs and split behavior
+- `P1` sync compact density, theme, and scrollbar rules
+- `P1` document responsive collapse order
+
+### English
+
+Goal:
+
+- lock the `Mission Control` workbench baseline and promote `left rail + split workbench + agent workspace` into the current UI source of truth
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- remove the default bottom panel and fix the `top header / left rail / split workbench / agent workspace` structure
+- define pane-local tab strips, compact tabs, and split-gutter rules
+- lock `thread + composer first`, `pending dock second`
+- document light/dark separation, scrollbar theming, and compact typography
+- define the left rail as `Project / Explorer / Source / Outline / Settings`
+- redefine `Project` as the project hub and `Explorer` as current-project text search
+- document responsive collapse before full vertical stacking
+
+Acceptance Criteria:
+
+- the `Sprint 15` baseline no longer reads like a terminal-first shell
+- the bottom panel is removed from the default layout
+- the right panel reads as `mission summary -> thread -> composer -> pending dock`
+- the center is defined as a split workbench with pane-local tabs
+- related source-of-truth docs are synchronized
+
+Risks:
+
+- the docs and the real app may drift again if the visual baseline is not implemented soon
+- oversized approval or status copy can weaken the thread-first flow
+- IDE-like composition will break if responsive behavior stacks everything too early
+
+Sprint 15 initial backlog:
+
+- `P0` lock the `left rail + split workbench + agent workspace` baseline
+- `P0` remove the default bottom panel from the primary layout
+- `P0` make the right panel `thread/composer first`
+- `P0` move project switching into the left rail
+- `P0` define pane-local tabs and split behavior
+- `P1` sync compact density, theme, and scrollbar rules
+- `P1` document the responsive collapse order
+
+## Sprint 16
+
+### 한국어
+
+목표:
+
+- `Concept A` 로고 방향을 현재 브랜드 기준으로 확정하고, 왼쪽 메뉴 5개 view의 기획과 디자인을 source of truth로 정리한다.
+
+단계:
+
+- `Post-MVP`
+
+포함 범위:
+
+- logo concept 비교와 선택 기록
+- `Concept A` 자산을 현재 web brand asset 기준으로 승격
+- `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정`의 view model 문서화
+- `프로젝트 허브`와 `탐색기`의 역할 경계 정리
+- UI 기준 문서와 스프린트 문서에 Sprint 15/16 결과 흡수
+
+완료조건:
+
+- `Concept A`가 현재 브랜드 기준으로 문서에 명시된다.
+- active web logo asset이 선택된 방향과 맞는다.
+- 왼쪽 메뉴 view별 목적, 표시 정보, interaction, density 규칙이 문서화된다.
+- `Sprint 15`와 `Sprint 16` 결과가 `sprint-plan`, `brand-identity`, UI 기준 문서에 흡수된다.
+
+리스크:
+
+- `src-tauri/icons`와 같은 desktop bundle icon은 별도 갱신이 필요하다.
+- left-menu view가 문서에는 정리돼도 실제 구현에서 다시 하나의 placeholder panel로 뭉개질 수 있다.
+
+Sprint 16 initial backlog:
+
+- `P0` choose and record the logo baseline
+- `P0` promote `Concept A` into active web brand assets
+- `P0` add a dedicated left-menu view design doc
+- `P0` sync `README`, routing docs, and UI benchmark docs
+- `P1` refresh desktop launcher and bundle icons from the selected mark
+- `P1` prepare implementation tasks for explorer, search, source control, outline, and settings views
+
+### English
+
+Goal:
+
+- formalize `Concept A` as the current brand baseline and document the five left-menu views as source-of-truth design guidance
+
+Phase:
+
+- `Post-MVP`
+
+Scope:
+
+- record the logo-concept comparison and selection
+- promote `Concept A` into the active web brand assets
+- document the view models for `Project`, `Explorer`, `Source Control`, `Outline`, and `Settings`
+- clarify the boundary between the project hub and the text-search explorer
+- absorb Sprint 15 and Sprint 16 decisions into sprint and UI source docs
+
+Acceptance Criteria:
+
+- `Concept A` is explicitly documented as the current brand baseline
+- the active web logo assets match the selected direction
+- each left-menu view has documented purpose, visible content, interaction, and density rules
+- Sprint 15 and Sprint 16 outcomes are absorbed into `sprint-plan`, `brand-identity`, and the UI source docs
+
+Risks:
+
+- desktop bundle icons such as `src-tauri/icons` still need a separate refresh pass
+- the real implementation may still collapse the left-menu views into a generic placeholder panel if the next sprint is not explicit
+
+Sprint 16 initial backlog:
+
+- `P0` choose and record the logo baseline
+- `P0` promote `Concept A` into active web brand assets
+- `P0` add a dedicated left-menu view design doc
+- `P0` sync `README`, routing docs, and UI benchmark docs
+- `P1` refresh desktop launcher and bundle icons from the selected mark
+- `P1` prepare implementation tasks for explorer, search, source control, outline, and settings views
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -1643,6 +1821,8 @@ Sprint 14 initial backlog:
 - `Sprint 12`는 `Sprint 9`의 워크스페이스 구조와 `Sprint 11`의 real request path 위에서 selected-file context를 실사용 가능한 수준으로 연결하는 단계다.
 - `Sprint 13`은 `Sprint 12`의 selected-file surface 위에서 line anchor, restore semantics, bounded fallback을 안정화하는 단계다.
 - `Sprint 14`는 `Sprint 13`의 editor-like surface 위에서 frontend 구조를 FSD 기준으로 재정렬해 이후 widget 세분화와 symbol/range 확장을 쉽게 만드는 단계다.
+- `Sprint 15`는 `Sprint 14`의 FSD 구조 위에서 실제 UI baseline을 `Mission Control`형 workbench로 다시 고정하는 단계다.
+- `Sprint 16`은 `Sprint 15`의 화면 baseline을 바탕으로 브랜드와 left-menu view model을 source of truth로 굳히는 단계다.
 
 ### English
 
@@ -1659,6 +1839,8 @@ Sprint 14 initial backlog:
 - `Sprint 12` uses the workspace structure from `Sprint 9` and the real request path from `Sprint 11` to make selected-file context usable in daily work
 - `Sprint 13` stabilizes line anchors, restore semantics, and bounded fallback on top of the selected-file surface from `Sprint 12`
 - `Sprint 14` reorganizes the frontend into an FSD-style structure on top of the editor-like surface from `Sprint 13` so later widget splitting and symbol/range expansion become safer
+- `Sprint 15` uses the `Sprint 14` structure to relock the UI as a Mission Control-style workbench baseline
+- `Sprint 16` uses the `Sprint 15` workbench baseline to formalize the brand and left-menu view model as source-of-truth docs
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -1694,6 +1876,10 @@ Sprint 14 initial backlog:
   - 사용자가 같은 파일의 같은 지점으로 다시 돌아오고, line anchor가 request와 approval에서도 일관되게 읽히는가
 - `Sprint 14`
   - 에이전트가 프론트 구조를 더 작고 명확한 단위로 수정할 수 있으면서도, workbench 가시성과 핵심 흐름은 그대로 유지되는가
+- `Sprint 15`
+  - 현재 메인 화면이 `VS Code`와 `conductor`의 강점을 섞은 IDE-like workspace로 읽히는가
+- `Sprint 16`
+  - 브랜드와 왼쪽 메뉴 view model이 더 이상 임시 시안이 아니라 구현 가능한 기준 문서로 정리되었는가
 
 ### English
 
@@ -1727,13 +1913,17 @@ Sprint 14 initial backlog:
   - can users return to the same location in a file and reread that line-anchor context consistently in request and approval flows
 - `Sprint 14`
   - can agents edit the frontend in smaller, clearer units while preserving workbench visibility and the core user flow
+- `Sprint 15`
+  - does the main screen now read like an IDE-style workspace that combines the strengths of `VS Code` and `conductor`
+- `Sprint 16`
+  - are the brand and left-menu view model now documented as implementable source of truth rather than temporary concept notes
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)의 정제 시안을 기준으로 `Sprint 14` 위에서 `WorkspaceStage`를 `left rail / split workbench / agent workspace` 중심으로 다시 나누고, 빈 workbench + `+` 탭 모델, 상하좌우 pane split, 좌측 프로젝트 관리, 더 강한 Windows 실기 검증을 붙이는 것이 맞다.
+다음 단계로는 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)와 [left-menu-views.md](/home/kwon/project/gtum/docs/left-menu-views.md)를 기준으로 실제 앱 shell에 `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정` view를 구현하고, split workbench와 agent workspace를 현재 디자인 baseline에 맞게 옮기는 것이 맞다.
 
 ### English
 
-The next step should use the refined baseline in [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md) to rebuild `WorkspaceStage` around a `left rail / split workbench / agent workspace`, then add the empty-workbench `+` tab model, horizontal and vertical pane splits, left-side project management, and stronger real Windows validation so the product feels closer to a conductor-style IDE instead of a terminal-first shell.
+The next step should use [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md) plus [left-menu-views.md](/home/kwon/project/gtum/docs/left-menu-views.md) to implement the real app shell for `Project`, `Explorer`, `Source Control`, `Outline`, and `Settings`, then bring the split workbench and agent workspace into the live product so the app matches the new Mission Control baseline instead of the older terminal-first shell.

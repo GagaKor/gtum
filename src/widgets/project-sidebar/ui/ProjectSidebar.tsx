@@ -1,10 +1,21 @@
-import type { FileTreeNode, ProjectOverview } from '../../../lib/runtime'
+import type {
+  FileTreeNode,
+  ProjectOverview,
+  ProjectSearchResult,
+  RuntimeInfo,
+  SourceControlFileEntry,
+  SourceControlOverview,
+} from '../../../lib/runtime'
+import type { LeftSidebarMode } from '../../../features/workspace/model/useWorkbenchLayout'
+import type { OutlineEntry } from '../../../shared/lib/outline'
 import { summarizePath } from '../../../shared/lib/formatters'
 import { FileTreeNodeView } from '../../../shared/ui/FileTreeNode'
 
 type ProjectSidebarProps = {
   visible: boolean
-  onToggle: () => void
+  activeMode: LeftSidebarMode
+  onSelectMode: (mode: LeftSidebarMode) => void
+  onToggleVisibility: () => void
   activeProjectPath: string
   activeProject: string
   projectOverview: ProjectOverview | null
@@ -15,14 +26,45 @@ type ProjectSidebarProps = {
   onChooseProjectFolder: () => void
   onOpenProject: (path: string) => void
   recentProjects: string[]
+  projectList: string[]
   gitLabel: string
   selectedFilePath: string | null
   onSelectProjectFile: (node: FileTreeNode) => void
+  searchQuery: string
+  onSearchQueryChange: (value: string) => void
+  recentQueries: string[]
+  searchResults: ProjectSearchResult[]
+  isSearchLoading: boolean
+  searchError: string | null
+  onOpenSearchResult: (filePath: string, lineNumber: number) => void
+  sourceControl: SourceControlOverview | null
+  isSourceControlLoading: boolean
+  sourceControlError: string | null
+  onOpenSourceDiff: (file: SourceControlFileEntry, staged: boolean) => void
+  onStageSourceFile: (file: SourceControlFileEntry) => void
+  onUnstageSourceFile: (file: SourceControlFileEntry) => void
+  commitMessage: string
+  onCommitMessageChange: (value: string) => void
+  onCommitSourceControl: () => void
+  onPushSourceControl: () => void
+  outlineEntries: OutlineEntry[]
+  onOpenOutlineLine: (lineNumber: number) => void
+  runtimeInfo: RuntimeInfo | null
 }
+
+const railItems: { mode: LeftSidebarMode; label: string; icon: string; placement?: 'bottom' }[] = [
+  { mode: 'project', label: '프로젝트', icon: '⌘' },
+  { mode: 'explorer', label: '탐색기', icon: '⌕' },
+  { mode: 'source-control', label: '소스 제어', icon: '⑂' },
+  { mode: 'outline', label: '아웃라인', icon: '⋮' },
+  { mode: 'settings', label: '설정', icon: '⚙', placement: 'bottom' },
+]
 
 export function ProjectSidebar({
   visible,
-  onToggle,
+  activeMode,
+  onSelectMode,
+  onToggleVisibility,
   activeProjectPath,
   activeProject,
   projectOverview,
@@ -33,106 +75,501 @@ export function ProjectSidebar({
   onChooseProjectFolder,
   onOpenProject,
   recentProjects,
+  projectList,
   gitLabel,
   selectedFilePath,
   onSelectProjectFile,
+  searchQuery,
+  onSearchQueryChange,
+  recentQueries,
+  searchResults,
+  isSearchLoading,
+  searchError,
+  onOpenSearchResult,
+  sourceControl,
+  isSourceControlLoading,
+  sourceControlError,
+  onOpenSourceDiff,
+  onStageSourceFile,
+  onUnstageSourceFile,
+  commitMessage,
+  onCommitMessageChange,
+  onCommitSourceControl,
+  onPushSourceControl,
+  outlineEntries,
+  onOpenOutlineLine,
+  runtimeInfo,
 }: ProjectSidebarProps) {
-  if (!visible) {
-    return (
-      <button className="rail-button left" onClick={onToggle}>
-        Show Projects
-      </button>
-    )
+  const activeProjectName = projectOverview?.metadata.name ?? activeProject
+  const currentProjectSummary = activeProjectPath
+    ? `${summarizePath(activeProjectPath)} • ${gitLabel}`
+    : '열린 프로젝트가 없습니다.'
+
+  const handleModeSelection = (mode: LeftSidebarMode) => {
+    if (visible && activeMode === mode) {
+      onToggleVisibility()
+      return
+    }
+
+    onSelectMode(mode)
   }
 
   return (
-    <aside className="panel sidebar">
-      <div className="panel-header">
-        <span className="eyebrow">Projects</span>
-        <button onClick={onToggle}>Hide</button>
+    <aside className={`left-dock ${visible ? 'expanded' : 'collapsed'}`} data-testid="left-dock">
+      <div className="activity-rail" aria-label="왼쪽 메뉴">
+        <div className="activity-rail-top">
+          {railItems
+            .filter((item) => item.placement !== 'bottom')
+            .map((item) => (
+              <button
+                key={item.mode}
+                type="button"
+                className={`activity-button ${activeMode === item.mode ? 'active' : ''}`}
+                aria-label={item.label}
+                title={item.label}
+                onClick={() => handleModeSelection(item.mode)}
+              >
+                <span>{item.icon}</span>
+              </button>
+            ))}
+        </div>
+        <div className="activity-rail-bottom">
+          {railItems
+            .filter((item) => item.placement === 'bottom')
+            .map((item) => (
+              <button
+                key={item.mode}
+                type="button"
+                className={`activity-button ${activeMode === item.mode ? 'active' : ''}`}
+                aria-label={item.label}
+                title={item.label}
+                onClick={() => handleModeSelection(item.mode)}
+              >
+                <span>{item.icon}</span>
+              </button>
+            ))}
+        </div>
       </div>
-      <div className="brand-lockup">
-        <img className="brand-logo" src="/brand/gtum-logo.svg" alt="gtum" />
-        <h1 className="visually-hidden">gtum</h1>
-      </div>
-      <p className="lead">Project-centric terminal workspace for agents, code, and live logs.</p>
-      <div className="stack">
-        <article className="card emphasis">
-          <span className="label">Start</span>
-          <strong>{activeProjectPath ? projectOverview?.metadata.name ?? activeProject : 'Open a project'}</strong>
-          <p>
-            {activeProjectPath
-              ? `${summarizePath(activeProjectPath)} is ready for terminal and agent work.`
-              : 'Use the folder picker to open a local project without pasting paths manually.'}
-          </p>
-          <div className="button-row">
-            <button
-              data-testid="start-open-project-button"
-              onClick={onChooseProjectFolder}
-              disabled={isProjectLoading}
-            >
-              {isProjectLoading ? 'Opening...' : 'Open Folder'}
+
+      {visible ? (
+        <div className="left-panel">
+          <div className="left-panel-header">
+            <div>
+              <span className="eyebrow">Mission Control</span>
+              <strong>{modeTitle(activeMode)}</strong>
+              <p>{modeSubtitle(activeMode)}</p>
+            </div>
+            <button type="button" className="ghost-button" onClick={onToggleVisibility}>
+              접기
             </button>
           </div>
-          {projectError ? <p className="error-text">{projectError}</p> : null}
-          <details className="subtle-disclosure">
-            <summary>Manual Path Fallback</summary>
-            <div className="stack compact">
-              <label className="field-block">
-                <span className="label">Project Path</span>
-                <input
-                  aria-label="Project Path"
-                  value={projectPathInput}
-                  onChange={(event) => onProjectPathInputChange(event.target.value)}
-                  placeholder="/home/kwon/project/gtum"
-                />
-              </label>
-              <button onClick={() => onOpenProject(projectPathInput)} disabled={isProjectLoading}>
-                Open Project
-              </button>
+
+          {activeMode === 'project' ? (
+            <div className="left-panel-scroll">
+              <article className="side-section emphasis" data-testid="project-hub-panel">
+                <div className="section-head">
+                  <strong>Start</strong>
+                  <span>{activeProjectPath ? 'active' : 'empty'}</span>
+                </div>
+                <strong className="primary-text">
+                  {activeProjectPath ? activeProjectName : '프로젝트를 열어주세요'}
+                </strong>
+                <p className="secondary-text">{currentProjectSummary}</p>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    data-testid="start-open-project-button"
+                    onClick={onChooseProjectFolder}
+                    disabled={isProjectLoading}
+                  >
+                    {isProjectLoading ? '열는 중...' : 'Open Folder'}
+                  </button>
+                  <button type="button" onClick={() => onOpenProject(projectPathInput)} disabled={!projectPathInput.trim()}>
+                    경로 열기
+                  </button>
+                </div>
+                <label className="field-block">
+                  <span className="label">Project Path</span>
+                  <input
+                    aria-label="Project Path"
+                    value={projectPathInput}
+                    onChange={(event) => onProjectPathInputChange(event.target.value)}
+                    placeholder="C:/Users/demo/demo-project"
+                  />
+                </label>
+                {projectError ? <p className="error-text">{projectError}</p> : null}
+              </article>
+
+              <article className="side-section">
+                <div className="section-head">
+                  <strong>Recent Projects</strong>
+                  <span>{recentProjects.length}</span>
+                </div>
+                <div className="list-stack">
+                  {recentProjects.length > 0 ? (
+                    recentProjects.map((project) => (
+                      <button
+                        key={project}
+                        type="button"
+                        className="list-row"
+                        aria-label={project}
+                        onClick={() => onOpenProject(project)}
+                      >
+                        <span className="ellipsis">{project}</span>
+                        <span className="row-tail" aria-hidden="true">
+                          전환
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="secondary-text">아직 최근 프로젝트가 없습니다.</p>
+                  )}
+                </div>
+              </article>
+
+              {projectList.filter((project) => project !== activeProjectPath).length > 0 ? (
+                <article className="side-section">
+                  <div className="section-head">
+                    <strong>Project List</strong>
+                    <span>{projectList.filter((project) => project !== activeProjectPath).length}</span>
+                  </div>
+                  <div className="list-stack">
+                    {projectList
+                      .filter((project) => project !== activeProjectPath)
+                      .map((project) => (
+                        <button
+                          key={project}
+                          type="button"
+                          className="list-row"
+                          aria-label={`${project} saved project`}
+                          onClick={() => onOpenProject(project)}
+                        >
+                          <span className="ellipsis">Saved • {project}</span>
+                          <span className="row-tail" aria-hidden="true">
+                            saved
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </article>
+              ) : null}
+
+              <article className="side-section project-tree-panel">
+                <div className="section-head">
+                  <strong>File Tree</strong>
+                  <span>{projectOverview ? 'jump' : 'empty'}</span>
+                </div>
+                {projectOverview ? (
+                  <ul className="tree-list">
+                    <FileTreeNodeView
+                      node={projectOverview.tree}
+                      selectedFilePath={selectedFilePath}
+                      onSelectFile={onSelectProjectFile}
+                    />
+                  </ul>
+                ) : (
+                  <p className="secondary-text">프로젝트를 열면 여기서 파일로 바로 이동할 수 있습니다.</p>
+                )}
+              </article>
             </div>
-          </details>
-        </article>
-        <article className="card">
-          <span className="label">Recent Projects</span>
-          <div className="stack compact">
-            {recentProjects.length > 0 ? (
-              recentProjects.map((project) => (
-                <button key={project} className="recent-project" onClick={() => onOpenProject(project)}>
-                  {project}
-                </button>
-              ))
-            ) : (
-              <p>No recent projects yet.</p>
-            )}
-          </div>
-        </article>
-        <article className="card">
-          <span className="label">Repository</span>
-          <strong>{projectOverview?.metadata.name ?? 'No project selected'}</strong>
-          <p>{gitLabel}</p>
-          <div className="meta-strip">
-            <span className="pill soft">{projectOverview?.metadata.exists ? 'Exists' : 'Missing'}</span>
-            <span className="pill soft">
-              {projectOverview?.metadata.isDirectory ? 'Directory' : 'Unknown'}
-            </span>
-          </div>
-        </article>
-        <article className="card project-tree-card">
-          <span className="label">File Tree</span>
-          {projectOverview ? (
-            <ul className="tree-list">
-              <FileTreeNodeView
-                node={projectOverview.tree}
-                selectedFilePath={selectedFilePath}
-                onSelectFile={onSelectProjectFile}
+          ) : null}
+
+          {activeMode === 'explorer' ? (
+            <div className="left-panel-scroll">
+              <article className="side-section emphasis">
+                <div className="section-head">
+                  <strong>현재 프로젝트 검색</strong>
+                  <span>{searchResults.length} file(s)</span>
+                </div>
+                <label className="field-block">
+                  <span className="label">Search Query</span>
+                  <input
+                    aria-label="Project Search"
+                    value={searchQuery}
+                    onChange={(event) => onSearchQueryChange(event.target.value)}
+                    placeholder="찾을 문구를 입력하세요"
+                  />
+                </label>
+                {recentQueries.length > 0 ? (
+                  <div className="chip-row">
+                    {recentQueries.map((query) => (
+                      <button key={query} type="button" className="chip" onClick={() => onSearchQueryChange(query)}>
+                        {query}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+
+              <article className="side-section">
+                <div className="section-head">
+                  <strong>검색 결과</strong>
+                  <span>{isSearchLoading ? 'loading' : searchResults.length}</span>
+                </div>
+                {searchError ? <p className="error-text">{searchError}</p> : null}
+                {isSearchLoading ? <p className="secondary-text">검색 중입니다...</p> : null}
+                {!isSearchLoading && searchQuery.trim().length < 2 ? (
+                  <p className="secondary-text">두 글자 이상 입력하면 현재 프로젝트에서 문구를 찾습니다.</p>
+                ) : null}
+                <div className="result-groups">
+                  {searchResults.map((result) => (
+                    <div key={result.filePath} className="result-group">
+                      <div className="section-head tight">
+                        <strong className="ellipsis">{result.displayPath}</strong>
+                        <span>{result.matches.length}</span>
+                      </div>
+                      <div className="result-list">
+                        {result.matches.map((match) => (
+                          <button
+                            key={`${result.filePath}-${match.lineNumber}`}
+                            type="button"
+                            className="result-row"
+                            onClick={() => onOpenSearchResult(result.displayPath, match.lineNumber)}
+                          >
+                            <span className="result-line">L{match.lineNumber}</span>
+                            <span className="result-snippet ellipsis">{match.lineText.trim()}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {activeMode === 'source-control' ? (
+            <div className="left-panel-scroll">
+              <article className="side-section emphasis">
+                <div className="section-head">
+                  <strong>소스 제어</strong>
+                  <span>{sourceControl?.branch ?? 'no-repo'}</span>
+                </div>
+                <p className="secondary-text">
+                  {sourceControl?.isRepository
+                    ? `ahead ${sourceControl.aheadCount} · behind ${sourceControl.behindCount}`
+                    : 'Git 저장소가 감지되지 않았습니다.'}
+                </p>
+                {sourceControlError ? <p className="error-text">{sourceControlError}</p> : null}
+                {isSourceControlLoading ? <p className="secondary-text">상태를 읽는 중입니다...</p> : null}
+              </article>
+
+              <SourceControlGroup
+                title="Changed"
+                files={sourceControl?.unstaged ?? []}
+                actionLabel="Stage"
+                onAction={onStageSourceFile}
+                onOpenDiff={(file) => onOpenSourceDiff(file, false)}
               />
-            </ul>
-          ) : (
-            <p>Open a project to inspect its directory structure.</p>
-          )}
-        </article>
-      </div>
+              <SourceControlGroup
+                title="Staged"
+                files={sourceControl?.staged ?? []}
+                actionLabel="Unstage"
+                onAction={onUnstageSourceFile}
+                onOpenDiff={(file) => onOpenSourceDiff(file, true)}
+              />
+
+              <article className="side-section">
+                <div className="section-head">
+                  <strong>Commit / Push</strong>
+                  <span>git</span>
+                </div>
+                <label className="field-block">
+                  <span className="label">Commit Message</span>
+                  <textarea
+                    aria-label="Commit Message"
+                    className="compact-textarea"
+                    value={commitMessage}
+                    onChange={(event) => onCommitMessageChange(event.target.value)}
+                    placeholder="feat: implement mission-control shell"
+                  />
+                </label>
+                <div className="inline-actions">
+                  <button
+                    type="button"
+                    onClick={onCommitSourceControl}
+                    disabled={(sourceControl?.staged.length ?? 0) === 0}
+                  >
+                    Commit Staged
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={onPushSourceControl}
+                    disabled={!sourceControl?.isRepository}
+                  >
+                    Push
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {activeMode === 'outline' ? (
+            <div className="left-panel-scroll">
+              <article className="side-section emphasis">
+                <div className="section-head">
+                  <strong>현재 파일 구조</strong>
+                  <span>{outlineEntries.length}</span>
+                </div>
+                <p className="secondary-text">
+                  {selectedFilePath
+                    ? '열려 있는 파일의 함수, 컴포넌트, 섹션 구조를 보여주고 바로 점프합니다.'
+                    : '코드 파일을 열면 현재 파일 구조가 여기에 표시됩니다.'}
+                </p>
+              </article>
+              <article className="side-section">
+                <div className="outline-list">
+                  {outlineEntries.length > 0 ? (
+                    outlineEntries.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className="outline-row"
+                        style={{ paddingLeft: `${16 + entry.depth * 12}px` }}
+                        onClick={() => onOpenOutlineLine(entry.lineNumber)}
+                      >
+                        <span className="outline-kind">{entry.kind}</span>
+                        <span className="ellipsis">{entry.label}</span>
+                        <span className="row-tail" aria-hidden="true">
+                          L{entry.lineNumber}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="secondary-text">현재 파일 구조를 읽을 수 있는 텍스트 파일을 선택하세요.</p>
+                  )}
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {activeMode === 'settings' ? (
+            <div className="left-panel-scroll">
+              <article className="side-section emphasis">
+                <div className="section-head">
+                  <strong>언어 설정</strong>
+                  <span>language</span>
+                </div>
+                <div className="setting-row">
+                  <span>앱 언어</span>
+                  <strong>한국어</strong>
+                </div>
+                <div className="setting-row">
+                  <span>문서 병기</span>
+                  <strong>한/영 병기</strong>
+                </div>
+              </article>
+
+              <article className="side-section">
+                <div className="section-head">
+                  <strong>확장 / 연동</strong>
+                  <span>extensions</span>
+                </div>
+                <div className="setting-row">
+                  <span>Canva</span>
+                  <strong>enabled</strong>
+                </div>
+                <div className="setting-row">
+                  <span>GitHub</span>
+                  <strong>enabled</strong>
+                </div>
+              </article>
+
+              <article className="side-section">
+                <div className="section-head">
+                  <strong>프로그램 정보</strong>
+                  <span>about</span>
+                </div>
+                <div className="setting-row">
+                  <span>App</span>
+                  <strong>gtum</strong>
+                </div>
+                <div className="setting-row">
+                  <span>Runtime</span>
+                  <strong>{runtimeInfo?.platform ?? 'preview'}</strong>
+                </div>
+                <div className="setting-row">
+                  <span>Mode</span>
+                  <strong>{runtimeInfo?.mode ?? 'browser'}</strong>
+                </div>
+              </article>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </aside>
   )
+}
+
+function SourceControlGroup({
+  title,
+  files,
+  actionLabel,
+  onAction,
+  onOpenDiff,
+}: {
+  title: string
+  files: SourceControlFileEntry[]
+  actionLabel: string
+  onAction: (file: SourceControlFileEntry) => void
+  onOpenDiff: (file: SourceControlFileEntry) => void
+}) {
+  return (
+    <article className="side-section">
+      <div className="section-head">
+        <strong>{title}</strong>
+        <span>{files.length}</span>
+      </div>
+      <div className="list-stack">
+        {files.length > 0 ? (
+          files.map((file) => (
+            <div key={`${title}-${file.displayPath}`} className="source-row">
+              <button type="button" className="source-open" onClick={() => onOpenDiff(file)}>
+                <span className="ellipsis">{file.displayPath}</span>
+                <span className="row-tail" aria-hidden="true">
+                  diff
+                </span>
+              </button>
+              <button type="button" className="source-action" onClick={() => onAction(file)}>
+                {actionLabel}
+              </button>
+            </div>
+          ))
+        ) : (
+          <p className="secondary-text">현재 항목이 없습니다.</p>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function modeTitle(mode: LeftSidebarMode) {
+  switch (mode) {
+    case 'project':
+      return '프로젝트'
+    case 'explorer':
+      return '탐색기'
+    case 'source-control':
+      return '소스 제어'
+    case 'outline':
+      return '아웃라인'
+    case 'settings':
+      return '설정'
+  }
+}
+
+function modeSubtitle(mode: LeftSidebarMode) {
+  switch (mode) {
+    case 'project':
+      return '현재 프로젝트, 최근 프로젝트, 프로젝트 리스트, 파일 트리를 관리합니다.'
+    case 'explorer':
+      return '현재 프로젝트에서 특정 문구를 찾고 파일의 해당 줄로 이동합니다.'
+    case 'source-control':
+      return 'diff를 열고 staged / changed 파일을 관리하며 commit, push를 실행합니다.'
+    case 'outline':
+      return '현재 열려 있는 파일의 구조를 보고 line anchor로 점프합니다.'
+    case 'settings':
+      return '언어, 확장, 프로그램 정보를 확인합니다.'
+  }
 }

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="280" viewBox="0 0 960 280" fill="none">
+  <title>gtum logo concept c - pane grid</title>
+  <rect x="24" y="24" width="232" height="232" rx="62" fill="#15181D"/>
+  <rect x="42" y="42" width="196" height="196" rx="48" fill="#20252D"/>
+  <rect x="58" y="58" width="24" height="164" rx="10" fill="#F3E7D9"/>
+  <rect x="100" y="58" width="56" height="68" rx="14" fill="#F3E7D9"/>
+  <rect x="166" y="58" width="48" height="68" rx="14" fill="#F3E7D9" opacity="0.82"/>
+  <rect x="100" y="136" width="56" height="56" rx="14" fill="#2C333D"/>
+  <rect x="166" y="136" width="48" height="56" rx="14" fill="#D76632"/>
+  <rect x="176" y="158" width="28" height="5" rx="2.5" fill="#FFF4EA"/>
+  <rect x="176" y="168" width="22" height="5" rx="2.5" fill="#FFF4EA" opacity="0.78"/>
+  <circle cx="204" cy="82" r="9" fill="#D76632"/>
+  <text x="300" y="132" fill="#17181C" font-size="108" font-weight="700" font-family="Space Grotesk, IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.05em">gtum</text>
+  <text x="304" y="184" fill="#6A6F79" font-size="28" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.01em">pane-based terminal + agent IDE</text>
+</svg>

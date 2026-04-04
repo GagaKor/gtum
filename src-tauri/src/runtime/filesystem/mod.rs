@@ -11,6 +11,9 @@ use crate::runtime::platform;
 const DEFAULT_TREE_DEPTH: usize = 3;
 const MAX_TREE_DEPTH: usize = 6;
 const MAX_FILE_BYTES: usize = 128 * 1024;
+const MAX_SEARCH_FILE_BYTES: usize = 128 * 1024;
+const MAX_SEARCH_RESULTS: usize = 24;
+const MAX_MATCHES_PER_FILE: usize = 6;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +71,53 @@ pub struct ProjectFileSnapshot {
     pub size_bytes: usize,
     pub line_count: usize,
     pub content: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSearchMatch {
+    pub line_number: usize,
+    pub line_text: String,
+    pub start_column: usize,
+    pub end_column: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSearchResult {
+    pub file_path: String,
+    pub display_path: String,
+    pub matches: Vec<ProjectSearchMatch>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceControlFileEntry {
+    pub path: String,
+    pub display_path: String,
+    pub staged_status: Option<String>,
+    pub unstaged_status: Option<String>,
+    pub summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceControlOverview {
+    pub is_repository: bool,
+    pub branch: Option<String>,
+    pub ahead_count: usize,
+    pub behind_count: usize,
+    pub staged: Vec<SourceControlFileEntry>,
+    pub unstaged: Vec<SourceControlFileEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceControlDiff {
+    pub file_path: String,
+    pub display_path: String,
+    pub staged: bool,
+    pub diff: String,
 }
 
 pub fn read_project_overview(
@@ -184,6 +234,109 @@ pub fn read_project_file(project_path: String, file_path: String) -> Result<Proj
     })
 }
 
+pub fn search_project_text(project_path: String, query: String) -> Result<Vec<ProjectSearchResult>, String> {
+    let trimmed_query = query.trim();
+    if trimmed_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let project_root = canonical_project_root(&project_path)?;
+    let needle = trimmed_query.to_lowercase();
+    let mut results = Vec::new();
+    collect_search_results(&project_root, &project_root, &needle, &mut results)?;
+    Ok(results)
+}
+
+pub fn read_source_control_overview(project_path: String) -> Result<SourceControlOverview, String> {
+    let project_root = canonical_project_root(&project_path)?;
+    Ok(build_source_control_overview(&project_root))
+}
+
+pub fn read_source_control_diff(
+    project_path: String,
+    file_path: String,
+    staged: Option<bool>,
+) -> Result<SourceControlDiff, String> {
+    let project_root = canonical_project_root(&project_path)?;
+    let overview = build_source_control_overview(&project_root);
+    if !overview.is_repository {
+        return Err("git repository not detected for the active project".into());
+    }
+
+    let relative_path = resolve_git_relative_path(&project_root, &file_path)?;
+    let absolute_path = project_root.join(&relative_path);
+    let staged = staged.unwrap_or(false);
+    let mut args = vec!["diff"];
+
+    if staged {
+        args.push("--cached");
+    }
+
+    args.push("--");
+    args.push(relative_path.as_str());
+
+    let diff = platform::run_git(&project_root, &args)?;
+
+    Ok(SourceControlDiff {
+        file_path: absolute_path.to_string_lossy().into_owned(),
+        display_path: normalize_display_path(&relative_path),
+        staged,
+        diff: if diff.trim().is_empty() {
+            "No diff available for this file in the selected mode.".into()
+        } else {
+            diff
+        },
+    })
+}
+
+pub fn stage_source_control_file(
+    project_path: String,
+    file_path: String,
+) -> Result<SourceControlOverview, String> {
+    let project_root = canonical_project_root(&project_path)?;
+    ensure_git_repository(&project_root)?;
+    let relative_path = resolve_git_relative_path(&project_root, &file_path)?;
+    platform::run_git(&project_root, &["add", "--", relative_path.as_str()])?;
+    Ok(build_source_control_overview(&project_root))
+}
+
+pub fn unstage_source_control_file(
+    project_path: String,
+    file_path: String,
+) -> Result<SourceControlOverview, String> {
+    let project_root = canonical_project_root(&project_path)?;
+    ensure_git_repository(&project_root)?;
+    let relative_path = resolve_git_relative_path(&project_root, &file_path)?;
+    platform::run_git(
+        &project_root,
+        &["restore", "--staged", "--", relative_path.as_str()],
+    )?;
+    Ok(build_source_control_overview(&project_root))
+}
+
+pub fn commit_source_control(
+    project_path: String,
+    message: String,
+) -> Result<SourceControlOverview, String> {
+    let project_root = canonical_project_root(&project_path)?;
+    ensure_git_repository(&project_root)?;
+    let trimmed_message = message.trim();
+
+    if trimmed_message.is_empty() {
+        return Err("commit message cannot be empty".into());
+    }
+
+    platform::run_git(&project_root, &["commit", "-m", trimmed_message])?;
+    Ok(build_source_control_overview(&project_root))
+}
+
+pub fn push_source_control(project_path: String) -> Result<SourceControlOverview, String> {
+    let project_root = canonical_project_root(&project_path)?;
+    ensure_git_repository(&project_root)?;
+    platform::run_git(&project_root, &["push"])?;
+    Ok(build_source_control_overview(&project_root))
+}
+
 fn build_tree(path: &Path, remaining_depth: usize) -> Result<FileTreeNode, String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
@@ -234,6 +387,85 @@ fn build_tree(path: &Path, remaining_depth: usize) -> Result<FileTreeNode, Strin
     Ok(node)
 }
 
+fn collect_search_results(
+    project_root: &Path,
+    path: &Path,
+    needle: &str,
+    results: &mut Vec<ProjectSearchResult>,
+) -> Result<(), String> {
+    if results.len() >= MAX_SEARCH_RESULTS {
+        return Ok(());
+    }
+
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("failed to inspect {}: {error}", path.display()))?;
+
+    if metadata.is_dir() {
+        let mut entries = fs::read_dir(path)
+            .map_err(|error| format!("failed to read directory {}: {error}", path.display()))?
+            .filter_map(Result::ok)
+            .filter(|entry| !should_skip(entry.path().as_path()))
+            .collect::<Vec<_>>();
+
+        entries.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
+
+        for entry in entries {
+            collect_search_results(project_root, &entry.path(), needle, results)?;
+            if results.len() >= MAX_SEARCH_RESULTS {
+                break;
+            }
+        }
+
+        return Ok(());
+    }
+
+    if metadata.len() > MAX_SEARCH_FILE_BYTES as u64 {
+        return Ok(());
+    }
+
+    let bytes = fs::read(path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+
+    if looks_like_binary(&bytes) {
+        return Ok(());
+    }
+
+    let content = String::from_utf8_lossy(&bytes).into_owned();
+    let matches = content
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let lowered = line.to_lowercase();
+            lowered.find(needle).map(|start_column| ProjectSearchMatch {
+                line_number: index + 1,
+                line_text: line.to_string(),
+                start_column,
+                end_column: start_column + needle.len(),
+            })
+        })
+        .take(MAX_MATCHES_PER_FILE)
+        .collect::<Vec<_>>();
+
+    if matches.is_empty() {
+        return Ok(());
+    }
+
+    let display_path = path
+        .strip_prefix(project_root)
+        .ok()
+        .and_then(|value| value.to_str())
+        .map(normalize_display_path)
+        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+
+    results.push(ProjectSearchResult {
+        file_path: path.to_string_lossy().into_owned(),
+        display_path,
+        matches,
+    });
+
+    Ok(())
+}
+
 fn read_git_overview(path: &Path) -> GitOverview {
     let branch = platform::run_git(path, &["rev-parse", "--abbrev-ref", "HEAD"])
         .ok()
@@ -260,6 +492,83 @@ fn read_git_overview(path: &Path) -> GitOverview {
     }
 }
 
+fn build_source_control_overview(path: &Path) -> SourceControlOverview {
+    let status_output = match platform::run_git(path, &["status", "--porcelain=1", "--branch"]) {
+        Ok(output) => output,
+        Err(_) => {
+            return SourceControlOverview {
+                is_repository: false,
+                branch: None,
+                ahead_count: 0,
+                behind_count: 0,
+                staged: Vec::new(),
+                unstaged: Vec::new(),
+            }
+        }
+    };
+
+    let mut branch = None;
+    let mut ahead_count = 0usize;
+    let mut behind_count = 0usize;
+    let mut staged = Vec::new();
+    let mut unstaged = Vec::new();
+
+    for line in status_output.lines() {
+        if let Some(branch_line) = line.strip_prefix("## ") {
+            let (next_branch, ahead, behind) = parse_git_branch_line(branch_line);
+            branch = next_branch;
+            ahead_count = ahead;
+            behind_count = behind;
+            continue;
+        }
+
+        if line.trim().is_empty() || line.len() < 3 {
+            continue;
+        }
+
+        if let Some(path_str) = line.strip_prefix("?? ") {
+            let display_path = normalize_display_path(path_str.trim());
+            unstaged.push(SourceControlFileEntry {
+                path: path.join(&display_path).to_string_lossy().into_owned(),
+                display_path,
+                staged_status: None,
+                unstaged_status: Some("untracked".into()),
+                summary: "untracked".into(),
+            });
+            continue;
+        }
+
+        let bytes = line.as_bytes();
+        let staged_code = bytes[0] as char;
+        let unstaged_code = bytes[1] as char;
+        let display_path = normalize_display_path(&parse_status_path(&line[3..]));
+        let entry = SourceControlFileEntry {
+            path: path.join(&display_path).to_string_lossy().into_owned(),
+            display_path,
+            staged_status: status_code_label(staged_code),
+            unstaged_status: status_code_label(unstaged_code),
+            summary: status_summary(staged_code, unstaged_code),
+        };
+
+        if entry.staged_status.is_some() {
+            staged.push(entry.clone());
+        }
+
+        if entry.unstaged_status.is_some() {
+            unstaged.push(entry);
+        }
+    }
+
+    SourceControlOverview {
+        is_repository: true,
+        branch,
+        ahead_count,
+        behind_count,
+        staged,
+        unstaged,
+    }
+}
+
 fn branch_type(branch: &str) -> String {
     if branch == "master" {
         "master".into()
@@ -274,6 +583,119 @@ fn branch_type(branch: &str) -> String {
     } else {
         "other".into()
     }
+}
+
+fn canonical_project_root(path: &str) -> Result<PathBuf, String> {
+    let normalized_root = platform::normalize_project_path(path)?;
+    let canonical_root = fs::canonicalize(&normalized_root).map_err(|error| {
+        format!(
+            "failed to resolve project root {}: {error}",
+            normalized_root.display()
+        )
+    })?;
+
+    if !canonical_root.is_dir() {
+        return Err(format!(
+            "project path is not a directory: {}",
+            canonical_root.display()
+        ));
+    }
+
+    Ok(canonical_root)
+}
+
+fn ensure_git_repository(path: &Path) -> Result<(), String> {
+    if build_source_control_overview(path).is_repository {
+        Ok(())
+    } else {
+        Err("git repository not detected for the active project".into())
+    }
+}
+
+fn resolve_git_relative_path(project_root: &Path, file_path: &str) -> Result<String, String> {
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() {
+        return Err("file path cannot be empty".into());
+    }
+
+    let requested_path = PathBuf::from(trimmed);
+    let relative_path = if requested_path.is_absolute() {
+        requested_path
+            .strip_prefix(project_root)
+            .map_err(|_| "requested file is outside the active project root".to_string())?
+            .to_path_buf()
+    } else {
+        requested_path
+    };
+
+    Ok(normalize_display_path(relative_path.to_string_lossy().as_ref()))
+}
+
+fn parse_git_branch_line(line: &str) -> (Option<String>, usize, usize) {
+    let branch_name = line
+        .split("...")
+        .next()
+        .unwrap_or(line)
+        .trim()
+        .strip_prefix("No commits yet on ")
+        .unwrap_or_else(|| line.split("...").next().unwrap_or(line).trim())
+        .to_string();
+
+    let branch = if branch_name.is_empty() || branch_name == "HEAD (no branch)" {
+        None
+    } else {
+        Some(branch_name)
+    };
+
+    let mut ahead = 0usize;
+    let mut behind = 0usize;
+
+    if let (Some(start), Some(end)) = (line.find('['), line.find(']')) {
+        for segment in line[start + 1..end].split(',') {
+            let trimmed = segment.trim();
+            if let Some(value) = trimmed.strip_prefix("ahead ") {
+                ahead = value.parse().unwrap_or(0);
+            } else if let Some(value) = trimmed.strip_prefix("behind ") {
+                behind = value.parse().unwrap_or(0);
+            }
+        }
+    }
+
+    (branch, ahead, behind)
+}
+
+fn parse_status_path(value: &str) -> String {
+    value
+        .split(" -> ")
+        .last()
+        .unwrap_or(value)
+        .trim()
+        .to_string()
+}
+
+fn status_code_label(code: char) -> Option<String> {
+    match code {
+        'M' => Some("modified".into()),
+        'A' => Some("added".into()),
+        'D' => Some("deleted".into()),
+        'R' => Some("renamed".into()),
+        'C' => Some("copied".into()),
+        'U' => Some("conflict".into()),
+        _ => None,
+    }
+}
+
+fn status_summary(staged_code: char, unstaged_code: char) -> String {
+    match (status_code_label(staged_code), status_code_label(unstaged_code)) {
+        (Some(staged), Some(unstaged)) => format!("staged {staged}, working tree {unstaged}"),
+        (Some(staged), None) => format!("staged {staged}"),
+        (None, Some(unstaged)) => format!("working tree {unstaged}"),
+        (None, None) => "unknown".into(),
+    }
+}
+
+fn normalize_display_path(value: &str) -> String {
+    value.replace('\\', "/")
 }
 
 fn should_skip(path: &Path) -> bool {

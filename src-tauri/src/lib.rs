@@ -15,7 +15,10 @@ use runtime::auth::{
 use runtime::codex::{
     AgentProviderDiagnostics, AgentSuggestionResponse, RequestAgentSuggestionsRequest,
 };
-use runtime::filesystem::{ProjectFileSnapshot, ProjectOverview};
+use runtime::filesystem::{
+    ProjectFileSnapshot, ProjectOverview, ProjectSearchResult, SourceControlDiff,
+    SourceControlOverview,
+};
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
     TerminalSessionManager, TerminalSessionSnapshot,
@@ -63,6 +66,54 @@ fn read_project_overview(
 #[tauri::command]
 fn read_project_file(project_path: String, file_path: String) -> Result<ProjectFileSnapshot, String> {
     runtime::filesystem::read_project_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn search_project_text(project_path: String, query: String) -> Result<Vec<ProjectSearchResult>, String> {
+    runtime::filesystem::search_project_text(project_path, query)
+}
+
+#[tauri::command]
+fn read_source_control_overview(project_path: String) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::read_source_control_overview(project_path)
+}
+
+#[tauri::command]
+fn read_source_control_diff(
+    project_path: String,
+    file_path: String,
+    staged: Option<bool>,
+) -> Result<SourceControlDiff, String> {
+    runtime::filesystem::read_source_control_diff(project_path, file_path, staged)
+}
+
+#[tauri::command]
+fn stage_source_control_file(
+    project_path: String,
+    file_path: String,
+) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::stage_source_control_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn unstage_source_control_file(
+    project_path: String,
+    file_path: String,
+) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::unstage_source_control_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn commit_source_control(
+    project_path: String,
+    message: String,
+) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::commit_source_control(project_path, message)
+}
+
+#[tauri::command]
+fn push_source_control(project_path: String) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::push_source_control(project_path)
 }
 
 #[tauri::command]
@@ -281,6 +332,13 @@ pub fn run() {
             get_runtime_info,
             read_project_overview,
             read_project_file,
+            search_project_text,
+            read_source_control_overview,
+            read_source_control_diff,
+            stage_source_control_file,
+            unstage_source_control_file,
+            commit_source_control,
+            push_source_control,
             create_terminal_session,
             list_terminal_sessions,
             rename_terminal_session,

@@ -152,9 +152,13 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - activity rail은 오른쪽 agent workspace나 중앙 terminal과 중복되는 `에이전트`, `실행` 전용 icon을 두지 않고, 하단에는 `설정` icon을 두는 편이 맞다.
 - side panel 내부의 `Explorer`, `Outline`, `Source Control`은 각각 독립적인 collapsible section이어야 한다.
 - side panel tree는 큰 행 높이보다 compact typography와 짧은 row height를 우선해, 더 적은 세로 공간으로 읽히게 해야 한다.
+- side panel의 project row와 tree row는 wrap이나 horizontal scroll보다 `single-line ellipsis`가 우선이다.
+- `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정`의 view별 목적과 content model은 [left-menu-views.md](/home/kwon/project/gtum/docs/left-menu-views.md)를 기준으로 구분한다.
+- design preview는 `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정`을 light/dark 둘 다에서 독립된 view처럼 보여줘야 하며, 하나의 generic side panel 예시로 뭉개면 안 된다.
 - 프로젝트 열기와 전환 같은 project management는 상단이 아니라 좌측 rail에서 이뤄져야 한다.
-- `프로젝트` icon은 project switcher 모드로 연결되고, 현재 프로젝트, 최근 프로젝트, `Open Folder`, 전환 액션을 보여줘야 한다.
-- `탐색기` icon은 file tree / outline / source control 같은 코드 탐색 모드로 연결돼야 한다.
+- `프로젝트` icon은 현재 프로젝트, 최근 프로젝트, 프로젝트 리스트, `+ 폴더 추가`, 현재 프로젝트 tree를 함께 보여주는 project hub여야 한다.
+- `탐색기` icon은 현재 프로젝트 안의 특정 문구를 찾는 text search view여야 한다.
+- `아웃라인`은 현재 열려 있는 파일의 함수/컴포넌트/section 구조를 보여주고, 클릭 시 center editor line anchor로 이동시키는 보조 view여야 한다.
 - 중앙 workbench는 처음에 비어 있어야 하며, `+` 버튼으로 `코드`, `터미널`, `비교`, `테스트`, `미리보기` 같은 탭을 연다고 이해돼야 한다.
 - 중앙 workbench는 `VS Code`처럼 상하좌우 pane 분할을 지원해야 한다.
 - workbench 탭은 큰 CTA 버튼이 아니라 `VS Code`처럼 낮고 가로로 긴 compact tab 형태여야 한다.
@@ -165,6 +169,7 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - `미리보기` 탭은 Markdown, HTML, 렌더링 결과 같은 preview surface다.
 - 중앙 시안은 단순 placeholder 박스가 아니라 실제 editor, terminal, diff, approval detail이 들어간 현실적인 밀도로 보여야 한다.
 - editor는 breadcrumbs, line number, active line, syntax color, minimap 같은 최소한의 읽기 디테일을 가져야 한다.
+- editor는 좁아질 때 코드 줄을 wrap하지 말고, pane 내부 horizontal scroll을 우선해야 한다.
 - terminal은 prompt, command, success/error output, running indicator가 보여야 한다.
 - agent board는 실제로 일을 주고 답변을 받고 제안을 보내는 `에이전트 작업창`처럼 읽혀야 한다.
 - 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> composer -> pending dock`가 이어지는 하나의 작업 surface처럼 보여야 한다.
@@ -190,7 +195,10 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - 탭, pill, badge는 작고 조밀해야 하며, 큰 둥근 CTA 블록처럼 보이면 안 된다.
 - 한 mock 안에서 light/dark surface를 섞지 않는다. `Light version`, `Dark version`은 각각 완결된 token 체계를 가져야 한다.
 - `Light version`에서는 rail과 terminal도 light family 안에 있어야 하며, dark shell이 섞여 보이면 안 된다.
+- scrollbar도 theme token을 따라야 하며, light/dark에서 같은 브라우저 기본 scrollbar가 그대로 보이면 안 된다.
 - design preview와 구현 기본 레이아웃은 common laptop width에서 주요 영역이 잘리지 않아야 하며, 필요 시 responsive reflow나 panel drop을 우선한다.
+- responsive에서는 IDE-like horizontal composition을 최대한 유지해야 하며, 화면이 좁아질 때 먼저 `side panel collapse`, 그다음 `agent panel narrow`를 적용하고 전체 세로 적층은 마지막 예외로 미뤄야 한다.
+- 정상적인 desktop 폭에서 mission summary, user prompt, agent reply 같은 핵심 문구가 잘려 보이면 안 된다.
 
 ### English
 
@@ -330,6 +338,7 @@ For the current active slice, the frontend should follow these rules:
 - 프로젝트, editor, agent flow는 순서가 보이도록 배치해야 한다.
 - 터미널은 한 번의 전환으로 바로 들어갈 수 있어야 하며, 선택 시 충분히 강력해야 한다.
 - 전역 상단 바는 project-tab manager가 아니라 `현재 작업`, `연결 상태`, `승인 대기`, `활성 에이전트` 같은 쉬운 현재 상태 언어를 우선한다.
+- desktop 기본 비율에서 top header는 한 줄을 유지해야 하며, 브랜드 텍스트가 여러 줄로 쪼개지면 안 된다.
 - 좌측 rail은 `activity bar + side panel` 구조로 접고 펼칠 수 있어야 한다.
 - 프로젝트 관리와 전환은 왼쪽 rail로 보낸다.
 - 중앙 workbench는 비어 있는 상태에서 시작할 수 있고, `+`로 코드 탭과 터미널 탭을 추가할 수 있어야 한다.
