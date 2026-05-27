@@ -1,3 +1,4 @@
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type {
   FileTreeNode,
   ProjectOverview,
@@ -13,6 +14,7 @@ import { FileTreeNodeView } from '../../../shared/ui/FileTreeNode'
 
 type ProjectSidebarProps = {
   visible: boolean
+  onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void
   activeMode: LeftSidebarMode
   onSelectMode: (mode: LeftSidebarMode) => void
   onToggleVisibility: () => void
@@ -62,6 +64,7 @@ const railItems: { mode: LeftSidebarMode; label: string; icon: string; placement
 
 export function ProjectSidebar({
   visible,
+  onResizeStart,
   activeMode,
   onSelectMode,
   onToggleVisibility,
@@ -497,6 +500,17 @@ export function ProjectSidebar({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {visible ? (
+        <div
+          className="dock-resize-handle dock-resize-handle-right"
+          data-testid="left-resize-handle"
+          role="separator"
+          aria-label="Resize project panel"
+          aria-orientation="vertical"
+          onPointerDown={onResizeStart}
+        />
       ) : null}
     </aside>
   )

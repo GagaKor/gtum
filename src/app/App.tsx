@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import '../App.css'
 import { type ExecutionMode } from '../lib/runtime'
 import { useWorkspaceStore } from '../stores/workspace-store'
@@ -20,6 +27,15 @@ import { formatModeLabel, summarizePath } from '../shared/lib/formatters'
 import { ProjectSidebar } from '../widgets/project-sidebar/ui/ProjectSidebar'
 import { WorkspaceStage } from '../widgets/workspace-stage/ui/WorkspaceStage'
 import { AgentSidebar } from '../widgets/agent-sidebar/ui/AgentSidebar'
+
+const LEFT_PANEL_DEFAULT_WIDTH = 324
+const RIGHT_PANEL_DEFAULT_WIDTH = 380
+const LEFT_PANEL_RESIZE = { min: 220, max: 440, collapse: 90 }
+const RIGHT_PANEL_RESIZE = { min: 280, max: 560, collapse: 100 }
+
+function clampPanelWidth(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
 
 function App() {
   const restoredUiState = useMemo(() => loadUiState(), [])
@@ -47,6 +63,8 @@ function App() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>(
     restoredUiState?.executionMode ?? 'balanced',
   )
+  const [leftPanelWidth, setLeftPanelWidth] = useState(LEFT_PANEL_DEFAULT_WIDTH)
+  const [rightPanelWidth, setRightPanelWidth] = useState(RIGHT_PANEL_DEFAULT_WIDTH)
 
   const terminalWorkspace = useTerminalWorkspace({
     activeProjectPath,
@@ -203,6 +221,71 @@ function App() {
     setPanelOpen('projects', true)
   }
 
+  const startPanelResize = useCallback(
+    (side: 'left' | 'right') => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) {
+        return
+      }
+
+      event.preventDefault()
+
+      const startX = event.clientX
+      const startWidth = side === 'left' ? leftPanelWidth : rightPanelWidth
+      const resizeBounds = side === 'left' ? LEFT_PANEL_RESIZE : RIGHT_PANEL_RESIZE
+      const bodyClass = side === 'left' ? 'resizing-h-left' : 'resizing-h-right'
+      let nextWidth = startWidth
+
+      const updateWidth = (width: number) => {
+        nextWidth = clampPanelWidth(width, resizeBounds.collapse, resizeBounds.max)
+
+        if (side === 'left') {
+          setLeftPanelWidth(nextWidth)
+        } else {
+          setRightPanelWidth(nextWidth)
+        }
+      }
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        const delta = moveEvent.clientX - startX
+        const rawWidth = side === 'left' ? startWidth + delta : startWidth - delta
+
+        updateWidth(rawWidth)
+      }
+
+      const handlePointerUp = () => {
+        document.removeEventListener('pointermove', handlePointerMove)
+        document.body.classList.remove(bodyClass)
+
+        if (nextWidth <= resizeBounds.collapse + 4) {
+          setPanelOpen(side === 'left' ? 'projects' : 'agents', false)
+          if (side === 'left') {
+            setLeftPanelWidth(LEFT_PANEL_DEFAULT_WIDTH)
+          } else {
+            setRightPanelWidth(RIGHT_PANEL_DEFAULT_WIDTH)
+          }
+          return
+        }
+
+        const normalizedWidth = clampPanelWidth(nextWidth, resizeBounds.min, resizeBounds.max)
+        if (side === 'left') {
+          setLeftPanelWidth(normalizedWidth)
+        } else {
+          setRightPanelWidth(normalizedWidth)
+        }
+      }
+
+      document.body.classList.add(bodyClass)
+      document.addEventListener('pointermove', handlePointerMove)
+      document.addEventListener('pointerup', handlePointerUp, { once: true })
+    },
+    [leftPanelWidth, rightPanelWidth, setPanelOpen],
+  )
+
+  const appShellStyle = {
+    '--left-panel-width': `${leftPanelWidth}px`,
+    '--right-panel-width': `${rightPanelWidth}px`,
+  } as CSSProperties
+
   return (
     <div className="mission-control-app">
       <header className="mission-header">
@@ -230,9 +313,11 @@ function App() {
         className={`app-shell ${panels.projects ? 'left-open' : 'left-collapsed'} ${
           panels.agents ? 'right-open' : 'right-collapsed'
         }`}
+        style={appShellStyle}
       >
         <ProjectSidebar
           visible={panels.projects}
+          onResizeStart={startPanelResize('left')}
           activeMode={workbenchLayout.leftSidebarMode}
           onSelectMode={handleLeftModeSelection}
           onToggleVisibility={() => togglePanel('projects')}
@@ -340,6 +425,7 @@ function App() {
 
         <AgentSidebar
           visible={panels.agents}
+          onResizeStart={startPanelResize('right')}
           onToggle={() => togglePanel('agents')}
           agentConnections={authWorkspace.agentConnections}
           providerDiagnostics={authWorkspace.providerDiagnostics}

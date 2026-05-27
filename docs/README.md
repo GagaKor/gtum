@@ -149,7 +149,7 @@
 - Sprint 14에서는 `FSD` 기준의 `app / widgets / features / shared` 구조로 프론트 orchestration을 분해하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다
 - Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
 - Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
-- 현재 앱 UI 디자인 시스템은 1차 시안 기준의 `cool dark desktop shell + green execution accent`를 기본값으로 사용한다
+- 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact agent model row를 기본값으로 사용한다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다

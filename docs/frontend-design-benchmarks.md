@@ -150,6 +150,7 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - code viewer는 사이드바가 아니라 메인 영역의 기본 surface여야 한다.
 - agent board는 단순 채팅창이 아니라 roster, task status, plan, pending action을 함께 다루는 메인 surface여야 한다.
 - 좌측은 `VS Code`처럼 activity bar와 side panel로 나뉘고, 접기/펼치기와 폭 조절이 가능해야 한다.
+- 폭 조절은 panel 내부 edge의 4px dock handle로 처리하고, hover/drag 상태만 accent로 드러내야 한다.
 - activity rail은 글자 약어보다 icon-only가 기본이고, hover 시 명칭 tooltip이 나오는 패턴이 맞다.
 - activity rail은 오른쪽 agent workspace나 중앙 terminal과 중복되는 `에이전트`, `실행` 전용 icon을 두지 않고, 하단에는 `설정` icon을 두는 편이 맞다.
 - side panel 내부의 `Explorer`, `Outline`, `Source Control`은 각각 독립적인 collapsible section이어야 한다.
@@ -175,6 +176,7 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - terminal은 prompt, command, success/error output, running indicator가 보여야 한다.
 - agent board는 실제로 일을 주고 답변을 받고 제안을 보내는 `에이전트 작업창`처럼 읽혀야 한다.
 - 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> composer -> pending dock`가 이어지는 하나의 작업 surface처럼 보여야 한다.
+- 오른쪽 agent workspace 상단에는 현재 provider/model과 실행 모드를 compact row로 먼저 보여줘야 한다.
 - thread와 composer가 항상 오른쪽 패널에서 가장 눈에 띄고 사용성이 좋은 영역이어야 한다.
 - approval UI는 항상 큰 카드로 열려 있지 않고, 기본은 `승인 대기 n` 형태의 slim footer 또는 compact drawer여야 한다.
 - approval queue는 여러 후보를 compact row 또는 small pill 목록으로 보여주고, 사용자가 열었을 때만 상세 승인 카드와 실행 버튼이 펼쳐지는 구조가 맞다.
@@ -211,7 +213,8 @@ For the current active slice, the frontend should follow these rules:
 - the central workbench should act as a co-primary surface for `Editor + Agent Management`
 - the code viewer should be the default main-workspace surface rather than a sidebar afterthought
 - the agent board should be a first-class surface for roster, task state, plans, and approval queue instead of a simple chat rail
-- the left side should follow a `VS Code`-style activity bar plus collapsible side panel
+- the left side should follow a `VS Code`-style activity bar plus collapsible and resizable side panel
+- width resizing should use a 4px dock handle on the panel edge, with accent only for hover/drag state
 - project opening and switching should live in the left rail rather than in a top project-tab strip
 - the center workbench should begin empty and make it obvious that `Code`, `Terminal`, `Diff`, `Test`, and `Preview` are tab types created from a `+` action
 - the center workbench should support `VS Code`-style horizontal and vertical pane splits
@@ -220,6 +223,7 @@ For the current active slice, the frontend should follow these rules:
 - the `Test` tab is for structured test results and failing-test focus views rather than raw shell output
 - the `Preview` tab is for rendered surfaces such as Markdown, HTML, or generated output previews
 - the agent board should read like an `agent work window` where users assign work, read replies, and approve actions
+- the top of the right agent workspace should expose the current provider/model and execution mode through a compact row
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - remove the default bottom panel from the primary layout and solve needed details through panes or overlays
 - the approval rail should show which file, line anchor, and logs produced a suggestion without pushing the editor and agent board away

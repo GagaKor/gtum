@@ -71,18 +71,19 @@
 
 .app-shell {
   display: grid;
-  grid-template-columns: 324px minmax(0, 1fr) 380px;
+  grid-template-columns: var(--left-panel-width, 324px) minmax(0, 1fr) var(--right-panel-width, 380px);
   gap: 1px;
   padding: 0 12px 12px;
   min-height: calc(100vh - 72px);
+  transition: grid-template-columns 140ms ease;
 }
 
 .app-shell.left-collapsed {
-  grid-template-columns: 72px minmax(0, 1fr) 380px;
+  grid-template-columns: 72px minmax(0, 1fr) var(--right-panel-width, 380px);
 }
 
 .app-shell.right-collapsed {
-  grid-template-columns: 360px minmax(0, 1fr) 72px;
+  grid-template-columns: var(--left-panel-width, 324px) minmax(0, 1fr) 72px;
 }
 
 .app-shell.left-collapsed.right-collapsed {
@@ -106,6 +107,7 @@
 .right-dock {
   display: grid;
   min-height: calc(100vh - 96px);
+  position: relative;
 }
 
 .left-dock.expanded {
@@ -119,6 +121,56 @@
 
 .right-dock.expanded {
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.dock-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  transition: background 120ms ease;
+}
+
+.dock-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.dock-resize-handle:hover,
+.dock-resize-handle:focus-visible {
+  background: var(--accent);
+}
+
+.dock-resize-handle-right {
+  right: -2px;
+}
+
+.dock-resize-handle-left {
+  left: -2px;
+}
+
+body.resizing-h-left,
+body.resizing-h-right {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.resizing-h-left *,
+body.resizing-h-right * {
+  cursor: col-resize !important;
+}
+
+body.resizing-h-left .app-shell,
+body.resizing-h-right .app-shell {
+  transition: none;
 }
 
 .activity-rail {
@@ -428,6 +480,11 @@ textarea {
   padding: 14px;
 }
 
+.left-panel-scroll .side-section,
+.right-panel-scroll .agent-card {
+  border-radius: var(--radius-sm);
+}
+
 .side-section.emphasis,
 .agent-card.thread-card,
 .composer-card {
@@ -725,6 +782,41 @@ textarea {
   background: var(--surface-3);
 }
 
+.agent-model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-deep);
+}
+
+.agent-model-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-model-copy span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.agent-model-copy strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .context-block,
 .context-line,
 .suggestion-card,
@@ -808,15 +900,15 @@ textarea {
 
 @media (max-width: 1360px) {
   .app-shell {
-    grid-template-columns: 320px minmax(0, 1fr) 340px;
+    grid-template-columns: var(--left-panel-width, 324px) minmax(0, 1fr) var(--right-panel-width, 380px);
   }
 
   .app-shell.left-collapsed {
-    grid-template-columns: 72px minmax(0, 1fr) 340px;
+    grid-template-columns: 72px minmax(0, 1fr) var(--right-panel-width, 380px);
   }
 
   .app-shell.right-collapsed {
-    grid-template-columns: 320px minmax(0, 1fr) 72px;
+    grid-template-columns: var(--left-panel-width, 324px) minmax(0, 1fr) 72px;
   }
 }
 
@@ -834,7 +926,7 @@ textarea {
   .app-shell.left-collapsed,
   .app-shell.right-collapsed,
   .app-shell.left-collapsed.right-collapsed {
-    grid-template-columns: 72px minmax(0, 1fr) 320px;
+    grid-template-columns: 72px minmax(0, 1fr) min(var(--right-panel-width, 380px), 320px);
   }
 
   .workbench-grid {

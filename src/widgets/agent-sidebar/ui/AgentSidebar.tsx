@@ -1,3 +1,4 @@
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type {
   AgentConnectionSnapshot,
   AgentProviderDiagnostics,
@@ -22,6 +23,7 @@ type ProviderRequestPreview = {
 
 type AgentSidebarProps = {
   visible: boolean
+  onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void
   onToggle: () => void
   agentConnections: AgentConnectionSnapshot[]
   providerDiagnostics: AgentProviderDiagnostics[]
@@ -51,6 +53,7 @@ type AgentSidebarProps = {
 
 export function AgentSidebar({
   visible,
+  onResizeStart,
   onToggle,
   agentConnections,
   providerDiagnostics,
@@ -79,6 +82,12 @@ export function AgentSidebar({
 }: AgentSidebarProps) {
   const diagnosticsByProvider = new Map(providerDiagnostics.map((entry) => [entry.provider, entry]))
   const selectedProviderContract = selectedConnection ? buildProviderUiContract(selectedConnection) : null
+  const selectedDiagnostics = selectedConnection ? diagnosticsByProvider.get(selectedConnection.provider) : null
+  const activeModelLabel =
+    selectedDiagnostics?.model ??
+    (selectedConnection?.provider === 'codex'
+      ? 'Codex CLI session'
+      : selectedConnection?.displayName ?? 'No provider selected')
 
   return (
     <aside className={`right-dock ${visible ? 'expanded' : 'collapsed'}`}>
@@ -95,6 +104,14 @@ export function AgentSidebar({
 
       {visible ? (
         <div className="right-panel-scroll">
+          <div className="agent-model-row" data-testid="agent-model-row">
+            <div className="agent-model-copy">
+              <span>Active model</span>
+              <strong>{activeModelLabel}</strong>
+            </div>
+            <span className="status-badge scopes">{formatModeLabel(executionMode)}</span>
+          </div>
+
           <article className="agent-card" data-testid="provider-auth-panel">
             <div className="section-head">
               <strong>Provider</strong>
@@ -376,6 +393,17 @@ export function AgentSidebar({
             </div>
           </article>
         </div>
+      ) : null}
+
+      {visible ? (
+        <div
+          className="dock-resize-handle dock-resize-handle-left"
+          data-testid="right-resize-handle"
+          role="separator"
+          aria-label="Resize agent panel"
+          aria-orientation="vertical"
+          onPointerDown={onResizeStart}
+        />
       ) : null}
     </aside>
   )

@@ -47,3 +47,27 @@ test('opens a project using the folder picker fallback in preview contract mode'
   await expect(page.getByText('C:/Users/demo/demo-project', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'C:/Users/demo/demo-project' })).toBeVisible()
 })
+
+test('resizes the side workspaces from visible dock handles', async ({ page }) => {
+  await page.goto('/')
+
+  const leftDock = page.getByTestId('left-dock')
+  const leftResizeHandle = page.getByTestId('left-resize-handle')
+  const rightResizeHandle = page.getByTestId('right-resize-handle')
+
+  await expect(leftDock).toBeVisible()
+  await expect(leftResizeHandle).toBeVisible()
+  await expect(rightResizeHandle).toBeVisible()
+
+  const beforeBox = await leftDock.boundingBox()
+  expect(beforeBox).not.toBeNull()
+
+  await page.mouse.move(beforeBox!.x + beforeBox!.width - 2, beforeBox!.y + 120)
+  await page.mouse.down()
+  await page.mouse.move(beforeBox!.x + beforeBox!.width + 52, beforeBox!.y + 120)
+  await page.mouse.up()
+
+  const afterBox = await leftDock.boundingBox()
+  expect(afterBox).not.toBeNull()
+  expect(afterBox!.width).toBeGreaterThan(beforeBox!.width + 24)
+})

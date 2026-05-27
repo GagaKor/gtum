@@ -548,6 +548,7 @@ Responsibilities:
 #### 좌측 사이드바
 
 - icon-only left rail과 접고 펼치는 side panel
+- 4px dock resize handle을 통한 side panel 폭 조절과 임계값 기반 collapse
 - 프로젝트 허브, 검색, 소스 제어, 아웃라인, 설정 view
 - 프로젝트 메타데이터, Git 브랜치 및 상태, 파일 트리
 - compact row와 single-line ellipsis 기반의 정보 구조
@@ -562,6 +563,7 @@ Responsibilities:
 #### 우측 패널
 
 - 에이전트 작업창
+- 활성 provider/model과 실행 모드를 먼저 읽는 compact model row
 - provider 상태, 요청 thread, context summary, composer
 - 현재 pending suggestion과 승인 진입점
 - 워크플로우 문제 요약과 프로젝트 인사이트
@@ -578,6 +580,7 @@ Responsibilities:
 #### Left Sidebar
 
 - icon-only left rail plus collapsible side panel
+- side-panel width resizing through a 4px dock handle with threshold-based collapse
 - Project hub, Search, Source Control, Outline, and Settings views
 - project metadata, Git branch and state, file tree
 - compact rows and single-line ellipsis as the default information structure
@@ -592,6 +595,7 @@ Responsibilities:
 #### Right Panel
 
 - agent workspace
+- compact model row that exposes the active provider/model and execution mode first
 - provider state, request thread, context summary, and composer
 - current pending suggestions and approval entry points
 - workflow findings and project insights

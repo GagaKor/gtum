@@ -4,13 +4,13 @@
 
 ### 한국어
 
-이 문서는 `gtum`의 제품 UI 디자인 시스템 기준 문서다. `Sprint 15`의 `Mission Control`형 workbench 방향과 `/Users/kwon/Downloads/test`의 1차 시안을 흡수해, 실제 구현에서 따라야 할 토큰, 레이아웃, 컴포넌트, 인터랙션 기준을 고정한다.
+이 문서는 `gtum`의 제품 UI 디자인 시스템 기준 문서다. `Sprint 15`의 `Mission Control`형 workbench 방향과 `/Users/kwon/Downloads/test (1)`의 발전 시안을 흡수해, 실제 구현에서 따라야 할 토큰, 레이아웃, 컴포넌트, 인터랙션 기준을 고정한다.
 
 브랜드 로고와 심볼 자산은 `docs/brand-identity.md`를 따른다. 앱 내부 작업 UI의 표면, 상태색, 밀도, 컴포넌트 기준은 이 문서를 따른다.
 
 ### English
 
-This document is the design-system source of truth for the `gtum` product UI. It absorbs the `Sprint 15` Mission Control workbench direction and the first draft in `/Users/kwon/Downloads/test`, then fixes the tokens, layout, components, and interaction rules for implementation.
+This document is the design-system source of truth for the `gtum` product UI. It absorbs the `Sprint 15` Mission Control workbench direction and the developed draft in `/Users/kwon/Downloads/test (1)`, then fixes the tokens, layout, components, and interaction rules for implementation.
 
 Brand logo and symbol assets follow `docs/brand-identity.md`. In-app workspace surfaces, state colors, density, and component rules follow this document.
 
@@ -67,11 +67,13 @@ The default `gtum` UI is a dark desktop developer tool.
 - `Left rail + side panel`
   - `프로젝트`, `탐색기`, `소스 제어`, `아웃라인`, `설정` view를 icon-only rail로 전환한다.
   - side panel은 compact row와 single-line ellipsis를 기본으로 한다.
+  - side panel은 4px dock resize handle로 폭을 조절할 수 있어야 하며, 임계값 이하로 줄이면 collapsed rail 상태가 된다.
 - `Center workbench`
   - 코드 surface와 terminal/diff/test/preview pane을 분할 가능한 workbench로 다룬다.
   - 각 pane은 자신의 tab strip을 가진다.
 - `Right agent workspace`
   - provider, context, thread, composer, pending suggestions가 하나의 작업 흐름으로 이어져야 한다.
+  - 활성 provider/model과 실행 모드를 agent workspace 상단의 compact row로 먼저 읽을 수 있어야 한다.
 - `Status/pill strip`
   - 하단 고정 패널보다 workbench 안의 작은 상태 pill을 우선한다.
 
@@ -84,11 +86,13 @@ The default screen is composed of five areas:
 - `Left rail + side panel`
   - Switches `Project`, `Explorer`, `Source Control`, `Outline`, and `Settings` through an icon-only rail.
   - Side-panel rows default to compact height and single-line ellipsis.
+  - The side panel must be horizontally resizable with a 4px dock resize handle, collapsing back to the rail below the threshold.
 - `Center workbench`
   - Treats code, terminal, diff, test, and preview panes as a split-capable workbench.
   - Each pane owns its own tab strip.
 - `Right agent workspace`
   - Provider, context, thread, composer, and pending suggestions must read as one work flow.
+  - Active provider/model and execution mode should be readable first through a compact row at the top of the agent workspace.
 - `Status/pill strip`
   - Prefer small status pills inside the workbench over a permanent bottom panel.
 
@@ -160,6 +164,10 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - `--bg-deep` 기반의 어두운 surface를 쓰고, 모노스페이스와 줄 단위 상태색을 유지한다.
 - `agent-card`, `side-section`
   - 동일한 카드 반복처럼 보이지 않게 role별 밀도와 내부 구성을 다르게 한다.
+- `dock-resize-handle`
+  - 좌우 panel 안쪽 edge에 붙는 4px vertical handle이다. hover와 drag 중에는 `--accent`로만 강조하고, 별도 텍스트 버튼처럼 보이면 안 된다.
+- `agent-model-row`
+  - 오른쪽 agent workspace 첫 줄에서 현재 provider/model과 실행 모드를 조밀하게 보여준다.
 - `suggestion-card`
   - 명령, 대상, 위험도, 승인 상태를 함께 보여준다.
 
@@ -175,6 +183,10 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - Use dark `--bg-deep` surfaces, monospace text, and line-level state colors.
 - `agent-card`, `side-section`
   - Avoid repeated generic card treatment; vary density and structure by role.
+- `dock-resize-handle`
+  - A 4px vertical handle pinned to the inner edge of each side panel. Highlight it with `--accent` on hover and drag; it must not look like a separate text button.
+- `agent-model-row`
+  - Compactly shows the current provider/model and execution mode as the first row of the right agent workspace.
 - `suggestion-card`
   - Show command, target, risk, and approval state together.
 
@@ -183,6 +195,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 ### 한국어
 
 - 패널 접기/펼치기, 탭 전환, provider 선택, line anchor 이동은 즉시 반응해야 한다.
+- 좌우 패널 폭 조절은 pointer drag로 즉시 반응해야 하며, drag 중에는 grid transition을 끄고 cursor와 selection 상태를 고정한다.
 - 명령 실행은 항상 승인 전 검토와 승인 후 실행 단계를 분리한다.
 - 좁은 화면에서는 side panel을 먼저 접고, 그 다음 agent workspace를 줄인다.
 - 코드 줄은 강제 wrap보다 pane 내부 horizontal scroll을 우선한다.
@@ -191,8 +204,8 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 ### English
 
 - Panel collapse, tab switching, provider selection, and line-anchor navigation must respond immediately.
+- Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
 - Command execution always separates pre-approval review from post-approval execution.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
 - Pending suggestions in the agent workspace should be a compact queue/drawer, not a large fixed card that pushes away the thread and composer.
-
