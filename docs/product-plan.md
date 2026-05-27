@@ -547,63 +547,61 @@ Responsibilities:
 
 #### 좌측 사이드바
 
-- 프로젝트 목록 또는 프로젝트 전환기
-- 프로젝트 메타데이터
-- Git 브랜치 및 상태
-- 작업 목록
-- 저장된 워크스페이스
+- icon-only left rail과 접고 펼치는 side panel
+- 프로젝트 허브, 검색, 소스 제어, 아웃라인, 설정 view
+- 프로젝트 메타데이터, Git 브랜치 및 상태, 파일 트리
+- compact row와 single-line ellipsis 기반의 정보 구조
 
 #### 중앙 작업 영역
 
-- 터미널 탭 바
-- 활성 터미널 세션
-- 이후 버전에서는 분할 pane
+- editor-like code surface
+- terminal, diff, test, preview 탭 타입
+- 상하좌우 분할 가능한 workbench pane
+- pane-local tab strip과 line anchor
 
 #### 우측 패널
 
-- 에이전트 채팅
-- 제안 액션
-- 작업 실행 기록
-- 워크플로우 문제 요약
-- 프로젝트 인사이트
+- 에이전트 작업창
+- provider 상태, 요청 thread, context summary, composer
+- 현재 pending suggestion과 승인 진입점
+- 워크플로우 문제 요약과 프로젝트 인사이트
 
 #### 하단 패널 또는 드로어
 
-- 로그
-- 알림
-- 명령 기록
-- 경로 요약
+- 기본 구조에서는 고정 하단 패널을 두지 않는다.
+- 로그, 알림, 명령 기록, 경로 요약은 workbench pane, compact dock, contextual surface로 푼다.
+
+구체적인 UI 토큰, 색상, 반경, 컴포넌트 상태 표현은 `docs/design-system.md`를 기준으로 한다.
 
 ### English
 
 #### Left Sidebar
 
-- project list or switcher
-- project metadata
-- Git branch and status
-- task list
-- saved workspaces
+- icon-only left rail plus collapsible side panel
+- Project hub, Search, Source Control, Outline, and Settings views
+- project metadata, Git branch and state, file tree
+- compact rows and single-line ellipsis as the default information structure
 
 #### Center Workspace
 
-- terminal tab bar
-- active terminal session
-- split panes in later versions
+- editor-like code surface
+- terminal, diff, test, and preview tab types
+- top/right/bottom/left split-capable workbench panes
+- pane-local tab strips and line anchors
 
 #### Right Panel
 
-- agent chat
-- suggested actions
-- execution history
-- workflow findings
-- project insights
+- agent workspace
+- provider state, request thread, context summary, and composer
+- current pending suggestions and approval entry points
+- workflow findings and project insights
 
 #### Bottom Panel or Drawer
 
-- logs
-- notifications
-- command history
-- path recap
+- no permanent bottom panel in the default structure
+- logs, notifications, command history, and path recap should be handled through workbench panes, compact docks, or contextual surfaces
+
+Use `docs/design-system.md` for concrete UI tokens, colors, radius, and component state representation.
 
 ## 핵심 사용자 흐름 / Core User Flow
 

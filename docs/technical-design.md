@@ -300,6 +300,7 @@ docs/
 - smoke test와 기능별 시나리오를 구분하고, 스프린트 종료 시 smoke test는 항상 통과 상태를 목표로 한다.
 - Tauri 데스크톱 런타임과 웹 프론트엔드 검증을 분리하되, 가능한 한 같은 사용자 흐름 이름을 유지한다.
 - 프론트엔드 레이아웃과 상호작용은 `docs/frontend-design-benchmarks.md`를 기준으로 검토한다.
+- UI 토큰, 색상, 반경, 컴포넌트 상태 표현은 `docs/design-system.md`를 기준으로 검토한다.
 - 디자인 검토 시 `VS Code`의 editor hierarchy, `conductor`의 agent workflow, `cmux`의 tabbed terminal strength가 유지되는지 확인한다.
 - UI는 task history와 실행 이력이 사용자가 밟아온 승인, 실패, 재시도 경로를 재구성할 수 있을 정도로 남는지 확인한다.
 - 프론트엔드 구현은 프레임워크 관용성보다 에이전트가 수정하기 쉬운 단순한 `TypeScript` 구조를 우선할 수 있다.
@@ -357,6 +358,7 @@ The frontend should be organized by feature domain.
 - separate smoke tests from feature-specific scenarios, and aim to keep smoke tests green at the end of every sprint
 - separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
 - review frontend layout and interaction quality against `docs/frontend-design-benchmarks.md`
+- review UI tokens, colors, radius, and component state representation against `docs/design-system.md`
 - check whether the UI still preserves the editor hierarchy of `VS Code`, the agent-workflow clarity of `conductor`, and the tabbed-terminal strength of `cmux`
 - make sure task history and execution history remain legible enough for users to reconstruct approvals, failures, and retries
 - prefer frontend implementation patterns that are easy for agents to edit, even if that means reducing framework-heavy abstractions in favor of simpler `TypeScript` structures

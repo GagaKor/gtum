@@ -126,6 +126,8 @@ The current symbol is designed to read as five parts:
 
 ### 한국어
 
+브랜드 자산의 색상과 앱 내부 UI 토큰은 분리해서 관리한다. 로고와 아이콘은 아래 브랜드 팔레트를 따르지만, 실제 앱 작업 UI는 1차 디자인 시스템 기준의 `cool dark shell + green execution accent`를 사용한다. 앱 UI 토큰은 [design-system.md](/Users/kwon/projects/gtum/docs/design-system.md)를 따른다.
+
 - `Ink`
   - `#17181C`
   - 로고 바탕, 강한 제목, 런처 아이콘 기본 질감
@@ -143,6 +145,8 @@ The current symbol is designed to read as five parts:
   - 보조 텍스트와 설명
 
 ### English
+
+Brand asset colors and in-app UI tokens are managed separately. Logo and icon assets follow the brand palette below, while the actual workspace UI uses the first design-system baseline: `cool dark shell + green execution accent`. In-app UI tokens follow [design-system.md](/Users/kwon/projects/gtum/docs/design-system.md).
 
 - `Ink`
   - `#17181C`

@@ -142,6 +142,8 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 
 ### 한국어
 
+현재 시각 토큰과 컴포넌트 상태 표현의 source of truth는 [design-system.md](/Users/kwon/projects/gtum/docs/design-system.md)다. 이 문서는 UI 구조, 정보 계층, 레퍼런스, 금지 패턴을 담당한다.
+
 현재 active 슬라이스에서 프론트가 지켜야 할 기준은 아래와 같다.
 
 - 중앙 workbench는 `Editor + Agent Management`의 co-primary surface여야 한다.
@@ -201,6 +203,8 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - 정상적인 desktop 폭에서 mission summary, user prompt, agent reply 같은 핵심 문구가 잘려 보이면 안 된다.
 
 ### English
+
+The source of truth for current visual tokens and component state representation is [design-system.md](/Users/kwon/projects/gtum/docs/design-system.md). This document owns UI structure, information hierarchy, references, and anti-patterns.
 
 For the current active slice, the frontend should follow these rules:
 

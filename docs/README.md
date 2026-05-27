@@ -8,6 +8,7 @@
 - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
 - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
+- [디자인 시스템 / Design System](./design-system.md)
 - [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
 - [UI/UX 개선안과 와이어프레임 / UI/UX Improvements and Wireframes](./ui-ux-wireframes.md)
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
@@ -44,6 +45,7 @@
   - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
   - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
 - UI 참고 기준
+  - [디자인 시스템 / Design System](./design-system.md)
   - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
   - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
   - [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
@@ -77,6 +79,8 @@
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
   - UI 구조, 정보 계층, 인터랙션, 금지 패턴을 검토할 때 읽는다.
+- [디자인 시스템 / Design System](./design-system.md)
+  - UI 토큰, 색상, 반경, 타이포그래피, 컴포넌트 상태 표현을 바꿀 때 읽는다.
 - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
   - 현재 UI가 왜 헷갈리는지 설명하고, 다음 메인 화면 구조의 선택안을 고를 때 읽는다.
 - [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
@@ -112,6 +116,10 @@
 - 새 문서 추가 또는 문서 역할 변경
   - `README`
   - 필요 시 `AGENTS.md`
+- UI 토큰, 앱 셸 시각 기준, 주요 컴포넌트 상태 표현 변경
+  - `design-system`
+  - `frontend-design-benchmarks`
+  - 필요 시 `brand-identity`
 
 ## 운영 원칙 / Working Rule
 
@@ -141,6 +149,7 @@
 - Sprint 14에서는 `FSD` 기준의 `app / widgets / features / shared` 구조로 프론트 orchestration을 분해하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다
 - Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
 - Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
+- 현재 앱 UI 디자인 시스템은 1차 시안 기준의 `cool dark desktop shell + green execution accent`를 기본값으로 사용한다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다

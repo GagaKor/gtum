@@ -108,10 +108,11 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 
 ### 프론트엔드 UI/UX가 문제일 때
 
-1. `docs/frontend-design-benchmarks.md`
-2. UI 방향 자체를 골라야 하면 `docs/design-concepts-sprint-15.md`
-3. 필요 시 `docs/ui-ux-wireframes.md`
-4. 필요 시 `docs/technical-design.md`
+1. `docs/design-system.md`
+2. `docs/frontend-design-benchmarks.md`
+3. UI 방향 자체를 골라야 하면 `docs/design-concepts-sprint-15.md`
+4. 필요 시 `docs/ui-ux-wireframes.md`
+5. 필요 시 `docs/technical-design.md`
 
 ### 왼쪽 rail, side panel, settings UX가 문제일 때
 
@@ -199,10 +200,11 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 
 ### When the issue is frontend UI/UX
 
-1. `docs/frontend-design-benchmarks.md`
-2. `docs/design-concepts-sprint-15.md` when the screen direction itself needs to be chosen
-3. `docs/ui-ux-wireframes.md` if needed
-4. `docs/technical-design.md` if needed
+1. `docs/design-system.md`
+2. `docs/frontend-design-benchmarks.md`
+3. `docs/design-concepts-sprint-15.md` when the screen direction itself needs to be chosen
+4. `docs/ui-ux-wireframes.md` if needed
+5. `docs/technical-design.md` if needed
 
 ### When the issue is left-rail, side-panel, or settings UX
 

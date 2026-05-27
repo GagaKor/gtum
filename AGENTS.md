@@ -53,6 +53,7 @@
 - MVP 범위, 우선순위, 완료조건, 제외 범위
   - `docs/mvp-backlog.md`
 - UI 레퍼런스와 프론트엔드 품질 기준
+  - `docs/design-system.md`
   - `docs/frontend-design-benchmarks.md`
 - 왼쪽 rail, side panel, project switcher, settings view 기획
   - `docs/left-menu-views.md`
@@ -87,6 +88,7 @@
   - `docs/mvp-backlog.md`
   - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
 - 왼쪽 rail, side panel, project switcher, settings view 구조 변경
+  - `docs/design-system.md`
   - `docs/left-menu-views.md`
   - `docs/frontend-design-benchmarks.md`
   - `docs/ui-ux-wireframes.md`
@@ -100,6 +102,10 @@
 - 새로운 문서 추가 또는 문서 역할 변경
   - `docs/README.md`
   - 필요 시 `AGENTS.md`
+- UI 토큰, 앱 셸 시각 기준, 주요 컴포넌트 상태 표현 변경
+  - `docs/design-system.md`
+  - `docs/frontend-design-benchmarks.md`
+  - 필요 시 `docs/brand-identity.md`
 
 이번 작업에서 못 고친 문서가 있으면 비동기 상태를 명시적으로 남긴다.
 
@@ -136,6 +142,7 @@
 - `docs/mvp-backlog.md`
 - `docs/sprint-plan.md`
 - `docs/agent-team-topology.md`
+- `docs/design-system.md`
 
 ## 9. 현재 저장소에서 특히 중요한 점
 
