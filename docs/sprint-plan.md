@@ -1818,59 +1818,19 @@ Sprint 16 initial backlog:
 
 ## Sprint 17
 
-### 한국어
-
-목표:
-
-- `/Users/kwon/Downloads/test (1)`의 새 제품 디자인 시안을 기존 구현보다 우선하는 개발 기준으로 고정하고, 실제 앱 구현을 실행 가능한 slice로 나눈다.
-- 첫 구현 slice는 title/status shell, 좌측 `Projects/Files` accordion, 우측 agent model row를 중심으로 기존 화면과의 충돌을 정리한다.
-
-단계:
-
-- `Post-MVP`
-
-상세 실행 계획:
-
-- [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
-
-포함 범위:
-
-- 새 디자인 우선 정책 명문화
-- 기존 `mission-header`, card-heavy support surface, terminal-first 중심 구조와 새 디자인의 충돌 지점 정리
-- `Sprint 17`: 새 shell과 left accordion, compact agent model row
-- `Sprint 18`: editor/terminal unified workbench tabs와 split group
-- `Sprint 19`: settings modal, provider model selection, risk-based approval policy
-- `Sprint 20`: responsive/collapse 안정화와 source-of-truth 문서 동기화
-
-완료조건:
-
-- 상세 개발계획이 파일 단위, 테스트 단위, 스프린트 단위로 문서화된다.
-- 새 디자인 시안이 기존 구조와 충돌할 때 새 디자인을 우선한다는 정책이 명시된다.
-- Sprint 17의 첫 구현 범위가 `titlebar/statusbar`, `Projects/Files` accordion, agent model row로 제한되어 있다.
-- 각 스프린트의 검증 명령과 E2E 범위가 명시된다.
-
-리스크:
-
-- 기존 구현을 유지하려는 관성이 새 디자인을 부분 적용 상태로 만들 수 있다.
-- workbench tab model과 현재 terminal/session model이 섞이면 restore와 E2E가 깨질 수 있다.
-- approval auto-run은 신뢰 경계가 명확하지 않으면 제품 신뢰도를 해칠 수 있다.
-
-Sprint 17 initial backlog:
-
-- `P0` create and commit the detailed new-design implementation plan
-- `P0` declare the new design override policy in sprint planning
-- `P0` prepare failing E2E coverage for the new shell landmarks
-- `P0` implement titlebar/statusbar and left `Projects/Files` accordion
-- `P0` promote the right agent model row and execution mode control
-- `P1` start workbench tab model design for Sprint 18
-- `P1` identify docs that must be synchronized after each implementation slice
-
-### English
-
 Goal:
 
 - lock the new product design draft in `/Users/kwon/Downloads/test (1)` as the development baseline above the existing implementation
 - split the implementation into executable slices, starting with the title/status shell, left `Projects/Files` accordion, and right agent model row
+
+Current status:
+
+- Sprint 17 is active.
+- The detailed implementation plan is committed in [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md).
+- The first code slice now replaces the old `mission-header` with `Titlebar` and `StatusBar`, exposes `app-titlebar` and `app-statusbar`, and keeps the right `agent-model-row` visible.
+- The left project panel now uses independent `Projects` and `Files` accordion sections with `left-projects-section` and `left-files-section` landmarks.
+- `tests/e2e/new-design-shell.spec.ts` covers the new shell landmarks and independent accordion collapse behavior.
+- `tests/e2e/project-workspace.spec.ts` is retargeted to the new left-panel landmarks while preserving the project open, file tree, code anchor, and resize flows.
 
 Phase:
 
@@ -1904,11 +1864,11 @@ Risks:
 
 Sprint 17 initial backlog:
 
-- `P0` create and commit the detailed new-design implementation plan
-- `P0` declare the new design override policy in sprint planning
-- `P0` prepare failing E2E coverage for the new shell landmarks
-- `P0` implement titlebar/statusbar and left `Projects/Files` accordion
-- `P0` promote the right agent model row and execution mode control
+- `P0` done: create and commit the detailed new-design implementation plan
+- `P0` done: declare the new design override policy in sprint planning
+- `P0` done: prepare failing E2E coverage for the new shell landmarks
+- `P0` done: implement titlebar/statusbar and left `Projects/Files` accordion
+- `P0` partial: keep the right agent model row visible; compact execution-mode control refinement remains
 - `P1` start workbench tab model design for Sprint 18
 - `P1` identify docs that must be synchronized after each implementation slice
 

@@ -29,6 +29,9 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - current provider-auth automation is contract/preview coverage, not final `OAuth/session login` validation
 - agent request -> suggestion -> approval flow
 - initial aging test with repetition and reload
+- new design shell landmarks through `tests/e2e/new-design-shell.spec.ts`
+- independent left `Projects` and `Files` accordion collapse behavior
+- project workspace regression retargeted to `left-projects-section` and `left-files-section`
 
 ## Aging Test 초안 / Initial Aging Test
 

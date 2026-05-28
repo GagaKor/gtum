@@ -27,7 +27,7 @@ test('repeats the core workspace flow across reloads with restored state', async
   await page.goto('/')
 
   await page.getByRole('radio', { name: 'Deep' }).check()
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
   await ensureCodexConnected(page)
 
   for (const iteration of [1, 2, 3]) {

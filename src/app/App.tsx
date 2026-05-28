@@ -13,7 +13,7 @@ import { useTaskHistory } from '../features/tasks/model/useTaskHistory'
 import { useProjectWorkspace } from '../features/projects/model/useProjectWorkspace'
 import { useTerminalWorkspace } from '../features/terminals/model/useTerminalWorkspace'
 import { useProviderAuth } from '../features/auth/model/useProviderAuth'
-import { buildProviderUiContract, formatProviderStatusLabel } from '../features/auth/model/provider-ui'
+import { buildProviderUiContract } from '../features/auth/model/provider-ui'
 import { useAgentSuggestions } from '../features/agents/model/useAgentSuggestions'
 import { useTelegramWorkspace } from '../features/telegram/model/useTelegramWorkspace'
 import { emptyTelegramReportState } from '../features/telegram/model/types'
@@ -23,7 +23,9 @@ import {
 } from '../features/workspace/model/useWorkbenchLayout'
 import { loadUiState, saveUiState } from '../features/workspace/model/ui-state'
 import { buildDisplayFileAnchor, buildFileSnippet } from '../shared/lib/file-context'
-import { formatModeLabel, summarizePath } from '../shared/lib/formatters'
+import { formatModeLabel } from '../shared/lib/formatters'
+import { Titlebar } from '../widgets/app-shell/ui/Titlebar'
+import { StatusBar } from '../widgets/app-shell/ui/StatusBar'
 import { ProjectSidebar } from '../widgets/project-sidebar/ui/ProjectSidebar'
 import { WorkspaceStage } from '../widgets/workspace-stage/ui/WorkspaceStage'
 import { AgentSidebar } from '../widgets/agent-sidebar/ui/AgentSidebar'
@@ -191,9 +193,6 @@ function App() {
   const connectedProviderCount = authWorkspace.agentConnections.filter(
     (connection) => connection.status === 'connected',
   ).length
-  const pendingSuggestionCount = agentWorkspace.agentSuggestions.filter(
-    (suggestion) => suggestion.status === 'pending',
-  ).length
   const canSubmitAgentSuggestion =
     Boolean(selectedProviderContract?.canRequestSuggestion) &&
     agentWorkspace.agentRequestInput.trim().length > 0
@@ -210,6 +209,11 @@ function App() {
   const providerSummaryLabel = selectedProviderContract?.statusLabel ?? 'No provider selected'
   const providerReadyForRequests = Boolean(selectedProviderContract?.canRequestSuggestion)
   const agentSuggestionsCount = agentWorkspace.agentSuggestions.length
+  const activeWorkbenchTabLabel =
+    projectWorkspace.selectedFile?.displayPath ?? terminalWorkspace.activeSession?.name ?? 'workspace'
+  const workbenchGroupCount = 1
+  const workbenchTabCount = terminalWorkspace.terminalSessions.length + (projectWorkspace.selectedFile ? 1 : 0)
+  const changedFileCount = projectWorkspace.projectOverview?.git.changedFilesCount ?? null
 
   const handleExecutionModeChange = (mode: ExecutionMode) => {
     setExecutionMode(mode)
@@ -219,6 +223,10 @@ function App() {
   const handleLeftModeSelection = (mode: LeftSidebarMode) => {
     workbenchLayout.setLeftSidebarMode(mode)
     setPanelOpen('projects', true)
+  }
+
+  const handleOpenSettings = () => {
+    handleLeftModeSelection('settings')
   }
 
   const startPanelResize = useCallback(
@@ -288,26 +296,17 @@ function App() {
 
   return (
     <div className="mission-control-app">
-      <header className="mission-header">
-        <div className="mission-brand">
-          <img className="brand-mark" src="/brand/gtum-mark.svg" alt="gtum mark" />
-          <div className="mission-brand-copy">
-            <strong>gtum mission workspace</strong>
-            <span>{activeProjectPath ? summarizePath(activeProjectPath) : '프로젝트를 열어 시작하세요.'}</span>
-          </div>
-        </div>
-        <div className="mission-header-chips">
-          <span className="status-badge kind-real">
-            {selectedConnection?.displayName ?? 'Codex'}{' '}
-            {selectedConnection ? formatProviderStatusLabel(selectedConnection.status) : 'Not Selected'}
-          </span>
-          <span className="status-badge scopes">현재 작업: {activeContext}</span>
-          <span className="status-badge scopes">왼쪽 패널: {workbenchLayout.leftSidebarMode}</span>
-          <span className="status-badge scopes">활성 세션: {terminalWorkspace.activeSession?.name ?? 'none'}</span>
-          <span className="status-badge scopes">연결 {connectedProviderCount}</span>
-          <span className="status-badge scopes">대기 제안 {pendingSuggestionCount}</span>
-        </div>
-      </header>
+      <Titlebar
+        projectName={projectWorkspace.projectOverview?.metadata.name ?? activeProject}
+        projectPath={activeProjectPath || null}
+        gitLabel={gitLabel}
+        activeTabLabel={activeWorkbenchTabLabel}
+        groupCount={workbenchGroupCount}
+        connectedProviderCount={connectedProviderCount}
+        selectedProvider={selectedConnection}
+        onOpenSettings={handleOpenSettings}
+        leading={<img className="brand-mark" src="/brand/gtum-mark.svg" alt="gtum mark" />}
+      />
 
       <div
         className={`app-shell ${panels.projects ? 'left-open' : 'left-collapsed'} ${
@@ -455,6 +454,15 @@ function App() {
           }
         />
       </div>
+
+      <StatusBar
+        gitLabel={gitLabel}
+        changedFileCount={changedFileCount}
+        tabCount={workbenchTabCount}
+        groupCount={workbenchGroupCount}
+        executionMode={executionMode}
+        activeContext={activeContext}
+      />
     </div>
   )
 }

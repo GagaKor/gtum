@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('manages terminal tabs and promotes active logs into the agent context panel', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
 
   await expect(page.getByTestId('terminal-workspace')).toBeVisible()
   await expect(page.getByRole('tab', { name: 'workspace' })).toHaveAttribute('aria-selected', 'true')

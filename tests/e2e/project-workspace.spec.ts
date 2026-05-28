@@ -3,10 +3,10 @@ import { expect, test } from '@playwright/test'
 test('opens a project path and shows repository context', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
 
-  const recentProjects = page.getByRole('article').filter({ hasText: 'Recent Projects' })
-  const fileTree = page.getByRole('article').filter({ hasText: 'File Tree' })
+  const recentProjects = page.getByTestId('left-projects-section').filter({ hasText: 'Recent Projects' })
+  const fileTree = page.getByTestId('left-files-section').filter({ hasText: 'File Tree' })
   const codeViewer = page.getByTestId('code-viewer')
 
   await expect(page.getByText('Project: demo-project', { exact: true })).toBeVisible()
@@ -41,7 +41,7 @@ test('opens a project path and shows repository context', async ({ page }) => {
 test('opens a project using the folder picker fallback in preview contract mode', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
 
   await expect(page.getByText('feature/windows-real-use • Dirty', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('C:/Users/demo/demo-project', { exact: true }).first()).toBeVisible()

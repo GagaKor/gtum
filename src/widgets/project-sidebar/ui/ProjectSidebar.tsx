@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import { useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type {
   FileTreeNode,
   ProjectOverview,
@@ -103,10 +103,13 @@ export function ProjectSidebar({
   onOpenOutlineLine,
   runtimeInfo,
 }: ProjectSidebarProps) {
+  const [projectsSectionOpen, setProjectsSectionOpen] = useState(true)
+  const [filesSectionOpen, setFilesSectionOpen] = useState(true)
   const activeProjectName = projectOverview?.metadata.name ?? activeProject
   const currentProjectSummary = activeProjectPath
     ? `${summarizePath(activeProjectPath)} • ${gitLabel}`
     : '열린 프로젝트가 없습니다.'
+  const savedProjectCount = projectList.filter((project) => project !== activeProjectPath).length
 
   const handleModeSelection = (mode: LeftSidebarMode) => {
     if (visible && activeMode === mode) {
@@ -169,15 +172,33 @@ export function ProjectSidebar({
 
           {activeMode === 'project' ? (
             <div className="left-panel-scroll">
-              <article className="side-section emphasis" data-testid="project-hub-panel">
-                <div className="section-head">
-                  <strong>Start</strong>
-                  <span>{activeProjectPath ? 'active' : 'empty'}</span>
-                </div>
+              <ProjectAccordionSection
+                title="Projects"
+                status={activeProjectPath ? 'active' : 'empty'}
+                sectionId="left-projects-content"
+                isOpen={projectsSectionOpen}
+                onToggle={() => setProjectsSectionOpen((isOpen) => !isOpen)}
+                className="emphasis"
+                testId="left-projects-section"
+              >
                 <strong className="primary-text">
                   {activeProjectPath ? activeProjectName : '프로젝트를 열어주세요'}
                 </strong>
                 <p className="secondary-text">{currentProjectSummary}</p>
+                <div className="project-metadata-grid" aria-label="Project metadata">
+                  <div>
+                    <span>Current</span>
+                    <strong>{activeProjectPath ? activeProjectName : 'none'}</strong>
+                  </div>
+                  <div>
+                    <span>Recent Projects</span>
+                    <strong>{recentProjects.length}</strong>
+                  </div>
+                  <div>
+                    <span>Project List</span>
+                    <strong>{savedProjectCount}</strong>
+                  </div>
+                </div>
                 <div className="inline-actions">
                   <button
                     type="button"
@@ -201,14 +222,11 @@ export function ProjectSidebar({
                   />
                 </label>
                 {projectError ? <p className="error-text">{projectError}</p> : null}
-              </article>
-
-              <article className="side-section">
-                <div className="section-head">
-                  <strong>Recent Projects</strong>
-                  <span>{recentProjects.length}</span>
-                </div>
                 <div className="list-stack">
+                  <div className="section-head tight">
+                    <strong>Recent Projects</strong>
+                    <span>{recentProjects.length}</span>
+                  </div>
                   {recentProjects.length > 0 ? (
                     recentProjects.map((project) => (
                       <button
@@ -228,16 +246,13 @@ export function ProjectSidebar({
                     <p className="secondary-text">아직 최근 프로젝트가 없습니다.</p>
                   )}
                 </div>
-              </article>
-
-              {projectList.filter((project) => project !== activeProjectPath).length > 0 ? (
-                <article className="side-section">
-                  <div className="section-head">
+                <div className="list-stack">
+                  <div className="section-head tight">
                     <strong>Project List</strong>
-                    <span>{projectList.filter((project) => project !== activeProjectPath).length}</span>
+                    <span>{savedProjectCount}</span>
                   </div>
-                  <div className="list-stack">
-                    {projectList
+                  {savedProjectCount > 0 ? (
+                    projectList
                       .filter((project) => project !== activeProjectPath)
                       .map((project) => (
                         <button
@@ -252,15 +267,25 @@ export function ProjectSidebar({
                             saved
                           </span>
                         </button>
-                      ))}
-                  </div>
-                </article>
-              ) : null}
+                      ))
+                  ) : (
+                    <p className="secondary-text">저장된 다른 프로젝트가 없습니다.</p>
+                  )}
+                </div>
+              </ProjectAccordionSection>
 
-              <article className="side-section project-tree-panel">
-                <div className="section-head">
+              <ProjectAccordionSection
+                title="Files"
+                status={projectOverview ? 'jump' : 'empty'}
+                sectionId="left-files-content"
+                isOpen={filesSectionOpen}
+                onToggle={() => setFilesSectionOpen((isOpen) => !isOpen)}
+                className="project-tree-panel"
+                testId="left-files-section"
+              >
+                <div className="section-head tight">
                   <strong>File Tree</strong>
-                  <span>{projectOverview ? 'jump' : 'empty'}</span>
+                  <span>{projectOverview ? projectOverview.metadata.name : 'empty'}</span>
                 </div>
                 {projectOverview ? (
                   <ul className="tree-list">
@@ -273,7 +298,7 @@ export function ProjectSidebar({
                 ) : (
                   <p className="secondary-text">프로젝트를 열면 여기서 파일로 바로 이동할 수 있습니다.</p>
                 )}
-              </article>
+              </ProjectAccordionSection>
             </div>
           ) : null}
 
@@ -513,6 +538,49 @@ export function ProjectSidebar({
         />
       ) : null}
     </aside>
+  )
+}
+
+function ProjectAccordionSection({
+  title,
+  status,
+  sectionId,
+  isOpen,
+  onToggle,
+  className = '',
+  testId,
+  children,
+}: {
+  title: string
+  status: string
+  sectionId: string
+  isOpen: boolean
+  onToggle: () => void
+  className?: string
+  testId: string
+  children: ReactNode
+}) {
+  return (
+    <article className={`side-section project-accordion-section ${className}`} data-testid={testId}>
+      <div className="section-head project-accordion-head">
+        <button
+          type="button"
+          className="project-accordion-toggle"
+          aria-expanded={isOpen}
+          aria-controls={sectionId}
+          onClick={onToggle}
+        >
+          <span aria-hidden="true">{isOpen ? '⌄' : '›'}</span>
+          <strong>{title}</strong>
+        </button>
+        <span>{status}</span>
+      </div>
+      {isOpen ? (
+        <div id={sectionId} className="project-accordion-body">
+          {children}
+        </div>
+      ) : null}
+    </article>
   )
 }
 

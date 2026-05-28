@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('repeats the core MVP flow and restores workspace state after reload', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
   await page.getByTestId('code-line-button-4').click()
   await page.getByRole('button', { name: 'Connect Codex' }).click()
 

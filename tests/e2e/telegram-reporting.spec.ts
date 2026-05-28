@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('drafts and queues a telegram report from the current workspace', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
   await page.locator('summary', { hasText: 'Telegram' }).click()
 
   const telegramPanel = page.getByTestId('telegram-report-panel')

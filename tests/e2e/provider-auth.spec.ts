@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('connects the real Codex-first preview path', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
 
   await expect(page.getByTestId('provider-card-codex')).toContainText('Real')
   await page.getByRole('radio', { name: 'Codex' }).check()
@@ -46,7 +46,7 @@ test('connects the real Codex-first preview path', async ({ page }) => {
 test('shows provider error state for deferred Claude support', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('article').filter({ hasText: 'Start' }).getByRole('button', { name: 'Open Folder' }).click()
+  await page.getByTestId('left-projects-section').getByRole('button', { name: 'Open Folder' }).click()
 
   await page.getByRole('radio', { name: 'Claude' }).check()
   await expect(page.getByTestId('provider-card-claude')).toContainText('Prototype')
