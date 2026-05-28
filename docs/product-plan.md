@@ -316,6 +316,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - 파일 트리
 - Git 브랜치와 변경 상태
 - 저장된 터미널 탭
+- 열린 editor/terminal 탭과 split group 상태
 - 활성 에이전트 목록
 
 #### 2. 멀티 탭 터미널 작업
@@ -328,6 +329,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - `deploy`
 
 각 탭은 독립적인 셸 세션과 출력 기록을 가진다.
+새 디자인 기준에서는 터미널 탭뿐 아니라 read-only editor 탭도 같은 중앙 workbench 안에서 열리고, 사용자는 탭을 끌어 새 group으로 분리하거나 좌우/상하 split으로 배치할 수 있다.
 
 #### 3. 에이전트 관찰
 
@@ -375,6 +377,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 
 초기 후보 채널은 다음과 같다.
 
+- `SMS`
 - `Telegram` 연동
 
 이 기능의 목적은 다음과 같다.
@@ -384,6 +387,21 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - 작업 완료, 실패, 승인 필요 상태를 메시지로 리포트
 
 다만 이 기능은 보안과 인증 경계가 중요하므로, `MVP 완료 후` 다음 단계 확장 기능으로 도입하는 것이 바람직하다.
+
+#### 7. 설정과 실행 정책
+
+새 디자인 시안은 설정을 별도 보조 화면이 아니라 제품의 실행 통제면으로 본다.
+
+설정은 최소한 다음을 다룬다.
+
+- provider 연결과 세션 상태
+- provider별 기본 모델 선택
+- accent 같은 외관 설정
+- `Fast`, `Balanced`, `Deep` 실행 모드
+- 병렬 worker 수와 응답 스트리밍
+- 위험도별 승인 정책
+- trusted directory와 forbidden pattern
+- 자동 승인 이력과 undo 가능한 알림
 
 ### English
 
@@ -395,6 +413,7 @@ When a user opens a local repository, the app should show:
 - file tree
 - Git branch and working state
 - saved terminal tabs
+- open editor/terminal tabs and split-group state
 - active agents
 
 #### 2. Multi-Tab Terminal Work
@@ -407,6 +426,7 @@ The user creates task-focused tabs such as:
 - `deploy`
 
 Each tab has its own shell session and output history.
+In the updated design baseline, read-only editor tabs and terminal tabs live inside the same center workbench. Users can drag tabs into new groups or split them horizontally and vertically.
 
 #### 3. Agent Observation
 
@@ -469,11 +489,35 @@ The goals of this feature are:
 
 Because this adds important security and authentication boundaries, it should be introduced after the base desktop workflow is stable.
 
+#### 7. Settings and Execution Policy
+
+The updated design treats settings as an execution-control surface, not a secondary preferences page.
+
+Settings should cover at least:
+
+- provider connections and session state
+- default model selection per provider
+- appearance settings such as the accent color
+- `Fast`, `Balanced`, and `Deep` execution modes
+- parallel worker count and response streaming
+- approval policy by risk level
+- trusted directories and forbidden patterns
+- auto-approval history and undoable notifications
+
 ## 정보 구조 / Information Architecture
 
 ### 한국어
 
-앱은 크게 세 가지 영역으로 구성된다.
+앱은 크게 네 가지 영역과 상단/하단 상태 shell로 구성된다.
+
+#### Workbench Shell
+
+역할:
+
+- 현재 프로젝트, 브랜치, 활성 탭, split group 수를 상단 titlebar에서 표시
+- 연결된 provider 수와 현재 실행 모드를 상단 또는 하단 상태 영역에서 표시
+- branch, 변경 파일 수, ahead/behind, tab/group 상태를 status bar에서 빠르게 확인
+- 큰 대시보드 카드 대신 editor/terminal/agent가 바로 작업 가능한 상태로 보이게 함
 
 #### Projects
 
@@ -482,6 +526,8 @@ Because this adds important security and authentication boundaries, it should be
 - 로컬 폴더 연결
 - 파일 트리 및 메타데이터 표시
 - Git 상태 요약
+- 현재 프로젝트와 최근 프로젝트를 compact project row로 표시
+- `Projects`와 `Files`를 독립적으로 접고 펼치는 accordion section으로 제공
 - 저장된 워크스페이스와 실행 프리셋 관리
 - 프로젝트 단위 작업 추적
 
@@ -489,8 +535,9 @@ Because this adds important security and authentication boundaries, it should be
 
 역할:
 
+- read-only editor tab과 terminal tab을 같은 workbench tab model로 관리
 - 터미널 탭 생성 및 관리
-- 이후 버전에서 pane 분할 지원
+- tab drag/drop, context menu, 좌우/상하 split group 지원
 - 명령 기록과 출력 로그 유지
 - 세션 복원
 - 현재까지의 실행 경로와 재시도 흐름을 다시 읽을 수 있게 유지
@@ -500,15 +547,36 @@ Because this adds important security and authentication boundaries, it should be
 역할:
 
 - 프로젝트와 터미널 상태 관찰
+- 선택된 파일, 현재 탭 출력, 최근 명령을 context summary로 표시
+- provider/model picker와 실행 모드를 한 줄에서 조정
 - 문제 설명
 - 작업 제안
 - 승인된 명령 실행
 - 작업 진행 상태 추적
 - 어떤 경로가 실패했고 어떤 개선이 필요한지 요약
 
+#### Settings and Execution Policy
+
+역할:
+
+- provider 연결, 모델 선택, 외관, 실행 정책, 제품 정보를 한 화면에서 관리
+- 위험도별 승인 정책을 `always ask`, `auto`, `trusted dirs only`로 구분
+- high-risk 명령은 항상 명시 승인으로 고정
+- forbidden pattern은 정책과 무관하게 차단 또는 재확인
+- 자동 실행된 low-risk 명령은 audit trail과 undo 가능한 toast로 남김
+
 ### English
 
-The app is organized around three primary domains.
+The app is organized around four primary domains plus a top/bottom status shell.
+
+#### Workbench Shell
+
+Responsibilities:
+
+- show current project, branch, active tab, and split-group count in the titlebar
+- show connected provider count and the current execution mode in the top or bottom status area
+- make branch, changed-file count, ahead/behind state, and tab/group state quickly readable in the status bar
+- avoid a large dashboard-card default; editor, terminal, and agent surfaces should be immediately usable
 
 #### Projects
 
@@ -517,6 +585,8 @@ Responsibilities:
 - connect to local folders
 - display file trees and metadata
 - summarize Git state
+- show the current project and recent projects as compact project rows
+- provide `Projects` and `Files` as independently collapsible accordion sections
 - manage saved workspaces and run presets
 - track project-level tasks
 
@@ -524,8 +594,9 @@ Responsibilities:
 
 Responsibilities:
 
+- manage read-only editor tabs and terminal tabs through the same workbench tab model
 - create and manage terminal tabs
-- support pane splits in later versions
+- support tab drag/drop, context menus, and horizontal/vertical split groups
 - preserve command history and output logs
 - restore sessions
 - preserve a readable path of executions and retries so prior work can be reconstructed
@@ -535,11 +606,23 @@ Responsibilities:
 Responsibilities:
 
 - observe project and terminal state
+- expose selected files, current tab output, and recent commands as a context summary
+- let users adjust provider/model picker and execution mode in one compact row
 - explain problems
 - suggest actions
 - execute approved commands
 - track task progress
 - summarize which paths failed and which improvements are worth trying next
+
+#### Settings and Execution Policy
+
+Responsibilities:
+
+- manage provider connections, model choices, appearance, execution policy, and product information in one settings surface
+- split approval behavior into `always ask`, `auto`, and `trusted dirs only` by risk level
+- keep high-risk commands pinned to explicit approval
+- block or reconfirm forbidden patterns regardless of the active policy
+- record auto-run low-risk commands in an audit trail with undoable toast notifications
 
 ## 권장 UI 구조 / Recommended UI Structure
 
@@ -549,28 +632,39 @@ Responsibilities:
 
 - icon-only left rail과 접고 펼치는 side panel
 - 4px dock resize handle을 통한 side panel 폭 조절과 임계값 기반 collapse
-- 프로젝트 허브, 검색, 소스 제어, 아웃라인, 설정 view
-- 프로젝트 메타데이터, Git 브랜치 및 상태, 파일 트리
+- `Projects`와 `Files`를 기본 accordion section으로 노출하고, 검색, 소스 제어, 아웃라인, 설정 view로 확장
+- 현재 프로젝트, 최근 프로젝트, 폴더 열기 action을 compact project row로 표시
+- 프로젝트 메타데이터, Git 브랜치 및 상태, 파일 트리, 변경 파일 수
 - compact row와 single-line ellipsis 기반의 정보 구조
 
 #### 중앙 작업 영역
 
-- editor-like code surface
-- terminal, diff, test, preview 탭 타입
-- 상하좌우 분할 가능한 workbench pane
-- pane-local tab strip과 line anchor
+- editor-like code surface와 terminal surface를 같은 tab model로 관리
+- terminal, editor, diff, test, preview 탭 타입
+- tab drag/drop과 context menu 기반의 상하좌우 split group
+- pane-local tab strip, line anchor, active tab status, running banner
+- 빈 group에서는 `+`를 통해 새 탭을 열 수 있는 명확한 empty state
 
 #### 우측 패널
 
 - 에이전트 작업창
-- 활성 provider/model과 실행 모드를 먼저 읽는 compact model row
-- provider 상태, 요청 thread, context summary, composer
-- 현재 pending suggestion과 승인 진입점
+- provider header, model picker, 실행 모드를 먼저 읽는 compact model row
+- context summary, 요청 thread, quick prompts, composer
+- 현재 pending suggestion과 승인 검토 진입점
 - 워크플로우 문제 요약과 프로젝트 인사이트
+
+#### 설정과 승인 정책
+
+- `Connections`, `Models`, `Appearance`, `Execution`, `About` 탭을 가진 settings modal
+- provider별 세션, scope, 만료 상태와 모델 기본값
+- 실행 모드, 병렬 worker 수, 응답 스트리밍 설정
+- 위험도별 승인 정책, trusted dirs, forbidden patterns
+- 자동 승인 이력과 undo 가능한 toast
 
 #### 하단 패널 또는 드로어
 
 - 기본 구조에서는 고정 하단 패널을 두지 않는다.
+- 단, 1줄 status bar는 branch, 변경 수, tab/group 수, 실행 모드 같은 메타 상태를 표시할 수 있다.
 - 로그, 알림, 명령 기록, 경로 요약은 workbench pane, compact dock, contextual surface로 푼다.
 
 구체적인 UI 토큰, 색상, 반경, 컴포넌트 상태 표현은 `docs/design-system.md`를 기준으로 한다.
@@ -581,28 +675,39 @@ Responsibilities:
 
 - icon-only left rail plus collapsible side panel
 - side-panel width resizing through a 4px dock handle with threshold-based collapse
-- Project hub, Search, Source Control, Outline, and Settings views
-- project metadata, Git branch and state, file tree
+- expose `Projects` and `Files` as the default accordion sections, then extend into Search, Source Control, Outline, and Settings views
+- show the current project, recent projects, and open-folder action as compact project rows
+- project metadata, Git branch and state, file tree, and changed-file count
 - compact rows and single-line ellipsis as the default information structure
 
 #### Center Workspace
 
-- editor-like code surface
-- terminal, diff, test, and preview tab types
-- top/right/bottom/left split-capable workbench panes
-- pane-local tab strips and line anchors
+- manage editor-like code surfaces and terminal surfaces through the same tab model
+- terminal, editor, diff, test, and preview tab types
+- top/right/bottom/left split groups driven by tab drag/drop and context menus
+- pane-local tab strips, line anchors, active-tab status, and running banners
+- a clear empty state where users can open a new tab through `+`
 
 #### Right Panel
 
 - agent workspace
-- compact model row that exposes the active provider/model and execution mode first
-- provider state, request thread, context summary, and composer
-- current pending suggestions and approval entry points
+- provider header plus compact model picker and execution-mode row
+- context summary, request thread, quick prompts, and composer
+- current pending suggestions and approval-review entry points
 - workflow findings and project insights
+
+#### Settings and Approval Policy
+
+- settings modal with `Connections`, `Models`, `Appearance`, `Execution`, and `About` tabs
+- provider sessions, scopes, expiration state, and default model choices per provider
+- execution mode, parallel worker count, and response streaming settings
+- approval policy by risk level, trusted directories, and forbidden patterns
+- auto-approval history and undoable toast notifications
 
 #### Bottom Panel or Drawer
 
 - no permanent bottom panel in the default structure
+- a one-line status bar may show metadata such as branch, change count, tab/group count, and execution mode
 - logs, notifications, command history, and path recap should be handled through workbench panes, compact docks, or contextual surfaces
 
 Use `docs/design-system.md` for concrete UI tokens, colors, radius, and component state representation.
@@ -614,12 +719,14 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 #### 기본 흐름
 
 1. 사용자가 프로젝트를 연다.
-2. 사용자가 하나 이상의 터미널 탭을 만든다.
-3. 각 탭에서 용도에 맞는 명령을 실행한다.
-4. 에이전트가 현재 프로젝트와 터미널 맥락을 읽는다.
-5. 에이전트가 설명 또는 다음 작업을 제안한다.
-6. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
-7. 사용자가 지금까지의 승인, 실패, 재시도 경로를 확인하고 다음 행동을 결정한다.
+2. 사용자가 좌측 `Projects`와 `Files` accordion에서 프로젝트와 파일을 확인한다.
+3. 사용자가 중앙 workbench에서 editor 탭 또는 terminal 탭을 열고, 필요하면 split group으로 배치한다.
+4. 사용자가 탭별로 명령을 실행하거나 코드를 읽는다.
+5. 에이전트가 현재 프로젝트, 선택 파일, 활성 탭 출력, 최근 명령 맥락을 읽는다.
+6. 에이전트가 설명 또는 다음 작업을 제안한다.
+7. 승인 정책이 허용한 low-risk 명령은 audit/undo 가능한 toast와 함께 자동 실행될 수 있고, 그 외 명령은 승인 modal에서 대상, 위험도, rollback 가능성을 검토한다.
+8. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
+9. 사용자가 지금까지의 승인, 실패, 재시도 경로를 확인하고 다음 행동을 결정한다.
 
 #### 예시 시나리오
 
@@ -636,12 +743,14 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 #### Primary Flow
 
 1. The user opens a project.
-2. The user creates one or more terminal tabs.
-3. The user runs task-specific commands in each tab.
-4. The agent reads the current project and terminal context.
-5. The agent suggests explanations or next actions.
-6. The user approves execution in the current tab or a new tab.
-7. The user reviews the approval, failure, and retry path before deciding the next action.
+2. The user reviews the project and files through the left `Projects` and `Files` accordion.
+3. The user opens editor or terminal tabs in the center workbench and arranges them into split groups when needed.
+4. The user runs commands per tab or reads code.
+5. The agent reads current project, selected-file, active-tab output, and recent-command context.
+6. The agent suggests explanations or next actions.
+7. Low-risk commands allowed by policy may auto-run with an auditable, undoable toast; other commands open an approval modal that shows target, risk, and rollback notes.
+8. The user approves execution in the current tab or a new tab.
+9. The user reviews the approval, failure, and retry path before deciding the next action.
 
 #### Example Scenario
 
@@ -689,6 +798,15 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 
 MVP에서는 명령 실행과 파일 수정 모두 사용자 승인을 요구하는 것이 바람직하다.
 
+새 디자인 시안 기준의 승인 정책은 다음을 제품 기본값으로 둔다.
+
+- `low-risk`, `mid-risk`, `high-risk`를 구분한다.
+- `low-risk`는 설정에 따라 자동 승인될 수 있지만, audit trail과 undo 가능한 알림을 남겨야 한다.
+- `mid-risk`는 `always ask`, `auto`, `trusted dirs only` 중 정책으로 제어하되 기본값은 신중해야 한다.
+- `high-risk`는 항상 명시 승인만 허용한다.
+- trusted directory 밖의 자동 실행은 기본적으로 막거나 다시 확인한다.
+- forbidden pattern은 위험도와 관계없이 항상 차단 또는 재확인한다.
+
 ### English
 
 Agents should have clear scope and permissions.
@@ -722,6 +840,15 @@ At minimum, the product should distinguish between:
 - editing files
 
 In the MVP, command execution and file edits should both require user approval.
+
+The updated design baseline sets the following approval-policy defaults:
+
+- distinguish `low-risk`, `mid-risk`, and `high-risk`
+- `low-risk` commands may be auto-approved depending on settings, but they must leave an audit trail and undoable notification
+- `mid-risk` behavior is controlled by policy across `always ask`, `auto`, and `trusted dirs only`, with a cautious default
+- `high-risk` always requires explicit approval
+- auto-execution outside trusted directories is blocked or reconfirmed by default
+- forbidden patterns are always blocked or reconfirmed regardless of risk level
 
 ## 멀티 에이전트 오케스트레이션 / Multi-Agent Orchestration
 
@@ -1007,13 +1134,19 @@ At the product level, the system needs:
 
 - 로컬 프로젝트 열기
 - 프로젝트 파일 트리 표시
+- 현재 프로젝트와 최근 프로젝트를 좌측 accordion에서 관리
+- read-only editor tab과 terminal tab을 같은 workbench 안에서 표시
+- 기본적인 tab drag/drop과 split group 상태 표시
 - 터미널 탭 생성, 이름 변경, 종료
 - 탭별 출력 기록 유지
 - 워크스페이스 상태 복원
 - 에이전트 패널 제공
 - 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽을 수 있음
+- 에이전트가 선택 파일과 최근 명령 맥락을 읽을 수 있음
+- provider/model 선택과 실행 모드를 오른쪽 agent workspace에서 조정
 - 에이전트가 명령을 제안할 수 있음
 - 승인된 명령을 현재 탭 또는 새 탭에서 실행할 수 있음
+- 위험도 기반 승인 modal과 low-risk auto-run audit/undo 흐름
 
 #### 제외 범위
 
@@ -1021,7 +1154,8 @@ At the product level, the system needs:
 - 여러 장치 간 동기화
 - 복잡한 Git 전용 UI
 - 광범위한 권한을 가진 자율 에이전트
-- 고급 pane 관리
+- 복잡한 pane layout 저장/복원과 고급 pane 관리
+- 신뢰 경계 없는 자동 승인
 - 완전한 IDE 대체
 
 ### English
@@ -1032,13 +1166,19 @@ The first version should focus on the smallest complete experience.
 
 - open a local project
 - show the project file tree
+- manage the current project and recent projects in the left accordion
+- show read-only editor tabs and terminal tabs inside the same workbench
+- show basic tab drag/drop and split-group state
 - create, rename, and close terminal tabs
 - preserve output history per tab
 - restore workspace state
 - provide an agent panel
 - let the agent read project context and current tab output
+- let the agent read selected-file and recent-command context
+- adjust provider/model selection and execution mode in the right agent workspace
 - let the agent suggest commands
 - run approved commands in the current tab or a new tab
+- risk-based approval modal plus low-risk auto-run audit/undo flow
 
 #### Out of Scope
 
@@ -1046,7 +1186,8 @@ The first version should focus on the smallest complete experience.
 - multi-device sync
 - complex Git-focused UI
 - autonomous agents with broad permissions
-- advanced pane management
+- complex pane layout persistence and advanced pane management
+- auto-approval without trusted boundaries
 - full IDE replacement
 
 ## 기능 요구사항 / Functional Requirements
@@ -1059,6 +1200,14 @@ The first version should focus on the smallest complete experience.
 - 각 프로젝트는 최근 탭과 워크스페이스 메타데이터를 저장해야 한다.
 - 시스템은 현재 브랜치와 기본적인 변경 상태를 보여줄 수 있어야 한다.
 - 프로젝트 UI는 현재 브랜치와 Git 상태를 표시하고, 향후 `git flow` 스타일 브랜치 운영과도 자연스럽게 연결될 수 있어야 한다.
+- 좌측 panel은 현재 프로젝트, 최근 프로젝트, 파일 트리를 accordion section으로 빠르게 접고 펼칠 수 있어야 한다.
+
+#### 워크벤치 관리
+
+- 중앙 workbench는 read-only editor tab과 terminal tab을 같은 tab model로 다뤄야 한다.
+- 사용자는 tab을 다른 group으로 이동하거나 좌우/상하 split group을 만들 수 있어야 한다.
+- 각 group은 독립적인 tab strip과 active tab state를 가져야 한다.
+- editor tab은 최소한 line number, active line, syntax color, file path state를 보여줘야 한다.
 
 #### 터미널 관리
 
@@ -1077,6 +1226,8 @@ The first version should focus on the smallest complete experience.
 - 첫 실사용 `Codex` 경로는 `OAuth/session login`을 사용해야 한다.
 - env/API key bridge는 필요하더라도 개발용 임시 경로에 머물러야 한다.
 - 앱은 연결 상태, 권한 범위, 연결 준비 상태와 진단 정보를 사용자에게 표시해야 한다.
+- 앱은 provider별 모델 선택, 실행 모드, 병렬 worker 수를 설정할 수 있어야 한다.
+- 앱은 위험도별 승인 정책, trusted directory, forbidden pattern, 자동 승인 이력을 표시해야 한다.
 - 향후 `SMS`와 `Telegram` 같은 외부 채널을 통해 상태 리포트와 제한된 원격 명령을 지원할 수 있어야 한다.
 
 #### 작업 인식
@@ -1092,6 +1243,14 @@ The first version should focus on the smallest complete experience.
 - each project should store recent tabs and workspace metadata
 - the system should show the current branch and basic dirty state
 - the project UI should expose current branch and Git state while remaining compatible with a `git flow`-style branch model
+- the left panel should let users collapse and expand current project, recent projects, and file tree sections quickly
+
+#### Workbench Management
+
+- the center workbench should treat read-only editor tabs and terminal tabs through the same tab model
+- users should be able to move tabs between groups or create horizontal/vertical split groups
+- each group should own an independent tab strip and active-tab state
+- editor tabs should at least show line numbers, active line, syntax color, and file path state
 
 #### Terminal Management
 
@@ -1110,6 +1269,8 @@ The first version should focus on the smallest complete experience.
 - the first daily-use `Codex` path should use `OAuth/session login`
 - any env/API-key bridge should remain a temporary development path rather than the default user route
 - the app should display connection state, readiness diagnostics, and granted scopes
+- the app should let users configure model selection per provider, execution mode, and parallel worker count
+- the app should expose approval policy by risk level, trusted directories, forbidden patterns, and auto-approval history
 - the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 
 #### Task Awareness
