@@ -1,7 +1,9 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
@@ -30,9 +32,9 @@ import { ProjectSidebar } from '../widgets/project-sidebar/ui/ProjectSidebar'
 import { WorkspaceStage } from '../widgets/workspace-stage/ui/WorkspaceStage'
 import { AgentSidebar } from '../widgets/agent-sidebar/ui/AgentSidebar'
 
-const LEFT_PANEL_DEFAULT_WIDTH = 324
+const LEFT_PANEL_DEFAULT_WIDTH = 264
 const RIGHT_PANEL_DEFAULT_WIDTH = 380
-const LEFT_PANEL_RESIZE = { min: 220, max: 440, collapse: 90 }
+const LEFT_PANEL_RESIZE = { min: 180, max: 440, collapse: 54 }
 const RIGHT_PANEL_RESIZE = { min: 280, max: 560, collapse: 100 }
 
 function clampPanelWidth(value: number, min: number, max: number) {
@@ -40,6 +42,8 @@ function clampPanelWidth(value: number, min: number, max: number) {
 }
 
 function App() {
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const scalerRef = useRef<HTMLDivElement | null>(null)
   const restoredUiState = useMemo(() => loadUiState(), [])
   const {
     activeProject,
@@ -139,11 +143,32 @@ function App() {
     activeProjectPath,
     selectedFile: projectWorkspace.selectedFile,
     recentProjects,
-    initialLeftSidebarMode: restoredUiState?.leftPanelMode,
+    initialLeftSidebarMode: 'project',
     recordTask,
     setActiveContext,
     refreshProject: projectWorkspace.refreshProject,
   })
+
+  useLayoutEffect(() => {
+    const fit = () => {
+      const stage = stageRef.current
+      const scaler = scalerRef.current
+
+      if (!stage || !scaler) {
+        return
+      }
+
+      const scale = Math.min(stage.clientWidth / 1320, stage.clientHeight / 824, 1)
+      scaler.style.setProperty('--scale', String(scale))
+    }
+
+    fit()
+
+    const observer = new ResizeObserver(fit)
+    observer.observe(document.documentElement)
+
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     saveUiState({
@@ -289,76 +314,90 @@ function App() {
     [leftPanelWidth, rightPanelWidth, setPanelOpen],
   )
 
-  const appShellStyle = {
-    '--left-panel-width': `${leftPanelWidth}px`,
-    '--right-panel-width': `${rightPanelWidth}px`,
+  const bodyGridStyle = {
+    gridTemplateColumns: `${panels.projects ? `${leftPanelWidth}px 4px ` : ''}minmax(0, 1fr)${
+      panels.agents ? ` 4px ${rightPanelWidth}px` : ''
+    }`,
   } as CSSProperties
 
   return (
-    <div className="mission-control-app">
-      <Titlebar
-        projectName={projectWorkspace.projectOverview?.metadata.name ?? activeProject}
-        projectPath={activeProjectPath || null}
-        gitLabel={gitLabel}
-        activeTabLabel={activeWorkbenchTabLabel}
-        groupCount={workbenchGroupCount}
-        connectedProviderCount={connectedProviderCount}
-        selectedProvider={selectedConnection}
-        onOpenSettings={handleOpenSettings}
-        leading={<img className="brand-mark" src="/brand/gtum-mark.svg" alt="gtum mark" />}
-      />
+    <div className="gtum-stage" ref={stageRef}>
+      <div className="gtum-scaler" ref={scalerRef}>
+        <div className="gtum-window" data-testid="gtum-window">
+          <Titlebar
+            projectName={projectWorkspace.projectOverview?.metadata.name ?? activeProject}
+            projectPath={activeProjectPath || null}
+            gitLabel={gitLabel}
+            activeTabLabel={activeWorkbenchTabLabel}
+            groupCount={workbenchGroupCount}
+            connectedProviderCount={connectedProviderCount}
+            selectedProvider={selectedConnection}
+            onOpenSettings={handleOpenSettings}
+          />
 
-      <div
-        className={`app-shell ${panels.projects ? 'left-open' : 'left-collapsed'} ${
-          panels.agents ? 'right-open' : 'right-collapsed'
-        }`}
-        style={appShellStyle}
-      >
-        <ProjectSidebar
-          visible={panels.projects}
-          onResizeStart={startPanelResize('left')}
-          activeMode={workbenchLayout.leftSidebarMode}
-          onSelectMode={handleLeftModeSelection}
-          onToggleVisibility={() => togglePanel('projects')}
-          activeProjectPath={activeProjectPath}
-          activeProject={activeProject}
-          projectOverview={projectWorkspace.projectOverview}
-          isProjectLoading={projectWorkspace.isProjectLoading}
-          projectError={projectWorkspace.projectError}
-          projectPathInput={projectPathInput}
-          onProjectPathInputChange={setProjectPathInput}
-          onChooseProjectFolder={() => void projectWorkspace.chooseProjectFolder()}
-          onOpenProject={(path) => void projectWorkspace.openProject(path)}
-          recentProjects={recentProjects}
-          projectList={workbenchLayout.projectList}
-          gitLabel={gitLabel}
-          selectedFilePath={projectWorkspace.selectedFilePath}
-          onSelectProjectFile={projectWorkspace.selectProjectFile}
-          searchQuery={workbenchLayout.searchQuery}
-          onSearchQueryChange={workbenchLayout.setSearchQuery}
-          recentQueries={workbenchLayout.recentQueries}
-          searchResults={workbenchLayout.searchResults}
-          isSearchLoading={workbenchLayout.isSearchLoading}
-          searchError={workbenchLayout.searchError}
-          onOpenSearchResult={(filePath, lineNumber) =>
-            void projectWorkspace.openProjectFileAtLine(filePath, lineNumber)
-          }
-          sourceControl={workbenchLayout.sourceControl}
-          isSourceControlLoading={workbenchLayout.isSourceControlLoading}
-          sourceControlError={workbenchLayout.sourceControlError}
-          onOpenSourceDiff={(entry, staged) => void workbenchLayout.openDiff(entry, staged)}
-          onStageSourceFile={(entry) => void workbenchLayout.applyFileAction(entry, 'stage')}
-          onUnstageSourceFile={(entry) => void workbenchLayout.applyFileAction(entry, 'unstage')}
-          commitMessage={workbenchLayout.commitMessage}
-          onCommitMessageChange={workbenchLayout.setCommitMessage}
-          onCommitSourceControl={() => void workbenchLayout.submitCommit()}
-          onPushSourceControl={() => void workbenchLayout.submitPush()}
-          outlineEntries={workbenchLayout.outlineEntries}
-          onOpenOutlineLine={projectWorkspace.selectCodeLine}
-          runtimeInfo={authWorkspace.runtimeInfo}
-        />
+          <div
+            className={`body-grid ${!panels.projects ? 'sidebar-closed' : ''} ${
+              !panels.agents ? 'agent-closed' : ''
+            }`}
+            style={bodyGridStyle}
+          >
+            {panels.projects ? (
+              <>
+                <ProjectSidebar
+                  visible={panels.projects}
+                  onResizeStart={startPanelResize('left')}
+                  activeMode={workbenchLayout.leftSidebarMode}
+                  onSelectMode={handleLeftModeSelection}
+                  onToggleVisibility={() => togglePanel('projects')}
+                  activeProjectPath={activeProjectPath}
+                  activeProject={activeProject}
+                  projectOverview={projectWorkspace.projectOverview}
+                  isProjectLoading={projectWorkspace.isProjectLoading}
+                  projectError={projectWorkspace.projectError}
+                  projectPathInput={projectPathInput}
+                  onProjectPathInputChange={setProjectPathInput}
+                  onChooseProjectFolder={() => void projectWorkspace.chooseProjectFolder()}
+                  onOpenProject={(path) => void projectWorkspace.openProject(path)}
+                  recentProjects={recentProjects}
+                  projectList={workbenchLayout.projectList}
+                  gitLabel={gitLabel}
+                  selectedFilePath={projectWorkspace.selectedFilePath}
+                  onSelectProjectFile={projectWorkspace.selectProjectFile}
+                  searchQuery={workbenchLayout.searchQuery}
+                  onSearchQueryChange={workbenchLayout.setSearchQuery}
+                  recentQueries={workbenchLayout.recentQueries}
+                  searchResults={workbenchLayout.searchResults}
+                  isSearchLoading={workbenchLayout.isSearchLoading}
+                  searchError={workbenchLayout.searchError}
+                  onOpenSearchResult={(filePath, lineNumber) =>
+                    void projectWorkspace.openProjectFileAtLine(filePath, lineNumber)
+                  }
+                  sourceControl={workbenchLayout.sourceControl}
+                  isSourceControlLoading={workbenchLayout.isSourceControlLoading}
+                  sourceControlError={workbenchLayout.sourceControlError}
+                  onOpenSourceDiff={(entry, staged) => void workbenchLayout.openDiff(entry, staged)}
+                  onStageSourceFile={(entry) => void workbenchLayout.applyFileAction(entry, 'stage')}
+                  onUnstageSourceFile={(entry) => void workbenchLayout.applyFileAction(entry, 'unstage')}
+                  commitMessage={workbenchLayout.commitMessage}
+                  onCommitMessageChange={workbenchLayout.setCommitMessage}
+                  onCommitSourceControl={() => void workbenchLayout.submitCommit()}
+                  onPushSourceControl={() => void workbenchLayout.submitPush()}
+                  outlineEntries={workbenchLayout.outlineEntries}
+                  onOpenOutlineLine={projectWorkspace.selectCodeLine}
+                  runtimeInfo={authWorkspace.runtimeInfo}
+                />
+                <div
+                  className="resize-handle handle-left"
+                  data-testid="left-resize-handle"
+                  role="separator"
+                  aria-label="Resize project panel"
+                  aria-orientation="vertical"
+                  onPointerDown={startPanelResize('left')}
+                />
+              </>
+            ) : null}
 
-        <WorkspaceStage
+            <WorkspaceStage
           activeProjectPath={activeProjectPath}
           activeProject={activeProject}
           projectOverview={projectWorkspace.projectOverview}
@@ -422,47 +461,61 @@ function App() {
           diffError={workbenchLayout.diffError}
         />
 
-        <AgentSidebar
-          visible={panels.agents}
-          onResizeStart={startPanelResize('right')}
-          onToggle={() => togglePanel('agents')}
-          agentConnections={authWorkspace.agentConnections}
-          providerDiagnostics={authWorkspace.providerDiagnostics}
-          authError={authWorkspace.authError}
-          selectedProvider={authWorkspace.selectedProvider}
-          onSelectProvider={authWorkspace.setSelectedProvider}
-          onStartProviderLogin={(provider) => void authWorkspace.startProviderLogin(provider)}
-          onDisconnectProvider={(provider) => void authWorkspace.disconnectProvider(provider)}
-          onOpenCodexLogin={() => void authWorkspace.openCodexLogin()}
-          onSimulateMockCallback={(provider) => void authWorkspace.simulateMockCallback(provider)}
-          selectedConnection={selectedConnection}
-          selectedFileAnchorLabel={selectedFileAnchorLabel}
-          selectedFileSnippet={selectedFileSnippet}
-          requestContextSnapshot={agentWorkspace.requestContextSnapshot}
-          onOpenLineReference={(line) => void projectWorkspace.openLineReference(line)}
-          providerRequestPreview={providerRequestPreview}
-          executionMode={executionMode}
-          onSelectExecutionMode={handleExecutionModeChange}
-          agentRequestInput={agentWorkspace.agentRequestInput}
-          onAgentRequestInputChange={agentWorkspace.setAgentRequestInput}
-          canSubmitAgentSuggestion={canSubmitAgentSuggestion}
-          onSubmitAgentRequest={() => void agentWorkspace.submitAgentRequest()}
-          agentRequestError={agentWorkspace.agentRequestError}
-          agentSuggestions={agentWorkspace.agentSuggestions}
-          onApproveSuggestion={(suggestion, target) =>
-            void agentWorkspace.approveSuggestion(suggestion, target)
-          }
-        />
-      </div>
+            {panels.agents ? (
+              <>
+                <div
+                  className="resize-handle handle-right"
+                  data-testid="right-resize-handle"
+                  role="separator"
+                  aria-label="Resize agent panel"
+                  aria-orientation="vertical"
+                  onPointerDown={startPanelResize('right')}
+                />
+                <AgentSidebar
+                  visible={panels.agents}
+                  onResizeStart={startPanelResize('right')}
+                  onToggle={() => togglePanel('agents')}
+                  agentConnections={authWorkspace.agentConnections}
+                  providerDiagnostics={authWorkspace.providerDiagnostics}
+                  authError={authWorkspace.authError}
+                  selectedProvider={authWorkspace.selectedProvider}
+                  onSelectProvider={authWorkspace.setSelectedProvider}
+                  onStartProviderLogin={(provider) => void authWorkspace.startProviderLogin(provider)}
+                  onDisconnectProvider={(provider) => void authWorkspace.disconnectProvider(provider)}
+                  onOpenCodexLogin={() => void authWorkspace.openCodexLogin()}
+                  onSimulateMockCallback={(provider) => void authWorkspace.simulateMockCallback(provider)}
+                  selectedConnection={selectedConnection}
+                  selectedFileAnchorLabel={selectedFileAnchorLabel}
+                  selectedFileSnippet={selectedFileSnippet}
+                  requestContextSnapshot={agentWorkspace.requestContextSnapshot}
+                  onOpenLineReference={(line) => void projectWorkspace.openLineReference(line)}
+                  providerRequestPreview={providerRequestPreview}
+                  executionMode={executionMode}
+                  onSelectExecutionMode={handleExecutionModeChange}
+                  agentRequestInput={agentWorkspace.agentRequestInput}
+                  onAgentRequestInputChange={agentWorkspace.setAgentRequestInput}
+                  canSubmitAgentSuggestion={canSubmitAgentSuggestion}
+                  onSubmitAgentRequest={() => void agentWorkspace.submitAgentRequest()}
+                  agentRequestError={agentWorkspace.agentRequestError}
+                  agentSuggestions={agentWorkspace.agentSuggestions}
+                  onApproveSuggestion={(suggestion, target) =>
+                    void agentWorkspace.approveSuggestion(suggestion, target)
+                  }
+                />
+              </>
+            ) : null}
+          </div>
 
-      <StatusBar
-        gitLabel={gitLabel}
-        changedFileCount={changedFileCount}
-        tabCount={workbenchTabCount}
-        groupCount={workbenchGroupCount}
-        executionMode={executionMode}
-        activeContext={activeContext}
-      />
+          <StatusBar
+            gitLabel={gitLabel}
+            changedFileCount={changedFileCount}
+            tabCount={workbenchTabCount}
+            groupCount={workbenchGroupCount}
+            executionMode={executionMode}
+            activeContext={activeContext}
+          />
+        </div>
+      </div>
     </div>
   )
 }

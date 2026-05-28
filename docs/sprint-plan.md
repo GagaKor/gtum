@@ -1829,8 +1829,11 @@ Current status:
 - The detailed implementation plan is committed in [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md).
 - The first code slice now replaces the old `mission-header` with `Titlebar` and `StatusBar`, exposes `app-titlebar` and `app-statusbar`, and keeps the right `agent-model-row` visible.
 - The left project panel now uses independent `Projects` and `Files` accordion sections with `left-projects-section` and `left-files-section` landmarks.
-- `tests/e2e/new-design-shell.spec.ts` covers the new shell landmarks and independent accordion collapse behavior.
+- The follow-up refit applies the uploaded draft source directly: `gtum-stage`, `gtum-scaler`, `gtum-window`, `body-grid`, `sidebar`, `agent`, and `statusbar` now follow the `/Users/kwon/Downloads/test (1)` JSX/CSS proportions.
+- The old activity rail is removed from the rendered DOM. Panel resize handles are owned by the shell grid instead of the side panels.
+- `tests/e2e/new-design-shell.spec.ts` covers the new shell landmarks, reference draft proportions, no-activity-rail constraint, and independent accordion collapse behavior.
 - `tests/e2e/project-workspace.spec.ts` is retargeted to the new left-panel landmarks while preserving the project open, file tree, code anchor, and resize flows.
+- Verification passed on 2026-05-28 with `npm run build` and `npm run test:e2e`.
 
 Phase:
 
@@ -1868,7 +1871,8 @@ Sprint 17 initial backlog:
 - `P0` done: declare the new design override policy in sprint planning
 - `P0` done: prepare failing E2E coverage for the new shell landmarks
 - `P0` done: implement titlebar/statusbar and left `Projects/Files` accordion
-- `P0` partial: keep the right agent model row visible; compact execution-mode control refinement remains
+- `P0` done: refit the shell, left sidebar, right agent panel, and statusbar to the uploaded JSX/CSS source structure
+- `P0` done: keep the right agent model row visible with compact execution-mode controls
 - `P1` start workbench tab model design for Sprint 18
 - `P1` identify docs that must be synchronized after each implementation slice
 

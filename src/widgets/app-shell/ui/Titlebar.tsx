@@ -1,7 +1,5 @@
-import type { ReactNode } from 'react'
 import type { AgentConnectionSnapshot } from '../../../lib/runtime'
 import { formatProviderStatusLabel } from '../../../features/auth/model/provider-ui'
-import { summarizePath } from '../../../shared/lib/formatters'
 
 export type TitlebarProviderSummary = {
   displayName: string
@@ -19,12 +17,7 @@ export type TitlebarProps = {
   selectedProvider: TitlebarProviderSummary | AgentConnectionSnapshot | null
   onOpenSettings: () => void
   settingsLabel?: string
-  leading?: ReactNode
-  trailing?: ReactNode
 }
-
-const formatCount = (count: number, singular: string, plural: string) =>
-  `${count} ${count === 1 ? singular : plural}`
 
 const formatSelectedProvider = (
   selectedProvider: TitlebarProps['selectedProvider'],
@@ -50,41 +43,53 @@ export function Titlebar({
   selectedProvider,
   onOpenSettings,
   settingsLabel = 'Settings',
-  leading,
-  trailing,
 }: TitlebarProps) {
-  const providerAccount =
-    selectedProvider && 'accountLabel' in selectedProvider ? selectedProvider.accountLabel : null
-
   return (
-    <header className="app-titlebar mission-header" data-testid="app-titlebar">
-      <div className="mission-brand">
-        {leading}
-        <div className="mission-brand-copy">
-          <strong>{projectName ?? 'No project selected'}</strong>
-          <span>{summarizePath(projectPath)}</span>
-        </div>
+    <header className="titlebar app-titlebar" data-testid="app-titlebar">
+      <div className="traffic" data-testid="app-window-controls" aria-hidden="true">
+        <span className="dot red" />
+        <span className="dot yellow" />
+        <span className="dot green" />
       </div>
 
-      <div className="mission-header-chips" aria-label="Workspace summary">
-        <span className="status-badge scopes">{gitLabel}</span>
-        <span className="status-badge scopes">Tab: {activeTabLabel}</span>
-        <span className="status-badge scopes">{formatCount(groupCount, 'group', 'groups')}</span>
-        <span className="status-badge scopes">
-          {formatCount(connectedProviderCount, 'provider', 'providers')} connected
+      <div className="title-center" aria-label="Workspace summary">
+        <span className="brand-dot" />
+        <span className="brand">gtum</span>
+        <span className="sep">›</span>
+        <span>{projectName ?? 'No Project'}</span>
+        <span className="sep">·</span>
+        <span className="title-branch">{gitLabel}</span>
+        <span className="sep">·</span>
+        <span>[{activeTabLabel || 'workspace'}]</span>
+        {groupCount > 1 ? (
+          <>
+            <span className="sep">·</span>
+            <span>{groupCount} groups</span>
+          </>
+        ) : null}
+        {projectPath ? (
+          <>
+            <span className="sep">·</span>
+            <span>{projectPath}</span>
+          </>
+        ) : null}
+      </div>
+
+      <div className="title-right">
+        <span className="pill">
+          <span className="dot" />
+          Live · {connectedProviderCount} agent{connectedProviderCount === 1 ? '' : 's'}
         </span>
-        <span className="status-badge kind-real">{formatSelectedProvider(selectedProvider)}</span>
-        {providerAccount ? <span className="status-badge scopes">{providerAccount}</span> : null}
-        {trailing}
+        <span className="pill">{formatSelectedProvider(selectedProvider)}</span>
         <button
           type="button"
-          className="ghost-button"
+          className="pill icon-only"
           data-testid="app-titlebar-settings-button"
           onClick={onOpenSettings}
           aria-label={settingsLabel}
           title={settingsLabel}
         >
-          Settings
+          ⚙
         </button>
       </div>
     </header>

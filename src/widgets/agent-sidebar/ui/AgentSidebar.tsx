@@ -53,7 +53,6 @@ type AgentSidebarProps = {
 
 export function AgentSidebar({
   visible,
-  onResizeStart,
   onToggle,
   agentConnections,
   providerDiagnostics,
@@ -88,28 +87,58 @@ export function AgentSidebar({
     (selectedConnection?.provider === 'codex'
       ? 'Codex CLI session'
       : selectedConnection?.displayName ?? 'No provider selected')
+  const activeProviderMark = selectedConnection?.displayName.slice(0, 2).toUpperCase() ?? 'AI'
 
   return (
-    <aside className={`right-dock ${visible ? 'expanded' : 'collapsed'}`}>
-      <div className="right-panel-header">
-        <div>
-          <span className="eyebrow">Agent Workspace</span>
-          <strong>thread 중심 작업창</strong>
-          <p>요청, 응답, 지금 처리할 제안이 하나의 흐름으로 이어집니다.</p>
+    <aside className="agent right-dock" data-testid="right-dock">
+      <div className="agent-header">
+        <div className={`provider-mark ${selectedConnection?.provider ?? 'codex'}`}>
+          {activeProviderMark}
         </div>
-        <button type="button" className="ghost-button" onClick={onToggle}>
+        <div className="who">
+          <div className="nm">
+            Agent Chat
+            <span>· {selectedConnection?.displayName ?? 'Provider pending'}</span>
+          </div>
+          <div className="sub">Conductor + workers · {formatModeLabel(executionMode)}</div>
+        </div>
+        <button
+          type="button"
+          className="rail-toggle"
+          onClick={onToggle}
+          aria-label={visible ? 'Collapse agent panel' : 'Open agent panel'}
+          title={visible ? 'Collapse agent panel' : 'Open agent panel'}
+        >
           {visible ? '접기' : '열기'}
         </button>
       </div>
 
       {visible ? (
-        <div className="right-panel-scroll">
+        <div className="right-panel-scroll agent-scroll">
           <div className="agent-model-row" data-testid="agent-model-row">
             <div className="agent-model-copy">
               <span>Active model</span>
               <strong>{activeModelLabel}</strong>
             </div>
-            <span className="status-badge scopes">{formatModeLabel(executionMode)}</span>
+            <ModePill executionMode={executionMode} onSelectExecutionMode={onSelectExecutionMode} />
+          </div>
+
+          <div className="context-summary">
+            <div className="h">Request Context</div>
+            <div className="row">
+              <span className="k">file:</span>
+              <span className="v">{providerRequestPreview.file}</span>
+            </div>
+            <div className="row">
+              <span className="k">terminal:</span>
+              <span className="v">
+                {providerRequestPreview.terminal} · {providerRequestPreview.lines} lines
+              </span>
+            </div>
+            <div className="row">
+              <span className="k">project:</span>
+              <span className="v">{providerRequestPreview.project}</span>
+            </div>
           </div>
 
           <article className="agent-card" data-testid="provider-auth-panel">
@@ -302,7 +331,7 @@ export function AgentSidebar({
             </div>
           </article>
 
-          <article className="agent-card" data-testid="execution-mode-panel">
+          <article className="agent-card execution-mode-card" data-testid="execution-mode-panel">
             <div className="section-head">
               <strong>Execution Mode</strong>
               <span>{formatModeLabel(executionMode)}</span>
@@ -395,16 +424,29 @@ export function AgentSidebar({
         </div>
       ) : null}
 
-      {visible ? (
-        <div
-          className="dock-resize-handle dock-resize-handle-left"
-          data-testid="right-resize-handle"
-          role="separator"
-          aria-label="Resize agent panel"
-          aria-orientation="vertical"
-          onPointerDown={onResizeStart}
-        />
-      ) : null}
     </aside>
+  )
+}
+
+function ModePill({
+  executionMode,
+  onSelectExecutionMode,
+}: {
+  executionMode: ExecutionMode
+  onSelectExecutionMode: (mode: ExecutionMode) => void
+}) {
+  return (
+    <div className="mode-pill" aria-label="Execution mode">
+      {(['fast', 'balanced', 'deep'] as ExecutionMode[]).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          className={executionMode === mode ? 'active' : ''}
+          onClick={() => onSelectExecutionMode(mode)}
+        >
+          {formatModeLabel(mode)}
+        </button>
+      ))}
+    </div>
   )
 }
