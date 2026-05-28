@@ -96,8 +96,14 @@ export type RuntimeInvoker = <T>(command: string, args?: Record<string, unknown>
 
 export type RuntimeAvailability = () => boolean;
 
+export type FallbackProjectFileReader = (
+  filePath: string,
+  fallbackName?: string,
+) => ProjectFileSnapshot;
+
 export type ProjectRuntimeServiceOptions = {
   fallbackProject?: RuntimeProject;
+  fallbackFileReader?: FallbackProjectFileReader;
   hasRuntime?: RuntimeAvailability;
   invokeRuntime?: RuntimeInvoker;
 };
@@ -295,6 +301,7 @@ export const createProjectRuntimeService = (
   options: ProjectRuntimeServiceOptions = {},
 ): ProjectRuntimeService => {
   const fallbackProject = options.fallbackProject || fallbackRuntimeProject;
+  const fallbackFileReader = options.fallbackFileReader || fileSnapshotFromFallback;
   const hasRuntime = options.hasRuntime || hasTauriRuntime;
   const invokeRuntime = options.invokeRuntime || invoke as RuntimeInvoker;
 
@@ -329,7 +336,7 @@ export const createProjectRuntimeService = (
     },
     async readProjectFile(project, filePath, fallbackName): Promise<ProjectFileSnapshot> {
       if (!project?.runtimeBacked || !hasRuntime()) {
-        return fileSnapshotFromFallback(filePath, fallbackName);
+        return fallbackFileReader(filePath, fallbackName);
       }
 
       const snapshot = await invokeRuntime<RuntimeProjectFileSnapshot>("read_project_file", {

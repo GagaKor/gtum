@@ -71,3 +71,17 @@ test('exposes backend bridge state while keeping browser fallback stable', async
   await page.locator('.project-item.action').click()
   await expect(page.locator('.titlebar').getByText('aurora-monorepo')).toBeVisible()
 })
+
+test('keeps rich prototype file content when browser fallback opens a file', async ({ page }) => {
+  await page.goto('/')
+
+  const filesSection = page.locator('.sb-section').filter({ hasText: '파일' })
+
+  await filesSection.getByText('OnboardingFunnel.tsx').click()
+
+  await expect(page.locator('.group-tabbar').getByText('OnboardingFunnel.tsx')).toBeVisible()
+  await expect(page.locator('.editor-code')).toContainText('export function OnboardingFunnel')
+  await expect(page.locator('.editor-code')).not.toContainText(
+    'Browser preview is using bundled project data',
+  )
+})

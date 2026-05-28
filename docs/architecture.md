@@ -77,7 +77,7 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - The active browser entry now starts at `src/app/main.tsx`, which is the TSX/FSD migration entrypoint.
    - `src/app/providers/legacy-prototype.ts` mounts the current uploaded design module while reusable TSX components are extracted by feature slice.
    - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
-   - `src/prototype.jsx` now owns the first thin runtime bridge on top of the uploaded design: project folder selection, `read_project_overview`, and `read_project_file`.
+   - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
 2. `Runtime Layer`
@@ -102,11 +102,12 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src/prototype.jsx`](../src/prototype.jsx)
   - legacy uploaded design module used by the TSX app entry during migration
   - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
-  - maps Tauri `ProjectOverview` and `ProjectFileSnapshot` payloads into the prototype project tree and editor tab shapes
+  - consumes `src/shared/api/runtimeProjects.ts` for `ProjectOverview` and `ProjectFileSnapshot` payloads while preserving the rich uploaded-design browser fixture fallback
   - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime
 - [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts)
   - typed project/file runtime service for future TSX components
   - wraps Tauri filesystem commands and browser fallback project/file snapshots
+  - allows the legacy prototype to inject its curated design fixture file reader so browser preview content does not collapse to generic placeholders
 - [`src/entities`, `src/features`, `src/shared`](../src)
   - initial FSD-style type, policy, and service seams for extracting the uploaded design into reusable TSX components
 - [`src/styles.css`](../src/styles.css)

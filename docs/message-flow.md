@@ -34,20 +34,20 @@ This document exceeds 200 lines. Do not reread every flow by default.
 1. The frontend starts at [`src/app/main.tsx`](../src/app/main.tsx), then loads the uploaded design fixture through [`src/app/providers/legacy-prototype.ts`](../src/app/providers/legacy-prototype.ts).
 2. In browser/Vite preview, `hasTauriRuntime()` is false. The project opener keeps the design fixture active and exposes `window.__GTUM_BACKEND_BRIDGE__` for E2E verification.
 3. In the Tauri desktop runtime, the sidebar `Open Project Folder` action opens the native directory picker through `@tauri-apps/plugin-dialog`.
-4. After a folder is selected, [`src/prototype.jsx`](../src/prototype.jsx) calls `invoke("read_project_overview", { path })`.
-5. New TSX components should consume the typed service seam in [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts) instead of duplicating invoke details.
+4. After a folder is selected, [`src/prototype.jsx`](../src/prototype.jsx) calls the typed service seam in [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts).
+5. `runtimeProjects.ts` calls `invoke("read_project_overview", { path })` in desktop runtime and preserves the uploaded design fixture in browser preview.
 6. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) returns project metadata, file tree, and Git overview.
-7. The frontend maps the Tauri `ProjectOverview` into the prototype project shape, updates the titlebar, sidebar project card, file tree, agent context branch, and statusbar.
+7. The frontend maps the normalized `RuntimeProject` into the titlebar, sidebar project card, file tree, agent context branch, and statusbar.
 8. PTY/session restore remains deferred for the next backend slice. It must be added on top of the TSX/FSD migration seam instead of restoring the deleted FSD frontend.
 
 ## Flow 2. File Focus And Code Surface
 
 1. The user selects a file from the sidebar file tree.
 2. Browser/Vite preview keeps using the uploaded fixture through `tabFromFile` so design tests can run without Tauri.
-3. If the active project is runtime-backed, the current legacy prototype calls `invoke("read_project_file", { projectPath, filePath })`.
-4. Extracted TSX components should route the same behavior through [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts).
+3. The current legacy prototype and future extracted TSX components route file reads through [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts).
+4. If the active project is runtime-backed, `runtimeProjects.ts` calls `invoke("read_project_file", { projectPath, filePath })`.
 5. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) rejects paths outside the active project root and returns a `ProjectFileSnapshot`.
-6. The frontend maps the snapshot into the editor tab shape, using `displayPath`, text content, language extension, and bounded binary/truncated fallbacks.
+6. `runtimeProjects.ts` maps the snapshot into the editor tab shape, using `displayPath`, text content, language extension, and bounded binary/truncated fallbacks. In browser preview, the legacy prototype injects its curated design fixture file reader.
 7. The opened file is inserted into the current workbench group through the existing prototype `openFile` store action.
 8. Line anchors and terminal-log file references are still deferred until terminal/session integration is reintroduced.
 

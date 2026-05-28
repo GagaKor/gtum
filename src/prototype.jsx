@@ -1,7 +1,10 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
+import {
+  createProjectRuntimeService,
+  hasTauriRuntime,
+} from './shared/api/runtimeProjects'
 import './styles.css'
 
 const ReactDOM = { createRoot }
@@ -946,52 +949,6 @@ const PROJECT = {
   ],
 };
 
-const hasTauriRuntime = () =>
-  typeof window !== "undefined" &&
-  typeof window.__TAURI_INTERNALS__ !== "undefined";
-
-const basenameOfPath = (value) => {
-  const parts = String(value || "").replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts.at(-1) || "workspace";
-};
-
-const extensionOf = (name) => {
-  const ext = String(name || "").split(".").pop();
-  return ext && ext !== name ? ext.toLowerCase() : "txt";
-};
-
-function prototypeNodeFromRuntime(node) {
-  const isDir = node.kind === "directory";
-  return {
-    name: node.name || basenameOfPath(node.path),
-    type: isDir ? "dir" : extensionOf(node.name),
-    open: isDir,
-    changed: false,
-    runtimePath: node.path,
-    truncated: !!node.truncated,
-    children: (node.children || []).map(prototypeNodeFromRuntime),
-  };
-}
-
-function projectFromRuntimeOverview(overview) {
-  const tree = overview?.tree;
-  const rootChildren = tree?.children?.length ? tree.children : tree ? [tree] : [];
-  const branch = overview?.git?.branch || (overview?.git?.isRepository ? "main" : "no-git");
-
-  return {
-    id: overview?.metadata?.path || PROJECT.path,
-    name: overview?.metadata?.name || basenameOfPath(overview?.metadata?.path) || PROJECT.name,
-    path: overview?.metadata?.path || PROJECT.path,
-    branch,
-    branchType: overview?.git?.branchType || "local",
-    ahead: 0,
-    behind: 0,
-    changedFiles: overview?.git?.changedFilesCount || 0,
-    fileTree: rootChildren.map(prototypeNodeFromRuntime),
-    runtimeBacked: true,
-  };
-}
-
 async function selectRuntimeProjectFolder(defaultPath) {
   if (!hasTauriRuntime()) return defaultPath || PROJECT.path;
 
@@ -1003,53 +960,6 @@ async function selectRuntimeProjectFolder(defaultPath) {
   });
 
   return typeof selected === "string" ? selected : null;
-}
-
-async function readRuntimeProjectOverview(path) {
-  if (!hasTauriRuntime()) return PROJECT;
-  const overview = await invoke("read_project_overview", { path });
-  return projectFromRuntimeOverview(overview);
-}
-
-function runtimeSnapshotToTab(snapshot, fallbackName) {
-  const displayPath = snapshot.displayPath || fallbackName || snapshot.filePath || "file";
-  const tabPath = snapshot.filePath || displayPath;
-  const name = basenameOfPath(displayPath);
-  const isText = snapshot.isText !== false;
-  const content = isText
-    ? snapshot.content || ""
-    : `// ${displayPath}\n// Binary file preview is not available in gtum.`;
-  const truncatedNote = snapshot.truncated && isText
-    ? "\n\n// File preview truncated by the desktop runtime."
-    : "";
-
-  return {
-    id: "ed-" + String(tabPath).replace(/[^a-z0-9]+/gi, "-"),
-    type: "editor",
-    title: name,
-    path: tabPath,
-    displayPath,
-    lang: extensionOf(displayPath),
-    content: content + truncatedNote,
-    dirty: false,
-    status: "idle",
-    cwd: ".",
-    cmd: null,
-    shell: null,
-    lines: [],
-  };
-}
-
-async function readRuntimeProjectFile(project, filePath, fallbackName) {
-  if (!project?.runtimeBacked || !hasTauriRuntime()) {
-    return tabFromFile(filePath, fallbackName);
-  }
-
-  const snapshot = await invoke("read_project_file", {
-    projectPath: project.path,
-    filePath,
-  });
-  return runtimeSnapshotToTab(snapshot, fallbackName);
 }
 
 // VS Code-style workspace.
@@ -1558,12 +1468,29 @@ function tabFromFile(path, name) {
     type: "editor",
     title: name,
     path,
+    displayPath: path,
     lang: c?.lang || "txt",
     content: c?.text || "// (no content for this file in the prototype)",
+    isText: true,
+    truncated: false,
     dirty: !!c?.dirty,
     status: "idle",
     cwd: ".", cmd: null, shell: null, lines: [],
   };
+}
+
+const projectRuntimeService = createProjectRuntimeService({
+  fallbackProject: PROJECT,
+  fallbackFileReader: tabFromFile,
+});
+
+async function readRuntimeProjectOverview(path) {
+  const result = await projectRuntimeService.readProjectOverview(path);
+  return result.project;
+}
+
+async function readRuntimeProjectFile(project, filePath, fallbackName) {
+  return projectRuntimeService.readProjectFile(project, filePath, fallbackName);
 }
 
 // Walk file tree to find the full path of a given node.
@@ -4120,11 +4047,7 @@ function App() {
     document.documentElement.style.setProperty("--accent", accent);
   }, [accent]);
   React.useEffect(() => {
-    window.__GTUM_BACKEND_BRIDGE__ = {
-      desktop: hasTauriRuntime(),
-      projectPath: activeProject.path,
-      runtimeBacked: !!activeProject.runtimeBacked,
-    };
+    window.__GTUM_BACKEND_BRIDGE__ = projectRuntimeService.getBridgeState(activeProject);
   }, [activeProject]);
 
   const pushProjectMessage = (message) => {
