@@ -1831,8 +1831,11 @@ Current status:
 - The left project panel now uses independent `Projects` and `Files` accordion sections with `left-projects-section` and `left-files-section` landmarks.
 - The follow-up refit applies the uploaded draft source directly: `gtum-stage`, `gtum-scaler`, `gtum-window`, `body-grid`, `sidebar`, `agent`, and `statusbar` now follow the `/Users/kwon/Downloads/test (1)` JSX/CSS proportions.
 - The old activity rail is removed from the rendered DOM. Panel resize handles are owned by the shell grid instead of the side panels.
+- The frontend has now been fully reset because the prior implementation continued to overlap the design draft. The old `src/app`, `src/features`, `src/widgets`, `src/shared`, `src/stores`, and `src/lib` frontend implementation is deleted.
+- The active frontend is a clean design prototype: `index.html` loads `src/prototype.jsx`, and `src/styles.css` is copied directly from `/Users/kwon/Downloads/test (1)/src/styles.css`.
 - `tests/e2e/new-design-shell.spec.ts` covers the new shell landmarks, reference draft proportions, no-activity-rail constraint, and independent accordion collapse behavior.
 - `tests/e2e/project-workspace.spec.ts` is retargeted to the new left-panel landmarks while preserving the project open, file tree, code anchor, and resize flows.
+- Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
 - Verification passed on 2026-05-28 with `npm run build` and `npm run test:e2e`.
 
 Phase:
@@ -1873,6 +1876,7 @@ Sprint 17 initial backlog:
 - `P0` done: implement titlebar/statusbar and left `Projects/Files` accordion
 - `P0` done: refit the shell, left sidebar, right agent panel, and statusbar to the uploaded JSX/CSS source structure
 - `P0` done: keep the right agent model row visible with compact execution-mode controls
+- `P0` done: delete the previous frontend implementation and replace it with the uploaded design prototype as the only active frontend
 - `P1` start workbench tab model design for Sprint 18
 - `P1` identify docs that must be synchronized after each implementation slice
 

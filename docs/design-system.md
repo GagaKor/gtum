@@ -100,7 +100,7 @@ The default screen is composed of five areas:
 
 ### 한국어
 
-구현 기본 토큰은 `src/index.css`의 CSS 변수다.
+구현 기본 토큰은 frontend reset 이후 `src/styles.css`의 CSS 변수다.
 
 | Token | Value | Role |
 | --- | --- | --- |
@@ -126,7 +126,7 @@ The default screen is composed of five areas:
 
 ### English
 
-Implementation tokens live as CSS variables in `src/index.css`.
+Implementation tokens now live as CSS variables in `src/styles.css` after the frontend reset.
 
 | Token | Value | Role |
 | --- | --- | --- |

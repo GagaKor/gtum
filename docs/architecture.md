@@ -64,133 +64,38 @@ This document exceeds 200 lines. Read only the matching route first.
 - when you need persistence and restore boundaries
   - read `State And Persistence` only
 
-## 현재 시스템 경계 / Current System Boundaries
+## Current System Boundaries
 
-### 한국어
+As of the 2026-05-28 frontend reset, the implemented system is best read as three active layers:
 
-현재 구현은 아래 네 층으로 읽는 것이 가장 정확하다.
-
-1. `UI Shell`
-   - [`src/App.tsx`](../src/App.tsx)
-   - [`src/app/App.tsx`](../src/app/App.tsx)
-   - [`src/widgets/project-sidebar/ui/ProjectSidebar.tsx`](../src/widgets/project-sidebar/ui/ProjectSidebar.tsx)
-   - [`src/widgets/workspace-stage/ui/WorkspaceStage.tsx`](../src/widgets/workspace-stage/ui/WorkspaceStage.tsx)
-   - [`src/widgets/agent-sidebar/ui/AgentSidebar.tsx`](../src/widgets/agent-sidebar/ui/AgentSidebar.tsx)
-   - [`src/App.css`](../src/App.css)
-   - `src/App.tsx`는 얇은 엔트리 파일이고, `src/app/App.tsx`가 feature hook과 widget을 조합하는 composition root다.
-   - 메인 워크스페이스, code surface, terminal surface, provider panel, approval UI를 workbench 구조로 조합한다.
-2. `Frontend Contract Layer`
-   - [`src/lib/runtime.ts`](../src/lib/runtime.ts)
-   - Tauri `invoke` 래퍼, typed contract, browser preview/mock fallback을 제공한다.
-3. `Runtime Layer`
-   - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
-   - Tauri command 등록, manager 초기화, 앱 저장 경로 설정을 맡는다.
-4. `Runtime Modules`
-   - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
-   - 실제 시스템 동작과 persistence를 담당한다.
-
-### English
-
-The current implementation is best read as four layers:
-
-1. `UI Shell`
-   - [`src/App.tsx`](../src/App.tsx)
-   - [`src/app/App.tsx`](../src/app/App.tsx)
-   - [`src/widgets/project-sidebar/ui/ProjectSidebar.tsx`](../src/widgets/project-sidebar/ui/ProjectSidebar.tsx)
-   - [`src/widgets/workspace-stage/ui/WorkspaceStage.tsx`](../src/widgets/workspace-stage/ui/WorkspaceStage.tsx)
-   - [`src/widgets/agent-sidebar/ui/AgentSidebar.tsx`](../src/widgets/agent-sidebar/ui/AgentSidebar.tsx)
-   - [`src/App.css`](../src/App.css)
-   - `src/App.tsx` is now a thin entry file, while `src/app/App.tsx` is the composition root over feature hooks and widgets
-   - composes the main workspace, code surface, terminal surface, provider panel, and approval UI as a workbench
-2. `Frontend Contract Layer`
-   - [`src/lib/runtime.ts`](../src/lib/runtime.ts)
-   - provides Tauri `invoke` wrappers, typed contracts, and browser preview/mock fallbacks
-3. `Runtime Layer`
+1. `Design Prototype Frontend`
+   - [`index.html`](../index.html)
+   - [`src/prototype.jsx`](../src/prototype.jsx)
+   - [`src/styles.css`](../src/styles.css)
+   - [`src/ts-placeholder.ts`](../src/ts-placeholder.ts)
+   - The previous FSD React frontend under `src/app`, `src/features`, `src/widgets`, `src/shared`, `src/stores`, and `src/lib` has been deleted so it cannot overlap the uploaded design draft.
+   - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
+   - `src/styles.css` is copied from the uploaded draft source.
+2. `Runtime Layer`
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
    - registers Tauri commands, initializes managers, and resolves app storage paths
-4. `Runtime Modules`
+3. `Runtime Modules`
    - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
    - own the actual system behavior and persistence
 
-## 프론트엔드 모듈 지도 / Frontend Module Map
+The frontend reset intentionally removes the old frontend contract layer from the active app. Reintroducing runtime-backed behavior should be planned as a new integration slice on top of the clean design prototype, not by restoring the deleted FSD UI wholesale.
 
-### 한국어
+## Frontend Module Map
 
-- [`src/App.tsx`](../src/App.tsx)
-  - 프론트엔드 앱의 얇은 엔트리 파일이다.
-  - 실제 구현은 [`src/app/App.tsx`](../src/app/App.tsx)로 위임한다.
-- [`src/app/App.tsx`](../src/app/App.tsx)
-  - 현재 composition root다.
-  - persisted UI state, `workspace-store`, feature hook, widget 조합을 담당한다.
-- [`src/features/projects/model/useProjectWorkspace.ts`](../src/features/projects/model/useProjectWorkspace.ts)
-  - 프로젝트 열기, 파일 읽기, line anchor, restore, `file:line` jump를 담당한다.
-- [`src/features/terminals/model/useTerminalWorkspace.ts`](../src/features/terminals/model/useTerminalWorkspace.ts)
-  - terminal polling, active-log capture, tab lifecycle, command-target 실행을 담당한다.
-- [`src/features/auth/model/useProviderAuth.ts`](../src/features/auth/model/useProviderAuth.ts)
-  - provider connection, diagnostics, login launcher, disconnect를 담당한다.
-- [`src/features/agents/model/useAgentSuggestions.ts`](../src/features/agents/model/useAgentSuggestions.ts)
-  - request envelope 조립, suggestion mapping, approval 실행 조합을 담당한다.
-- [`src/features/telegram/model/useTelegramWorkspace.ts`](../src/features/telegram/model/useTelegramWorkspace.ts)
-  - Telegram bridge/runtime/draft 상태와 approval 연결을 담당한다.
-- [`src/widgets/project-sidebar/ui/ProjectSidebar.tsx`](../src/widgets/project-sidebar/ui/ProjectSidebar.tsx)
-  - 프로젝트 열기, recent projects, repository summary, file tree를 렌더링한다.
-- [`src/widgets/workspace-stage/ui/WorkspaceStage.tsx`](../src/widgets/workspace-stage/ui/WorkspaceStage.tsx)
-  - 메인 workbench와 support surface를 렌더링한다.
-  - 현재 가장 큰 widget이며 다음 분해 대상은 `code-stage`, `terminal-stage`, `workspace-support`다.
-- [`src/widgets/agent-sidebar/ui/AgentSidebar.tsx`](../src/widgets/agent-sidebar/ui/AgentSidebar.tsx)
-  - provider auth, request context, request form, suggestion approval rail을 렌더링한다.
-- [`src/shared/lib/file-context.ts`](../src/shared/lib/file-context.ts)
-  - file anchor, snippet, line reference, fallback formatting 같은 순수 `TypeScript` helper를 제공한다.
-- [`src/shared/ui/FileTreeNode.tsx`](../src/shared/ui/FileTreeNode.tsx)
-  - file tree recursion을 담당한다.
-- [`src/shared/ui/TerminalRenameField.tsx`](../src/shared/ui/TerminalRenameField.tsx)
-  - 활성 terminal rename field를 담당한다.
-- [`src/lib/runtime.ts`](../src/lib/runtime.ts)
-  - 프론트엔드에서 사용하는 공용 contract 레이어다.
-  - `readProjectOverview`, `readProjectFile`, `createTerminalSession`, `requestAgentSuggestions`, `readAgentProviderDiagnostics` 같은 typed API entrypoint를 제공한다.
-  - Tauri가 없을 때 preview/mock contract를 유지하는 책임도 여기에 있다.
-- [`src/stores/workspace-store.ts`](../src/stores/workspace-store.ts)
-  - 패널 열림 상태, 현재 프로젝트 정보, 활성 터미널 탭, 캡처된 agent context를 저장한다.
-  - 최근 프로젝트 목록은 브라우저 `localStorage`에 저장한다.
-
-### English
-
-- [`src/App.tsx`](../src/App.tsx)
-  - the thin frontend entry file
-  - delegates the real implementation to [`src/app/App.tsx`](../src/app/App.tsx)
-- [`src/app/App.tsx`](../src/app/App.tsx)
-  - the current composition root
-  - reads persisted UI state, `workspace-store`, feature hooks, and widgets
-- [`src/features/projects/model/useProjectWorkspace.ts`](../src/features/projects/model/useProjectWorkspace.ts)
-  - owns project open, file reads, line anchors, restore, and `file:line` jumps
-- [`src/features/terminals/model/useTerminalWorkspace.ts`](../src/features/terminals/model/useTerminalWorkspace.ts)
-  - owns terminal polling, active-log capture, tab lifecycle, and command-target execution
-- [`src/features/auth/model/useProviderAuth.ts`](../src/features/auth/model/useProviderAuth.ts)
-  - owns provider connections, diagnostics, login launch, and disconnect behavior
-- [`src/features/agents/model/useAgentSuggestions.ts`](../src/features/agents/model/useAgentSuggestions.ts)
-  - owns request-envelope assembly, suggestion mapping, and approval coordination
-- [`src/features/telegram/model/useTelegramWorkspace.ts`](../src/features/telegram/model/useTelegramWorkspace.ts)
-  - owns Telegram bridge/runtime state and draft/report behavior
-- [`src/widgets/project-sidebar/ui/ProjectSidebar.tsx`](../src/widgets/project-sidebar/ui/ProjectSidebar.tsx)
-  - renders project open, recent projects, repository summary, and file tree
-- [`src/widgets/workspace-stage/ui/WorkspaceStage.tsx`](../src/widgets/workspace-stage/ui/WorkspaceStage.tsx)
-  - renders the main workbench and secondary support surfaces
-  - it is now the largest widget and the natural next split point into `code-stage`, `terminal-stage`, and `workspace-support`
-- [`src/widgets/agent-sidebar/ui/AgentSidebar.tsx`](../src/widgets/agent-sidebar/ui/AgentSidebar.tsx)
-  - renders the provider auth rail, request context, request form, and suggestion approval UI
-- [`src/shared/lib/file-context.ts`](../src/shared/lib/file-context.ts)
-  - provides pure `TypeScript` helpers for anchors, snippets, line references, and file fallback formatting
-- [`src/shared/ui/FileTreeNode.tsx`](../src/shared/ui/FileTreeNode.tsx)
-  - owns recursive file-tree rendering
-- [`src/shared/ui/TerminalRenameField.tsx`](../src/shared/ui/TerminalRenameField.tsx)
-  - owns the active-terminal rename field
-- [`src/lib/runtime.ts`](../src/lib/runtime.ts)
-  - the shared frontend contract layer
-  - exposes typed entrypoints such as `readProjectOverview`, `readProjectFile`, `createTerminalSession`, `requestAgentSuggestions`, and `readAgentProviderDiagnostics`
-  - also owns preview/mock contracts when Tauri is not available
-- [`src/stores/workspace-store.ts`](../src/stores/workspace-store.ts)
-  - stores panel visibility, active project metadata, active terminal tab, and captured agent context
-  - persists recent projects in browser `localStorage`
+- [`index.html`](../index.html)
+  - loads the design prototype entry and the Geist font links used by the uploaded design
+- [`src/prototype.jsx`](../src/prototype.jsx)
+  - single active React entrypoint for the clean uploaded design prototype
+  - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
+- [`src/styles.css`](../src/styles.css)
+  - single active frontend stylesheet copied from the uploaded design source
+- [`src/ts-placeholder.ts`](../src/ts-placeholder.ts)
+  - keeps `tsc -b` valid while the active prototype source is JavaScript/JSX
 
 ## 런타임 모듈 지도 / Runtime Module Map
 
