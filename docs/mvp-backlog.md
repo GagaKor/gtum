@@ -1171,23 +1171,30 @@ Acceptance Criteria:
 
 목표:
 
-- `VS Code`, `conductor`, `cmux` 레퍼런스를 실제 화면 구현에 반영해 현재 워크스페이스를 다시 짠다.
+- `/Users/kwon/Downloads/test (1)`의 새 제품 디자인 시안을 기존 구현보다 우선하는 기준으로 삼고, 현재 워크스페이스를 새 shell, left accordion, unified workbench, agent/settings/approval 구조로 다시 짠다.
 
 백로그 항목:
 
-- 상단 바, 좌측 프로젝트 레일, 중앙 터미널 스테이지, 우측 에이전트 패널 구조 재구성
-- 요약 카드 중심 레이아웃을 패널 중심 레이아웃으로 축소 또는 대체
+- titlebar/statusbar 기반 shell로 기존 mission header를 대체
+- 좌측 `Projects/Files` accordion과 compact project row 구현
+- editor tab과 terminal tab을 같은 중앙 workbench tab model로 통합
+- tab drag/drop, context menu, 좌우/상하 split group 구현
+- 우측 provider/model picker, execution mode row, context summary, quick prompt, composer 구조 구현
+- `Connections`, `Models`, `Appearance`, `Execution`, `About` 설정 modal 구현
+- 위험도 기반 approval policy, trusted dirs, forbidden patterns, auto-run audit/undo 흐름 구현
+- 요약 카드 중심 레이아웃을 작업 surface 중심 레이아웃으로 축소 또는 대체
 - Task History, Telegram, Runtime/Debug를 기본 2선 영역으로 재배치
-- 에이전트 요청, 컨텍스트, 승인 흐름을 더 단계적으로 보이게 재구성
-- 터미널 탭과 활성 로그 연결 상태를 더 강하게 시각화
 - backend snapshot, status field, action availability와 frontend UI 동작을 같은 display contract로 정렬
 - `docs/frontend-design-benchmarks.md` 기준 디자인 리뷰와 `Playwright` 회귀 갱신
 
 완료조건:
 
-- 첫 화면 정보 계층이 현재보다 명확하다.
-- 터미널이 가장 강한 1차 작업 표면으로 보인다.
-- 우측 에이전트 패널이 요청, 컨텍스트, 제안, 승인 순서를 자연스럽게 보여준다.
+- 첫 화면이 새 디자인 시안의 titlebar/statusbar, left accordion, center workbench, right agent workspace 구조를 따른다.
+- editor와 terminal이 같은 workbench tab model 안에서 동작한다.
+- 좌측 panel은 `Projects`와 `Files`를 독립 accordion으로 보여준다.
+- 우측 에이전트 패널이 provider/model, mode, context, thread, composer, approval entry를 자연스럽게 보여준다.
+- settings modal에서 provider, model, appearance, execution policy를 조정할 수 있다.
+- low-risk auto-run은 audit/undo 흐름을 남기고, high-risk와 forbidden pattern은 명시 승인 또는 차단을 요구한다.
 - Task History, Telegram, Runtime/Debug가 기본 작업 흐름을 방해하지 않는다.
 - backend 상태와 frontend 버튼/뱃지/패널 동작이 서로 모순되지 않는다.
 - 관련 UI E2E가 새 구조 기준으로 갱신된다.
@@ -1198,23 +1205,30 @@ Priority: `P0`
 
 Goal:
 
-- apply the `VS Code`, `conductor`, and `cmux` references to a real workspace redesign instead of leaving them as documentation only
+- treat the new product design draft in `/Users/kwon/Downloads/test (1)` as higher priority than the existing implementation and rebuild the workspace around the new shell, left accordion, unified workbench, agent/settings/approval structure
 
 Backlog:
 
-- rebuild the top bar, left project rail, center terminal stage, and right agent panel structure
-- reduce or replace summary-card-heavy layout with a panel-first workspace layout
+- replace the existing mission header with a titlebar/statusbar shell
+- implement the left `Projects/Files` accordion and compact project rows
+- unify editor tabs and terminal tabs into the same center workbench tab model
+- implement tab drag/drop, context menus, and horizontal/vertical split groups
+- implement the right provider/model picker, execution-mode row, context summary, quick prompts, and composer
+- implement the `Connections`, `Models`, `Appearance`, `Execution`, and `About` settings modal
+- implement risk-based approval policy, trusted dirs, forbidden patterns, and auto-run audit/undo flow
+- reduce or replace summary-card-heavy layout with work-surface-first layout
 - move Task History, Telegram, and Runtime/Debug into clearly secondary areas by default
-- make the agent request, context, suggestion, and approval flow read more step-by-step
-- strengthen the visual relationship between terminal tabs and active-log attachment
 - align backend snapshots, status fields, and action availability with the frontend display contract
 - run design review against `docs/frontend-design-benchmarks.md` and update `Playwright` regression coverage
 
 Acceptance Criteria:
 
-- the first-screen information hierarchy is clearly stronger than the current UI
-- the terminal is visibly the strongest primary work surface
-- the right agent panel presents request, context, suggestion, and approval in a natural order
+- the first screen follows the new design's titlebar/statusbar, left accordion, center workbench, and right agent workspace structure
+- editor and terminal surfaces run inside the same workbench tab model
+- the left panel exposes `Projects` and `Files` as independent accordion sections
+- the right agent panel presents provider/model, mode, context, thread, composer, and approval entry naturally
+- settings can configure providers, models, appearance, and execution policy
+- low-risk auto-run leaves audit/undo evidence, while high-risk commands and forbidden patterns require explicit approval or blocking
 - Task History, Telegram, and Runtime/Debug no longer interrupt the default workflow
 - backend state and frontend button, badge, and panel behavior do not contradict each other
 - related UI E2E coverage is updated for the new structure

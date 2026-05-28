@@ -17,6 +17,7 @@
 - [문서 읽기 순서 / Docs Reading Order](./DOCS_READING_ORDER.md)
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
+- [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
@@ -44,6 +45,7 @@
 - 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 종료 기준
   - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
   - [MVP 백로그 / MVP Backlog](./mvp-backlog.md)
+  - [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)
 - UI 참고 기준
   - [디자인 시스템 / Design System](./design-system.md)
   - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
@@ -75,6 +77,8 @@
   - MVP 범위, 완료조건, 우선순위, 제외 범위를 확인할 때 읽는다.
 - [스프린트 계획 / Sprint Plan](./sprint-plan.md)
   - 다음 작업 순서, 현재 스프린트 목표, 종료 조건, 직전 스프린트 경로를 다음 개선안으로 바꿀 때 읽는다.
+- [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)
+  - `/Users/kwon/Downloads/test (1)` 새 디자인 시안을 실제 구현 스프린트로 나눠 실행할 때 읽는다.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
@@ -150,6 +154,7 @@
 - Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
 - Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
 - 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact agent model row를 기본값으로 사용한다
+- Sprint 17부터는 `/Users/kwon/Downloads/test (1)` 새 제품 디자인 시안이 기존 구현과 충돌할 때 우선하며, 상세 실행 순서는 [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)을 따른다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
 - 릴리스와 배포 정책은 `master` 머지 시 자동 GitHub Release를 생성하는 방향으로 `docs/release-build-ci.md`를 기준으로 한다

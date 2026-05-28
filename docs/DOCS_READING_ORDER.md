@@ -86,7 +86,8 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 1. `docs/sprint-plan.md`
 2. `docs/product-plan.md`
 3. `docs/frontend-design-benchmarks.md`
-4. `docs/agent-team-topology.md`
+4. 새 제품 디자인 구현이면 `docs/superpowers/plans/2026-05-28-new-product-design-implementation.md`
+5. `docs/agent-team-topology.md`
 
 ### 런타임 구조, provider/auth, contract가 문제일 때
 
@@ -178,7 +179,8 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 1. `docs/sprint-plan.md`
 2. `docs/product-plan.md`
 3. `docs/frontend-design-benchmarks.md`
-4. `docs/agent-team-topology.md`
+4. `docs/superpowers/plans/2026-05-28-new-product-design-implementation.md` when implementing the new product design
+5. `docs/agent-team-topology.md`
 
 ### When the issue is runtime structure, provider/auth, or contracts
 

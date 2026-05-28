@@ -49,9 +49,13 @@ Read this document when:
 현재 UI 방향의 source of truth는 과거 스프린트 기록보다 아래 문서가 우선한다.
 
 - [product-plan.md](/home/kwon/project/gtum/docs/product-plan.md)
+- [design-system.md](/home/kwon/project/gtum/docs/design-system.md)
 - [frontend-design-benchmarks.md](/home/kwon/project/gtum/docs/frontend-design-benchmarks.md)
 - [ui-ux-wireframes.md](/home/kwon/project/gtum/docs/ui-ux-wireframes.md)
 - [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)
+- [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
+
+`Sprint 17`부터는 `/Users/kwon/Downloads/test (1)`의 새 디자인 시안이 기존 구현보다 우선한다. 기존 구조와 충돌하면 새 디자인을 기준으로 구현하고, 기존 UI는 필요한 경우 secondary surface로 내려야 한다.
 
 ### English
 
@@ -60,9 +64,13 @@ This document also contains historical sprint records, so older `terminal-first`
 For the current UI direction, treat the following documents as higher priority than historical sprint wording:
 
 - [product-plan.md](/home/kwon/project/gtum/docs/product-plan.md)
+- [design-system.md](/home/kwon/project/gtum/docs/design-system.md)
 - [frontend-design-benchmarks.md](/home/kwon/project/gtum/docs/frontend-design-benchmarks.md)
 - [ui-ux-wireframes.md](/home/kwon/project/gtum/docs/ui-ux-wireframes.md)
 - [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)
+- [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
+
+Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
 ## 장문 문서 라우팅 / Long-Doc Routing
 
@@ -228,6 +236,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - Mission Control형 workbench baseline과 left rail / split workbench / agent workspace 정리
 - `Sprint 16`
   - Concept A 브랜드 선택과 left-menu view baseline 정리
+- `Sprint 17`
+  - 새 제품 디자인 시안 기반 shell, left accordion, workbench, agent/settings/approval 구현 계획과 1차 shell 적용
 
 ### English
 
@@ -265,6 +275,8 @@ When a sprint changes both UI and runtime behavior, it should also leave behind:
   - Mission Control workbench baseline plus left rail / split workbench / agent workspace alignment
 - `Sprint 16`
   - Concept A brand selection and left-menu view baseline cleanup
+- `Sprint 17`
+  - new product design shell, left accordion, workbench, agent/settings/approval implementation planning and first shell slice
 
 ## Sprint 0
 
@@ -1804,6 +1816,102 @@ Sprint 16 initial backlog:
 - `P1` refresh desktop launcher and bundle icons from the selected mark
 - `P1` prepare implementation tasks for explorer, search, source control, outline, and settings views
 
+## Sprint 17
+
+### 한국어
+
+목표:
+
+- `/Users/kwon/Downloads/test (1)`의 새 제품 디자인 시안을 기존 구현보다 우선하는 개발 기준으로 고정하고, 실제 앱 구현을 실행 가능한 slice로 나눈다.
+- 첫 구현 slice는 title/status shell, 좌측 `Projects/Files` accordion, 우측 agent model row를 중심으로 기존 화면과의 충돌을 정리한다.
+
+단계:
+
+- `Post-MVP`
+
+상세 실행 계획:
+
+- [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
+
+포함 범위:
+
+- 새 디자인 우선 정책 명문화
+- 기존 `mission-header`, card-heavy support surface, terminal-first 중심 구조와 새 디자인의 충돌 지점 정리
+- `Sprint 17`: 새 shell과 left accordion, compact agent model row
+- `Sprint 18`: editor/terminal unified workbench tabs와 split group
+- `Sprint 19`: settings modal, provider model selection, risk-based approval policy
+- `Sprint 20`: responsive/collapse 안정화와 source-of-truth 문서 동기화
+
+완료조건:
+
+- 상세 개발계획이 파일 단위, 테스트 단위, 스프린트 단위로 문서화된다.
+- 새 디자인 시안이 기존 구조와 충돌할 때 새 디자인을 우선한다는 정책이 명시된다.
+- Sprint 17의 첫 구현 범위가 `titlebar/statusbar`, `Projects/Files` accordion, agent model row로 제한되어 있다.
+- 각 스프린트의 검증 명령과 E2E 범위가 명시된다.
+
+리스크:
+
+- 기존 구현을 유지하려는 관성이 새 디자인을 부분 적용 상태로 만들 수 있다.
+- workbench tab model과 현재 terminal/session model이 섞이면 restore와 E2E가 깨질 수 있다.
+- approval auto-run은 신뢰 경계가 명확하지 않으면 제품 신뢰도를 해칠 수 있다.
+
+Sprint 17 initial backlog:
+
+- `P0` create and commit the detailed new-design implementation plan
+- `P0` declare the new design override policy in sprint planning
+- `P0` prepare failing E2E coverage for the new shell landmarks
+- `P0` implement titlebar/statusbar and left `Projects/Files` accordion
+- `P0` promote the right agent model row and execution mode control
+- `P1` start workbench tab model design for Sprint 18
+- `P1` identify docs that must be synchronized after each implementation slice
+
+### English
+
+Goal:
+
+- lock the new product design draft in `/Users/kwon/Downloads/test (1)` as the development baseline above the existing implementation
+- split the implementation into executable slices, starting with the title/status shell, left `Projects/Files` accordion, and right agent model row
+
+Phase:
+
+- `Post-MVP`
+
+Detailed execution plan:
+
+- [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
+
+Scope:
+
+- document the new-design override policy
+- identify conflicts between the new design and the existing `mission-header`, card-heavy support surfaces, and terminal-first structure
+- `Sprint 17`: new shell, left accordion, compact agent model row
+- `Sprint 18`: unified editor/terminal workbench tabs and split groups
+- `Sprint 19`: settings modal, provider model selection, and risk-based approval policy
+- `Sprint 20`: responsive/collapse stabilization and source-of-truth documentation sync
+
+Acceptance Criteria:
+
+- the detailed implementation plan is documented by file, test, and sprint
+- the sprint plan explicitly says the new design wins when it conflicts with old structure
+- Sprint 17 is scoped to `titlebar/statusbar`, `Projects/Files` accordion, and agent model row
+- verification commands and E2E coverage are listed for each sprint
+
+Risks:
+
+- preserving too much of the old implementation may leave the new design only partially applied
+- mixing the new workbench tab model with the current terminal/session model can break restore and E2E flows
+- approval auto-run can reduce trust if trusted boundaries are not explicit
+
+Sprint 17 initial backlog:
+
+- `P0` create and commit the detailed new-design implementation plan
+- `P0` declare the new design override policy in sprint planning
+- `P0` prepare failing E2E coverage for the new shell landmarks
+- `P0` implement titlebar/statusbar and left `Projects/Files` accordion
+- `P0` promote the right agent model row and execution mode control
+- `P1` start workbench tab model design for Sprint 18
+- `P1` identify docs that must be synchronized after each implementation slice
+
 ## 스프린트 간 의존성 / Cross-Sprint Dependencies
 
 ### 한국어
@@ -1823,6 +1931,10 @@ Sprint 16 initial backlog:
 - `Sprint 14`는 `Sprint 13`의 editor-like surface 위에서 frontend 구조를 FSD 기준으로 재정렬해 이후 widget 세분화와 symbol/range 확장을 쉽게 만드는 단계다.
 - `Sprint 15`는 `Sprint 14`의 FSD 구조 위에서 실제 UI baseline을 `Mission Control`형 workbench로 다시 고정하는 단계다.
 - `Sprint 16`은 `Sprint 15`의 화면 baseline을 바탕으로 브랜드와 left-menu view model을 source of truth로 굳히는 단계다.
+- `Sprint 17`은 `Sprint 16`의 브랜드/left-menu 기준과 새 제품 디자인 시안을 바탕으로 기존 구현과 충돌하는 구조를 새 디자인 쪽으로 정리하는 단계다.
+- `Sprint 18`은 `Sprint 17`의 shell/left/right baseline 위에서 중앙 workbench tab model을 구현하는 단계다.
+- `Sprint 19`는 `Sprint 17`의 agent model row와 `Sprint 18`의 workbench context 위에서 settings와 approval policy를 구현하는 단계다.
+- `Sprint 20`은 `Sprint 17-19` 구현을 responsive, E2E, source-of-truth 문서로 안정화하는 단계다.
 
 ### English
 
@@ -1841,6 +1953,10 @@ Sprint 16 initial backlog:
 - `Sprint 14` reorganizes the frontend into an FSD-style structure on top of the editor-like surface from `Sprint 13` so later widget splitting and symbol/range expansion become safer
 - `Sprint 15` uses the `Sprint 14` structure to relock the UI as a Mission Control-style workbench baseline
 - `Sprint 16` uses the `Sprint 15` workbench baseline to formalize the brand and left-menu view model as source-of-truth docs
+- `Sprint 17` uses the `Sprint 16` brand/left-menu baseline plus the new product design draft to resolve implementation conflicts in favor of the new design
+- `Sprint 18` builds the center workbench tab model on top of the `Sprint 17` shell/left/right baseline
+- `Sprint 19` implements settings and approval policy on top of the `Sprint 17` agent model row and `Sprint 18` workbench context
+- `Sprint 20` stabilizes the `Sprint 17-19` implementation through responsive behavior, E2E coverage, and source-of-truth docs
 
 ## 스프린트별 성공 질문 / Sprint Success Questions
 
@@ -1880,6 +1996,8 @@ Sprint 16 initial backlog:
   - 현재 메인 화면이 `VS Code`와 `conductor`의 강점을 섞은 IDE-like workspace로 읽히는가
 - `Sprint 16`
   - 브랜드와 왼쪽 메뉴 view model이 더 이상 임시 시안이 아니라 구현 가능한 기준 문서로 정리되었는가
+- `Sprint 17`
+  - 새 제품 디자인 시안이 기존 구현보다 우선한다는 기준이 명확하고, 첫 구현 slice가 작고 검증 가능하게 잡혔는가
 
 ### English
 
@@ -1917,13 +2035,15 @@ Sprint 16 initial backlog:
   - does the main screen now read like an IDE-style workspace that combines the strengths of `VS Code` and `conductor`
 - `Sprint 16`
   - are the brand and left-menu view model now documented as implementable source of truth rather than temporary concept notes
+- `Sprint 17`
+  - is the new product design clearly prioritized over the existing implementation, with a small and testable first implementation slice
 
 ## 다음 실행 추천 / Recommended Next Action
 
 ### 한국어
 
-다음 단계로는 [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md)와 [left-menu-views.md](/home/kwon/project/gtum/docs/left-menu-views.md)를 기준으로 실제 앱 shell에 `프로젝트`, `탐색기`, `소스제어`, `아웃라인`, `설정` view를 구현하고, split workbench와 agent workspace를 현재 디자인 baseline에 맞게 옮기는 것이 맞다.
+다음 단계로는 [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)의 `Sprint 17`부터 실행한다. 첫 구현은 titlebar/statusbar, 좌측 `Projects/Files` accordion, 우측 agent model row를 대상으로 하고, 기존 구조와 충돌하면 새 디자인 시안을 우선한다.
 
 ### English
 
-The next step should use [design-concepts-sprint-15.md](/home/kwon/project/gtum/docs/design-concepts-sprint-15.md) plus [left-menu-views.md](/home/kwon/project/gtum/docs/left-menu-views.md) to implement the real app shell for `Project`, `Explorer`, `Source Control`, `Outline`, and `Settings`, then bring the split workbench and agent workspace into the live product so the app matches the new Mission Control baseline instead of the older terminal-first shell.
+The next step is to execute `Sprint 17` from the [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md). The first implementation slice should target the titlebar/statusbar, left `Projects/Files` accordion, and right agent model row, and the new design should win whenever it conflicts with existing structure.
