@@ -68,14 +68,17 @@ This document exceeds 200 lines. Read only the matching route first.
 
 As of the 2026-05-28 frontend reset, the implemented system is best read as three active layers:
 
-1. `Design Prototype Frontend`
+1. `TSX App Shell And Legacy Design Prototype`
    - [`index.html`](../index.html)
+   - [`src/app/main.tsx`](../src/app/main.tsx)
+   - [`src/app/providers/legacy-prototype.ts`](../src/app/providers/legacy-prototype.ts)
    - [`src/prototype.jsx`](../src/prototype.jsx)
    - [`src/styles.css`](../src/styles.css)
-   - [`src/ts-placeholder.ts`](../src/ts-placeholder.ts)
-   - The previous FSD React frontend under `src/app`, `src/features`, `src/widgets`, `src/shared`, `src/stores`, and `src/lib` has been deleted so it cannot overlap the uploaded design draft.
+   - The active browser entry now starts at `src/app/main.tsx`, which is the TSX/FSD migration entrypoint.
+   - `src/app/providers/legacy-prototype.ts` mounts the current uploaded design module while reusable TSX components are extracted by feature slice.
    - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
    - `src/prototype.jsx` now owns the first thin runtime bridge on top of the uploaded design: project folder selection, `read_project_overview`, and `read_project_file`.
+   - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
 2. `Runtime Layer`
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
@@ -90,16 +93,24 @@ The frontend reset intentionally removes the old frontend contract layer from th
 ## Frontend Module Map
 
 - [`index.html`](../index.html)
-  - loads the design prototype entry and the Geist font links used by the uploaded design
+  - loads the TSX app entry and the Geist font links used by the uploaded design
+- [`src/app/main.tsx`](../src/app/main.tsx)
+  - active frontend entrypoint for the FSD migration
+  - delegates to the legacy prototype provider until each design area is extracted into reusable TSX components
+- [`src/app/providers/legacy-prototype.ts`](../src/app/providers/legacy-prototype.ts)
+  - compatibility provider that imports the uploaded JSX prototype module
 - [`src/prototype.jsx`](../src/prototype.jsx)
-  - single active React entrypoint for the clean uploaded design prototype
+  - legacy uploaded design module used by the TSX app entry during migration
   - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
   - maps Tauri `ProjectOverview` and `ProjectFileSnapshot` payloads into the prototype project tree and editor tab shapes
   - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime
+- [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts)
+  - typed project/file runtime service for future TSX components
+  - wraps Tauri filesystem commands and browser fallback project/file snapshots
+- [`src/entities`, `src/features`, `src/shared`](../src)
+  - initial FSD-style type, policy, and service seams for extracting the uploaded design into reusable TSX components
 - [`src/styles.css`](../src/styles.css)
   - single active frontend stylesheet copied from the uploaded design source
-- [`src/ts-placeholder.ts`](../src/ts-placeholder.ts)
-  - keeps `tsc -b` valid while the active prototype source is JavaScript/JSX
 
 ## 런타임 모듈 지도 / Runtime Module Map
 

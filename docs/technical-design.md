@@ -341,15 +341,19 @@ The frontend should be organized by feature domain.
 #### Current Implemented Baseline
 
 - `app`
-  - `src/App.tsx` is the thin entrypoint and `src/app/App.tsx` is the composition root.
+  - `index.html` loads `src/app/main.tsx`.
+  - `src/app/main.tsx` is the active TSX entrypoint for the uploaded design migration.
+  - `src/app/providers/legacy-prototype.ts` imports the current uploaded JSX prototype until each workbench zone is extracted into TSX components.
+- `entities/*/model`
+  - hold reusable typed domain shapes for project, workspace, and agent data.
 - `features/*/model`
-  - project, terminal, auth, agent, and Telegram flow logic should be pushed into pure `TypeScript` helpers and feature hooks whenever possible.
+  - hold feature contracts such as workbench tab layout and approval policy logic.
+- `shared/api`
+  - holds backend-facing service seams such as `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file-read commands with browser fallback.
+- `shared/lib`, `shared/types`
+  - hold cross-feature helpers and compatibility types needed while the uploaded design moves from JSX to TSX.
 - `widgets/*/ui`
-  - split along major workbench zones such as the left project rail, center workspace stage, and right agent rail.
-- `shared/lib`, `shared/ui`
-  - hold cross-feature helpers such as tree recursion, file snippets, line references, and formatters.
-- `stores`
-  - keep only global workspace state such as layout visibility, the active tab, and captured agent context.
+  - remains the target extraction layer for major workbench zones such as titlebar, sidebar, center workspace, right agent panel, and modals.
 
 #### UI Verification Principles
 

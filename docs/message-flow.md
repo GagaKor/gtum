@@ -31,23 +31,25 @@ This document exceeds 200 lines. Do not reread every flow by default.
 
 ## Flow 1. Project Open And Baseline Restore
 
-1. The clean design prototype starts from the uploaded design fixture embedded in [`src/prototype.jsx`](../src/prototype.jsx).
+1. The frontend starts at [`src/app/main.tsx`](../src/app/main.tsx), then loads the uploaded design fixture through [`src/app/providers/legacy-prototype.ts`](../src/app/providers/legacy-prototype.ts).
 2. In browser/Vite preview, `hasTauriRuntime()` is false. The project opener keeps the design fixture active and exposes `window.__GTUM_BACKEND_BRIDGE__` for E2E verification.
 3. In the Tauri desktop runtime, the sidebar `Open Project Folder` action opens the native directory picker through `@tauri-apps/plugin-dialog`.
 4. After a folder is selected, [`src/prototype.jsx`](../src/prototype.jsx) calls `invoke("read_project_overview", { path })`.
-5. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) returns project metadata, file tree, and Git overview.
-6. The frontend maps the Tauri `ProjectOverview` into the prototype project shape, updates the titlebar, sidebar project card, file tree, agent context branch, and statusbar.
-7. PTY/session restore remains deferred for the next backend slice. It must be added on top of the clean prototype instead of restoring the deleted FSD frontend.
+5. New TSX components should consume the typed service seam in [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts) instead of duplicating invoke details.
+6. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) returns project metadata, file tree, and Git overview.
+7. The frontend maps the Tauri `ProjectOverview` into the prototype project shape, updates the titlebar, sidebar project card, file tree, agent context branch, and statusbar.
+8. PTY/session restore remains deferred for the next backend slice. It must be added on top of the TSX/FSD migration seam instead of restoring the deleted FSD frontend.
 
 ## Flow 2. File Focus And Code Surface
 
 1. The user selects a file from the sidebar file tree.
 2. Browser/Vite preview keeps using the uploaded fixture through `tabFromFile` so design tests can run without Tauri.
-3. If the active project is runtime-backed, [`src/prototype.jsx`](../src/prototype.jsx) calls `invoke("read_project_file", { projectPath, filePath })`.
-4. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) rejects paths outside the active project root and returns a `ProjectFileSnapshot`.
-5. The frontend maps the snapshot into the prototype editor tab shape, using `displayPath`, text content, language extension, and bounded binary/truncated fallbacks.
-6. The opened file is inserted into the current workbench group through the existing prototype `openFile` store action.
-7. Line anchors and terminal-log file references are still deferred until terminal/session integration is reintroduced.
+3. If the active project is runtime-backed, the current legacy prototype calls `invoke("read_project_file", { projectPath, filePath })`.
+4. Extracted TSX components should route the same behavior through [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts).
+5. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) rejects paths outside the active project root and returns a `ProjectFileSnapshot`.
+6. The frontend maps the snapshot into the editor tab shape, using `displayPath`, text content, language extension, and bounded binary/truncated fallbacks.
+7. The opened file is inserted into the current workbench group through the existing prototype `openFile` store action.
+8. Line anchors and terminal-log file references are still deferred until terminal/session integration is reintroduced.
 
 ## Flow 3. Provider Diagnostics And Codex Connect
 
@@ -77,7 +79,7 @@ The input contract for `request_agent_suggestions` is fixed around these fields:
 - `userTask`
 - `executionMode`
 
-The active design prototype does not currently call this runtime command. When this slice is reintroduced, [`src/prototype.jsx`](../src/prototype.jsx) must assemble the payload from its active project state, active editor/terminal tab, provider state, and execution mode. The runtime receiver remains [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs).
+The active design prototype does not currently call this runtime command. When this slice is reintroduced, TSX/FSD components should assemble the payload from active project state, active editor/terminal tab, provider state, and execution mode. The runtime receiver remains [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs).
 
 ## Flow 5. Suggestion Request And Approval Execution
 

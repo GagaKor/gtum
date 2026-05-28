@@ -156,7 +156,7 @@
 - Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
 - Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
 - 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact agent model row를 기본값으로 사용한다
-- Active frontend code is the uploaded design prototype in `src/prototype.jsx` and `src/styles.css`; the first backend reconnection slice now calls the Tauri filesystem commands for project overview and file reads while preserving browser fallback.
+- Active frontend entry is `src/app/main.tsx`; it mounts the uploaded design prototype through `src/app/providers/legacy-prototype.ts` while Sprint 17 extracts `src/prototype.jsx` into TSX/FSD components. The reusable backend bridge starts in `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file reads with browser fallback.
 - Sprint 17부터는 `/Users/kwon/Downloads/test (1)` 새 제품 디자인 시안이 기존 구현과 충돌할 때 우선하며, 상세 실행 순서는 [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)을 따른다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다
 - 브랜치 전략은 `feature/* -> dev -> master` 흐름을 따른다
