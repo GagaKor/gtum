@@ -50,3 +50,24 @@ test('preserves prototype interactions without legacy frontend state', async ({ 
   await expect(projectsSection.getByText('aurora-monorepo')).toBeHidden()
   await expect(filesSection.getByText('OnboardingFunnel.tsx')).toBeVisible()
 })
+
+test('exposes backend bridge state while keeping browser fallback stable', async ({ page }) => {
+  await page.goto('/')
+
+  await page.waitForFunction(() =>
+    Boolean((window as Window & { __GTUM_BACKEND_BRIDGE__?: unknown }).__GTUM_BACKEND_BRIDGE__),
+  )
+
+  const bridge = await page.evaluate(() =>
+    (window as Window & {
+      __GTUM_BACKEND_BRIDGE__: { desktop: boolean; projectPath: string; runtimeBacked: boolean }
+    }).__GTUM_BACKEND_BRIDGE__,
+  )
+
+  expect(bridge.desktop).toBe(false)
+  expect(bridge.runtimeBacked).toBe(false)
+  expect(bridge.projectPath).toContain('aurora-monorepo')
+
+  await page.locator('.project-item.action').click()
+  await expect(page.locator('.titlebar').getByText('aurora-monorepo')).toBeVisible()
+})

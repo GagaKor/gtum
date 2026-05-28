@@ -75,10 +75,12 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - [`src/ts-placeholder.ts`](../src/ts-placeholder.ts)
    - The previous FSD React frontend under `src/app`, `src/features`, `src/widgets`, `src/shared`, `src/stores`, and `src/lib` has been deleted so it cannot overlap the uploaded design draft.
    - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
+   - `src/prototype.jsx` now owns the first thin runtime bridge on top of the uploaded design: project folder selection, `read_project_overview`, and `read_project_file`.
    - `src/styles.css` is copied from the uploaded draft source.
 2. `Runtime Layer`
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
    - registers Tauri commands, initializes managers, and resolves app storage paths
+   - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default` and `dialog:open` so the prototype can open a native project folder picker before calling filesystem commands
 3. `Runtime Modules`
    - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
    - own the actual system behavior and persistence
@@ -92,6 +94,8 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src/prototype.jsx`](../src/prototype.jsx)
   - single active React entrypoint for the clean uploaded design prototype
   - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
+  - maps Tauri `ProjectOverview` and `ProjectFileSnapshot` payloads into the prototype project tree and editor tab shapes
+  - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime
 - [`src/styles.css`](../src/styles.css)
   - single active frontend stylesheet copied from the uploaded design source
 - [`src/ts-placeholder.ts`](../src/ts-placeholder.ts)

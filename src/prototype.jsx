@@ -1,5 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { invoke } from '@tauri-apps/api/core'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import './styles.css'
 
 const ReactDOM = { createRoot }
@@ -943,6 +945,112 @@ const PROJECT = {
     { name: "README.md", type: "md" },
   ],
 };
+
+const hasTauriRuntime = () =>
+  typeof window !== "undefined" &&
+  typeof window.__TAURI_INTERNALS__ !== "undefined";
+
+const basenameOfPath = (value) => {
+  const parts = String(value || "").replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.at(-1) || "workspace";
+};
+
+const extensionOf = (name) => {
+  const ext = String(name || "").split(".").pop();
+  return ext && ext !== name ? ext.toLowerCase() : "txt";
+};
+
+function prototypeNodeFromRuntime(node) {
+  const isDir = node.kind === "directory";
+  return {
+    name: node.name || basenameOfPath(node.path),
+    type: isDir ? "dir" : extensionOf(node.name),
+    open: isDir,
+    changed: false,
+    runtimePath: node.path,
+    truncated: !!node.truncated,
+    children: (node.children || []).map(prototypeNodeFromRuntime),
+  };
+}
+
+function projectFromRuntimeOverview(overview) {
+  const tree = overview?.tree;
+  const rootChildren = tree?.children?.length ? tree.children : tree ? [tree] : [];
+  const branch = overview?.git?.branch || (overview?.git?.isRepository ? "main" : "no-git");
+
+  return {
+    id: overview?.metadata?.path || PROJECT.path,
+    name: overview?.metadata?.name || basenameOfPath(overview?.metadata?.path) || PROJECT.name,
+    path: overview?.metadata?.path || PROJECT.path,
+    branch,
+    branchType: overview?.git?.branchType || "local",
+    ahead: 0,
+    behind: 0,
+    changedFiles: overview?.git?.changedFilesCount || 0,
+    fileTree: rootChildren.map(prototypeNodeFromRuntime),
+    runtimeBacked: true,
+  };
+}
+
+async function selectRuntimeProjectFolder(defaultPath) {
+  if (!hasTauriRuntime()) return defaultPath || PROJECT.path;
+
+  const selected = await openDialog({
+    directory: true,
+    multiple: false,
+    title: "Choose a project folder",
+    defaultPath: defaultPath || undefined,
+  });
+
+  return typeof selected === "string" ? selected : null;
+}
+
+async function readRuntimeProjectOverview(path) {
+  if (!hasTauriRuntime()) return PROJECT;
+  const overview = await invoke("read_project_overview", { path });
+  return projectFromRuntimeOverview(overview);
+}
+
+function runtimeSnapshotToTab(snapshot, fallbackName) {
+  const displayPath = snapshot.displayPath || fallbackName || snapshot.filePath || "file";
+  const tabPath = snapshot.filePath || displayPath;
+  const name = basenameOfPath(displayPath);
+  const isText = snapshot.isText !== false;
+  const content = isText
+    ? snapshot.content || ""
+    : `// ${displayPath}\n// Binary file preview is not available in gtum.`;
+  const truncatedNote = snapshot.truncated && isText
+    ? "\n\n// File preview truncated by the desktop runtime."
+    : "";
+
+  return {
+    id: "ed-" + String(tabPath).replace(/[^a-z0-9]+/gi, "-"),
+    type: "editor",
+    title: name,
+    path: tabPath,
+    displayPath,
+    lang: extensionOf(displayPath),
+    content: content + truncatedNote,
+    dirty: false,
+    status: "idle",
+    cwd: ".",
+    cmd: null,
+    shell: null,
+    lines: [],
+  };
+}
+
+async function readRuntimeProjectFile(project, filePath, fallbackName) {
+  if (!project?.runtimeBacked || !hasTauriRuntime()) {
+    return tabFromFile(filePath, fallbackName);
+  }
+
+  const snapshot = await invoke("read_project_file", {
+    projectPath: project.path,
+    filePath,
+  });
+  return runtimeSnapshotToTab(snapshot, fallbackName);
+}
 
 // VS Code-style workspace.
 //
@@ -2071,7 +2179,7 @@ Object.assign(window, {
 function FileTreeNode({ node, depth, lang, onSelect, selected }) {
   const [open, setOpen] = React.useState(node.open !== false);
   const isDir = node.type === "dir";
-  const isSelected = selected === node.name && !isDir;
+  const isSelected = (selected === node.name || selected === node.runtimePath) && !isDir;
   return (
     <>
       <div
@@ -2126,7 +2234,7 @@ function ProjectItem({ project, active, lang, onSelect }) {
       onClick={() => onSelect?.(project)}
     >
       <span className={"project-mark" + (active ? " active" : "")}>
-        {project.name[0].toUpperCase()}
+        {(project.name || "?")[0].toUpperCase()}
       </span>
       <span className="project-info">
         <span className="project-name">
@@ -2158,15 +2266,16 @@ function ProjectItem({ project, active, lang, onSelect }) {
   );
 }
 
-function Sidebar({ lang, collapseSidebar, onOpenFile }) {
+function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject }) {
   const [selectedFile, setSelectedFile] = React.useState("OnboardingFunnel.tsx");
   const [projectsOpen, setProjectsOpen] = React.useState(true);
   const [filesOpen, setFilesOpen] = React.useState(true);
+  const activeProject = project || PROJECT;
 
   const handleFileClick = (node) => {
-    setSelectedFile(node.name);
-    const path = pathOfNode(PROJECT.fileTree, node);
+    const path = node.runtimePath || pathOfNode(activeProject.fileTree, node);
     if (path) onOpenFile?.(path, node.name);
+    setSelectedFile(node.runtimePath || node.name);
   };
 
   return (
@@ -2191,7 +2300,7 @@ function Sidebar({ lang, collapseSidebar, onOpenFile }) {
         >
           <div className="project-list">
             <ProjectItem
-              project={PROJECT}
+              project={activeProject}
               active
               lang={lang}
               onSelect={() => {}}
@@ -2205,14 +2314,16 @@ function Sidebar({ lang, collapseSidebar, onOpenFile }) {
                 onSelect={() => {}}
               />
             ))}
-            <button className="project-item action">
+            <button className="project-item action" onClick={onOpenProject} disabled={openingProject}>
               <span className="project-mark plus"><Icon.plus /></span>
               <span className="project-info">
                 <span className="project-name">
                   <span className="nm">{t(lang, "openProjectFolder")}</span>
                 </span>
                 <span className="project-meta">
-                  {lang === "ko" ? "로컬 폴더를 워크스페이스로 열기" : "Open a local folder as a workspace"}
+                  {openingProject
+                    ? (lang === "ko" ? "프로젝트를 여는 중" : "Opening project")
+                    : (lang === "ko" ? "로컬 폴더를 워크스페이스로 열기" : "Open a local folder as a workspace")}
                 </span>
               </span>
               <span className="kbd">⌘O</span>
@@ -2222,13 +2333,13 @@ function Sidebar({ lang, collapseSidebar, onOpenFile }) {
 
         <Section
           label={lang === "ko" ? "파일" : "Files"}
-          count={PROJECT.changedFiles > 0
-            ? `${PROJECT.changedFiles} ${lang === "ko" ? "변경" : "changed"}`
+          count={activeProject.changedFiles > 0
+            ? `${activeProject.changedFiles} ${lang === "ko" ? "변경" : "changed"}`
             : null}
           open={filesOpen}
           onToggle={() => setFilesOpen((v) => !v)}
         >
-          {PROJECT.fileTree.map((n, i) =>
+          {activeProject.fileTree.map((n, i) =>
             <FileTreeNode key={i} node={n} depth={0} lang={lang}
               onSelect={handleFileClick}
               selected={selectedFile} />
@@ -2457,7 +2568,7 @@ function GroupTabBar({
 
 // ── Group (tabbar + content area) ───────────────────────────────────────
 function Group({
-  group, isActive, lang, executing,
+  group, isActive, lang, executing, project,
   onSetActiveTab, onCloseTab, onNewTab,
   onReorderTab, onDropTabFromAnother, onDropTabOnEdge,
   onTabContextMenu, onFocusGroup,
@@ -2465,6 +2576,7 @@ function Group({
 }) {
   const contentRef = React.useRef(null);
   const [edge, setEdge] = React.useState(null);
+  const activeProject = project || PROJECT;
 
   // Edge detection: figure out if pointer is near a side of the content area.
   // Returns 'left' | 'right' | 'top' | 'bottom' | 'center' (move-into-tabbar).
@@ -2541,7 +2653,7 @@ function Group({
             {activeTab.type !== "editor" && (
               <div className="group-status">
                 <span className="cwd">
-                  {activeTab.cwd === "." ? PROJECT.path : `${PROJECT.path}/${activeTab.cwd}`}
+                  {activeTab.cwd === "." ? activeProject.path : `${activeProject.path}/${activeTab.cwd}`}
                 </span>
                 <span className="sep">·</span>
                 <span className="cmd">{activeTab.cmd || "—"}</span>
@@ -2550,7 +2662,7 @@ function Group({
             )}
             {activeTab.type === "editor" && (
               <div className="group-status editor-status">
-                <span className="cwd">{activeTab.path}</span>
+                <span className="cwd">{activeTab.displayPath || activeTab.path}</span>
                 {activeTab.dirty && <span className="dirty-dot" />}
                 <span className="sep">·</span>
                 <span className="cmd">{activeTab.lang}</span>
@@ -2672,7 +2784,7 @@ function LayoutNode({ node, workspace, ...rest }) {
 
 // ── Workspace root ──────────────────────────────────────────────────────
 function Workspace({
-  workspace, lang, executing,
+  workspace, lang, executing, project,
   sidebarOpen, openSidebar, agentOpen, openAgent,
   actions,
 }) {
@@ -2703,6 +2815,7 @@ function Workspace({
     workspace,
     lang,
     executing,
+    project,
     dragRef,
     onTabDragStart: (groupId, tabId) => setDragRef({ groupId, tabId }),
     onTabDragEnd: () => setDragRef(null),
@@ -2771,13 +2884,17 @@ function ModePill({ mode, setMode, lang }) {
   );
 }
 
-function ContextSummary({ lang, activeTab, activePane }) {
+function ContextSummary({ lang, activeTab, activePane, project }) {
+  const activeProject = project || PROJECT;
+  const contextFiles = activeTab?.type === "editor"
+    ? activeTab.displayPath || activeTab.path
+    : "OnboardingFunnel.tsx, useFunnelState.ts";
   return (
     <div className="context-summary">
       <div className="h">{t(lang, "aboutContext")}</div>
       <div className="row">
         <span className="k">{t(lang, "contextFiles")}:</span>
-        <span className="v">OnboardingFunnel.tsx, useFunnelState.ts</span>
+        <span className="v">{contextFiles}</span>
       </div>
       <div className="row">
         <span className="k">{t(lang, "contextTab")}:</span>
@@ -2785,7 +2902,7 @@ function ContextSummary({ lang, activeTab, activePane }) {
       </div>
       <div className="row">
         <span className="k">{t(lang, "branch")}:</span>
-        <span className="v">{PROJECT.branch}</span>
+        <span className="v">{activeProject.branch}</span>
       </div>
     </div>
   );
@@ -3027,7 +3144,7 @@ function ModelPicker({ lang, providers, activeProviderId, activeModelId, onChang
 function AgentPanel({
   lang, messages, isTyping, activeTab, activePane, mode, setMode,
   onSend, onOpenApproval, providers, collapseAgent,
-  activeProviderId, activeModelId, onSwitchModel, onOpenSettings,
+  activeProviderId, activeModelId, onSwitchModel, onOpenSettings, project,
 }) {
   const chatRef = React.useRef(null);
   React.useEffect(() => {
@@ -3081,7 +3198,7 @@ function AgentPanel({
         <ModePill mode={mode} setMode={setMode} lang={lang} />
       </div>
 
-      <ContextSummary lang={lang} activeTab={activeTab} activePane={activePane} />
+      <ContextSummary lang={lang} activeTab={activeTab} activePane={activePane} project={project} />
 
       <div className="chat" ref={chatRef}>
         {messages.map((m) => (
@@ -3113,8 +3230,9 @@ Object.assign(window, { AgentPanel });
 // ----- src/modals.jsx -----
 // modals.jsx — approval + OAuth provider connect
 
-function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs }) {
+function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) {
   if (!suggestion) return null;
+  const activeProject = project || PROJECT;
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -3149,13 +3267,13 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs }) {
           )}
           <div className="approval-row">
             <div className="lbl">{t(lang, "cwd")}</div>
-            <div className="val">{PROJECT.path}</div>
+            <div className="val">{activeProject.path}</div>
           </div>
           <div className="approval-row">
             <div className="lbl">{t(lang, "branch")}</div>
             <div className="val">
-              <span className="accent">{PROJECT.branch}</span>
-              <span className="meta"> · {PROJECT.changedFiles} {t(lang, "changes")}</span>
+              <span className="accent">{activeProject.branch}</span>
+              <span className="meta"> · {activeProject.changedFiles} {t(lang, "changes")}</span>
             </div>
           </div>
           <div className="approval-row">
@@ -3822,11 +3940,12 @@ const EXEC_OUTPUTS = {
   ],
 };
 
-function Titlebar({ lang, workspace, providers, openOAuth, openSettings }) {
+function Titlebar({ lang, workspace, providers, project, openOAuth, openSettings }) {
   const connected = providers.filter((p) => p.state === "connected");
   const activeTab = activeTabOf(workspace);
   const wsStatus = workspaceStatus(workspace);
   const groupCount = Object.keys(workspace.groups).length;
+  const activeProject = project || PROJECT;
   return (
     <div className="titlebar" data-comment-anchor="titlebar">
       <div className="traffic">
@@ -3838,9 +3957,9 @@ function Titlebar({ lang, workspace, providers, openOAuth, openSettings }) {
         <span className="brand-dot" />
         <span className="brand">gtum</span>
         <span className="sep">›</span>
-        <span>{PROJECT.name}</span>
+        <span>{activeProject.name}</span>
         <span className="sep">·</span>
-        <span style={{ color: "var(--accent)" }}>{PROJECT.branch}</span>
+        <span style={{ color: "var(--accent)" }}>{activeProject.branch}</span>
         <span className="sep">·</span>
         <span>[{activeTab?.title || "—"}]</span>
         {groupCount > 1 && (
@@ -3862,20 +3981,21 @@ function Titlebar({ lang, workspace, providers, openOAuth, openSettings }) {
   );
 }
 
-function StatusBar({ lang, mode, workspace }) {
+function StatusBar({ lang, mode, workspace, project }) {
   const tabsList = allTabs(workspace);
   const failed = tabsList.filter(({ tab }) => tab.status === "failed").length;
   const running = tabsList.filter(({ tab }) => tab.status === "running").length;
   const groupCount = Object.keys(workspace.groups).length;
+  const activeProject = project || PROJECT;
   return (
     <div className="statusbar" data-comment-anchor="statusbar">
       <span className="item ok"><Icon.dot /> {t(lang, "statusReady")}</span>
       <span className="sep">·</span>
-      <span className="item"><Icon.branch /> {PROJECT.branch}</span>
+      <span className="item"><Icon.branch /> {activeProject.branch}</span>
       <span className="sep">·</span>
-      <span className="item warn">{PROJECT.changedFiles} {t(lang, "changes")}</span>
+      <span className="item warn">{activeProject.changedFiles} {t(lang, "changes")}</span>
       <span className="sep">·</span>
-      <span className="item">↑{PROJECT.ahead} ↓{PROJECT.behind}</span>
+      <span className="item">↑{activeProject.ahead} ↓{activeProject.behind}</span>
       <span className="sep">·</span>
       <span className="item">
         {tabsList.length} {t(lang, "tabsLabel")} · {groupCount} {lang === "ko" ? "그룹" : "groups"}
@@ -3914,6 +4034,9 @@ function App() {
   }, []);
 
   const [workspace, setWorkspace] = React.useState(WORKSPACE_INITIAL);
+  const [activeProject, setActiveProject] = React.useState(PROJECT);
+  const [projectBusy, setProjectBusy] = React.useState(false);
+  const [projectError, setProjectError] = React.useState(null);
   const [providers, setProviders] = React.useState(PROVIDERS_INIT);
   const [tasks, setTasks] = React.useState(TASKS_INIT(lang));
   const [history, setHistory] = React.useState(COMMAND_HISTORY_INIT);
@@ -3996,6 +4119,68 @@ function App() {
   React.useEffect(() => {
     document.documentElement.style.setProperty("--accent", accent);
   }, [accent]);
+  React.useEffect(() => {
+    window.__GTUM_BACKEND_BRIDGE__ = {
+      desktop: hasTauriRuntime(),
+      projectPath: activeProject.path,
+      runtimeBacked: !!activeProject.runtimeBacked,
+    };
+  }, [activeProject]);
+
+  const pushProjectMessage = (message) => {
+    setMessages((prev) => [...prev, {
+      id: "project-" + Date.now(),
+      role: "assistant",
+      roleLabel: lang === "ko" ? "시스템" : "System",
+      at: nowHm(),
+      content: message,
+    }]);
+  };
+
+  const handleOpenProject = async () => {
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      const selectedPath = await selectRuntimeProjectFolder(activeProject.path);
+      if (!selectedPath) return;
+      const nextProject = await readRuntimeProjectOverview(selectedPath);
+      setActiveProject(nextProject);
+      setHistory((prev) => [...prev, {
+        at: nowHm(),
+        tab: "workspace",
+        cmd: `open ${nextProject.path}`,
+        ok: true,
+      }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setProjectError(message);
+      pushProjectMessage(lang === "ko"
+        ? `프로젝트를 열지 못했어: ${message}`
+        : `Could not open the project: ${message}`);
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const handleOpenFile = async (path, name) => {
+    setProjectError(null);
+    try {
+      const tab = await readRuntimeProjectFile(activeProject, path, name);
+      setWorkspace((w) => openFile(w, w.activeGroupId, tab));
+      setHistory((prev) => [...prev, {
+        at: nowHm(),
+        tab: "editor",
+        cmd: `open ${tab.displayPath || tab.path}`,
+        ok: true,
+      }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setProjectError(message);
+      pushProjectMessage(lang === "ko"
+        ? `파일을 열지 못했어: ${message}`
+        : `Could not open the file: ${message}`);
+    }
+  };
 
   // ── workspace actions (thin wrappers around the pure store) ──────────
   const actions = React.useMemo(() => ({
@@ -4017,9 +4202,10 @@ function App() {
     closeAllTabs: (gId) => setWorkspace((w) => closeAllTabs(w, gId)),
     newTab: (gId) => setWorkspace((w) => openTab(w, gId, {
       title: lang === "ko" ? "새 탭" : "new",
-      lines: [{ kind: "log", text: `yj@aurora ~/code/aurora-monorepo (${PROJECT.branch}) $`, color: "dim" }],
+      cwd: ".",
+      lines: [{ kind: "log", text: `${activeProject.path} (${activeProject.branch}) $`, color: "dim" }],
     })),
-  }), [lang]);
+  }), [lang, activeProject.path, activeProject.branch]);
 
   // ── Send / approve flow uses workspace lookups ────────────────────────
   const activeTab = activeTabOf(workspace);
@@ -4192,7 +4378,7 @@ function App() {
       <div className="gtum-stage" ref={stageRef}>
         <div className="gtum-scaler" ref={scalerRef}>
           <div className="gtum-window">
-            <Titlebar lang={lang} workspace={workspace} providers={providers} openOAuth={openOAuth} openSettings={() => setSettingsOpen(true)} />
+            <Titlebar lang={lang} workspace={workspace} providers={providers} project={activeProject} openOAuth={openOAuth} openSettings={() => setSettingsOpen(true)} />
             <div
               className={"body-grid" +
                 (!sidebarOpen ? " sidebar-closed" : "") +
@@ -4207,10 +4393,11 @@ function App() {
               {sidebarOpen && (
                 <Sidebar
                   lang={lang}
+                  project={activeProject}
+                  openingProject={projectBusy}
                   collapseSidebar={() => setSidebarOpen(false)}
-                  onOpenFile={(path, name) => {
-                    setWorkspace((w) => openFile(w, w.activeGroupId, tabFromFile(path, name)));
-                  }}
+                  onOpenProject={handleOpenProject}
+                  onOpenFile={handleOpenFile}
                 />
               )}
               {sidebarOpen && (
@@ -4224,6 +4411,7 @@ function App() {
                 workspace={workspace}
                 lang={lang}
                 executing={executing}
+                project={activeProject}
                 sidebarOpen={sidebarOpen}
                 openSidebar={() => setSidebarOpen(true)}
                 agentOpen={agentOpen}
@@ -4254,10 +4442,11 @@ function App() {
                   activeModelId={activeModelId}
                   onSwitchModel={onSwitchModel}
                   onOpenSettings={() => setSettingsOpen(true)}
+                  project={activeProject}
                 />
               )}
             </div>
-            <StatusBar lang={lang} mode={mode} workspace={workspace} />
+            <StatusBar lang={lang} mode={mode} workspace={workspace} project={activeProject} />
           </div>
         </div>
       </div>
@@ -4267,6 +4456,7 @@ function App() {
           lang={lang}
           suggestion={approval}
           tabs={flatTabs}
+          project={activeProject}
           onClose={() => setApproval(null)}
           onApprove={onApprove}
         />
