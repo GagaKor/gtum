@@ -131,18 +131,14 @@
 7. 테스트 또는 검증을 수행한다.
 8. 결과와 남은 리스크를 짧게 정리한다.
 
-## 8. 한영 동기화 원칙
+## 8. Documentation Language Policy
 
-`AGENTS.md`는 한국어 단일 문서로 운영한다.
+Source-of-truth documentation uses English as the single canonical language.
 
-다만 아래 핵심 문서는 한국어와 영어를 함께 유지한다.
-
-- `docs/product-plan.md`
-- `docs/technical-design.md`
-- `docs/mvp-backlog.md`
-- `docs/sprint-plan.md`
-- `docs/agent-team-topology.md`
-- `docs/design-system.md`
+- Write new documents and new sections in English only.
+- Do not duplicate the same policy, plan, or decision in both Korean and English.
+- Treat existing bilingual content as legacy content, then consolidate it into English when the relevant section is materially edited.
+- User conversations, temporary notes, and UI copy may use Korean when appropriate, but durable planning, technical, sprint, design-system, and agent-operation docs should avoid bilingual duplication.
 
 ## 9. 현재 저장소에서 특히 중요한 점
 

@@ -125,11 +125,12 @@
   - `frontend-design-benchmarks`
   - 필요 시 `brand-identity`
 
-## 운영 원칙 / Working Rule
+## Working Rule
 
-- 모든 핵심 문서는 한국어와 영어를 함께 유지한다.
-- 한국어와 영어는 항상 같은 의미와 최신 상태를 유지해야 한다.
-- 한국어는 사람 중심, 영어는 에이전트 중심 참조 문서로 사용한다.
+- Source-of-truth docs use English as the single canonical documentation language.
+- Do not duplicate the same policy, plan, or decision in Korean and English; this wastes context and creates drift.
+- Existing bilingual sections are legacy content and should be migrated to English-only when materially edited.
+- Korean may still be used in user conversation, temporary notes, and UI copy when appropriate.
 - 컨텍스트가 길어질 때마다 `docs/DOCS_READING_ORDER.md`를 기준으로 다시 문서를 읽는다.
 - 기본값은 전체 문서 재독이 아니라 `AGENTS.md + docs/README.md + docs/DOCS_READING_ORDER.md`를 먼저 읽고 필요한 문서만 추가로 읽는 것이다.
 - 의미 있는 작업은 항상 서브에이전트를 포함한 멀티 에이전트 팀빌딩으로 시작하며, 기본 편성은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
@@ -139,6 +140,7 @@
 
 ## 현재 결정 / Current Decisions
 
+- Documentation language policy is English-only for source-of-truth docs; existing bilingual content is legacy and should be migrated opportunistically.
 - 기본 기술 스택은 `Tauri + Rust + React + TypeScript + Vite + xterm.js + Zustand`
 - 기본 개발 운영 모델은 서브에이전트 기반 멀티 에이전트 구조이며, `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할 분리를 우선 사용한다
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다

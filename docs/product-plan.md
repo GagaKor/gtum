@@ -1,45 +1,17 @@
-# gtum 제품 기획서 / Product Plan
+# gtum Product Plan
 
-## 문서 운영 원칙 / Documentation Sync Policy
+## Documentation Language Policy
 
-### 한국어
+This document uses English as the single canonical documentation language.
 
-이 문서는 한국어와 영어를 함께 유지하는 이중 언어 문서다.
+Rules:
 
-운영 원칙은 다음과 같다.
+- New documents and new sections must be written in English only.
+- Do not maintain parallel Korean and English sections for the same meaning.
+- Existing bilingual content below is legacy content and should be consolidated into English when the relevant section is materially edited.
+- Korean may be used in user conversations, temporary notes, and UI copy when appropriate, but this source-of-truth document should avoid bilingual duplication.
 
-- 한국어와 영어는 항상 같은 의미와 최신 상태를 유지해야 한다.
-- 기능, 범위, 정책, 권한, 아키텍처가 바뀌면 두 언어를 함께 수정해야 한다.
-- 한국어는 사람이 빠르게 읽기 위한 기준 문서 역할을 한다.
-- 영어는 에이전트가 더 안정적으로 해석하고 참조하기 위한 기준 문서 역할을 한다.
-- 어느 한쪽만 먼저 수정된 상태로 오래 두지 않는다.
-
-즉, 이 문서의 한국어와 영어는 번역본과 원문 관계가 아니라 항상 동기화되어야 하는 병렬 기준 문서로 다룬다.
-
-### English
-
-This document is a bilingual source of truth maintained in both Korean and English.
-
-The operating rules are:
-
-- Korean and English must always stay aligned in meaning and freshness.
-- When features, scope, policies, permissions, or architecture change, both language sections must be updated together.
-- Korean serves as the primary human-facing reading experience.
-- English serves as the primary agent-facing reference for reliable interpretation and execution.
-- One language must not remain stale while the other has already been updated.
-
-In other words, the Korean and English sections are not treated as a source-and-translation pair. They are parallel canonical views that must stay synchronized.
-
-## 언제 읽는 문서인가 / When To Read This Document
-
-### 한국어
-
-아래 상황이면 이 문서를 읽는다.
-
-- 제품 비전, 범위, 핵심 가치, 사용자 문제 정의를 확인해야 할 때
-- provider 정책, 실행 모드, 멀티 에이전트 제품 방향 같은 상위 정책을 바꿀 때
-
-### English
+## When To Read This Document
 
 Read this document when:
 
