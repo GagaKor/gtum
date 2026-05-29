@@ -72,11 +72,14 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - [`index.html`](../index.html)
    - [`src/app/main.tsx`](../src/app/main.tsx)
    - [`src/app/providers/legacy-prototype.ts`](../src/app/providers/legacy-prototype.ts)
+   - [`src/widgets/app-shell/ui/Titlebar.tsx`](../src/widgets/app-shell/ui/Titlebar.tsx)
+   - [`src/widgets/app-shell/ui/StatusBar.tsx`](../src/widgets/app-shell/ui/StatusBar.tsx)
    - [`src/prototype.jsx`](../src/prototype.jsx)
    - [`src/styles.css`](../src/styles.css)
    - The active browser entry now starts at `src/app/main.tsx`, which is the TSX/FSD migration entrypoint.
    - `src/app/providers/legacy-prototype.ts` mounts the current uploaded design module while reusable TSX components are extracted by feature slice.
    - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
+   - `src/widgets/app-shell/ui/Titlebar.tsx` and `src/widgets/app-shell/ui/StatusBar.tsx` are the first extracted TSX/FSD app-shell components. They preserve the uploaded design class names and visible shell contract.
    - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
@@ -99,6 +102,12 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - delegates to the legacy prototype provider until each design area is extracted into reusable TSX components
 - [`src/app/providers/legacy-prototype.ts`](../src/app/providers/legacy-prototype.ts)
   - compatibility provider that imports the uploaded JSX prototype module
+- [`src/widgets/app-shell/ui/Titlebar.tsx`](../src/widgets/app-shell/ui/Titlebar.tsx)
+  - extracted TSX titlebar preserving the uploaded design root `.titlebar` and `data-comment-anchor="titlebar"`
+  - renders project name, branch, active tab, workspace status, connected provider count, and settings entry
+- [`src/widgets/app-shell/ui/StatusBar.tsx`](../src/widgets/app-shell/ui/StatusBar.tsx)
+  - extracted TSX statusbar preserving the uploaded design root `.statusbar` and `data-comment-anchor="statusbar"`
+  - renders readiness, branch, changed-file count, ahead/behind, tab/group status, execution mode, and palette hint
 - [`src/prototype.jsx`](../src/prototype.jsx)
   - legacy uploaded design module used by the TSX app entry during migration
   - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls

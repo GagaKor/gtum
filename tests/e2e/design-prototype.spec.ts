@@ -37,6 +37,35 @@ test('keeps uploaded design proportions after frontend reset', async ({ page }) 
   expect(agent!.width / scale).toBeGreaterThanOrEqual(360)
 })
 
+test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
+  await page.goto('/')
+
+  const titlebar = page.locator('.titlebar')
+  const statusbar = page.locator('.statusbar')
+
+  await expect(titlebar).toHaveCount(1)
+  await expect(statusbar).toHaveCount(1)
+  await expect(titlebar).toHaveAttribute('data-comment-anchor', 'titlebar')
+  await expect(statusbar).toHaveAttribute('data-comment-anchor', 'statusbar')
+
+  await expect(titlebar).toContainText('gtum')
+  await expect(titlebar).toContainText('aurora-monorepo')
+  await expect(titlebar).toContainText('feature/onboarding-funnel')
+  await expect(titlebar).toContainText('[backend]')
+  await expect(titlebar).toContainText('라이브 · 1 활성 에이전트')
+
+  await expect(statusbar).toContainText('준비됨')
+  await expect(statusbar).toContainText('feature/onboarding-funnel')
+  await expect(statusbar).toContainText('7 변경')
+  await expect(statusbar).toContainText('↑3 ↓0')
+  await expect(statusbar).toContainText('5 터미널 탭 · 2 그룹 · 2 실패 · 2 실행 중')
+  await expect(statusbar).toContainText('모드: Balanced')
+  await expect(statusbar).toContainText('Cmd+K로 명령 팔레트')
+
+  await titlebar.locator('.pill.icon-only').click()
+  await expect(page.locator('.settings-modal')).toBeVisible()
+})
+
 test('preserves prototype interactions without legacy frontend state', async ({ page }) => {
   await page.goto('/')
 

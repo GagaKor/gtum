@@ -87,17 +87,17 @@
 **Files:**
 - Modify: `tests/e2e/design-prototype.spec.ts`
 
-- [ ] **Step 1: Write failing test assertions for stable landmarks**
+- [x] **Step 1: Write failing test assertions for stable landmarks**
 
 Add assertions that titlebar, sidebar, center, agent panel, and statusbar still render after TSX extraction.
 
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 2: Run the focused test**
 
 Run: `npm run test:e2e -- tests/e2e/design-prototype.spec.ts`
 
 Expected: PASS before implementation; this is a guard test for upcoming refactors.
 
-- [ ] **Step 3: Commit guard coverage**
+- [x] **Step 3: Commit guard coverage**
 
 Run:
 
@@ -114,11 +114,11 @@ git commit -m "test: guard design shell extraction"
 - Modify: `src/prototype.jsx`
 - Modify: `docs/architecture.md`
 
-- [ ] **Step 1: Move titlebar JSX into `Titlebar.tsx`**
-- [ ] **Step 2: Move statusbar JSX into `StatusBar.tsx`**
-- [ ] **Step 3: Keep existing class names and visible copy unchanged**
-- [ ] **Step 4: Import TSX components from `src/prototype.jsx`**
-- [ ] **Step 5: Run verification**
+- [x] **Step 1: Move titlebar JSX into `Titlebar.tsx`**
+- [x] **Step 2: Move statusbar JSX into `StatusBar.tsx`**
+- [x] **Step 3: Keep existing class names and visible copy unchanged**
+- [x] **Step 4: Import TSX components from `src/prototype.jsx`**
+- [x] **Step 5: Run verification**
 
 Run:
 
@@ -130,7 +130,7 @@ npm run test:e2e -- tests/e2e/design-prototype.spec.ts
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 

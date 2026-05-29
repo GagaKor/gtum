@@ -5,6 +5,8 @@ import {
   createProjectRuntimeService,
   hasTauriRuntime,
 } from './shared/api/runtimeProjects'
+import { StatusBar } from './widgets/app-shell/ui/StatusBar'
+import { Titlebar } from './widgets/app-shell/ui/Titlebar'
 import './styles.css'
 
 const ReactDOM = { createRoot }
@@ -3867,76 +3869,6 @@ const EXEC_OUTPUTS = {
   ],
 };
 
-function Titlebar({ lang, workspace, providers, project, openOAuth, openSettings }) {
-  const connected = providers.filter((p) => p.state === "connected");
-  const activeTab = activeTabOf(workspace);
-  const wsStatus = workspaceStatus(workspace);
-  const groupCount = Object.keys(workspace.groups).length;
-  const activeProject = project || PROJECT;
-  return (
-    <div className="titlebar" data-comment-anchor="titlebar">
-      <div className="traffic">
-        <span className="dot red" />
-        <span className="dot yellow" />
-        <span className="dot green" />
-      </div>
-      <div className="title-center">
-        <span className="brand-dot" />
-        <span className="brand">gtum</span>
-        <span className="sep">›</span>
-        <span>{activeProject.name}</span>
-        <span className="sep">·</span>
-        <span style={{ color: "var(--accent)" }}>{activeProject.branch}</span>
-        <span className="sep">·</span>
-        <span>[{activeTab?.title || "—"}]</span>
-        {groupCount > 1 && (
-          <span style={{ color: "var(--text-faint)" }}>· {groupCount} groups</span>
-        )}
-      </div>
-      <div className="title-right">
-        <span className="pill">
-          <span className={"dot" + (wsStatus === "failed" ? " warn" : "")} />
-          {lang === "ko" ? "라이브" : "Live"} · {connected.length} {t(lang, "activeAgent")}
-        </span>
-        <button
-          className="pill icon-only"
-          onClick={openSettings}
-          title={t(lang, "settingsTitle")}
-        ><Icon.gear /></button>
-      </div>
-    </div>
-  );
-}
-
-function StatusBar({ lang, mode, workspace, project }) {
-  const tabsList = allTabs(workspace);
-  const failed = tabsList.filter(({ tab }) => tab.status === "failed").length;
-  const running = tabsList.filter(({ tab }) => tab.status === "running").length;
-  const groupCount = Object.keys(workspace.groups).length;
-  const activeProject = project || PROJECT;
-  return (
-    <div className="statusbar" data-comment-anchor="statusbar">
-      <span className="item ok"><Icon.dot /> {t(lang, "statusReady")}</span>
-      <span className="sep">·</span>
-      <span className="item"><Icon.branch /> {activeProject.branch}</span>
-      <span className="sep">·</span>
-      <span className="item warn">{activeProject.changedFiles} {t(lang, "changes")}</span>
-      <span className="sep">·</span>
-      <span className="item">↑{activeProject.ahead} ↓{activeProject.behind}</span>
-      <span className="sep">·</span>
-      <span className="item">
-        {tabsList.length} {t(lang, "tabsLabel")} · {groupCount} {lang === "ko" ? "그룹" : "groups"}
-        {failed > 0 && <span style={{ color: "var(--err)" }}> · {failed} {t(lang, "failed")}</span>}
-        {running > 0 && <span style={{ color: "var(--accent)" }}> · {running} {t(lang, "running")}</span>}
-      </span>
-      <span className="spacer" />
-      <span className="item">{t(lang, "mode")}: <span style={{ color: "var(--accent)" }}>{t(lang, mode)}</span></span>
-      <span className="sep">·</span>
-      <span className="item"><span className="kbd">⌘K</span> {t(lang, "statusBarHint")}</span>
-    </div>
-  );
-}
-
 function App() {
   const [t_, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const lang = t_.lang;
@@ -4301,7 +4233,15 @@ function App() {
       <div className="gtum-stage" ref={stageRef}>
         <div className="gtum-scaler" ref={scalerRef}>
           <div className="gtum-window">
-            <Titlebar lang={lang} workspace={workspace} providers={providers} project={activeProject} openOAuth={openOAuth} openSettings={() => setSettingsOpen(true)} />
+            <Titlebar
+              lang={lang}
+              workspace={workspace}
+              providers={providers}
+              project={activeProject}
+              icons={Icon}
+              translate={t}
+              openSettings={() => setSettingsOpen(true)}
+            />
             <div
               className={"body-grid" +
                 (!sidebarOpen ? " sidebar-closed" : "") +
@@ -4369,7 +4309,14 @@ function App() {
                 />
               )}
             </div>
-            <StatusBar lang={lang} mode={mode} workspace={workspace} project={activeProject} />
+            <StatusBar
+              lang={lang}
+              mode={mode}
+              workspace={workspace}
+              project={activeProject}
+              icons={Icon}
+              translate={t}
+            />
           </div>
         </div>
       </div>
