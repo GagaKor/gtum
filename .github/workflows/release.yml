@@ -83,11 +83,30 @@ jobs:
 
             Included artifacts depend on the runner platform:
             - Ubuntu: AppImage / deb / rpm where available
-            - Windows: installer executable artifacts
+            - Windows: installer artifacts
             - macOS: unsigned app bundle / dmg artifacts
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify Windows install artifacts
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $artifacts = Get-ChildItem -Path "src-tauri/target" -Recurse -File |
+            Where-Object {
+              $_.FullName -match "[\\/](bundle)[\\/]" -and
+              $_.Extension -in @(".exe", ".msi")
+            }
+
+          if (-not $artifacts) {
+            Write-Error "Expected at least one Windows .exe or .msi installer artifact under src-tauri/target/*/bundle, but none were found."
+            exit 1
+          }
+
+          "### Windows install artifacts" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          $artifacts | ForEach-Object { $_.FullName } >> $env:GITHUB_STEP_SUMMARY
 
       - name: Verify macOS install artifacts
         if: matrix.platform == 'macos-latest'

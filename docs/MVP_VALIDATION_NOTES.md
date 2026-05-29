@@ -68,6 +68,8 @@ This does not replace long-duration manual aging validation, but it serves as th
 - `Windows`
   - first daily-use baseline platform
   - shell-candidate abstraction and command-submission newline handling are in place
+  - native app compile path is covered by the `windows-install-smoke` CI job
+  - Release workflow requires at least one `.exe` or `.msi` artifact from the Windows runner
   - real-device validation is still required
 - `macOS`
   - covered by the non-Windows shell abstraction path

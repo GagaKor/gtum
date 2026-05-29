@@ -80,9 +80,10 @@ npm run tauri:bundle
 - `npm run tauri:bundle`
   - creates platform-specific installable artifacts
 
-macOS install support is currently explicit at the artifact level:
+Windows and macOS install support is currently explicit at the artifact level:
 
-- CI runs a macOS `tauri build --no-bundle` smoke job.
+- CI runs Windows and macOS `tauri build --no-bundle` smoke jobs.
+- The Release workflow builds on `windows-latest` and fails if no `.exe` or `.msi` installer artifact is produced.
 - The Release workflow builds on `macos-latest` and fails if both `.app` and `.dmg` artifacts are not produced.
 - macOS signing and notarization are not implemented yet, so generated macOS artifacts should be treated as unsigned builds.
 
