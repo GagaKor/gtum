@@ -84,7 +84,34 @@ jobs:
             Included artifacts depend on the runner platform:
             - Ubuntu: AppImage / deb / rpm where available
             - Windows: installer executable artifacts
-            - macOS: app bundle / dmg where available
+            - macOS: unsigned app bundle / dmg artifacts
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify macOS install artifacts
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          app_artifacts="$(find src-tauri/target -path '*/bundle/macos/*' -name '*.app' -print)"
+          dmg_artifacts="$(find src-tauri/target -path '*/bundle/dmg/*' -name '*.dmg' -print)"
+
+          if [ -z "$app_artifacts" ]; then
+            echo "Expected at least one macOS .app artifact under src-tauri/target/*/bundle/macos, but none were found." >&2
+            exit 1
+          fi
+
+          if [ -z "$dmg_artifacts" ]; then
+            echo "Expected at least one macOS .dmg artifact under src-tauri/target/*/bundle/dmg, but none were found." >&2
+            exit 1
+          fi
+
+          {
+            echo "### macOS install artifacts"
+            echo
+            echo "#### .app"
+            printf '%s\n' "$app_artifacts"
+            echo
+            echo "#### .dmg"
+            printf '%s\n' "$dmg_artifacts"
+          } >> "$GITHUB_STEP_SUMMARY"

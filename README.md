@@ -68,7 +68,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 npm run test:e2e
 ```
 
-## 배포용 빌드 / Production Builds
+## Production Builds
 
 ```bash
 npm run tauri:build
@@ -76,16 +76,18 @@ npm run tauri:bundle
 ```
 
 - `npm run tauri:build`
-  - 번들 없이 네이티브 빌드 경로를 검증합니다.
+  - validates the native Tauri build path without creating installers
 - `npm run tauri:bundle`
-  - 플랫폼별 배포 산출물을 만듭니다.
+  - creates platform-specific installable artifacts
 
-- `npm run tauri:build`
-  - verifies the native build path without packaging
-- `npm run tauri:bundle`
-  - creates platform-specific distributable artifacts
+macOS install support is currently explicit at the artifact level:
 
-현재 릴리즈 정책은 `master`에 머지되면 GitHub Actions가 자동으로 빌드 후 GitHub Release에 업로드하는 방식입니다.
+- CI runs a macOS `tauri build --no-bundle` smoke job.
+- The Release workflow builds on `macos-latest` and fails if both `.app` and `.dmg` artifacts are not produced.
+- macOS signing and notarization are not implemented yet, so generated macOS artifacts should be treated as unsigned builds.
+
+Local Tauri builds require a Rust toolchain with `cargo` available on `PATH`; CI installs Rust before running native build steps.
+
 The current release policy is to build and publish automatically to GitHub Releases when changes are merged into `master`.
 
 ## 문서 / Documentation

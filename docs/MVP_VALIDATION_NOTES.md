@@ -61,21 +61,7 @@ The current aging test repeats the following in Playwright:
 
 This does not replace long-duration manual aging validation, but it serves as the first evidence of state persistence and repeated-use stability for the MVP.
 
-## 플랫폼 상태 / Platform Status
-
-### 한국어
-
-- `Ubuntu`
-  - 현재 주요 개발 플랫폼
-- `Windows`
-  - 첫 실사용 기준 플랫폼
-  - 셸 후보 추상화와 command submission line 분기까지 반영됨
-  - real-device 검증은 아직 필요
-- `macOS`
-  - 비-Windows 셸 후보 추상화 범위에 포함됨
-  - 실기 검증은 아직 필요
-
-### English
+## Platform Status
 
 - `Ubuntu`
   - current primary development platform
@@ -85,26 +71,18 @@ This does not replace long-duration manual aging validation, but it serves as th
   - real-device validation is still required
 - `macOS`
   - covered by the non-Windows shell abstraction path
+  - native app compile path is covered by the `macos-install-smoke` CI job
+  - Release workflow requires both `.app` and `.dmg` artifacts from the macOS runner
+  - signing and notarization are not implemented yet
   - real-device validation is still required
 
-## 현재 MVP 판단 / Current MVP Assessment
-
-### 한국어
-
-현재 기준으로 `gtum`은 문서에 정의한 MVP 핵심 흐름을 충족한다. 다만 아래는 `Post-MVP` 또는 후속 안정화 과제로 남는다.
-
-- `Codex` real `OAuth/session login` 경로 구현
-- 세션 만료, 취소, 재연결, scope 부족 검증
-- 실제 Windows/macOS 실기 검증
-- 장시간 수동 aging test 확대
-- Telegram 외부 채널 연동
-
-### English
+## Current MVP Assessment
 
 At the current stage, `gtum` satisfies the core MVP flows defined in the planning documents. The following remain post-MVP or later stabilization work:
 
 - real `Codex` `OAuth/session login` implementation
 - session expiry, cancellation, reconnect, and missing-scope validation
 - real-device Windows/macOS validation
+- signed and notarized macOS distribution
 - expanded long-running manual aging validation
 - Telegram external-channel integration
