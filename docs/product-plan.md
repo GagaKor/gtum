@@ -1,40 +1,56 @@
-# gtum 제품 기획서 / Product Plan
+# gtum Product Plan
 
-## 문서 운영 원칙 / Documentation Sync Policy
+## Documentation Language Policy
+
+This document uses English as the single canonical documentation language.
+
+Rules:
+
+- New documents and new sections must be written in English only.
+- Do not maintain parallel Korean and English sections for the same meaning.
+- Existing bilingual content below is legacy content and should be consolidated into English when the relevant section is materially edited.
+- Korean may be used in user conversations, temporary notes, and UI copy when appropriate, but this source-of-truth document should avoid bilingual duplication.
+
+## When To Read This Document
+
+Read this document when:
+
+- you need to confirm product vision, scope, core value, or user problem framing
+- you are changing top-level policies such as provider direction, execution modes, or multi-agent product behavior
+
+## 장문 문서 라우팅 / Long-Doc Routing
 
 ### 한국어
 
-이 문서는 한국어와 영어를 함께 유지하는 이중 언어 문서다.
+이 문서는 200줄을 넘는 장문 기준 문서다. 기본값은 끝까지 읽는 것이 아니라 아래 경로 중 필요한 것만 읽는 것이다.
 
-운영 원칙은 다음과 같다.
-
-- 한국어와 영어는 항상 같은 의미와 최신 상태를 유지해야 한다.
-- 기능, 범위, 정책, 권한, 아키텍처가 바뀌면 두 언어를 함께 수정해야 한다.
-- 한국어는 사람이 빠르게 읽기 위한 기준 문서 역할을 한다.
-- 영어는 에이전트가 더 안정적으로 해석하고 참조하기 위한 기준 문서 역할을 한다.
-- 어느 한쪽만 먼저 수정된 상태로 오래 두지 않는다.
-
-즉, 이 문서의 한국어와 영어는 번역본과 원문 관계가 아니라 항상 동기화되어야 하는 병렬 기준 문서로 다룬다.
+- 제품 비전, 핵심 문제, 핵심 원칙만 확인할 때
+  - 이 문서의 앞부분만 읽는다.
+- provider 정책, 플랫폼 기준, 실행 모드 정책을 확인할 때
+  - 이 문서와 `technical-design.md`를 같이 읽는다.
+- 현재 구현 구조나 데이터 흐름이 궁금할 때
+  - 이 문서 대신 `architecture.md`, `message-flow.md`를 먼저 읽는다.
+- 역할 분리나 팀 운영 모델이 궁금할 때
+  - `agent-team-topology.md`를 먼저 읽는다.
 
 ### English
 
-This document is a bilingual source of truth maintained in both Korean and English.
+This document exceeds 200 lines. Do not read it end to end by default. Use only the route that matches your question.
 
-The operating rules are:
-
-- Korean and English must always stay aligned in meaning and freshness.
-- When features, scope, policies, permissions, or architecture change, both language sections must be updated together.
-- Korean serves as the primary human-facing reading experience.
-- English serves as the primary agent-facing reference for reliable interpretation and execution.
-- One language must not remain stale while the other has already been updated.
-
-In other words, the Korean and English sections are not treated as a source-and-translation pair. They are parallel canonical views that must stay synchronized.
+- when you only need vision, problem framing, or core principles
+  - read only the front portion of this doc
+- when you need provider policy, platform baseline, or execution-mode policy
+  - read this doc together with `technical-design.md`
+- when you need current implementation structure or data flow
+  - read `architecture.md` and `message-flow.md` first instead of continuing through this whole doc
+- when you need role split or team-operating model
+  - read `agent-team-topology.md` first
 
 ## 개요 / Overview
 
 ### 한국어
 
-`gtum`은 프로젝트, 터미널, AI 에이전트를 하나의 로컬 데스크톱 워크스페이스에서 함께 다루기 위한 제품이다.
+`gtum`은 프로젝트, 코드 에디터, AI 에이전트, 그리고 필요할 때 강하게 전환해 쓰는 터미널 세션을 하나의 로컬 데스크톱 워크스페이스에서 함께 다루기 위한 제품이다.
 
 이 제품은 다음 세 가지 감각을 결합하는 것을 목표로 한다.
 
@@ -42,11 +58,18 @@ In other words, the Korean and English sections are not treated as a source-and-
 - `cmux`의 터미널 멀티플렉싱 감각
 - 프로젝트와 터미널 상태를 함께 읽는 에이전트 협업 레이어
 
-즉, 단순한 터미널 에뮬레이터가 아니라 프로젝트 중심으로 작업을 조직하고, 탭 단위로 실행 흐름을 분리하며, 에이전트가 그 맥락을 이해하고 도와주는 작업 환경을 만드는 것이 핵심이다.
+즉, 단순한 터미널 에뮬레이터가 아니라 `VS Code`처럼 코드를 읽기 쉬운 editor surface와 `conductor`처럼 에이전트를 관리하는 orchestration surface를 중심에 두고, 필요할 때 강한 터미널 mode로 전환하는 작업 환경을 만드는 것이 핵심이다.
+
+이 제품은 개인적인 실제 사용 경험에서 나온 문제를 해결하려는 시도이기도 하다.
+
+- `cmux`는 멀티 터미널 사용감은 좋았지만, IDE 성격이 약해서 코드를 함께 읽고 판단하기에 불편했다.
+- `conductor`는 에이전트 관리, 코드 열람, VS Code 연동은 좋았지만, 터미널 기능이 약해서 실제 테스트 중인 로그를 자연스럽게 공유하고 활용하기 어려웠다.
+
+`gtum`은 이 둘의 장점을 결합하면서, 특히 "코드를 보면서 에이전트를 운영하고, 동시에 현재 테스트 중인 터미널 로그를 바로 공유하고 활용할 수 있는 환경"을 목표로 한다.
 
 ### English
 
-`gtum` is a local desktop workspace for managing projects, terminals, and AI agents together.
+`gtum` is a local desktop workspace for managing projects, code editors, AI agents, and strong on-demand terminal sessions together.
 
 The product combines:
 
@@ -54,7 +77,14 @@ The product combines:
 - the terminal multiplexing feel of `cmux`
 - an agent collaboration layer that can read both project and terminal state
 
-The goal is not to build another terminal emulator. The goal is to build a project-centric workspace where users organize work by project, separate execution flows by tab, and let agents assist with full context.
+The goal is not to build another terminal emulator. The goal is to center a `VS Code`-like editor surface and a `conductor`-like agent-orchestration surface, while letting users switch into a stronger terminal mode whenever execution work requires it.
+
+This product also comes from direct hands-on frustration with existing tools.
+
+- `cmux` felt strong as a multi-terminal tool, but lacked enough IDE-like affordances to make code reading and inspection comfortable.
+- `conductor` was strong at agent management, code visibility, and VS Code integration, but its terminal capabilities were weak enough that sharing and using live testing logs felt awkward.
+
+`gtum` is intended to combine the strengths of both while specifically solving this gap: operating agents while reading code, and at the same time sharing and using live terminal logs from active testing workflows.
 
 ## 제품 비전 / Product Vision
 
@@ -67,8 +97,11 @@ The goal is not to build another terminal emulator. The goal is to build a proje
 - 로컬 프로젝트 열기
 - 작업 목적에 따라 터미널 탭 분리하기
 - 프로젝트 파일과 작업 상태를 터미널과 함께 관리하기
-- 에이전트가 프로젝트와 터미널 맥락을 읽도록 하기
+- 코드를 읽고 흐름을 추적할 수 있는 editor-like surface를 확보하기
+- 에이전트가 프로젝트, 선택 파일, 터미널 맥락을 읽도록 하기
 - 에이전트가 제안한 작업을 승인 후 실행하기
+- 현재 테스트 중인 터미널 로그를 에이전트와 자연스럽게 공유하기
+- 지금까지 밟아온 승인, 실패, 재시도 경로를 되짚어 문제를 파악하고 개선하기
 
 ### English
 
@@ -79,8 +112,37 @@ The app should make it easy to:
 - open a local project
 - split terminal tabs by task
 - manage project files and task state alongside terminals
-- let agents read project and terminal context
+- keep an editor-like surface where users can read code and trace flow comfortably
+- let agents read project, selected-file, and terminal context
 - approve and execute agent-suggested actions
+- share active testing logs with agents naturally inside the same workspace
+- review the path of approvals, failures, and retries already taken so problems can be diagnosed and improved
+
+## 해결하려는 문제 / Problem Statement
+
+### 한국어
+
+`gtum`이 해결하려는 핵심 문제는 다음과 같다.
+
+1. 좋은 멀티 터미널 경험과 좋은 코드 탐색 경험이 하나의 앱 안에서 잘 결합되지 않는다.
+2. 에이전트 관리가 잘 되는 도구는 있어도, 현재 실행 중인 터미널 로그를 작업 맥락으로 다루는 경험이 약하다.
+3. 테스트와 디버깅 중 생성되는 실시간 로그를 코드, 프로젝트 구조, 에이전트 작업 흐름과 함께 연결하기 어렵다.
+4. 에이전트에 일을 전임해도 사용자는 결국 코드를 읽고 흐름을 따라가야 하는데, 기존 도구는 코드 보기 surface나 대화 가시성이 불편한 경우가 많다.
+5. 지금까지 어떤 시도와 승인, 실패, 우회가 있었는지 한눈에 재구성하기 어려우면 반복 문제를 개선하기 어렵다.
+
+즉, `gtum`은 "프로젝트, 코드, 터미널, 에이전트"가 분리된 도구들 사이를 오가는 불편함을 줄이는 것을 목표로 한다.
+
+### English
+
+The core problems `gtum` is trying to solve are:
+
+1. strong multi-terminal workflows and strong code-reading workflows are rarely combined well in a single app
+2. some tools manage agents well, but do not treat live terminal logs as first-class working context
+3. real-time logs produced during testing and debugging are hard to connect with code, project structure, and agent workflows
+4. even when work is delegated to agents, users still need to read code and trace flow, but existing tools often make code-viewing surfaces or agent conversations uncomfortable
+5. if users cannot reconstruct which attempts, approvals, failures, and detours already happened, recurring workflow problems are hard to improve
+
+In short, `gtum` aims to reduce the friction of constantly switching between separate tools for projects, code, terminals, and agents.
 
 ## 핵심 원칙 / Core Principles
 
@@ -96,6 +158,12 @@ The app should make it easy to:
    초기 버전은 원격 인프라 없이도 로컬 개발 환경에서 충분히 가치 있어야 한다.
 5. 안전한 자동화
    읽기는 쉽게, 실행은 통제 가능하게 설계한다.
+6. 팀빌딩 우선
+   의미 있는 작업은 단일 에이전트보다 서브에이전트를 포함한 멀티 에이전트 팀빌딩을 기본값으로 삼고, `planner + orchestrator + designer + frontend + backend + QA + tester` 분업을 먼저 적용한다.
+7. 코드 읽기 우선
+   에이전트 위임이 있더라도 사용자가 코드를 읽고 흐름을 따라갈 수 있는 surface는 1급 작업 영역이어야 하며, 단순 사이드바나 하단 채팅 패널로 밀어넣지 않는다.
+8. 경로 가시성 우선
+   task history, validation notes, sprint 문서, path recap UI는 단순 기록이 아니라 사용자가 이미 밟아온 경로, 승인, 실패, 재시도를 재구성해 문제점을 파악하고 개선안을 만들 수 있는 입력이어야 한다.
 
 ### English
 
@@ -109,20 +177,26 @@ The app should make it easy to:
    The first version should be valuable in local development environments without remote infrastructure.
 5. Safe automation
    Reading should be easy, execution should remain controlled.
+6. Team-building first
+   Non-trivial work should default to multi-agent team formation with sub-agents, starting from the `planner + orchestrator + designer + frontend + backend + QA + tester` split before any narrower path.
+7. Code-reading first
+   Even with agent delegation, the surface for reading code and tracing flow should remain first-class rather than collapsing into a sidebar-only or bottom-panel chat model.
+8. Path-visibility first
+   task history, validation notes, sprint docs, and path-recap UI should function as interpretable inputs that help users reconstruct prior approvals, failures, and retries so recurring problems can be improved.
 
 ## 대상 사용자 / Target Users
 
 ### 한국어
 
 - 여러 서비스와 명령을 동시에 다루는 개발자
-- 터미널 중심 작업 흐름 안에서 에이전트 도움을 받고 싶은 사용자
-- 실행, 테스트, 디버깅, 배포 루틴을 프로젝트 단위로 관리하고 싶은 사용자
+- editor 중심으로 코드를 읽으면서 에이전트를 운영하고 싶은 사용자
+- 실행, 테스트, 디버깅, 배포 루틴을 필요할 때 터미널 mode로 전환해 다루고 싶은 사용자
 
 ### English
 
 - developers working across multiple services and commands
-- users who want agent assistance inside terminal-heavy workflows
-- users who want to manage run, test, debug, and deploy routines by project
+- users who want to operate agents while staying inside an editor-first workflow
+- users who want to switch into a strong terminal mode when execution, testing, debugging, or deployment needs it
 
 ## 지원 플랫폼 / Supported Platforms
 
@@ -133,6 +207,8 @@ The app should make it easy to:
 - Ubuntu
 - Windows
 - macOS
+
+개발 편의상 Ubuntu를 주요 개발 환경으로 사용할 수 있지만, 첫 실사용 판단과 UX 마찰 측정은 Windows를 기준으로 삼는다.
 
 초기 설계와 구현은 처음부터 크로스 플랫폼을 전제로 해야 한다.
 
@@ -147,6 +223,8 @@ The app should make it easy to:
 - Ubuntu
 - Windows
 - macOS
+
+Ubuntu may remain the primary development environment, but first daily-use validation and UX-friction assessment are anchored on Windows.
 
 The architecture and implementation should be cross-platform from the start.
 
@@ -166,7 +244,7 @@ The architecture and implementation should be cross-platform from the start.
 
 - `master`
   - 안정 기준 브랜치
-- `develop`
+- `dev`
   - 통합 개발 브랜치
 - `feature/*`
   - 기능 개발, 문서 작업, 기술 실험
@@ -175,7 +253,7 @@ The architecture and implementation should be cross-platform from the start.
 - `hotfix/*`
   - 긴급 수정
 
-초기에는 `master`만 있어도 괜찮지만, 실제 구현이 시작되면 최소한 `develop`과 `feature/*` 운영을 도입하는 것이 바람직하다.
+초기에는 `master`만 있어도 괜찮지만, 실제 구현이 시작되면 최소한 `dev`와 `feature/*` 운영을 도입하는 것이 바람직하다.
 
 ### English
 
@@ -187,7 +265,7 @@ The recommended branch roles are:
 
 - `master`
   - stable baseline branch
-- `develop`
+- `dev`
   - integration branch
 - `feature/*`
   - feature work, documentation work, and technical experiments
@@ -196,7 +274,7 @@ The recommended branch roles are:
 - `hotfix/*`
   - urgent fixes
 
-It is acceptable to start with only `master`, but once implementation begins, introducing at least `develop` and `feature/*` is recommended.
+It is acceptable to start with only `master`, but once implementation begins, introducing at least `dev` and `feature/*` is recommended.
 
 ## 주요 사용 시나리오 / Main Use Cases
 
@@ -210,6 +288,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - 파일 트리
 - Git 브랜치와 변경 상태
 - 저장된 터미널 탭
+- 열린 editor/terminal 탭과 split group 상태
 - 활성 에이전트 목록
 
 #### 2. 멀티 탭 터미널 작업
@@ -222,6 +301,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - `deploy`
 
 각 탭은 독립적인 셸 세션과 출력 기록을 가진다.
+새 디자인 기준에서는 터미널 탭뿐 아니라 read-only editor 탭도 같은 중앙 workbench 안에서 열리고, 사용자는 탭을 끌어 새 group으로 분리하거나 좌우/상하 split으로 배치할 수 있다.
 
 #### 3. 에이전트 관찰
 
@@ -231,8 +311,10 @@ It is acceptable to start with only `master`, but once implementation begins, in
 - 선택된 파일
 - 현재 탭의 터미널 출력
 - 최근 작업 기록
+- 승인, 실패, 재시도, 우회 경로 요약
 
 이를 바탕으로 에러를 요약하거나, 문제 원인을 설명하거나, 다음 작업을 제안할 수 있다.
+또한 사용자가 이미 밟은 경로를 다시 읽고 반복 문제를 드러낼 수 있어야 한다.
 
 #### 4. 에이전트 보조 실행
 
@@ -247,7 +329,7 @@ It is acceptable to start with only `master`, but once implementation begins, in
 
 #### 5. 에이전트 계정 연결
 
-사용자는 API 토큰을 직접 입력하는 방식이 아니라, 에이전트 제공자 계정을 로그인 방식으로 연결한다.
+사용자는 에이전트 제공자를 앱이 관리하는 연결 경로로 연결한다.
 
 초기 지원 대상은 다음과 같다.
 
@@ -256,9 +338,42 @@ It is acceptable to start with only `master`, but once implementation begins, in
 
 인증 방식은 다음 원칙을 따른다.
 
-- 사용자는 OAuth 또는 이에 준하는 공식 로그인 흐름으로 계정을 연결한다.
-- 장기 API 토큰을 직접 복사해서 붙여넣는 UX는 기본 경로로 채택하지 않는다.
-- 연결된 계정 상태, 권한 범위, 로그인 만료 여부를 앱 안에서 확인할 수 있어야 한다.
+- 첫 실사용 `Codex` 경로의 목표는 `Conductor`나 `Codex CLI`와 유사한 `OAuth/session login`이다.
+- 장기 API 토큰이나 `OPENAI_API_KEY`를 최종 사용자 기본 연결 경로로 채택하지 않는다.
+- 개발 중 임시로 env/API key bridge를 둘 수는 있지만, 이는 release target이 아니라 내부 브리지로만 취급한다.
+- 연결된 계정 상태, 권한 범위, 연결 준비 상태를 앱 안에서 확인할 수 있어야 한다.
+
+#### 6. 원격 명령 및 리포트 채널
+
+사용자는 데스크톱 앱 안에서만 작업하는 것이 아니라, 외부 메시징 채널을 통해서도 상태를 받고 명령을 보낼 수 있으면 좋다.
+
+초기 후보 채널은 다음과 같다.
+
+- `SMS`
+- `Telegram` 연동
+
+이 기능의 목적은 다음과 같다.
+
+- 현재 실행 중인 작업의 상태를 원격에서 확인
+- 간단한 명령을 원격으로 전달
+- 작업 완료, 실패, 승인 필요 상태를 메시지로 리포트
+
+다만 이 기능은 보안과 인증 경계가 중요하므로, `MVP 완료 후` 다음 단계 확장 기능으로 도입하는 것이 바람직하다.
+
+#### 7. 설정과 실행 정책
+
+새 디자인 시안은 설정을 별도 보조 화면이 아니라 제품의 실행 통제면으로 본다.
+
+설정은 최소한 다음을 다룬다.
+
+- provider 연결과 세션 상태
+- provider별 기본 모델 선택
+- accent 같은 외관 설정
+- `Fast`, `Balanced`, `Deep` 실행 모드
+- 병렬 worker 수와 응답 스트리밍
+- 위험도별 승인 정책
+- trusted directory와 forbidden pattern
+- 자동 승인 이력과 undo 가능한 알림
 
 ### English
 
@@ -270,6 +385,7 @@ When a user opens a local repository, the app should show:
 - file tree
 - Git branch and working state
 - saved terminal tabs
+- open editor/terminal tabs and split-group state
 - active agents
 
 #### 2. Multi-Tab Terminal Work
@@ -282,6 +398,7 @@ The user creates task-focused tabs such as:
 - `deploy`
 
 Each tab has its own shell session and output history.
+In the updated design baseline, read-only editor tabs and terminal tabs live inside the same center workbench. Users can drag tabs into new groups or split them horizontally and vertically.
 
 #### 3. Agent Observation
 
@@ -289,10 +406,16 @@ An agent can read:
 
 - current project structure
 - selected files
+- the active read-only code surface or excerpt from the selected file
 - terminal output from the current tab
 - recent task history
+- summarized approvals, failures, retries, and detours
 
 Based on that context, the agent can summarize issues, explain likely causes, or suggest next steps.
+It should also help users reread the path already taken and expose recurring problems.
+
+The first code-reading delivery should remain read-only.
+Editing, saving, and diff application can follow later, but the MVP path should first prove that users can read code, compare it with live logs, and understand why an approval was suggested.
 
 #### 4. Agent-Assisted Execution
 
@@ -307,7 +430,7 @@ Execution happens only after user approval.
 
 #### 5. Agent Account Connection
 
-Users connect agent providers through account login flows rather than by pasting raw API tokens.
+Users connect agent providers through app-managed connection paths rather than by pasting raw API tokens into the UI.
 
 The initial supported providers are:
 
@@ -316,15 +439,57 @@ The initial supported providers are:
 
 The authentication model follows these rules:
 
-- users connect accounts through OAuth or an equivalent official login flow
-- manually pasting long-lived API tokens is not the default path
-- the app should show connection state, granted scopes, and token expiration or session validity
+- the target first daily-use `Codex` path is `OAuth/session login`, similar in shape to `Conductor` or `Codex CLI`
+- long-lived API tokens or `OPENAI_API_KEY` should not become the default end-user connection path
+- an env/API-key bridge may exist temporarily during development, but it is an internal bridge rather than the release target
+- the app should show connection state, granted scopes, and readiness diagnostics
+
+#### 6. Remote Command and Report Channels
+
+Users may also want to receive status updates and send commands through external messaging channels, not only from inside the desktop app.
+
+The initial candidate channels are:
+
+- `SMS`
+- `Telegram`
+
+The goals of this feature are:
+
+- check the state of running work remotely
+- send lightweight commands from outside the desktop app
+- receive reports for completion, failure, or approval-required states
+
+Because this adds important security and authentication boundaries, it should be introduced after the base desktop workflow is stable.
+
+#### 7. Settings and Execution Policy
+
+The updated design treats settings as an execution-control surface, not a secondary preferences page.
+
+Settings should cover at least:
+
+- provider connections and session state
+- default model selection per provider
+- appearance settings such as the accent color
+- `Fast`, `Balanced`, and `Deep` execution modes
+- parallel worker count and response streaming
+- approval policy by risk level
+- trusted directories and forbidden patterns
+- auto-approval history and undoable notifications
 
 ## 정보 구조 / Information Architecture
 
 ### 한국어
 
-앱은 크게 세 가지 영역으로 구성된다.
+앱은 크게 네 가지 영역과 상단/하단 상태 shell로 구성된다.
+
+#### Workbench Shell
+
+역할:
+
+- 현재 프로젝트, 브랜치, 활성 탭, split group 수를 상단 titlebar에서 표시
+- 연결된 provider 수와 현재 실행 모드를 상단 또는 하단 상태 영역에서 표시
+- branch, 변경 파일 수, ahead/behind, tab/group 상태를 status bar에서 빠르게 확인
+- 큰 대시보드 카드 대신 editor/terminal/agent가 바로 작업 가능한 상태로 보이게 함
 
 #### Projects
 
@@ -333,6 +498,8 @@ The authentication model follows these rules:
 - 로컬 폴더 연결
 - 파일 트리 및 메타데이터 표시
 - Git 상태 요약
+- 현재 프로젝트와 최근 프로젝트를 compact project row로 표시
+- `Projects`와 `Files`를 독립적으로 접고 펼치는 accordion section으로 제공
 - 저장된 워크스페이스와 실행 프리셋 관리
 - 프로젝트 단위 작업 추적
 
@@ -340,24 +507,48 @@ The authentication model follows these rules:
 
 역할:
 
+- read-only editor tab과 terminal tab을 같은 workbench tab model로 관리
 - 터미널 탭 생성 및 관리
-- 이후 버전에서 pane 분할 지원
+- tab drag/drop, context menu, 좌우/상하 split group 지원
 - 명령 기록과 출력 로그 유지
 - 세션 복원
+- 현재까지의 실행 경로와 재시도 흐름을 다시 읽을 수 있게 유지
 
 #### Agents
 
 역할:
 
 - 프로젝트와 터미널 상태 관찰
+- 선택된 파일, 현재 탭 출력, 최근 명령을 context summary로 표시
+- provider/model picker와 실행 모드를 한 줄에서 조정
 - 문제 설명
 - 작업 제안
 - 승인된 명령 실행
 - 작업 진행 상태 추적
+- 어떤 경로가 실패했고 어떤 개선이 필요한지 요약
+
+#### Settings and Execution Policy
+
+역할:
+
+- provider 연결, 모델 선택, 외관, 실행 정책, 제품 정보를 한 화면에서 관리
+- 위험도별 승인 정책을 `always ask`, `auto`, `trusted dirs only`로 구분
+- high-risk 명령은 항상 명시 승인으로 고정
+- forbidden pattern은 정책과 무관하게 차단 또는 재확인
+- 자동 실행된 low-risk 명령은 audit trail과 undo 가능한 toast로 남김
 
 ### English
 
-The app is organized around three primary domains.
+The app is organized around four primary domains plus a top/bottom status shell.
+
+#### Workbench Shell
+
+Responsibilities:
+
+- show current project, branch, active tab, and split-group count in the titlebar
+- show connected provider count and the current execution mode in the top or bottom status area
+- make branch, changed-file count, ahead/behind state, and tab/group state quickly readable in the status bar
+- avoid a large dashboard-card default; editor, terminal, and agent surfaces should be immediately usable
 
 #### Projects
 
@@ -366,6 +557,8 @@ Responsibilities:
 - connect to local folders
 - display file trees and metadata
 - summarize Git state
+- show the current project and recent projects as compact project rows
+- provide `Projects` and `Files` as independently collapsible accordion sections
 - manage saved workspaces and run presets
 - track project-level tasks
 
@@ -373,20 +566,35 @@ Responsibilities:
 
 Responsibilities:
 
+- manage read-only editor tabs and terminal tabs through the same workbench tab model
 - create and manage terminal tabs
-- support pane splits in later versions
+- support tab drag/drop, context menus, and horizontal/vertical split groups
 - preserve command history and output logs
 - restore sessions
+- preserve a readable path of executions and retries so prior work can be reconstructed
 
 #### Agents
 
 Responsibilities:
 
 - observe project and terminal state
+- expose selected files, current tab output, and recent commands as a context summary
+- let users adjust provider/model picker and execution mode in one compact row
 - explain problems
 - suggest actions
 - execute approved commands
 - track task progress
+- summarize which paths failed and which improvements are worth trying next
+
+#### Settings and Execution Policy
+
+Responsibilities:
+
+- manage provider connections, model choices, appearance, execution policy, and product information in one settings surface
+- split approval behavior into `always ask`, `auto`, and `trusted dirs only` by risk level
+- keep high-risk commands pinned to explicit approval
+- block or reconfirm forbidden patterns regardless of the active policy
+- record auto-run low-risk commands in an audit trail with undoable toast notifications
 
 ## 권장 UI 구조 / Recommended UI Structure
 
@@ -394,59 +602,87 @@ Responsibilities:
 
 #### 좌측 사이드바
 
-- 프로젝트 목록 또는 프로젝트 전환기
-- 프로젝트 메타데이터
-- Git 브랜치 및 상태
-- 작업 목록
-- 저장된 워크스페이스
+- icon-only left rail과 접고 펼치는 side panel
+- 4px dock resize handle을 통한 side panel 폭 조절과 임계값 기반 collapse
+- `Projects`와 `Files`를 기본 accordion section으로 노출하고, 검색, 소스 제어, 아웃라인, 설정 view로 확장
+- 현재 프로젝트, 최근 프로젝트, 폴더 열기 action을 compact project row로 표시
+- 프로젝트 메타데이터, Git 브랜치 및 상태, 파일 트리, 변경 파일 수
+- compact row와 single-line ellipsis 기반의 정보 구조
 
 #### 중앙 작업 영역
 
-- 터미널 탭 바
-- 활성 터미널 세션
-- 이후 버전에서는 분할 pane
+- editor-like code surface와 terminal surface를 같은 tab model로 관리
+- terminal, editor, diff, test, preview 탭 타입
+- tab drag/drop과 context menu 기반의 상하좌우 split group
+- pane-local tab strip, line anchor, active tab status, running banner
+- 빈 group에서는 `+`를 통해 새 탭을 열 수 있는 명확한 empty state
 
 #### 우측 패널
 
-- 에이전트 채팅
-- 제안 액션
-- 작업 실행 기록
-- 프로젝트 인사이트
+- 에이전트 작업창
+- provider header, model picker, 실행 모드를 먼저 읽는 compact model row
+- context summary, 요청 thread, quick prompts, composer
+- 현재 pending suggestion과 승인 검토 진입점
+- 워크플로우 문제 요약과 프로젝트 인사이트
+
+#### 설정과 승인 정책
+
+- `Connections`, `Models`, `Appearance`, `Execution`, `About` 탭을 가진 settings modal
+- provider별 세션, scope, 만료 상태와 모델 기본값
+- 실행 모드, 병렬 worker 수, 응답 스트리밍 설정
+- 위험도별 승인 정책, trusted dirs, forbidden patterns
+- 자동 승인 이력과 undo 가능한 toast
 
 #### 하단 패널 또는 드로어
 
-- 로그
-- 알림
-- 명령 기록
+- 기본 구조에서는 고정 하단 패널을 두지 않는다.
+- 단, 1줄 status bar는 branch, 변경 수, tab/group 수, 실행 모드 같은 메타 상태를 표시할 수 있다.
+- 로그, 알림, 명령 기록, 경로 요약은 workbench pane, compact dock, contextual surface로 푼다.
+
+구체적인 UI 토큰, 색상, 반경, 컴포넌트 상태 표현은 `docs/design-system.md`를 기준으로 한다.
 
 ### English
 
 #### Left Sidebar
 
-- project list or switcher
-- project metadata
-- Git branch and status
-- task list
-- saved workspaces
+- icon-only left rail plus collapsible side panel
+- side-panel width resizing through a 4px dock handle with threshold-based collapse
+- expose `Projects` and `Files` as the default accordion sections, then extend into Search, Source Control, Outline, and Settings views
+- show the current project, recent projects, and open-folder action as compact project rows
+- project metadata, Git branch and state, file tree, and changed-file count
+- compact rows and single-line ellipsis as the default information structure
 
 #### Center Workspace
 
-- terminal tab bar
-- active terminal session
-- split panes in later versions
+- manage editor-like code surfaces and terminal surfaces through the same tab model
+- terminal, editor, diff, test, and preview tab types
+- top/right/bottom/left split groups driven by tab drag/drop and context menus
+- pane-local tab strips, line anchors, active-tab status, and running banners
+- a clear empty state where users can open a new tab through `+`
 
 #### Right Panel
 
-- agent chat
-- suggested actions
-- execution history
-- project insights
+- agent workspace
+- provider header plus compact model picker and execution-mode row
+- context summary, request thread, quick prompts, and composer
+- current pending suggestions and approval-review entry points
+- workflow findings and project insights
+
+#### Settings and Approval Policy
+
+- settings modal with `Connections`, `Models`, `Appearance`, `Execution`, and `About` tabs
+- provider sessions, scopes, expiration state, and default model choices per provider
+- execution mode, parallel worker count, and response streaming settings
+- approval policy by risk level, trusted directories, and forbidden patterns
+- auto-approval history and undoable toast notifications
 
 #### Bottom Panel or Drawer
 
-- logs
-- notifications
-- command history
+- no permanent bottom panel in the default structure
+- a one-line status bar may show metadata such as branch, change count, tab/group count, and execution mode
+- logs, notifications, command history, and path recap should be handled through workbench panes, compact docks, or contextual surfaces
+
+Use `docs/design-system.md` for concrete UI tokens, colors, radius, and component state representation.
 
 ## 핵심 사용자 흐름 / Core User Flow
 
@@ -455,11 +691,14 @@ Responsibilities:
 #### 기본 흐름
 
 1. 사용자가 프로젝트를 연다.
-2. 사용자가 하나 이상의 터미널 탭을 만든다.
-3. 각 탭에서 용도에 맞는 명령을 실행한다.
-4. 에이전트가 현재 프로젝트와 터미널 맥락을 읽는다.
-5. 에이전트가 설명 또는 다음 작업을 제안한다.
-6. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
+2. 사용자가 좌측 `Projects`와 `Files` accordion에서 프로젝트와 파일을 확인한다.
+3. 사용자가 중앙 workbench에서 editor 탭 또는 terminal 탭을 열고, 필요하면 split group으로 배치한다.
+4. 사용자가 탭별로 명령을 실행하거나 코드를 읽는다.
+5. 에이전트가 현재 프로젝트, 선택 파일, 활성 탭 출력, 최근 명령 맥락을 읽는다.
+6. 에이전트가 설명 또는 다음 작업을 제안한다.
+7. 승인 정책이 허용한 low-risk 명령은 audit/undo 가능한 toast와 함께 자동 실행될 수 있고, 그 외 명령은 승인 modal에서 대상, 위험도, rollback 가능성을 검토한다.
+8. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
+9. 사용자가 지금까지의 승인, 실패, 재시도 경로를 확인하고 다음 행동을 결정한다.
 
 #### 예시 시나리오
 
@@ -469,17 +708,21 @@ Responsibilities:
 4. 에이전트가 출력과 관련 설정 파일을 읽는다.
 5. 에이전트가 원인을 설명하고 수정용 명령을 제안한다.
 6. 사용자가 승인하면 새 디버깅 탭에서 명령이 실행된다.
+7. 사용자가 이전 시도와 새 결과를 비교해 반복 문제인지 판단한다.
 
 ### English
 
 #### Primary Flow
 
 1. The user opens a project.
-2. The user creates one or more terminal tabs.
-3. The user runs task-specific commands in each tab.
-4. The agent reads the current project and terminal context.
-5. The agent suggests explanations or next actions.
-6. The user approves execution in the current tab or a new tab.
+2. The user reviews the project and files through the left `Projects` and `Files` accordion.
+3. The user opens editor or terminal tabs in the center workbench and arranges them into split groups when needed.
+4. The user runs commands per tab or reads code.
+5. The agent reads current project, selected-file, active-tab output, and recent-command context.
+6. The agent suggests explanations or next actions.
+7. Low-risk commands allowed by policy may auto-run with an auditable, undoable toast; other commands open an approval modal that shows target, risk, and rollback notes.
+8. The user approves execution in the current tab or a new tab.
+9. The user reviews the approval, failure, and retry path before deciding the next action.
 
 #### Example Scenario
 
@@ -489,6 +732,7 @@ Responsibilities:
 4. The agent reads the output and related config files.
 5. The agent explains the likely cause and proposes a fix command.
 6. The user approves execution in a new debugging tab.
+7. The user compares the new result with prior attempts to see whether the problem is repeating.
 
 ## 에이전트 모델 / Agent Model
 
@@ -526,6 +770,15 @@ Responsibilities:
 
 MVP에서는 명령 실행과 파일 수정 모두 사용자 승인을 요구하는 것이 바람직하다.
 
+새 디자인 시안 기준의 승인 정책은 다음을 제품 기본값으로 둔다.
+
+- `low-risk`, `mid-risk`, `high-risk`를 구분한다.
+- `low-risk`는 설정에 따라 자동 승인될 수 있지만, audit trail과 undo 가능한 알림을 남겨야 한다.
+- `mid-risk`는 `always ask`, `auto`, `trusted dirs only` 중 정책으로 제어하되 기본값은 신중해야 한다.
+- `high-risk`는 항상 명시 승인만 허용한다.
+- trusted directory 밖의 자동 실행은 기본적으로 막거나 다시 확인한다.
+- forbidden pattern은 위험도와 관계없이 항상 차단 또는 재확인한다.
+
 ### English
 
 Agents should have clear scope and permissions.
@@ -560,6 +813,15 @@ At minimum, the product should distinguish between:
 
 In the MVP, command execution and file edits should both require user approval.
 
+The updated design baseline sets the following approval-policy defaults:
+
+- distinguish `low-risk`, `mid-risk`, and `high-risk`
+- `low-risk` commands may be auto-approved depending on settings, but they must leave an audit trail and undoable notification
+- `mid-risk` behavior is controlled by policy across `always ask`, `auto`, and `trusted dirs only`, with a cautious default
+- `high-risk` always requires explicit approval
+- auto-execution outside trusted directories is blocked or reconfirmed by default
+- forbidden patterns are always blocked or reconfirmed regardless of risk level
+
 ## 멀티 에이전트 오케스트레이션 / Multi-Agent Orchestration
 
 ### 한국어
@@ -582,20 +844,24 @@ In the MVP, command execution and file edits should both require user approval.
 4. 에이전트들은 병렬로 탐색, 구현, 테스트, 리뷰를 수행한다.
 5. 상위 오케스트레이터가 결과를 모으고 최종 결정을 내린다.
 
-#### 추천 역할 분리
+#### 기본 역할 분리
 
-- `Conductor`
-  - 전체 작업 분해, 우선순위 설정, 결과 통합
-- `Explorer`
-  - 코드베이스 탐색, 영향 범위 파악, 관련 파일 식별
-- `Coder`
-  - 특정 범위의 구현 수행
-- `Terminal Operator`
-  - 승인된 명령 실행과 로그 수집
+- `Planner`
+  - 현재 스프린트 목적 정리, 다음 스프린트 초안, 레퍼런스 분석, 작업 경로 분석, 기획 문서화
+- `Orchestrator`
+  - 전체 작업 분해, 우선순위 설정, 문서 기준선 정렬, 결과 통합
+- `Designer`
+  - `VS Code`, `conductor`, `cmux` 분석을 바탕으로 정보 계층, 코드 읽기 surface, 인터랙션, 와이어프레임, 작업 경로 가시화 설계
+- `Frontend`
+  - `src/` 중심 UI, 상태, 사용자 흐름 구현
+- `Backend`
+  - `src-tauri/` 중심 runtime, contract, provider, 시스템 로직 구현
+- `QA`
+  - 완료조건, 수용 기준, handoff 품질, 문서/계약 정합성 확인
 - `Tester`
-  - 테스트 실행, 실패 분석, 재현 절차 정리
-- `Reviewer`
-  - 변경 위험, 회귀 가능성, 누락된 검증 확인
+  - E2E, 회귀, 재현 절차, aging 관점 검증
+
+기본 운영 모델은 위 일곱 역할로 항상 먼저 팀빌딩하고, 필요할 때만 탐색 전용 또는 리뷰 전용 역할을 추가한다.
 
 #### 설계 원칙
 
@@ -604,6 +870,7 @@ In the MVP, command execution and file edits should both require user approval.
 - 공유 프로젝트 컨텍스트는 동일하게 보되, 쓰기 권한은 역할마다 제한한다.
 - 테스트와 리뷰는 구현과 병렬로 수행할 수 있지만, 최종 병합 판단은 중앙에서 수행한다.
 - 에이전트 수를 늘리는 것보다 작업 분해 품질이 더 중요하다.
+- 작은 작업이라도 먼저 `planner + orchestrator + designer + frontend + backend + QA + tester` 기준으로 분해를 시도한다.
 
 #### 프로젝트 컨텍스트 예시
 
@@ -614,6 +881,7 @@ In the MVP, command execution and file edits should both require user approval.
 - 열려 있는 터미널 탭 목록
 - 탭별 최근 로그
 - 최근 명령 실행 기록
+- 개선이 필요한 승인, 실패, 재시도, 우회 요약
 - 작업 큐와 에이전트별 담당 상태
 
 ### English
@@ -636,20 +904,24 @@ The core idea is:
 4. Agents work in parallel on exploration, implementation, testing, and review.
 5. The orchestrator gathers results and makes the final decision.
 
-#### Suggested Role Split
+#### Default Role Split
 
-- `Conductor`
-  - decomposes work, prioritizes tasks, and integrates results
-- `Explorer`
-  - explores the codebase, maps impact, and identifies relevant files
-- `Coder`
-  - implements within an assigned scope
-- `Terminal Operator`
-  - executes approved commands and collects logs
+- `Planner`
+  - frames the current sprint goal, drafts the next sprint, analyzes references, reviews the work path already taken, and updates planning docs
+- `Orchestrator`
+  - decomposes work, prioritizes tasks, aligns the doc baseline, and integrates results
+- `Designer`
+  - uses `VS Code`, `conductor`, and `cmux` to design hierarchy, code-reading surfaces, interactions, wireframes, and workflow-visibility patterns
+- `Frontend`
+  - implements UI, state, and user-facing flow changes around `src/`
+- `Backend`
+  - implements runtime, contract, provider, and system logic around `src-tauri/`
+- `QA`
+  - owns acceptance criteria, handoff quality, and doc/contract consistency checks
 - `Tester`
-  - runs tests, analyzes failures, and documents repro steps
-- `Reviewer`
-  - checks risks, regressions, and missing validation
+  - validates E2E behavior, regressions, repro steps, and aging-sensitive areas
+
+The default operating model should always build the team from these seven roles first, and only add read-only exploration or review specialists when needed.
 
 #### Design Principles
 
@@ -658,6 +930,7 @@ The core idea is:
 - share the same project context, but limit write permissions by role
 - testing and review can run in parallel with implementation, but final integration should remain centralized
 - increasing the number of agents matters less than improving task decomposition quality
+- attempt decomposition with `planner + orchestrator + designer + frontend + backend + QA + tester` before adding more specialized roles
 
 #### Example Project Context
 
@@ -668,6 +941,7 @@ A shared project context for multi-agent work may include:
 - list of open terminal tabs
 - recent logs per tab
 - recent command execution history
+- summarized approvals, failures, retries, and detours worth improving
 - task queue and per-agent assignment state
 
 ## 실행 모드 / Execution Modes
@@ -832,13 +1106,19 @@ At the product level, the system needs:
 
 - 로컬 프로젝트 열기
 - 프로젝트 파일 트리 표시
+- 현재 프로젝트와 최근 프로젝트를 좌측 accordion에서 관리
+- read-only editor tab과 terminal tab을 같은 workbench 안에서 표시
+- 기본적인 tab drag/drop과 split group 상태 표시
 - 터미널 탭 생성, 이름 변경, 종료
 - 탭별 출력 기록 유지
 - 워크스페이스 상태 복원
 - 에이전트 패널 제공
 - 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽을 수 있음
+- 에이전트가 선택 파일과 최근 명령 맥락을 읽을 수 있음
+- provider/model 선택과 실행 모드를 오른쪽 agent workspace에서 조정
 - 에이전트가 명령을 제안할 수 있음
 - 승인된 명령을 현재 탭 또는 새 탭에서 실행할 수 있음
+- 위험도 기반 승인 modal과 low-risk auto-run audit/undo 흐름
 
 #### 제외 범위
 
@@ -846,7 +1126,8 @@ At the product level, the system needs:
 - 여러 장치 간 동기화
 - 복잡한 Git 전용 UI
 - 광범위한 권한을 가진 자율 에이전트
-- 고급 pane 관리
+- 복잡한 pane layout 저장/복원과 고급 pane 관리
+- 신뢰 경계 없는 자동 승인
 - 완전한 IDE 대체
 
 ### English
@@ -857,13 +1138,19 @@ The first version should focus on the smallest complete experience.
 
 - open a local project
 - show the project file tree
+- manage the current project and recent projects in the left accordion
+- show read-only editor tabs and terminal tabs inside the same workbench
+- show basic tab drag/drop and split-group state
 - create, rename, and close terminal tabs
 - preserve output history per tab
 - restore workspace state
 - provide an agent panel
 - let the agent read project context and current tab output
+- let the agent read selected-file and recent-command context
+- adjust provider/model selection and execution mode in the right agent workspace
 - let the agent suggest commands
 - run approved commands in the current tab or a new tab
+- risk-based approval modal plus low-risk auto-run audit/undo flow
 
 #### Out of Scope
 
@@ -871,7 +1158,8 @@ The first version should focus on the smallest complete experience.
 - multi-device sync
 - complex Git-focused UI
 - autonomous agents with broad permissions
-- advanced pane management
+- complex pane layout persistence and advanced pane management
+- auto-approval without trusted boundaries
 - full IDE replacement
 
 ## 기능 요구사항 / Functional Requirements
@@ -884,6 +1172,14 @@ The first version should focus on the smallest complete experience.
 - 각 프로젝트는 최근 탭과 워크스페이스 메타데이터를 저장해야 한다.
 - 시스템은 현재 브랜치와 기본적인 변경 상태를 보여줄 수 있어야 한다.
 - 프로젝트 UI는 현재 브랜치와 Git 상태를 표시하고, 향후 `git flow` 스타일 브랜치 운영과도 자연스럽게 연결될 수 있어야 한다.
+- 좌측 panel은 현재 프로젝트, 최근 프로젝트, 파일 트리를 accordion section으로 빠르게 접고 펼칠 수 있어야 한다.
+
+#### 워크벤치 관리
+
+- 중앙 workbench는 read-only editor tab과 terminal tab을 같은 tab model로 다뤄야 한다.
+- 사용자는 tab을 다른 group으로 이동하거나 좌우/상하 split group을 만들 수 있어야 한다.
+- 각 group은 독립적인 tab strip과 active tab state를 가져야 한다.
+- editor tab은 최소한 line number, active line, syntax color, file path state를 보여줘야 한다.
 
 #### 터미널 관리
 
@@ -898,9 +1194,13 @@ The first version should focus on the smallest complete experience.
 - 에이전트는 현재 또는 선택된 탭의 출력을 읽을 수 있어야 한다.
 - 에이전트는 작업 제안을 생성할 수 있어야 한다.
 - 명령 실행 전 사용자가 실행 대상과 명령 내용을 확인하고 승인할 수 있어야 한다.
-- 사용자는 `Codex`와 `Claude` 계정을 앱 안에서 로그인 기반으로 연결할 수 있어야 한다.
-- 인증은 API 토큰 수동 입력이 아니라 OAuth 또는 이에 준하는 공식 인증 흐름을 우선해야 한다.
-- 앱은 연결 상태, 세션 만료, 권한 범위를 사용자에게 표시해야 한다.
+- 사용자는 `Codex`와 `Claude` 제공자를 앱 안에서 연결할 수 있어야 한다.
+- 첫 실사용 `Codex` 경로는 `OAuth/session login`을 사용해야 한다.
+- env/API key bridge는 필요하더라도 개발용 임시 경로에 머물러야 한다.
+- 앱은 연결 상태, 권한 범위, 연결 준비 상태와 진단 정보를 사용자에게 표시해야 한다.
+- 앱은 provider별 모델 선택, 실행 모드, 병렬 worker 수를 설정할 수 있어야 한다.
+- 앱은 위험도별 승인 정책, trusted directory, forbidden pattern, 자동 승인 이력을 표시해야 한다.
+- 향후 `SMS`와 `Telegram` 같은 외부 채널을 통해 상태 리포트와 제한된 원격 명령을 지원할 수 있어야 한다.
 
 #### 작업 인식
 
@@ -915,6 +1215,14 @@ The first version should focus on the smallest complete experience.
 - each project should store recent tabs and workspace metadata
 - the system should show the current branch and basic dirty state
 - the project UI should expose current branch and Git state while remaining compatible with a `git flow`-style branch model
+- the left panel should let users collapse and expand current project, recent projects, and file tree sections quickly
+
+#### Workbench Management
+
+- the center workbench should treat read-only editor tabs and terminal tabs through the same tab model
+- users should be able to move tabs between groups or create horizontal/vertical split groups
+- each group should own an independent tab strip and active-tab state
+- editor tabs should at least show line numbers, active line, syntax color, and file path state
 
 #### Terminal Management
 
@@ -929,9 +1237,13 @@ The first version should focus on the smallest complete experience.
 - agents should be able to read current or selected tab output
 - agents should be able to generate task suggestions
 - users should be able to review and approve command targets before execution
-- users should be able to connect `Codex` and `Claude` accounts through in-app login flows
-- authentication should prefer OAuth or equivalent official sign-in flows instead of manual API token entry
-- the app should display connection state, session expiration, and granted scopes
+- users should be able to connect `Codex` and `Claude` providers from inside the app
+- the first daily-use `Codex` path should use `OAuth/session login`
+- any env/API-key bridge should remain a temporary development path rather than the default user route
+- the app should display connection state, readiness diagnostics, and granted scopes
+- the app should let users configure model selection per provider, execution mode, and parallel worker count
+- the app should expose approval policy by risk level, trusted directories, forbidden patterns, and auto-approval history
+- the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 
 #### Task Awareness
 
@@ -949,7 +1261,7 @@ The first version should focus on the smallest complete experience.
 - 복원 가능한 세션 상태
 - Ubuntu, Windows, macOS에서 일관된 동작
 - 운영체제별 차이를 흡수하는 크로스 플랫폼 추상화
-- 로그인 기반 에이전트 인증의 안정적인 세션 관리
+- session-based provider 인증과 재연결의 안정적인 상태 관리
 - 다중 브랜치 작업에서도 명확한 Git 상태 표현
 
 ### English
@@ -961,7 +1273,7 @@ The first version should focus on the smallest complete experience.
 - restorable session state
 - consistent behavior across Ubuntu, Windows, and macOS
 - cross-platform abstractions for OS-specific differences
-- reliable session handling for login-based agent authentication
+- reliable state handling for session-based provider authentication and reconnects
 - clear Git state representation across multi-branch workflows
 
 ## 기술 방향 / Technical Direction
@@ -984,12 +1296,15 @@ The first version should focus on the smallest complete experience.
 플랫폼 기준은 다음과 같다.
 
 - 1차 지원 플랫폼: `Ubuntu`, `Windows`, `macOS`
+- 첫 실사용 기준: `Windows`
 - 구현 원칙: 처음부터 크로스 플랫폼 기준으로 설계
 
 에이전트 연결 기준은 다음과 같다.
 
 - 초기 지원 제공자: `Codex`, `Claude`
-- 인증 원칙: API 토큰 수동 입력보다 OAuth 또는 공식 로그인 흐름 우선
+- 첫 실사용 `Codex` 경로: `OAuth/session login`
+- 개발용 임시 경로: 필요 시 `OPENAI_API_KEY` 기반 bridge를 둘 수 있지만 source of truth는 아님
+- `Claude`: provider contract 호환 대상이지만 첫 실사용 릴리스에서는 deferred path 유지
 
 한 줄로 정리하면 다음과 같다.
 
@@ -1052,12 +1367,15 @@ The implementation stack for the first version of `gtum` is finalized as:
 Platform targets are:
 
 - first-class desktop targets: `Ubuntu`, `Windows`, `macOS`
+- first daily-use baseline: `Windows`
 - implementation rule: design for cross-platform behavior from day one
 
 Agent connection rules are:
 
 - initial providers: `Codex`, `Claude`
-- authentication rule: prefer OAuth or official sign-in flows over manual API token entry
+- first daily-use `Codex` path: `OAuth/session login`
+- temporary development path: an `OPENAI_API_KEY`-backed bridge may exist, but it is not the source-of-truth release path
+- `Claude`: contract-compatible provider that stays on the deferred path for the first daily-use release
 
 In one sentence:
 

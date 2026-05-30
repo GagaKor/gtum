@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="280" viewBox="0 0 980 280" fill="none">
+  <title>gtum logo concept A - editor spine</title>
+  <rect x="24" y="24" width="232" height="232" rx="64" fill="#171412"/>
+  <rect x="42" y="42" width="196" height="196" rx="52" fill="#221D1A"/>
+  <rect x="66" y="66" width="32" height="148" rx="12" fill="#F4E7D6"/>
+  <rect x="118" y="68" width="104" height="84" rx="16" fill="#F4E7D6"/>
+  <rect x="132" y="84" width="70" height="9" rx="4.5" fill="#221D1A" opacity="0.18"/>
+  <rect x="132" y="102" width="50" height="9" rx="4.5" fill="#221D1A" opacity="0.12"/>
+  <path d="M130 176L154 196L130 216" stroke="#D0612B" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="168" y="189" width="54" height="14" rx="7" fill="#D0612B"/>
+  <circle cx="204" cy="88" r="14" fill="#D0612B"/>
+  <circle cx="204" cy="88" r="26" stroke="#D0612B" stroke-opacity="0.22" stroke-width="8"/>
+  <text x="306" y="132" fill="#171412" font-size="112" font-weight="700" font-family="Space Grotesk, IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.05em">gtum</text>
+  <text x="308" y="186" fill="#6E615A" font-size="30" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.01em">editor-first mission workspace</text>
+</svg>

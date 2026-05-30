@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>gtum logo decision sprint 16</title>
+    <style>
+      :root {
+        --bg: #f4ecdf;
+        --ink: #171412;
+        --muted: #6e615a;
+        --line: rgba(23, 20, 18, 0.12);
+        --card: rgba(255, 250, 244, 0.82);
+        --dark-card: #1a1f28;
+        --paper: #f3e6d4;
+        --ember: #c95c27;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(201, 92, 39, 0.08), transparent 24%),
+          linear-gradient(180deg, #fbf6ef 0%, var(--bg) 58%, #eadfd0 100%);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .page {
+        width: min(1460px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 40px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      .hero h1 {
+        font-size: clamp(28px, 4vw, 48px);
+        line-height: 0.98;
+        letter-spacing: -0.05em;
+      }
+
+      .hero p {
+        max-width: 920px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        border: 1px solid rgba(255, 255, 255, 0.82);
+        border-radius: 24px;
+        background: var(--card);
+        backdrop-filter: blur(16px);
+        box-shadow: 0 16px 40px rgba(44, 32, 24, 0.08);
+        overflow: hidden;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .card-copy {
+        padding: 16px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .preview-shell {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 18px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .preview-shell.light {
+        background: linear-gradient(180deg, #fff8ef, #f2e7d8);
+      }
+
+      .preview-shell.dark {
+        background: linear-gradient(180deg, #202733, #151a22);
+      }
+
+      .mark-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .mark-row img {
+        width: 86px;
+        height: 86px;
+      }
+
+      .mark-svg {
+        display: block;
+        flex: 0 0 auto;
+      }
+
+      .mark-row .mark-svg {
+        width: 86px;
+        height: 86px;
+      }
+
+      .wordmark {
+        display: grid;
+        gap: 4px;
+      }
+
+      .wordmark strong {
+        font-size: 36px;
+        line-height: 0.92;
+        letter-spacing: -0.06em;
+      }
+
+      .wordmark span {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .preview-shell.dark .wordmark strong {
+        color: #f6efe7;
+      }
+
+      .preview-shell.dark .wordmark span {
+        color: #a6b0c2;
+      }
+
+      .mini-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .mini-chip {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        display: grid;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.56);
+      }
+
+      .mini-chip.dark {
+        background: rgba(9, 14, 20, 0.82);
+      }
+
+      .mini-chip img {
+        width: 28px;
+        height: 28px;
+      }
+
+      .mini-chip .mark-svg {
+        width: 28px;
+        height: 28px;
+      }
+
+      .notes {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .notes strong {
+        color: var(--ink);
+      }
+
+      .notes ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .compare {
+        margin-top: 18px;
+      }
+
+      .compare .card-copy {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
+      .compare-box {
+        display: grid;
+        gap: 10px;
+      }
+
+      .compare-box img {
+        width: 88px;
+        height: 88px;
+      }
+
+      .compare-box .mark-svg {
+        width: 88px;
+        height: 88px;
+      }
+
+      .compare-box span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position:absolute;left:-9999px;overflow:hidden" aria-hidden="true" focusable="false">
+      <symbol id="mark-current" viewBox="0 0 512 512">
+        <rect x="48" y="48" width="416" height="416" rx="112" fill="#171412"/>
+        <rect x="78" y="78" width="356" height="356" rx="84" fill="#221D1A"/>
+        <rect x="108" y="118" width="70" height="276" rx="26" fill="#F3E6D4"/>
+        <rect x="208" y="150" width="164" height="28" rx="14" fill="#F3E6D4"/>
+        <rect x="208" y="200" width="122" height="28" rx="14" fill="#F3E6D4" opacity="0.72"/>
+        <rect x="198" y="262" width="190" height="10" rx="5" fill="#F3E6D4" opacity="0.16"/>
+        <path d="M214 292L258 326L214 360" stroke="#C95C27" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="282" y="314" width="102" height="24" rx="12" fill="#C95C27"/>
+        <circle cx="364" cy="160" r="26" fill="#C95C27"/>
+        <circle cx="364" cy="160" r="48" stroke="#C95C27" stroke-opacity="0.22" stroke-width="16"/>
+      </symbol>
+      <symbol id="mark-frame" viewBox="0 0 512 512">
+        <rect x="44" y="44" width="424" height="424" rx="112" fill="#17181C"/>
+        <rect x="74" y="74" width="364" height="364" rx="88" fill="#23262D"/>
+        <rect x="104" y="108" width="62" height="296" rx="24" fill="#F4E8D9"/>
+        <rect x="196" y="118" width="138" height="58" rx="22" fill="#F4E8D9"/>
+        <rect x="350" y="118" width="58" height="58" rx="22" fill="#F4E8D9" opacity="0.84"/>
+        <rect x="196" y="196" width="212" height="96" rx="30" fill="#2D3440"/>
+        <rect x="222" y="222" width="88" height="14" rx="7" fill="#F4E8D9"/>
+        <rect x="222" y="248" width="132" height="14" rx="7" fill="#F4E8D9" opacity="0.64"/>
+        <path d="M212 338L252 370L212 402" stroke="#D76632" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="278" y="356" width="108" height="22" rx="11" fill="#D76632"/>
+        <circle cx="370" cy="148" r="18" fill="#D76632"/>
+        <circle cx="370" cy="148" r="34" stroke="#D76632" stroke-opacity="0.22" stroke-width="12"/>
+      </symbol>
+      <symbol id="mark-panes" viewBox="0 0 512 512">
+        <rect x="44" y="44" width="424" height="424" rx="116" fill="#171412"/>
+        <rect x="82" y="82" width="348" height="348" rx="88" fill="#211C19"/>
+        <path d="M168 188L254 256L168 324" stroke="#F4E8D9" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="270" y="282" width="94" height="24" rx="12" fill="#F4E8D9"/>
+        <circle cx="344" cy="166" r="26" fill="#D76632"/>
+        <path d="M344 116C389 116 426 153 426 198" stroke="#D76632" stroke-width="16" stroke-linecap="round" stroke-opacity="0.34"/>
+        <path d="M118 152C136 124 167 106 202 106H310" stroke="#5C534D" stroke-width="16" stroke-linecap="round"/>
+        <path d="M130 356C154 388 192 406 234 406H310" stroke="#5C534D" stroke-width="16" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="mark-orbit" viewBox="0 0 512 512">
+        <rect x="44" y="44" width="424" height="424" rx="112" fill="#15181D"/>
+        <rect x="82" y="82" width="348" height="348" rx="84" fill="#20252D"/>
+        <rect x="108" y="108" width="42" height="296" rx="18" fill="#F3E7D9"/>
+        <rect x="182" y="108" width="108" height="120" rx="24" fill="#F3E7D9"/>
+        <rect x="306" y="108" width="96" height="120" rx="24" fill="#F3E7D9" opacity="0.82"/>
+        <rect x="182" y="244" width="108" height="108" rx="24" fill="#2C333D"/>
+        <rect x="306" y="244" width="96" height="108" rx="24" fill="#D76632"/>
+        <rect x="326" y="288" width="56" height="10" rx="5" fill="#FFF4EA"/>
+        <rect x="326" y="308" width="42" height="10" rx="5" fill="#FFF4EA" opacity="0.78"/>
+        <circle cx="382" cy="144" r="16" fill="#D76632"/>
+      </symbol>
+    </svg>
+    <div class="page">
+      <section class="hero">
+        <h1>gtum logo decision</h1>
+        <p>`Sprint 16`에서 `Concept A`를 현재 로고 기준으로 선택했다. 아래 프리뷰는 선정안과 대안을 함께 비교할 수 있는 decision sheet다.</p>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Concept A</h2>
+              <p>Split Rail</p>
+            </div>
+            <span class="badge">selected</span>
+          </div>
+          <div class="card-copy">
+            <div class="preview-shell light">
+              <div class="mark-row">
+                <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="gtum concept A mark"><use href="#mark-frame"/></svg>
+                <div class="wordmark">
+                  <strong>gtum</strong>
+                  <span>split rail editor agent workspace</span>
+                </div>
+              </div>
+              <div class="mini-row">
+                <div class="mini-chip"><svg class="mark-svg" viewBox="0 0 512 512" aria-hidden="true"><use href="#mark-frame"/></svg></div>
+                <div class="mini-chip dark"><svg class="mark-svg" viewBox="0 0 512 512" aria-hidden="true"><use href="#mark-frame"/></svg></div>
+              </div>
+            </div>
+            <div class="notes">
+              <strong>요약</strong>
+              <ul>
+                <li>현재 브랜드 기준으로 채택한 안</li>
+                <li>left rail, editor bars, prompt, signal dot이 균형 있게 들어감</li>
+                <li>브랜드 전환 리스크가 가장 낮음</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Concept B</h2>
+              <p>Prompt Beacon</p>
+            </div>
+            <span class="badge">agent-first alternative</span>
+          </div>
+          <div class="card-copy">
+            <div class="preview-shell dark">
+              <div class="mark-row">
+                <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="gtum concept B mark"><use href="#mark-panes"/></svg>
+                <div class="wordmark">
+                  <strong>gtum</strong>
+                  <span>agent-guided local workspace</span>
+                </div>
+              </div>
+              <div class="mini-row">
+                <div class="mini-chip"><svg class="mark-svg" viewBox="0 0 512 512" aria-hidden="true"><use href="#mark-panes"/></svg></div>
+                <div class="mini-chip dark"><svg class="mark-svg" viewBox="0 0 512 512" aria-hidden="true"><use href="#mark-panes"/></svg></div>
+              </div>
+            </div>
+            <div class="notes">
+              <strong>요약</strong>
+              <ul>
+                <li>prompt와 signal arc가 가장 강하게 읽히는 안</li>
+                <li>agent orchestration 느낌이 가장 또렷함</li>
+                <li>icon-first 확장에 유리한 방향이다</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Concept C</h2>
+              <p>Pane Grid</p>
+            </div>
+            <span class="badge">pane emphasis</span>
+          </div>
+          <div class="card-copy">
+            <div class="preview-shell light">
+              <div class="mark-row">
+                <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="gtum concept C mark"><use href="#mark-orbit"/></svg>
+                <div class="wordmark">
+                  <strong>gtum</strong>
+                  <span>pane-based terminal + agent ide</span>
+                </div>
+              </div>
+              <div class="mini-row">
+                <div class="mini-chip"><svg class="mark-svg" viewBox="0 0 512 512" aria-hidden="true"><use href="#mark-orbit"/></svg></div>
+                <div class="mini-chip dark"><svg class="mark-svg" viewBox="0 0 512 512" aria-hidden="true"><use href="#mark-orbit"/></svg></div>
+              </div>
+            </div>
+            <div class="notes">
+              <strong>요약</strong>
+              <ul>
+                <li>split workbench와 pane 구조를 가장 강하게 드러내는 안</li>
+                <li>block 대비가 강해서 editor 성격이 또렷하다</li>
+                <li>IDE형 브랜드 확장에 유리한 방향이다</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="compare">
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>Legacy vs Selected Direction</h2>
+              <p>기존 심볼, 선정안, 대안 비교</p>
+            </div>
+            <span class="badge">decision record</span>
+          </div>
+          <div class="card-copy">
+            <div class="compare-box">
+              <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="current gtum mark"><use href="#mark-current"/></svg>
+              <strong>Current</strong>
+              <span>현재 심볼. 구조는 읽히지만 디테일 밀도가 다소 높고, 작은 크기에서 조금 답답하다.</span>
+            </div>
+            <div class="compare-box">
+              <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="concept A mark"><use href="#mark-frame"/></svg>
+              <strong>Split Rail</strong>
+              <span>선정안. 현재 제품 구조와 가장 직접적으로 연결된다.</span>
+            </div>
+            <div class="compare-box">
+              <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="concept B mark"><use href="#mark-panes"/></svg>
+              <strong>Prompt Beacon</strong>
+              <span>agent orchestration 성격이 가장 강하다.</span>
+            </div>
+            <div class="compare-box">
+              <svg class="mark-svg" viewBox="0 0 512 512" role="img" aria-label="concept C mark"><use href="#mark-orbit"/></svg>
+              <strong>Pane Grid</strong>
+              <span>workbench와 pane block 대비가 가장 강하다.</span>
+            </div>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

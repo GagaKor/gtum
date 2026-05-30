@@ -1,321 +1,148 @@
 # AGENTS.md
 
-## 1. 목적 / Purpose
+## 1. 목적
 
-### 한국어
+이 문서는 `gtum` 저장소의 짧은 부트스트랩 라우터다.
 
-이 문서는 `gtum` 저장소에서 작업하는 사람과 에이전트가 작업을 시작하기 전에 무엇을 읽고, 어떤 기준으로 판단하고, 변경이 생겼을 때 어떤 문서를 함께 갱신해야 하는지 정리한 운영 지침서다.
+목표는 세 가지다.
 
-핵심 목표는 다음과 같다.
+- 작업 시작 전에 최소한의 문서만 읽고 빠르게 방향을 잡는다.
+- 어떤 작업이 어떤 source of truth 문서를 읽어야 하는지 라우팅한다.
+- 구조, 정책, 계약이 바뀔 때 어떤 문서를 함께 갱신해야 하는지 놓치지 않게 한다.
 
-- 작업 시작 전에 문서로 현재 맥락을 빠르게 파악한다.
-- 코드만 바꾸고 문서를 방치하지 않는다.
-- 문서마다 역할을 분명히 구분해 중복과 충돌을 줄인다.
-- 기능이 변할 때 관련 문서를 함께 갱신해 에이전트가 길을 잃지 않게 한다.
-- 한국어와 영어 문서가 항상 같은 의미와 최신 상태를 유지하도록 한다.
+상세 정책은 이 문서에 길게 반복하지 않고, 필요한 문서로 바로 라우팅한다.
 
-### English
+## 2. 꼭 지킬 기본 원칙
 
-This document is an operating guide for both humans and agents working in the `gtum` repository. It explains what to read before starting work, how to make decisions, and which documents must be updated when changes are introduced.
+- 이 프로젝트의 진입점은 항상 `docs/`다.
+- 기본값은 `전체 문서 재독`이 아니라 `최소 읽기 팩 + 필요한 문서만 추가 읽기`다.
+- 의미 있는 작업은 먼저 `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할로 팀빌딩한다.
+- 의미 있는 작업은 현재 스프린트 문서, 검증 메모, task history를 함께 검토해 지금까지 밟아온 경로와 반복 문제를 먼저 파악한다.
+- 구조, 흐름, 정책, 권한, 계약이 바뀌면 관련 문서를 같은 작업 안에서 함께 갱신한다.
+- 문서와 코드가 다르면 실제 코드와 최신 결정을 기준으로 문서를 수정한다.
+- 브랜치 운영 기본값은 `feature/* -> dev -> master`다.
+- `WORKLOG`는 진행 중 스프린트의 임시 추적 문서로만 사용하고, 스프린트 종료 시 source-of-truth 문서에 흡수한 뒤 삭제한다.
+- source-of-truth 기술 문서가 200줄을 넘으면 상단 라우팅 섹션을 두거나 하위 문서로 분리한다.
 
-Its goals are:
+## 3. 최소 읽기 팩
 
-- understand the current context quickly through documentation before making changes
-- avoid changing code while leaving documentation behind
-- keep document roles clear to reduce duplication and conflict
-- update related documents when behavior changes so agents do not lose context
-- keep Korean and English documentation aligned in meaning and freshness
-
-## 2. 기본 작업 원칙 / Core Working Principles
-
-### 한국어
-
-- 이 프로젝트는 `docs/`를 작업 진입점으로 사용한다.
-- 작업 전에 필요한 문서를 먼저 읽고, 추측보다 문서와 코드 근거를 우선한다.
-- 변경이 구조, 흐름, 정책, 권한, 계약에 영향을 주면 관련 문서를 같은 작업 안에서 함께 갱신한다.
-- 브랜치 운영은 `git flow` 개념을 가볍게 적용하는 방향을 기본 협업 원칙으로 삼는다.
-- 문서와 코드가 다르면 실제 코드와 최신 결정 내용을 기준으로 확인한 뒤 문서를 수정한다.
-- 새로운 규칙을 만들었으면 메모로 흩어두지 말고 적절한 문서에 반영한다.
-- 현재 없는 문서를 전제로 판단하지 말고, 실제 존재하는 문서를 기준으로 작업한다.
-
-### English
-
-- This project uses `docs/` as the entry point for work.
-- Read the relevant documents before starting, and prefer documented and code-based evidence over guesswork.
-- If a change affects structure, flow, policy, permissions, or contracts, update the related documents in the same task.
-- Branch operations should follow a lightweight interpretation of `git flow` as the default collaboration model.
-- If code and docs differ, verify against the actual code and latest decisions, then update the documentation.
-- When a new rule appears, do not leave it as scattered notes; fold it into the appropriate document.
-- Do not assume documents exist unless they are actually present in the repository.
-
-## 3. 작업 시작 전 읽기 규칙 / What To Read Before Starting
-
-### 한국어
-
-현재 저장소 기준 기본 시작 순서는 아래와 같다.
+작업 시작 시 기본으로 먼저 읽는 문서는 아래 세 개다.
 
 1. `AGENTS.md`
 2. `docs/README.md`
-3. `docs/product-plan.md`
-4. `docs/technical-design.md`
+3. `docs/DOCS_READING_ORDER.md`
 
-각 문서의 역할은 다음과 같다.
+그 다음에는 아래 라우팅 표를 보고 필요한 문서만 추가로 읽는다.
 
-- `AGENTS.md`
-  - 저장소 운영 규칙, 문서 동기화 원칙, 작업 절차를 안내한다.
-- `docs/README.md`
-  - 현재 문서 목록과 핵심 결정 사항을 빠르게 확인하게 해준다.
-- `docs/product-plan.md`
-  - 제품 비전, 핵심 기능, 멀티 에이전트 구조, 실행 모드, 기술 방향을 설명한다.
-- `docs/technical-design.md`
-  - 앱 구조, 런타임 책임, 크로스 플랫폼 전략, 인증 구조, 구현 순서를 설명한다.
+## 4. 문서 라우팅
 
-짧게 확인해야 할 때도 최소한 아래는 먼저 읽는다.
-
-1. `AGENTS.md`
-2. `docs/product-plan.md`
-3. `docs/technical-design.md`
-
-### English
-
-Given the current state of the repository, the default reading order is:
-
-1. `AGENTS.md`
-2. `docs/README.md`
-3. `docs/product-plan.md`
-
-The role of each document is:
-
-- `AGENTS.md`
-  - explains repository operating rules, documentation sync rules, and working procedures
-- `docs/README.md`
-  - gives a quick view of the available docs and current decisions
-- `docs/product-plan.md`
-  - explains product vision, core capabilities, multi-agent structure, execution modes, and technical direction
-
-Even in a time-constrained situation, read at least:
-
-1. `AGENTS.md`
-2. `docs/product-plan.md`
-
-## 4. 현재 문서별 역할 / Current Document Roles
-
-### 한국어
-
-- `AGENTS.md`
-  - 저장소 운영 원칙과 에이전트 행동 규칙
-- `docs/README.md`
-  - 문서 인덱스와 현재 핵심 결정 요약
-- `docs/product-plan.md`
-  - 제품 기획의 기준 문서
-- `docs/technical-design.md`
-  - 구현 구조의 기준 문서
-
-향후 구현이 진행되면 아래 문서들을 추가하는 것을 권장한다.
-
-- `docs/technical-design.md`
-  - 앱 구조, 폴더 구조, PTY 세션, 상태 모델, 에이전트 통합 경계
-- `docs/repository-map.md`
-  - 디렉토리 구조와 주요 진입점
-- `docs/architecture.md`
-  - 시스템 경계와 모듈 책임
-- `docs/message-flow.md`
-  - 요청, 이벤트, 작업 orchestration 흐름
-- `docs/development-guide.md`
-  - 구현 규칙과 개발 패턴
-
-### English
-
-- `AGENTS.md`
-  - repository operating principles and agent behavior rules
-- `docs/README.md`
-  - document index and summary of current decisions
-- `docs/product-plan.md`
-  - canonical product planning document
-- `docs/technical-design.md`
-  - canonical implementation structure document
-
-As implementation grows, the following documents should be added:
-
-- `docs/technical-design.md`
-  - app structure, folder structure, PTY sessions, state model, and agent boundaries
-- `docs/repository-map.md`
-  - directory structure and major entry points
-- `docs/architecture.md`
-  - system boundaries and module responsibilities
-- `docs/message-flow.md`
-  - request, event, and orchestration flows
-- `docs/development-guide.md`
-  - implementation rules and development patterns
-
-## 5. 문서 동기화 규칙 / Documentation Sync Rules
-
-### 한국어
-
-아래와 같은 변경이 생기면 문서도 함께 갱신해야 한다.
-
-- 브랜치 전략 또는 협업 워크플로우 변경
+- 제품 비전, 범위, 핵심 가치, provider 정책, 멀티 에이전트 제품 방향
   - `docs/product-plan.md`
+- 아키텍처, 런타임 책임, 플랫폼 전략, auth 구조, contract 변경
   - `docs/technical-design.md`
+- 현재 구현 구조, 모듈 책임, 저장 경계
+  - `docs/architecture.md`
+- 주요 데이터 흐름, request envelope, approval/restore 경계
+  - `docs/message-flow.md`
+- 역할 분리, 서브에이전트 팀빌딩, 파일 소유권, handoff, `planner`, `designer`, `QA`, `tester` 분리
+  - `docs/agent-team-topology.md`
+- 구현 규칙, 문서 흡수 기준, 검증 기록 기준
+  - `docs/development-guide.md`
+- 지금 무엇을 먼저 만들지, 현재 우선순위, 스프린트 산출물과 종료 기준
+  - `docs/sprint-plan.md`
+- MVP 범위, 우선순위, 완료조건, 제외 범위
+  - `docs/mvp-backlog.md`
+- UI 레퍼런스와 프론트엔드 품질 기준
+  - `docs/design-system.md`
+  - `docs/frontend-design-benchmarks.md`
+- 왼쪽 rail, side panel, project switcher, settings view 기획
+  - `docs/left-menu-views.md`
+- 릴리스, 빌드, 배포, CI/CD
+  - `docs/release-build-ci.md`
+- 최신 실행 맥락, 체크리스트, 검증 근거
+  - 현재 스프린트 체크리스트 또는 진행 중 `WORKLOG`
+  - `docs/MVP_VALIDATION_NOTES.md`
+  - UI의 task history
+
+## 5. 문서 동기화 라우팅
+
+아래 변경이 생기면 함께 갱신할 문서는 다음과 같다.
+
 - 제품 비전, 범위, 에이전트 정책, 실행 모드 변경
   - `docs/product-plan.md`
-- 기술 스택, 런타임 구조, PTY 설계, 상태 모델 확정 또는 변경
-  - `docs/product-plan.md`
-  - `docs/technical-design.md`가 있으면 함께 갱신
+- 기술 스택, 런타임 구조, PTY 설계, 플랫폼 전략, 상태 계약 변경
+  - `docs/technical-design.md`
+- 현재 구현 아키텍처, 모듈 책임, 저장 경계 변경
+  - `docs/architecture.md`
+- request payload, approval 흐름, restore 흐름 변경
+  - `docs/message-flow.md`
+- 멀티 에이전트 역할 분리, 팀빌딩 기본값, handoff 규칙 변경
+  - `docs/agent-team-topology.md`
+  - `docs/README.md`
+  - `docs/DOCS_READING_ORDER.md`
+  - 필요 시 `docs/sprint-plan.md`
+- 개발 규칙, 기록 원칙, 문서 흡수 정책 변경
+  - `docs/development-guide.md`
+  - `docs/README.md`
+- MVP 범위, 우선순위, 완료조건 변경
+  - `docs/mvp-backlog.md`
+  - 필요 시 `docs/product-plan.md`, `docs/technical-design.md`
+- 왼쪽 rail, side panel, project switcher, settings view 구조 변경
+  - `docs/design-system.md`
+  - `docs/left-menu-views.md`
+  - `docs/frontend-design-benchmarks.md`
+  - `docs/ui-ux-wireframes.md`
+  - 필요 시 `docs/README.md`
+- 스프린트 순서, 산출물, 완료조건 변경
+  - `docs/sprint-plan.md`
+  - `docs/mvp-backlog.md`
+- 릴리스, 빌드, 배포, CI/CD 변경
+  - `docs/release-build-ci.md`
+  - 필요 시 `docs/README.md`, `docs/technical-design.md`
 - 새로운 문서 추가 또는 문서 역할 변경
   - `docs/README.md`
   - 필요 시 `AGENTS.md`
-- 저장소 구조가 커져 주요 경로 설명이 필요해짐
-  - `docs/repository-map.md` 추가 검토
-- 구조적 설계나 흐름 설명이 반복적으로 필요해짐
-  - `docs/architecture.md`, `docs/message-flow.md` 추가 검토
+- UI 토큰, 앱 셸 시각 기준, 주요 컴포넌트 상태 표현 변경
+  - `docs/design-system.md`
+  - `docs/frontend-design-benchmarks.md`
+  - 필요 시 `docs/brand-identity.md`
 
-문서 갱신이 필요한데 이번 작업에서 반영하지 못했다면, 어떤 문서가 비동기 상태인지 명시적으로 남긴다.
+이번 작업에서 못 고친 문서가 있으면 비동기 상태를 명시적으로 남긴다.
 
-### English
+## 6. 멀티에이전트 기본값
 
-The following kinds of changes require documentation updates:
+- 기본 역할은 `planner + orchestrator + designer + frontend + backend + QA + tester`다.
+- `planner`는 제품 목표, 다음 스프린트 범위, 과거 작업 경로, 스프린트 문서, 검증 메모, task history를 읽고 문제점과 개선 항목을 정리한다.
+- `orchestrator`는 역할 분리, 파일 소유권, handoff, 최종 통합을 맡는다.
+- `designer`는 `VS Code`, `conductor`, `cmux` 레퍼런스를 바탕으로 정보 계층, 코드 읽기 surface, 상호작용 디자인, 와이어프레임과 작업 경로 가시화 방향을 정리한다.
+- `QA`는 완료조건, 품질 게이트, 회귀 체크리스트를 맡는다.
+- `tester`는 E2E, 재현 절차, aging 관점 검증을 맡는다.
+- 같은 파일을 여러 역할이 동시에 수정하지 않도록 먼저 분해한다.
+- 상세 규칙은 `docs/agent-team-topology.md`를 기준으로 따른다.
 
-- branch strategy or collaboration workflow changes
-  - update `docs/product-plan.md`
-  - update `docs/technical-design.md`
-- product vision, scope, agent policy, or execution mode changes
-  - update `docs/product-plan.md`
-- technical stack, runtime structure, PTY design, or state model decisions
-  - update `docs/product-plan.md`
-  - update `docs/technical-design.md` as well if it exists
-- adding a new document or changing document responsibilities
-  - update `docs/README.md`
-  - update `AGENTS.md` when needed
-- repository growth that requires path-level guidance
-  - consider adding `docs/repository-map.md`
-- repeated need for structural or flow explanations
-  - consider adding `docs/architecture.md` and `docs/message-flow.md`
+## 7. 작업 순서
 
-If documentation should be updated but cannot be completed in the same task, explicitly note which document is now out of sync.
+1. 최소 읽기 팩을 읽는다.
+2. 라우팅 표를 보고 필요한 문서만 추가로 읽는다.
+3. `planner`와 `orchestrator` 기준으로 역할과 파일 소유권을 먼저 정한다.
+4. 현재 코드와 문서 기준선이 맞는지 빠르게 확인하고, 현재 스프린트 문서, 진행 중 `WORKLOG`, task history, 검증 메모에서 이미 시도한 것과 실패 패턴을 함께 정리한다.
+5. 변경 대상을 수정한다.
+6. 영향받는 문서를 함께 갱신한다.
+7. 테스트 또는 검증을 수행한다.
+8. 결과와 남은 리스크를 짧게 정리한다.
 
-## 6. 한영 동기화 규칙 / Korean-English Sync Rules
+## 8. Documentation Language Policy
 
-### 한국어
+Source-of-truth documentation uses English as the single canonical language.
 
-이 저장소의 핵심 문서는 한국어와 영어를 함께 유지한다.
+- Write new documents and new sections in English only.
+- Do not duplicate the same policy, plan, or decision in both Korean and English.
+- Treat existing bilingual content as legacy content, then consolidate it into English when the relevant section is materially edited.
+- User conversations, temporary notes, and UI copy may use Korean when appropriate, but durable planning, technical, sprint, design-system, and agent-operation docs should avoid bilingual duplication.
 
-- 한국어는 사람이 읽기 좋은 기준 문서 역할을 한다.
-- 영어는 에이전트가 더 안정적으로 참조하는 기준 문서 역할을 한다.
-- 어느 한 언어만 먼저 수정된 상태로 오래 두지 않는다.
-- 의미가 달라지는 느슨한 번역을 피하고, 두 언어가 같은 정책과 결정을 담도록 유지한다.
-- 핵심 문서를 수정할 때는 가능하면 같은 커밋 또는 같은 작업 단위 안에서 두 언어를 함께 갱신한다.
+## 9. 현재 저장소에서 특히 중요한 점
 
-### English
-
-Core documents in this repository are maintained in both Korean and English.
-
-- Korean is the primary human-readable view.
-- English is the primary agent-readable view.
-- Do not leave one language updated while the other remains stale for long.
-- Avoid loose translation drift; both language sections should express the same policies and decisions.
-- When editing a core document, update both language sections within the same task whenever possible.
-
-## 7. 작업 절차 / Working Procedure
-
-### 한국어
-
-가능하면 아래 순서를 따른다.
-
-1. 관련 문서를 먼저 읽는다.
-2. 현재 코드와 문서가 얼마나 맞는지 빠르게 확인한다.
-3. 변경 대상 코드를 수정한다.
-4. 영향받는 문서를 함께 갱신한다.
-5. 테스트 또는 검증을 수행한다.
-6. 결과와 남은 리스크를 짧게 정리한다.
-
-문서 갱신은 선택 사항이 아니라 구조나 동작이 바뀐 경우 작업의 일부다.
-
-### English
-
-Follow this sequence whenever possible:
-
-1. read the relevant documents first
-2. quickly compare the current code and docs
-3. change the target code
-4. update affected documents in the same task
-5. run tests or verification
-6. summarize the result and remaining risks
-
-Documentation updates are not optional when structure or behavior changes.
-
-## 8. 에이전트 행동 규칙 / Agent Behavior Rules
-
-### 한국어
-
-이 저장소에서 작업하는 에이전트는 다음을 따른다.
-
-- 작업 전에 관련 문서를 먼저 읽는다.
-- 문서만 믿지 말고 실제 코드도 함께 확인한다.
-- 코드 변경이 문서 성격 중 하나에 영향을 주면 해당 문서를 업데이트한다.
-- 어떤 문서를 갱신해야 할지 애매하면 `docs/README.md`와 이 파일의 문서 역할 정의를 기준으로 판단한다.
-- 문서 간 충돌이 보이면 조용히 지나가지 말고, 코드와 최신 결정 근거를 바탕으로 정리한다.
-- 큰 변경을 했으면 필요 시 새 문서를 추가하거나 문서 구조 개편을 제안한다.
-
-### English
-
-Agents working in this repository must:
-
-- read relevant documents before starting
-- verify against actual code, not docs alone
-- update documentation when code changes affect documented behavior
-- use `docs/README.md` and this file when unsure which document should be updated
-- resolve documentation conflicts based on code and latest project decisions
-- propose new documents or document structure updates when the repository grows
-
-## 9. 새 문서 추가 규칙 / When To Add New Documents
-
-### 한국어
-
-아래 중 하나에 해당하면 새 문서 추가를 고려한다.
-
-- 같은 설명을 반복해서 여러 번 하게 될 때
-- 특정 기능 영역이 커져서 기존 문서 하나에 담기 어려울 때
-- 구조 설명이나 흐름 설명이 반복적으로 필요할 때
-- 구현 규칙과 설계 규칙을 분리할 필요가 생길 때
-
-새 문서를 추가했다면 함께 수행한다.
-
-1. `docs/README.md`에 링크를 추가한다.
-2. 필요하면 `AGENTS.md`의 읽기 순서와 문서 역할을 갱신한다.
-3. 기존 문서의 중복 설명은 제거하거나 링크로 대체한다.
-
-### English
-
-Consider adding a new document when:
-
-- the same explanation must be repeated often
-- one feature area has grown too large for a single document
-- structural or flow explanations are repeatedly needed
-- implementation rules and design rules should be separated
-
-When adding a new document:
-
-1. add it to `docs/README.md`
-2. update reading order and document roles in `AGENTS.md` when needed
-3. remove duplicated explanations from older documents or replace them with links
-
-## 10. 현재 저장소에서 특히 중요한 점 / What Matters Most Right Now
-
-### 한국어
-
-- 이 저장소는 아직 초기 단계이므로 문서가 곧 구조다.
+- 이 저장소는 아직 초기 단계라 문서가 곧 구조다.
 - `docs/`는 참고 자료가 아니라 실제 작업 진입점이다.
-- 현재는 `docs/product-plan.md`가 가장 중요한 기준 문서다.
-- 브랜치 전략은 현재 `master`만 존재하더라도 `git flow` 개념을 기준으로 확장 가능하게 유지한다.
-- 앞으로 기술 설계와 코드 구조가 생기면 문서 체계도 함께 확장해야 한다.
-- 문서 품질은 개발 속도와 에이전트 정확도에 직접 영향을 준다.
-
-### English
-
-- This repository is still in an early stage, so documentation is effectively part of the structure.
-- `docs/` is not optional reference material; it is the real work entry point.
-- Right now, `docs/product-plan.md` is the most important source of truth.
-- Even though only `master` exists right now, branch strategy should stay compatible with `git flow` concepts as the repository grows.
-- As technical design and code structure emerge, the documentation system should grow with them.
-- Documentation quality directly affects development speed and agent accuracy.
+- 항상 `AGENTS.md` 하나에 모든 정책을 밀어넣지 말고, 필요한 문서로 라우팅하는 구조를 유지한다.
+- 현재 가장 자주 기준이 되는 source of truth는 `docs/product-plan.md`, `docs/technical-design.md`, `docs/architecture.md`, `docs/message-flow.md`, `docs/sprint-plan.md`다.

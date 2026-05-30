@@ -1,0 +1,421 @@
+mod runtime {
+    pub mod auth;
+    pub mod codex;
+    pub mod filesystem;
+    pub mod platform;
+    pub mod pty;
+    pub mod telegram;
+    pub mod workspace;
+}
+
+use runtime::auth::{
+    AgentAuthManager, AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProvider,
+    CompleteAgentLoginRequest,
+};
+use runtime::codex::{
+    AgentProviderDiagnostics, AgentSuggestionResponse, RequestAgentSuggestionsRequest,
+};
+use runtime::filesystem::{
+    ProjectFileSnapshot, ProjectOverview, ProjectSearchResult, SourceControlDiff,
+    SourceControlOverview,
+};
+use runtime::pty::{
+    CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
+    TerminalSessionManager, TerminalSessionSnapshot,
+};
+use runtime::telegram::{
+    CompleteTelegramLinkRequest, CreateTelegramReportRequest, QueueTelegramRemoteCommandRequest,
+    ResolveTelegramRemoteCommandRequest, TelegramBridgeManager, TelegramBridgeSnapshot,
+    TelegramRemoteCommandSnapshot, TelegramReportSnapshot, TelegramRuntimeSnapshot,
+};
+use runtime::workspace::{
+    RememberWorkspaceProjectRequest, SaveWorkspaceSnapshotRequest,
+    SetWorkspaceExecutionModeRequest, WorkspaceRuntimeSnapshot, WorkspaceSnapshot,
+    WorkspaceStateManager,
+};
+use tauri::Manager;
+
+#[derive(serde::Serialize)]
+struct RuntimeInfo {
+    app_name: String,
+    platform: String,
+    mode: String,
+}
+
+#[tauri::command]
+fn get_runtime_info(app: tauri::AppHandle) -> RuntimeInfo {
+    RuntimeInfo {
+        app_name: app.package_info().name.clone(),
+        platform: std::env::consts::OS.to_string(),
+        mode: if cfg!(debug_assertions) {
+            "debug".into()
+        } else {
+            "release".into()
+        },
+    }
+}
+
+#[tauri::command]
+fn read_project_overview(
+    path: String,
+    max_depth: Option<usize>,
+) -> Result<ProjectOverview, String> {
+    runtime::filesystem::read_project_overview(path, max_depth)
+}
+
+#[tauri::command]
+fn read_project_file(project_path: String, file_path: String) -> Result<ProjectFileSnapshot, String> {
+    runtime::filesystem::read_project_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn search_project_text(project_path: String, query: String) -> Result<Vec<ProjectSearchResult>, String> {
+    runtime::filesystem::search_project_text(project_path, query)
+}
+
+#[tauri::command]
+fn read_source_control_overview(project_path: String) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::read_source_control_overview(project_path)
+}
+
+#[tauri::command]
+fn read_source_control_diff(
+    project_path: String,
+    file_path: String,
+    staged: Option<bool>,
+) -> Result<SourceControlDiff, String> {
+    runtime::filesystem::read_source_control_diff(project_path, file_path, staged)
+}
+
+#[tauri::command]
+fn stage_source_control_file(
+    project_path: String,
+    file_path: String,
+) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::stage_source_control_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn unstage_source_control_file(
+    project_path: String,
+    file_path: String,
+) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::unstage_source_control_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn commit_source_control(
+    project_path: String,
+    message: String,
+) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::commit_source_control(project_path, message)
+}
+
+#[tauri::command]
+fn push_source_control(project_path: String) -> Result<SourceControlOverview, String> {
+    runtime::filesystem::push_source_control(project_path)
+}
+
+#[tauri::command]
+fn create_terminal_session(
+    state: tauri::State<'_, TerminalSessionManager>,
+    request: CreateTerminalSessionRequest,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.create_session(request)
+}
+
+#[tauri::command]
+fn list_terminal_sessions(
+    state: tauri::State<'_, TerminalSessionManager>,
+) -> Vec<TerminalSessionSnapshot> {
+    state.list_sessions()
+}
+
+#[tauri::command]
+fn rename_terminal_session(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    name: String,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.rename_session(session_id, name)
+}
+
+#[tauri::command]
+fn close_terminal_session(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.close_session(session_id)
+}
+
+#[tauri::command]
+fn read_terminal_session_logs(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    limit: Option<usize>,
+) -> Result<TerminalSessionLogs, String> {
+    state.read_recent_logs(session_id, limit)
+}
+
+#[tauri::command]
+fn execute_terminal_session_command(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    command: String,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.execute_command(session_id, command)
+}
+
+#[tauri::command]
+fn create_terminal_session_with_command(
+    state: tauri::State<'_, TerminalSessionManager>,
+    request: CreateTerminalSessionWithCommandRequest,
+) -> Result<TerminalSessionSnapshot, String> {
+    state.create_session_with_command(request)
+}
+
+#[tauri::command]
+fn list_agent_connections(
+    state: tauri::State<'_, AgentAuthManager>,
+) -> Vec<AgentConnectionSnapshot> {
+    state.list_connections()
+}
+
+#[tauri::command]
+fn begin_agent_login(
+    state: tauri::State<'_, AgentAuthManager>,
+    provider: AgentProvider,
+    requested_scopes: Option<Vec<String>>,
+) -> AgentConnectionSnapshot {
+    state.begin_login(provider, requested_scopes)
+}
+
+#[tauri::command]
+fn complete_agent_login(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: CompleteAgentLoginRequest,
+) -> Result<AgentConnectionSnapshot, String> {
+    state.complete_login(request)
+}
+
+#[tauri::command]
+fn request_agent_suggestions(
+    auth_state: tauri::State<'_, AgentAuthManager>,
+    request: RequestAgentSuggestionsRequest,
+) -> Result<Vec<AgentSuggestionResponse>, String> {
+    let _ = auth_state.require_connected_provider(request.provider)?;
+
+    match request.provider {
+        AgentProvider::Codex => runtime::codex::request_codex_suggestions(request),
+        AgentProvider::Claude => Err(
+            "Claude real-provider support is deferred for the first daily-use release.".into(),
+        ),
+    }
+}
+
+#[tauri::command]
+fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
+    match provider {
+        AgentProvider::Codex => runtime::codex::read_codex_diagnostics(),
+        AgentProvider::Claude => runtime::codex::deferred_provider_diagnostics(provider),
+    }
+}
+
+#[tauri::command]
+fn disconnect_agent_provider(
+    state: tauri::State<'_, AgentAuthManager>,
+    provider: AgentProvider,
+) -> AgentConnectionSnapshot {
+    state.disconnect(provider)
+}
+
+#[tauri::command]
+fn agent_auth_runtime_snapshot(
+    state: tauri::State<'_, AgentAuthManager>,
+) -> AgentAuthRuntimeSnapshot {
+    state.runtime_snapshot()
+}
+
+#[tauri::command]
+fn read_workspace_runtime_snapshot(
+    state: tauri::State<'_, WorkspaceStateManager>,
+) -> WorkspaceRuntimeSnapshot {
+    state.runtime_snapshot()
+}
+
+#[tauri::command]
+fn save_workspace_runtime_snapshot(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: SaveWorkspaceSnapshotRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.save_snapshot(request)
+}
+
+#[tauri::command]
+fn remember_workspace_project(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: RememberWorkspaceProjectRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.remember_project(request.path)
+}
+
+#[tauri::command]
+fn set_workspace_execution_mode(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: SetWorkspaceExecutionModeRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.set_execution_mode(request)
+}
+
+#[tauri::command]
+fn read_telegram_runtime_snapshot(
+    state: tauri::State<'_, TelegramBridgeManager>,
+) -> TelegramRuntimeSnapshot {
+    state.runtime_snapshot()
+}
+
+#[tauri::command]
+fn begin_telegram_link(
+    state: tauri::State<'_, TelegramBridgeManager>,
+) -> Result<TelegramBridgeSnapshot, String> {
+    state.begin_link()
+}
+
+#[tauri::command]
+fn complete_telegram_link(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: CompleteTelegramLinkRequest,
+) -> Result<TelegramBridgeSnapshot, String> {
+    state.complete_link(request)
+}
+
+#[tauri::command]
+fn disconnect_telegram_bridge(
+    state: tauri::State<'_, TelegramBridgeManager>,
+) -> Result<TelegramBridgeSnapshot, String> {
+    state.disconnect()
+}
+
+#[tauri::command]
+fn create_telegram_report(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: CreateTelegramReportRequest,
+) -> Result<TelegramReportSnapshot, String> {
+    state.create_report(request)
+}
+
+#[tauri::command]
+fn queue_telegram_remote_command(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: QueueTelegramRemoteCommandRequest,
+) -> Result<TelegramRemoteCommandSnapshot, String> {
+    state.queue_remote_command(request)
+}
+
+#[tauri::command]
+fn resolve_telegram_remote_command(
+    state: tauri::State<'_, TelegramBridgeManager>,
+    request: ResolveTelegramRemoteCommandRequest,
+) -> Result<TelegramRemoteCommandSnapshot, String> {
+    state.resolve_remote_command(request)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AgentAuthManager::new())
+        .manage(TerminalSessionManager::new())
+        .manage(TelegramBridgeManager::new())
+        .manage(WorkspaceStateManager::new())
+        .invoke_handler(tauri::generate_handler![
+            get_runtime_info,
+            read_project_overview,
+            read_project_file,
+            search_project_text,
+            read_source_control_overview,
+            read_source_control_diff,
+            stage_source_control_file,
+            unstage_source_control_file,
+            commit_source_control,
+            push_source_control,
+            create_terminal_session,
+            list_terminal_sessions,
+            rename_terminal_session,
+            close_terminal_session,
+            read_terminal_session_logs,
+            execute_terminal_session_command,
+            create_terminal_session_with_command,
+            list_agent_connections,
+            begin_agent_login,
+            complete_agent_login,
+            request_agent_suggestions,
+            read_agent_provider_diagnostics,
+            disconnect_agent_provider,
+            agent_auth_runtime_snapshot,
+            read_workspace_runtime_snapshot,
+            save_workspace_runtime_snapshot,
+            remember_workspace_project,
+            set_workspace_execution_mode,
+            read_telegram_runtime_snapshot,
+            begin_telegram_link,
+            complete_telegram_link,
+            disconnect_telegram_bridge,
+            create_telegram_report,
+            queue_telegram_remote_command,
+            resolve_telegram_remote_command
+        ])
+        .setup(|app| {
+            let auth_storage_path = app
+                .handle()
+                .path()
+                .app_data_dir()
+                .or_else(|_| {
+                    std::env::current_dir().map(|cwd| cwd.join(".gtum").join("agent-auth.json"))
+                })
+                .map_err(|error| format!("failed to resolve auth storage path: {error}"))?;
+
+            app.handle()
+                .state::<AgentAuthManager>()
+                .initialize_storage(auth_storage_path)?;
+
+            let workspace_storage_path = app
+                .handle()
+                .path()
+                .app_data_dir()
+                .or_else(|_| {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(".gtum").join("workspace-state.json"))
+                })
+                .map_err(|error| format!("failed to resolve workspace storage path: {error}"))?;
+
+            app.handle()
+                .state::<WorkspaceStateManager>()
+                .initialize_storage(workspace_storage_path)?;
+
+            let telegram_storage_path = app
+                .handle()
+                .path()
+                .app_data_dir()
+                .or_else(|_| {
+                    std::env::current_dir()
+                        .map(|cwd| cwd.join(".gtum").join("telegram-state.json"))
+                })
+                .map_err(|error| format!("failed to resolve telegram storage path: {error}"))?;
+
+            app.handle()
+                .state::<TelegramBridgeManager>()
+                .initialize_storage(telegram_storage_path)?;
+
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

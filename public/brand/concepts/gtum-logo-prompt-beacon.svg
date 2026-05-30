@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="280" viewBox="0 0 980 280" fill="none">
+  <title>gtum logo concept C - prompt beacon</title>
+  <rect x="24" y="24" width="232" height="232" rx="64" fill="#171412"/>
+  <rect x="62" y="58" width="28" height="164" rx="12" fill="#F4E7D6"/>
+  <path d="M116 110L170 152L116 194" stroke="#F4E7D6" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="184" y="178" width="44" height="16" rx="8" fill="#D0612B"/>
+  <circle cx="194" cy="88" r="14" fill="#D0612B"/>
+  <circle cx="194" cy="88" r="28" stroke="#D0612B" stroke-opacity="0.18" stroke-width="8"/>
+  <text x="306" y="132" fill="#171412" font-size="112" font-weight="700" font-family="Space Grotesk, IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.05em">gtum</text>
+  <text x="308" y="186" fill="#6E615A" font-size="30" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.01em">prompt beacon for local AI work</text>
+</svg>

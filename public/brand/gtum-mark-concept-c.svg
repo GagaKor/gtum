@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>gtum mark concept c - pane grid</title>
+  <rect x="44" y="44" width="424" height="424" rx="112" fill="#15181D"/>
+  <rect x="82" y="82" width="348" height="348" rx="84" fill="#20252D"/>
+  <rect x="108" y="108" width="42" height="296" rx="18" fill="#F3E7D9"/>
+  <rect x="182" y="108" width="108" height="120" rx="24" fill="#F3E7D9"/>
+  <rect x="306" y="108" width="96" height="120" rx="24" fill="#F3E7D9" opacity="0.82"/>
+  <rect x="182" y="244" width="108" height="108" rx="24" fill="#2C333D"/>
+  <rect x="306" y="244" width="96" height="108" rx="24" fill="#D76632"/>
+  <rect x="326" y="288" width="56" height="10" rx="5" fill="#FFF4EA"/>
+  <rect x="326" y="308" width="42" height="10" rx="5" fill="#FFF4EA" opacity="0.78"/>
+  <circle cx="382" cy="144" r="16" fill="#D76632"/>
+</svg>

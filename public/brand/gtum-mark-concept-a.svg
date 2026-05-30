@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>gtum mark concept a - split rail</title>
+  <rect x="44" y="44" width="424" height="424" rx="112" fill="#17181C"/>
+  <rect x="74" y="74" width="364" height="364" rx="88" fill="#23262D"/>
+  <rect x="104" y="108" width="62" height="296" rx="24" fill="#F4E8D9"/>
+  <rect x="196" y="118" width="138" height="58" rx="22" fill="#F4E8D9"/>
+  <rect x="350" y="118" width="58" height="58" rx="22" fill="#F4E8D9" opacity="0.84"/>
+  <rect x="196" y="196" width="212" height="96" rx="30" fill="#2D3440"/>
+  <rect x="222" y="222" width="88" height="14" rx="7" fill="#F4E8D9"/>
+  <rect x="222" y="248" width="132" height="14" rx="7" fill="#F4E8D9" opacity="0.64"/>
+  <path d="M212 338L252 370L212 402" stroke="#D76632" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="278" y="356" width="108" height="22" rx="11" fill="#D76632"/>
+  <circle cx="370" cy="148" r="18" fill="#D76632"/>
+  <circle cx="370" cy="148" r="34" stroke="#D76632" stroke-opacity="0.22" stroke-width="12"/>
+</svg>

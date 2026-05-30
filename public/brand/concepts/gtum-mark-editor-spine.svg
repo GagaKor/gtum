@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>gtum mark concept A - editor spine</title>
+  <rect x="48" y="48" width="416" height="416" rx="120" fill="#171412"/>
+  <rect x="78" y="78" width="356" height="356" rx="96" fill="#221D1A"/>
+  <rect x="116" y="116" width="58" height="280" rx="24" fill="#F4E7D6"/>
+  <rect x="206" y="118" width="188" height="162" rx="30" fill="#F4E7D6"/>
+  <rect x="232" y="148" width="126" height="18" rx="9" fill="#221D1A" opacity="0.18"/>
+  <rect x="232" y="182" width="90" height="18" rx="9" fill="#221D1A" opacity="0.12"/>
+  <path d="M232 332L272 366L232 400" stroke="#D0612B" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="290" y="355" width="102" height="22" rx="11" fill="#D0612B"/>
+  <circle cx="364" cy="156" r="24" fill="#D0612B"/>
+  <circle cx="364" cy="156" r="44" stroke="#D0612B" stroke-opacity="0.22" stroke-width="14"/>
+</svg>

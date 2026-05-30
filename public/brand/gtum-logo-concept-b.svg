@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="280" viewBox="0 0 960 280" fill="none">
+  <title>gtum logo concept b - prompt beacon</title>
+  <rect x="24" y="24" width="232" height="232" rx="64" fill="#171412"/>
+  <rect x="42" y="42" width="196" height="196" rx="48" fill="#211C19"/>
+  <path d="M88 112L140 152L88 192" stroke="#F4E8D9" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="152" y="168" width="58" height="14" rx="7" fill="#F4E8D9"/>
+  <circle cx="190" cy="100" r="14" fill="#D76632"/>
+  <path d="M190 74C217 74 240 97 240 124" stroke="#D76632" stroke-width="9" stroke-linecap="round" stroke-opacity="0.34"/>
+  <path d="M58 92C70 74 90 62 112 62H176" stroke="#5C534D" stroke-width="10" stroke-linecap="round"/>
+  <path d="M64 214C80 234 104 246 132 246H182" stroke="#5C534D" stroke-width="10" stroke-linecap="round"/>
+  <text x="300" y="132" fill="#171412" font-size="108" font-weight="700" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.04em">gtum</text>
+  <text x="304" y="184" fill="#6E615A" font-size="28" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.03em">agent-guided local workspace</text>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="280" viewBox="0 0 960 280" fill="none">
+  <title>gtum logo concept a - split rail</title>
+  <rect x="24" y="24" width="232" height="232" rx="62" fill="#17181C"/>
+  <rect x="40" y="40" width="200" height="200" rx="48" fill="#23262D"/>
+  <rect x="58" y="58" width="34" height="164" rx="14" fill="#F4E8D9"/>
+  <rect x="112" y="66" width="78" height="34" rx="12" fill="#F4E8D9"/>
+  <rect x="198" y="66" width="34" height="34" rx="12" fill="#F4E8D9" opacity="0.84"/>
+  <rect x="112" y="112" width="120" height="52" rx="16" fill="#2D3440"/>
+  <rect x="126" y="126" width="50" height="8" rx="4" fill="#F4E8D9"/>
+  <rect x="126" y="142" width="76" height="8" rx="4" fill="#F4E8D9" opacity="0.64"/>
+  <path d="M120 192L146 212L120 232" stroke="#D76632" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="164" y="204" width="58" height="12" rx="6" fill="#D76632"/>
+  <circle cx="210" cy="84" r="10" fill="#D76632"/>
+  <circle cx="210" cy="84" r="19" stroke="#D76632" stroke-opacity="0.22" stroke-width="7"/>
+  <text x="302" y="132" fill="#17181C" font-size="108" font-weight="700" font-family="Space Grotesk, IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="-0.05em">gtum</text>
+  <text x="306" y="184" fill="#6A6F79" font-size="28" font-weight="500" font-family="IBM Plex Sans, Segoe UI, sans-serif" letter-spacing="0.01em">split editor + agent workspace</text>
+</svg>

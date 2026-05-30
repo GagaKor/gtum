@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>gtum mark concept B - split orbit</title>
+  <rect x="48" y="48" width="416" height="416" rx="120" fill="#171412"/>
+  <rect x="86" y="86" width="132" height="340" rx="44" fill="#F4E7D6"/>
+  <rect x="246" y="86" width="180" height="220" rx="44" fill="#F4E7D6"/>
+  <rect x="236" y="92" width="10" height="320" rx="5" fill="#D0612B" opacity="0.3"/>
+  <path d="M274 354L316 390L274 426" stroke="#D0612B" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="334" y="379" width="92" height="24" rx="12" fill="#D0612B"/>
+  <circle cx="360" cy="152" r="24" fill="#D0612B"/>
+  <path d="M300 152C300 118.863 326.863 92 360 92C393.137 92 420 118.863 420 152" stroke="#D0612B" stroke-opacity="0.24" stroke-width="14" stroke-linecap="round"/>
+</svg>
