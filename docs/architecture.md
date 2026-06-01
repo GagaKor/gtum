@@ -81,12 +81,13 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
    - `src/widgets/app-shell/ui/Titlebar.tsx` and `src/widgets/app-shell/ui/StatusBar.tsx` are the first extracted TSX/FSD app-shell components. They preserve the uploaded design class names and visible shell contract.
    - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
+   - The fixed uploaded-design shell is `1320x824`; `src-tauri/tauri.conf.json` uses the same default launch size so the frameless desktop window opens without shell letterboxing.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
 2. `Runtime Layer`
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
    - registers Tauri commands, initializes managers, and resolves app storage paths
-   - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default` and `dialog:open` so the prototype can open a native project folder picker before calling filesystem commands
+   - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default`, `dialog:allow-open`, and explicit `core:window:*` permissions so the prototype can open a native project folder picker and control the frameless desktop window before calling filesystem commands
 3. `Runtime Modules`
    - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
    - own the actual system behavior and persistence

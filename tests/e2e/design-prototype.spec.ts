@@ -1,4 +1,18 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+
+function tauriLaunchWindowSize() {
+  const configPath = resolve(repoRoot, 'src-tauri/tauri.conf.json')
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    app: { windows: Array<{ width: number; height: number }> }
+  }
+
+  return config.app.windows[0]
+}
 
 test('renders the clean uploaded design prototype shell', async ({ page }) => {
   await page.goto('/')
@@ -35,6 +49,33 @@ test('keeps uploaded design proportions after frontend reset', async ({ page }) 
   expect(titlebar!.height / scale).toBeLessThanOrEqual(42)
   expect(sidebar!.width / scale).toBeLessThanOrEqual(276)
   expect(agent!.width / scale).toBeGreaterThanOrEqual(360)
+})
+
+test('fits the Tauri launch window without shell letterboxing', async ({ page }) => {
+  const launchWindow = tauriLaunchWindowSize()
+
+  await page.setViewportSize({
+    width: launchWindow.width,
+    height: launchWindow.height,
+  })
+  await page.goto('/')
+
+  const stage = await page.locator('.gtum-stage').boundingBox()
+  const shell = await page.locator('.gtum-window').boundingBox()
+  const scale = await page.evaluate(() => {
+    const scaler = document.querySelector<HTMLElement>('.gtum-scaler')
+    const value = scaler ? window.getComputedStyle(scaler).getPropertyValue('--scale') : '1'
+
+    return Number.parseFloat(value) || 1
+  })
+
+  expect(stage).not.toBeNull()
+  expect(shell).not.toBeNull()
+  expect(scale).toBeCloseTo(1, 2)
+  expect(Math.round(shell!.width)).toBe(launchWindow.width)
+  expect(Math.round(shell!.height)).toBe(launchWindow.height)
+  expect(Math.round(shell!.x - stage!.x)).toBe(0)
+  expect(Math.round(shell!.y - stage!.y)).toBe(0)
 })
 
 test('preserves titlebar and statusbar shell contracts', async ({ page }) => {

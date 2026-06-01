@@ -1837,6 +1837,7 @@ Current status:
 - The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and preserve the rich uploaded-design browser fixture fallback.
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
 - The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, and browser preview keeps injectable/no-op fallbacks for E2E.
+- The Tauri launch window now matches the fixed uploaded-design shell size (`1320x824`) so the app opens without shell letterboxing before maximize or manual resizing.
 - Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
 - Verification passed on 2026-06-01 with `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml`, `npm run test:e2e`, `npm run tauri:build`, and a `npm run tauri:dev` launch smoke.

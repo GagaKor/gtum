@@ -95,6 +95,10 @@ The default screen is composed of five areas:
   - Active provider/model and execution mode should be readable first through a compact row at the top of the agent workspace.
 - `Status/pill strip`
   - Prefer small status pills inside the workbench over a permanent bottom panel.
+- `Desktop launch geometry`
+  - The fixed uploaded-design canvas is `1320x824`.
+  - The default Tauri launch window must use the same `1320x824` size so the frameless shell opens without letterboxing.
+  - Larger desktop sizes should come from native maximize/restore or user resizing, while the scaler keeps smaller windows fitted.
 
 ## 토큰 / Tokens
 

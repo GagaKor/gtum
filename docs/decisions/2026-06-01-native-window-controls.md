@@ -13,6 +13,7 @@ The previous Windows-titlebar/responsive slice intentionally shipped the custom 
 Make the app window frameless and treat the custom titlebar as the real desktop chrome:
 
 - set the main Tauri window `decorations` flag to `false`
+- set the default Tauri launch size to the uploaded design canvas size (`1320x824`) so the frameless shell opens without letterboxing
 - route custom minimize, close, maximize/restore, and titlebar drag actions through Tauri `getCurrentWindow()`
 - keep browser preview safe through `src/shared/api/runtimeWindow.ts`, which exposes no-op browser fallbacks and an injected test bridge
 - add explicit capability entries for the window commands used by the custom chrome
@@ -31,5 +32,6 @@ Make the app window frameless and treat the custom titlebar as the real desktop 
 ## Consequences
 
 - The custom titlebar is now responsible for native window behavior in desktop builds.
+- The non-maximized desktop launch window now matches the fixed design canvas. Larger sizes should come from real maximize/restore or manual resizing instead of an oversized initial window.
 - Browser preview keeps the same visual experience and uses no-op controls unless tests inject a mock runtime window bridge.
 - Follow-up work can move from window chrome into the higher-value runtime slices: real PTY wiring, real Codex suggestions, approval-to-execution, and workspace restore.
