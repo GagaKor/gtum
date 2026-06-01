@@ -9,6 +9,7 @@ import {
   createRuntimeWindowControls,
   initialRuntimeWindowControls,
 } from './shared/api/runtimeWindow'
+import { createAgentSuggestionRuntimeService } from './shared/api/runtimeAgentSuggestions'
 import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
@@ -1491,6 +1492,7 @@ const projectRuntimeService = createProjectRuntimeService({
   fallbackProject: PROJECT,
   fallbackFileReader: tabFromFile,
 });
+const agentSuggestionRuntimeService = createAgentSuggestionRuntimeService();
 const terminalRuntimeService = createTerminalRuntimeService();
 
 async function readRuntimeProjectOverview(path) {
@@ -4073,7 +4075,9 @@ function App() {
     window.addEventListener("pointerup", onUp);
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [activeProviderId, setActiveProviderId] = React.useState("claude");
+  const [activeProviderId, setActiveProviderId] = React.useState(
+    agentSuggestionRuntimeService.hasRuntime() ? "codex" : "claude"
+  );
   const [parallelLimit, setParallelLimit] = React.useState(3);
   const [approvalPolicy, setApprovalPolicy] = React.useState(APPROVAL_POLICY_INIT);
   const [autoApprovalLog, setAutoApprovalLog] = React.useState([]);
@@ -4225,6 +4229,53 @@ function App() {
     }
   };
 
+  const requestRuntimeAgentSuggestions = React.useCallback(async (text, messageId, active) => {
+    try {
+      const suggestions = await agentSuggestionRuntimeService.requestSuggestions({
+        provider: activeProviderId,
+        project: activeProject,
+        activeTab: active,
+        userTask: text,
+        executionMode: mode,
+      });
+
+      const runtimeMessages = suggestions.map((suggestion, index) => ({
+        id: messageId + "-runtime-" + index,
+        role: "assistant",
+        at: nowHm(),
+        suggestion,
+      }));
+
+      if (runtimeMessages.length === 0) {
+        setMessages((prev) => [...prev, {
+          id: messageId + "-empty",
+          role: "assistant",
+          roleLabel: "Codex",
+          at: nowHm(),
+          content: lang === "ko"
+            ? "Codex가 실행 가능한 제안을 반환하지 않았어."
+            : "Codex did not return an executable suggestion.",
+        }]);
+        return;
+      }
+
+      setMessages((prev) => [...prev, ...runtimeMessages]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMessages((prev) => [...prev, {
+        id: messageId + "-error",
+        role: "assistant",
+        roleLabel: "Codex",
+        at: nowHm(),
+        content: lang === "ko"
+          ? `Codex 제안을 가져오지 못했어: ${message}`
+          : `Could not request Codex suggestions: ${message}`,
+      }]);
+    } finally {
+      setIsTyping(false);
+    }
+  }, [activeProject, activeProviderId, lang, mode]);
+
   // ── workspace actions (thin wrappers around the pure store) ──────────
   const actions = React.useMemo(() => ({
     setActiveTab: (gId, tId) => setWorkspace((w) => setActiveTab(w, gId, tId)),
@@ -4310,13 +4361,20 @@ function App() {
 
   const onSend = (text) => {
     const id = "u" + Date.now();
+    const attachedTab = activeTab;
     setMessages((prev) => [...prev, {
       id, role: "user", at: nowHm(), content: text,
-      contextAttached: [activeTab?.id || ""],
+      contextAttached: [attachedTab?.id || ""],
     }]);
     setIsTyping(true);
+
+    if (agentSuggestionRuntimeService.hasRuntime() && activeProviderId === "codex") {
+      void requestRuntimeAgentSuggestions(text, id, attachedTab);
+      return;
+    }
+
     setTimeout(() => {
-      const reply = canned(text, lang, activeTab);
+      const reply = canned(text, lang, attachedTab);
       setMessages((prev) => [...prev, ...reply.map((r, i) => ({
         ...r, id: id + "-r" + i, at: nowHm(),
       }))]);

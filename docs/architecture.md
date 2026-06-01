@@ -82,6 +82,7 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/widgets/app-shell/ui/Titlebar.tsx` and `src/widgets/app-shell/ui/StatusBar.tsx` are the first extracted TSX/FSD app-shell components. They preserve the uploaded design class names and visible shell contract.
    - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
    - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for PTY-backed terminal sessions. The prototype uses it for new terminal tabs, log polling, tab close termination, and approved command writes when a tab is runtime-backed.
+   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics and `request_agent_suggestions`. The prototype uses it for Codex runtime-backed suggestion requests while keeping canned browser-preview replies when Tauri is unavailable.
    - The fixed uploaded-design shell is `1320x824`; `src-tauri/tauri.conf.json` uses the same default launch size so the frameless desktop window opens without shell letterboxing.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.

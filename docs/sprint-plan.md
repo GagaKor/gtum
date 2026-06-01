@@ -1839,6 +1839,7 @@ Current status:
 - The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, and browser preview keeps injectable/no-op fallbacks for E2E.
 - The Tauri launch window now matches the fixed uploaded-design shell size (`1320x824`) so the app opens without shell letterboxing before maximize or manual resizing.
 - The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: new terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, closing runtime-backed tabs terminates the PTY session, and approved commands write to runtime-backed tabs after the risk gate.
+- The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and execution mode, then normalize Codex responses into existing approval cards.
 - Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
 - Verification passed on 2026-06-01 with `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml`, `npm run test:e2e`, `npm run tauri:build`, and a `npm run tauri:dev` launch smoke.
@@ -1887,8 +1888,8 @@ Sprint 17 initial backlog:
 - `P0` done: route the legacy prototype's project overview and file-open behavior through `src/shared/api/runtimeProjects.ts` while preserving browser fixture content
 - `P0` done: make the custom titlebar the real frameless desktop window chrome through `src/shared/api/runtimeWindow.ts` and Tauri window-control permissions
 - `P0` done: wire terminal tabs to real PTY create/read/write/terminate behavior through `src/shared/api/runtimeTerminals.ts`
-- `P0` next: wire agent suggestions to the real Codex session-backed request path and diagnostics
-- `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to replace canned suggestions with the real Codex request path and broaden approval E2E coverage
+- `P0` done: wire agent suggestions to the real Codex session-backed request path and diagnostics through `src/shared/api/runtimeAgentSuggestions.ts`
+- `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to broaden approval E2E coverage and replace the simulated provider-login modal with Codex CLI login launcher/detection
 - `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
 - `P1` start workbench tab model design for Sprint 18

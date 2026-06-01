@@ -223,6 +223,78 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
     .toContain('close_terminal_session')
 })
 
+test('routes agent requests through the Codex suggestion runtime bridge', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'request_agent_suggestions') {
+          return [
+            {
+              id: 'codex-runtime-1',
+              provider: 'codex',
+              summary: 'Run the failing funnel test',
+              command: 'pnpm test:funnel --reporter=verbose',
+              preferredTarget: 'current_tab',
+              confidence: 'high',
+              error: null,
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.sugg').last()).toContainText('Run the failing funnel test')
+  await expect(page.locator('.sugg').last()).toContainText('pnpm test:funnel --reporter=verbose')
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __agentCalls?: Array<{ command: string; args?: { request?: Record<string, unknown> } }>
+        }
+      ).__agentCalls ?? [],
+  )
+  const requestCall = calls.find((call) => call.command === 'request_agent_suggestions')
+
+  expect(requestCall?.args?.request).toMatchObject({
+    provider: 'codex',
+    projectName: 'aurora-monorepo',
+    projectPath: '~/code/aurora-monorepo',
+    activeTabId: 't-backend',
+    activeTabTitle: 'backend',
+    executionMode: 'balanced',
+    userTask: '테스트 다시 실행해줘',
+  })
+  expect(requestCall?.args?.request?.lastNLogLines).toContain(
+    'Error: listen EADDRINUSE: address already in use :::3001',
+  )
+})
+
 test('keeps rich prototype file content when browser fallback opens a file', async ({ page }) => {
   await page.goto('/')
 

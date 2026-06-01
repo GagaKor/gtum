@@ -34,6 +34,8 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - runtime project-service fallback behavior through `tests/e2e/runtime-project-service.spec.ts`
 - terminal runtime service contract behavior through `tests/e2e/runtime-terminal-service.spec.ts`
 - injected terminal runtime bridge coverage in `tests/e2e/design-prototype.spec.ts` for new-tab creation and close/terminate routing
+- agent suggestion runtime service contract behavior through `tests/e2e/runtime-agent-suggestions-service.spec.ts`
+- injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
 
 Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The specs listed above are the active E2E coverage; the aging scenario must be re-gathered on the new shell.
 

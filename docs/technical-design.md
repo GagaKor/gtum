@@ -1269,6 +1269,8 @@ Because `gtum` interacts with local files and shell execution, security boundari
 - login sessions and sensitive data must use secure storage
 - provider responses should be normalized into shared internal formats before being exposed to the UI
 - the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
+- The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_diagnostics` and `request_agent_suggestions`, then normalizes the Codex response into the existing approval-card command shape.
+- `src/prototype.jsx` uses that seam only when the desktop runtime is available and `Codex` is the active provider. Browser preview and deferred providers keep the canned response path.
 
 ## MVP 구현 순서 / MVP Implementation Order
 

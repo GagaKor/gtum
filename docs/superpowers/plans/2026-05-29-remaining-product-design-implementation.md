@@ -300,21 +300,22 @@ git commit -m "refactor: extract agent panel"
 - Create: `src/shared/api/runtimeAgentSuggestions.ts`
 - Modify: `src/entities/agent/model/types.ts`
 - Modify: `src/prototype.jsx`
-- Modify: `tests/e2e/agent-runtime.spec.ts`
+- Create: `tests/e2e/runtime-agent-suggestions-service.spec.ts`
+- Modify: `tests/e2e/design-prototype.spec.ts`
 - Modify: `docs/message-flow.md`
 
-- [ ] **Step 1: Write failing test for `request_agent_suggestions` payload shape**
-- [ ] **Step 2: Implement provider diagnostics and suggestion request wrappers**
-- [ ] **Step 3: Replace canned suggestion path only behind a runtime-backed feature branch**
-- [ ] **Step 4: Keep browser fallback canned replies for design preview**
-- [ ] **Step 5: Run verification**
+- [x] **Step 1: Write failing test for `request_agent_suggestions` payload shape**
+- [x] **Step 2: Implement provider diagnostics and suggestion request wrappers**
+- [x] **Step 3: Replace canned suggestion path only behind a runtime-backed Codex path**
+- [x] **Step 4: Keep browser fallback canned replies for design preview**
+- [x] **Step 5: Run verification**
 
 Run:
 
 ```bash
 npm run build
 npm run lint
-npm run test:e2e -- tests/e2e/agent-runtime.spec.ts
+npm run test:e2e -- tests/e2e/runtime-agent-suggestions-service.spec.ts tests/e2e/design-prototype.spec.ts --grep "runtime agent suggestion|routes agent requests"
 ```
 
 Expected: PASS.
@@ -322,7 +323,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/shared/api/runtimeAgentSuggestions.ts src/entities/agent/model/types.ts src/prototype.jsx tests/e2e/agent-runtime.spec.ts docs/message-flow.md
+git add src/shared/api/runtimeAgentSuggestions.ts src/entities/agent/model/types.ts src/prototype.jsx tests/e2e/runtime-agent-suggestions-service.spec.ts tests/e2e/design-prototype.spec.ts docs/message-flow.md
 git commit -m "feat: add agent suggestion runtime service"
 ```
 

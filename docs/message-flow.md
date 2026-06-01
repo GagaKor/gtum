@@ -79,13 +79,13 @@ The input contract for `request_agent_suggestions` is fixed around these fields:
 - `userTask`
 - `executionMode`
 
-The active design prototype does not currently call this runtime command. When this slice is reintroduced, TSX/FSD components should assemble the payload from active project state, active editor/terminal tab, provider state, and execution mode. The runtime receiver remains [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs).
+The active design prototype now calls this runtime command through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts) when the desktop runtime is available and the active provider is `Codex`. Browser preview keeps the canned reply path so the uploaded design remains testable without Tauri.
 
 ## Flow 5. Suggestion Request And Approval Execution
 
 1. The user must enter a request while the provider is connected.
-2. The active prototype currently returns canned chat responses and simulated approval suggestions from [`src/prototype.jsx`](../src/prototype.jsx).
-3. The durable runtime path should pack active project metadata, selected file context, recent terminal logs, and the user request into the Flow 4 envelope.
+2. The active prototype routes runtime-backed `Codex` requests through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts); browser preview and non-runtime providers keep canned chat responses from [`src/prototype.jsx`](../src/prototype.jsx).
+3. The runtime path packs active project metadata, selected file context, recent terminal logs, and the user request into the Flow 4 envelope.
 4. After validating the connection, the `Codex` runtime requests suggestions through `codex exec --sandbox read-only`.
 5. The response is normalized into:
    - `summary`
@@ -119,8 +119,10 @@ It covers:
 - browser fallback for the backend bridge state
 - injected terminal runtime bridge coverage for new-tab creation and close/terminate routing
 - terminal runtime service contract coverage through [`tests/e2e/runtime-terminal-service.spec.ts`](../tests/e2e/runtime-terminal-service.spec.ts)
+- agent suggestion runtime service contract coverage through [`tests/e2e/runtime-agent-suggestions-service.spec.ts`](../tests/e2e/runtime-agent-suggestions-service.spec.ts)
+- injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
 
-Deleted FSD-era E2E specs must not be referenced as current coverage. Provider, agent request, aging, and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
+Deleted FSD-era E2E specs must not be referenced as current coverage. Provider login, aging, and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
 
 ## Documentation Rule
 
