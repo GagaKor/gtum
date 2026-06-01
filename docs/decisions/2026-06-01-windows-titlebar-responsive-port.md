@@ -33,7 +33,7 @@ The user selected a phased approach (design approval + the "단계 분리" answe
 
 ## Trade-offs Accepted
 
-- The caption/traffic buttons are visual this phase: maximize toggles an in-canvas `is-max` (scaler fills the stage 1:1), while minimize/close are no-ops with TODO markers. They do not control the real OS window yet, and the native titlebar (`decorations:true`) still shows until the deferred follow-up.
+- The caption/traffic buttons are visual for this phase: maximize toggles an in-canvas `is-max` (scaler fills the stage 1:1), while minimize/close are no-ops with TODO markers. This accepted short-term trade-off was resolved by `2026-06-01-native-window-controls.md`.
 - Responsive reflow (width class + auto-collapse) only engages meaningfully when maximized, because the non-maximized window is a fixed 1320px design canvas that is merely scaled to fit.
 
 ## Related Code Paths
@@ -46,7 +46,7 @@ The user selected a phased approach (design approval + the "단계 분리" answe
 
 ## Consequences
 
-- Follow-up task: real OS window control — `decorations:false`, wire `WinControls` to `getCurrentWindow().minimize()/toggleMaximize()/close()` + `startDragging`, add `core:window:*` + drag-region capabilities, and remove the redundant native titlebar.
+- Follow-up resolved: real OS window control was implemented in the native-window-controls slice (`decorations:false`, Tauri window API wiring, and explicit window-control capability entries).
 - This is the first item of the broader "make it actually-working software" action plan.
 
 ## Decision Journey

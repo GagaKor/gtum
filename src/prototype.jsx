@@ -5,6 +5,10 @@ import {
   createProjectRuntimeService,
   hasTauriRuntime,
 } from './shared/api/runtimeProjects'
+import {
+  createRuntimeWindowControls,
+  initialRuntimeWindowControls,
+} from './shared/api/runtimeWindow'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
 import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
@@ -3887,13 +3891,60 @@ function App() {
     return () => { alive = false; };
   }, []);
 
-  // Visual maximize state. NOTE: this only toggles the in-canvas presentation
-  // (scaler fills the stage at 1:1, window loses its corner radius). Real OS
-  // window control (minimize/close + frameless decorations) is a follow-up.
+  const [windowControls, setWindowControls] = React.useState(initialRuntimeWindowControls);
+  React.useEffect(() => {
+    let alive = true;
+    createRuntimeWindowControls().then((controls) => { if (alive) setWindowControls(controls); });
+    return () => { alive = false; };
+  }, []);
+
   const [maximized, setMaximized] = React.useState(false);
-  const onToggleMax = () => setMaximized((m) => !m);
-  const onMinimize = () => {}; // TODO(follow-up): wire to Tauri window.minimize()
-  const onClose = () => {};    // TODO(follow-up): wire to Tauri window.close()
+  React.useEffect(() => {
+    if (!windowControls.available) return undefined;
+    let alive = true;
+
+    const syncMaximized = () => {
+      windowControls.isMaximized()
+        .then((value) => { if (alive) setMaximized(value); })
+        .catch(() => undefined);
+    };
+
+    syncMaximized();
+
+    let removeResizeListener;
+    windowControls.onResized?.(syncMaximized)
+      .then((unlisten) => { removeResizeListener = unlisten; })
+      .catch(() => undefined);
+
+    return () => {
+      alive = false;
+      removeResizeListener?.();
+    };
+  }, [windowControls]);
+
+  const onToggleMax = React.useCallback(async () => {
+    if (!windowControls.available) {
+      setMaximized((m) => !m);
+      return;
+    }
+
+    try {
+      await windowControls.toggleMaximize();
+      setMaximized(await windowControls.isMaximized());
+    } catch {
+      setMaximized((m) => !m);
+    }
+  }, [windowControls]);
+  const onMinimize = React.useCallback(() => {
+    windowControls.minimize().catch(() => undefined);
+  }, [windowControls]);
+  const onClose = React.useCallback(() => {
+    windowControls.close().catch(() => undefined);
+  }, [windowControls]);
+  const onStartDrag = React.useCallback(() => {
+    if (!windowControls.available) return;
+    windowControls.startDragging().catch(() => undefined);
+  }, [windowControls]);
 
   React.useLayoutEffect(() => {
     const fit = () => {
@@ -4298,6 +4349,7 @@ function App() {
               onMinimize={onMinimize}
               onToggleMax={onToggleMax}
               onClose={onClose}
+              onStartDrag={onStartDrag}
             />
             <div
               className={"body-grid" +

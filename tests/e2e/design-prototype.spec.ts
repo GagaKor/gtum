@@ -150,3 +150,73 @@ test('collapses side panels responsively when the maximized window is narrow', a
   await expect(page.locator('.body-grid')).toHaveClass(/sidebar-closed/)
   await expect(page.locator('.body-grid')).toHaveClass(/agent-closed/)
 })
+
+test('routes custom caption buttons to native window controls when available', async ({ page }) => {
+  await page.addInitScript(() => {
+    const events: string[] = []
+    let maximized = false
+
+    ;(window as Window & {
+      __GTUM_OS__?: string
+      __GTUM_WINDOW_EVENTS__?: string[]
+      __GTUM_WINDOW_CONTROLS__?: unknown
+    }).__GTUM_OS__ = 'windows'
+    ;(window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__ = events
+    ;(window as Window & { __GTUM_WINDOW_CONTROLS__?: unknown }).__GTUM_WINDOW_CONTROLS__ = {
+      available: true,
+      minimize: async () => events.push('minimize'),
+      close: async () => events.push('close'),
+      toggleMaximize: async () => {
+        maximized = !maximized
+        events.push('toggleMaximize')
+      },
+      isMaximized: async () => maximized,
+      startDragging: async () => events.push('startDragging'),
+    }
+  })
+  await page.goto('/')
+
+  await page.getByLabel('Minimize').click()
+  await page.getByLabel('Maximize').click()
+  await expect(page.locator('.gtum-window')).toHaveClass(/is-max/)
+
+  await page.getByLabel('Maximize').click()
+  await expect(page.locator('.gtum-window')).not.toHaveClass(/is-max/)
+
+  await page.getByLabel('Close').click()
+
+  const events = await page.evaluate(() =>
+    (window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__,
+  )
+  expect(events).toEqual(['minimize', 'toggleMaximize', 'toggleMaximize', 'close'])
+})
+
+test('starts native window dragging from the titlebar background only', async ({ page }) => {
+  await page.addInitScript(() => {
+    const events: string[] = []
+
+    ;(window as Window & {
+      __GTUM_OS__?: string
+      __GTUM_WINDOW_EVENTS__?: string[]
+      __GTUM_WINDOW_CONTROLS__?: unknown
+    }).__GTUM_OS__ = 'windows'
+    ;(window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__ = events
+    ;(window as Window & { __GTUM_WINDOW_CONTROLS__?: unknown }).__GTUM_WINDOW_CONTROLS__ = {
+      available: true,
+      minimize: async () => events.push('minimize'),
+      close: async () => events.push('close'),
+      toggleMaximize: async () => events.push('toggleMaximize'),
+      isMaximized: async () => false,
+      startDragging: async () => events.push('startDragging'),
+    }
+  })
+  await page.goto('/')
+
+  await page.getByLabel('Minimize').click()
+  await page.locator('.titlebar.os-windows .title-left').click({ position: { x: 24, y: 12 } })
+
+  const events = await page.evaluate(() =>
+    (window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__,
+  )
+  expect(events).toEqual(['minimize', 'startDragging'])
+})

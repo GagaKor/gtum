@@ -1,3 +1,5 @@
+import type { MouseEvent } from 'react'
+
 import {
   activeShellTab,
   shellWorkspaceStatus,
@@ -23,6 +25,7 @@ export interface TitlebarProps {
   readonly onMinimize: () => void
   readonly onToggleMax: () => void
   readonly onClose: () => void
+  readonly onStartDrag?: () => void
 }
 
 // OS-specific window controls.
@@ -113,6 +116,7 @@ export function Titlebar({
   onMinimize,
   onToggleMax,
   onClose,
+  onStartDrag,
 }: TitlebarProps) {
   const connected = providers.filter((provider) => provider.state === 'connected')
   const activeTab = activeShellTab(workspace)
@@ -165,9 +169,28 @@ export function Titlebar({
     />
   )
 
+  const handleDragStart = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
+
+    const target = event.target
+    if (
+      target instanceof Element &&
+      target.closest('button, a, input, select, textarea, [role="button"], .win-controls, .traffic, .title-right')
+    ) {
+      return
+    }
+
+    onStartDrag?.()
+  }
+
   if (os === 'windows') {
     return (
-      <div className="titlebar os-windows" data-comment-anchor="titlebar" onDoubleClick={onToggleMax}>
+      <div
+        className="titlebar os-windows"
+        data-comment-anchor="titlebar"
+        onDoubleClick={onToggleMax}
+        onMouseDown={handleDragStart}
+      >
         <div className="title-left">{breadcrumb}</div>
         <div className="title-spacer" />
         {status}
@@ -178,7 +201,12 @@ export function Titlebar({
 
   // macOS — controls on the left, breadcrumb centered.
   return (
-    <div className="titlebar os-mac" data-comment-anchor="titlebar" onDoubleClick={onToggleMax}>
+    <div
+      className="titlebar os-mac"
+      data-comment-anchor="titlebar"
+      onDoubleClick={onToggleMax}
+      onMouseDown={handleDragStart}
+    >
       {controls}
       <div className="title-center">{breadcrumb}</div>
       {status}

@@ -30,6 +30,7 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - agent request -> suggestion -> approval flow
 - new design shell render, scaled proportions, and titlebar/statusbar contracts through `tests/e2e/design-prototype.spec.ts`
 - independent left `Projects` and `Files` accordion collapse behavior, settings-modal open, backend-bridge state, and file-open content (same spec)
+- custom frameless titlebar coverage in the same spec: OS-specific window chrome, responsive collapse, injected native window-control routing, and titlebar drag-region behavior
 - runtime project-service fallback behavior through `tests/e2e/runtime-project-service.spec.ts`
 
 Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The two specs above are the only active E2E coverage; the aging scenario must be re-gathered on the new shell.

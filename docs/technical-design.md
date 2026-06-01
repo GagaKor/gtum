@@ -350,6 +350,7 @@ The frontend should be organized by feature domain.
   - hold feature contracts such as workbench tab layout and approval policy logic.
 - `shared/api`
   - holds backend-facing service seams such as `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file-read commands with browser fallback.
+  - includes `src/shared/api/runtimeWindow.ts`, the browser-safe seam for Tauri native window controls (`minimize`, `close`, `toggleMaximize`, `isMaximized`, and `startDragging`) used by the custom frameless titlebar.
 - `shared/lib`, `shared/types`
   - hold cross-feature helpers and compatibility types needed while the uploaded design moves from JSX to TSX.
 - `widgets/*/ui`
