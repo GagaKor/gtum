@@ -4,7 +4,7 @@
 
 **Goal:** Turn the installable `gtum` app into working software by completing the real `Codex login -> suggestion -> approval -> PTY execution -> restore` loop and keeping mock behavior limited to browser-preview regression tests.
 
-**Architecture:** Browser/Vite preview may use fixture projects, canned replies, and simulated terminal output only as design-test scaffolding. The Tauri desktop runtime must either call real runtime contracts or show explicit unavailable/deferred states; it must never silently report mock success. Codex is the first daily-use provider path, while Claude remains deferred until Codex reaches an installable-app smoke baseline.
+**Architecture:** Browser/Vite preview may use fixture projects and simulated terminal output only as design-test scaffolding. It must not fabricate agent replies; Codex requests without the desktop runtime show an explicit runtime-unavailable state. The Tauri desktop runtime must either call real runtime contracts or show explicit unavailable/deferred states; it must never silently report mock success. Codex is the first daily-use provider path, while Claude remains deferred until Codex reaches an installable-app smoke baseline.
 
 **Tech Stack:** React 19, TypeScript, Vite, Tauri v2, Rust, Codex CLI session auth, PTY runtime, Playwright E2E, Cargo checks, GitHub Actions release gates.
 
@@ -29,7 +29,8 @@
   - workspace persistence commands
 - Latest guardrail already landed:
   - desktop runtime no longer falls through to canned provider replies
-  - Codex commands targeting mock tabs reroute to a new PTY-backed tab
+  - browser preview no longer fabricates canned agent replies
+  - Codex commands targeting non-runtime-backed tabs reroute to a new PTY-backed tab
 
 ## Acceptance Criteria
 
@@ -95,7 +96,7 @@
 
 - [ ] **Step 1: Write failing E2E for runtime-without-real-project**
 
-Add a test that injects `__GTUM_AGENT_RUNTIME__.hasRuntime() === true`, keeps the active project as the browser fixture (`runtimeBacked: false`), sends a Codex request, and expects an explicit "open a real project first" message instead of calling `request_agent_suggestions`.
+Add a test that injects `__GTUM_AGENT_RUNTIME__.hasRuntime() === true`, keeps the active project as the empty browser fallback (`runtimeBacked: false`), sends a Codex request, and expects an explicit "open a real project first" message instead of calling `request_agent_suggestions`.
 
 - [ ] **Step 2: Run the failing test**
 
@@ -337,7 +338,7 @@ npm run build
 npm run test:e2e -- --grep "does not simulate approved command success in desktop runtime"
 ```
 
-Expected: FAIL because `EXEC_OUTPUTS` can still backfill simulated output in some desktop paths.
+Expected: PASS after the no-simulation cleanup; `EXEC_OUTPUTS` is no longer part of the frontend runtime path.
 
 - [ ] **Step 3: Implement strict desktop execution policy**
 
@@ -345,7 +346,7 @@ In `onApprove`:
 - if `terminalRuntimeService.hasRuntime()` is true, every approved command must call `createTerminalTabWithCommand` or `executeCommand`
 - if runtime execution fails, mark the tab failed and append the error
 - do not call `EXEC_OUTPUTS` in desktop runtime
-- keep `EXEC_OUTPUTS` for browser preview only
+- do not keep browser-preview command success fixtures; browser preview should show explicit runtime-required state
 
 - [ ] **Step 4: Verify**
 

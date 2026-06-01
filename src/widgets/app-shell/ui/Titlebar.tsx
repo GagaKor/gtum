@@ -28,32 +28,26 @@ export interface TitlebarProps {
   readonly onStartDrag?: () => void
 }
 
-// OS-specific window controls.
-// macOS = round "traffic lights" on the left, glyphs revealed on hover.
-// Windows = square caption buttons on the right, close turns red.
 interface WinControlsProps {
   readonly os: ShellOs
-  readonly lang: ShellLanguage
   readonly maximized: boolean
   readonly onMinimize: () => void
   readonly onToggleMax: () => void
   readonly onClose: () => void
 }
 
-function WinControls({ os, lang, maximized, onMinimize, onToggleMax, onClose }: WinControlsProps) {
-  const L = (ko: string, en: string) => (lang === 'ko' ? ko : en)
-
+function WinControls({ os, maximized, onMinimize, onToggleMax, onClose }: WinControlsProps) {
   if (os === 'windows') {
     return (
       <div className="win-controls" data-comment-anchor="window-controls">
-        <button className="winbtn" title={L('최소화', 'Minimize')} aria-label="Minimize" onClick={onMinimize}>
+        <button className="winbtn" title="Minimize" aria-label="Minimize" onClick={onMinimize}>
           <svg width="11" height="11" viewBox="0 0 11 11">
             <rect x="1" y="5" width="9" height="1" fill="currentColor" />
           </svg>
         </button>
         <button
           className="winbtn"
-          title={maximized ? L('이전 크기로', 'Restore') : L('최대화', 'Maximize')}
+          title={maximized ? 'Restore' : 'Maximize'}
           aria-label="Maximize"
           onClick={onToggleMax}
         >
@@ -68,7 +62,7 @@ function WinControls({ os, lang, maximized, onMinimize, onToggleMax, onClose }: 
             </svg>
           )}
         </button>
-        <button className="winbtn close" title={L('닫기', 'Close')} aria-label="Close" onClick={onClose}>
+        <button className="winbtn close" title="Close" aria-label="Close" onClick={onClose}>
           <svg width="11" height="11" viewBox="0 0 11 11" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round">
             <path d="M1.5 1.5l8 8M9.5 1.5l-8 8" />
           </svg>
@@ -79,19 +73,19 @@ function WinControls({ os, lang, maximized, onMinimize, onToggleMax, onClose }: 
 
   return (
     <div className="traffic mac" data-comment-anchor="window-controls">
-      <button className="dot red" title={L('닫기', 'Close')} aria-label="Close" onClick={onClose}>
+      <button className="dot red" title="Close" aria-label="Close" onClick={onClose}>
         <svg viewBox="0 0 12 12">
           <path d="M3.6 3.6l4.8 4.8M8.4 3.6l-4.8 4.8" />
         </svg>
       </button>
-      <button className="dot yellow" title={L('최소화', 'Minimize')} aria-label="Minimize" onClick={onMinimize}>
+      <button className="dot yellow" title="Minimize" aria-label="Minimize" onClick={onMinimize}>
         <svg viewBox="0 0 12 12">
           <path d="M3 6h6" />
         </svg>
       </button>
       <button
         className="dot green"
-        title={maximized ? L('이전 크기로', 'Restore') : L('최대화', 'Maximize')}
+        title={maximized ? 'Restore' : 'Maximize'}
         aria-label="Maximize"
         onClick={onToggleMax}
       >
@@ -104,7 +98,6 @@ function WinControls({ os, lang, maximized, onMinimize, onToggleMax, onClose }: 
 }
 
 export function Titlebar({
-  lang,
   os,
   maximized,
   workspace,
@@ -117,6 +110,7 @@ export function Titlebar({
   onToggleMax,
   onClose,
   onStartDrag,
+  lang,
 }: TitlebarProps) {
   const connected = providers.filter((provider) => provider.state === 'connected')
   const activeTab = activeShellTab(workspace)
@@ -124,23 +118,21 @@ export function Titlebar({
   const groupCount = Object.keys(workspace.groups ?? {}).length
   const GearIcon = icons.gear
 
-  // Breadcrumb is shared between layouts. The `.bc-detail` spans are hidden by
-  // the responsive width classes (w-md/w-sm) on the window.
   const breadcrumb = (
     <div className="breadcrumb">
       <span className="brand-dot" />
       <span className="brand">gtum</span>
-      <span className="sep bc-detail">›</span>
+      <span className="sep bc-detail">/</span>
       <span className="bc-detail">{project.name}</span>
-      <span className="sep bc-detail">·</span>
+      <span className="sep bc-detail">/</span>
       <span className="bc-detail" style={{ color: 'var(--accent)' }}>
         {project.branch}
       </span>
-      <span className="sep bc-detail">·</span>
-      <span className="bc-detail">[{activeTab?.title || '—'}]</span>
+      <span className="sep bc-detail">/</span>
+      <span className="bc-detail">[{activeTab?.title || '--'}]</span>
       {groupCount > 1 && (
         <span className="bc-detail" style={{ color: 'var(--text-faint)' }}>
-          · {groupCount} groups
+          / {groupCount} groups
         </span>
       )}
     </div>
@@ -150,7 +142,7 @@ export function Titlebar({
     <div className="title-right">
       <span className="pill">
         <span className={'dot' + (wsStatus === 'failed' ? ' warn' : '')} />
-        {lang === 'ko' ? '라이브' : 'Live'} · {connected.length} {translate(lang, 'activeAgent')}
+        Live / {connected.length} {translate(lang, 'activeAgent')}
       </span>
       <button className="pill icon-only" onClick={openSettings} title={translate(lang, 'settingsTitle')}>
         <GearIcon />
@@ -161,7 +153,6 @@ export function Titlebar({
   const controls = (
     <WinControls
       os={os}
-      lang={lang}
       maximized={maximized}
       onMinimize={onMinimize}
       onToggleMax={onToggleMax}
@@ -199,7 +190,6 @@ export function Titlebar({
     )
   }
 
-  // macOS — controls on the left, breadcrumb centered.
   return (
     <div
       className="titlebar os-mac"

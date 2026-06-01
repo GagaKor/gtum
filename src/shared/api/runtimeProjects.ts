@@ -125,66 +125,16 @@ export type ProjectRuntimeService = {
 };
 
 const FALLBACK_PROJECT: RuntimeProject = {
-  name: "aurora-monorepo",
-  path: "~/code/aurora-monorepo",
-  id: "~/code/aurora-monorepo",
-  branch: "feature/onboarding-funnel",
-  branchType: "feature",
-  ahead: 3,
+  name: "Open a project",
+  path: "",
+  id: "",
+  branch: "no-project",
+  branchType: "none",
+  ahead: 0,
   behind: 0,
-  changedFiles: 7,
+  changedFiles: 0,
   runtimeBacked: false,
-  fileTree: [
-    {
-      name: "apps",
-      type: "dir",
-      open: true,
-      children: [
-        {
-          name: "web",
-          type: "dir",
-          open: true,
-          children: [
-            {
-              name: "src",
-              type: "dir",
-              open: true,
-              children: [
-                { name: "OnboardingFunnel.tsx", type: "ts", changed: true, selected: true },
-                { name: "useFunnelState.ts", type: "ts", changed: true },
-                { name: "main.tsx", type: "ts" },
-              ],
-            },
-            { name: "package.json", type: "json" },
-            { name: "vite.config.ts", type: "ts" },
-          ],
-        },
-        {
-          name: "api",
-          type: "dir",
-          open: true,
-          children: [
-            { name: "src", type: "dir", open: false },
-            { name: "server.ts", type: "ts", changed: true },
-            { name: "package.json", type: "json", changed: true },
-          ],
-        },
-      ],
-    },
-    { name: "packages", type: "dir", open: false },
-    {
-      name: "tests",
-      type: "dir",
-      open: true,
-      children: [
-        { name: "funnel.spec.ts", type: "ts", changed: true },
-        { name: "checkout.spec.ts", type: "ts" },
-      ],
-    },
-    { name: "package.json", type: "json" },
-    { name: "pnpm-workspace.yaml", type: "yaml" },
-    { name: "README.md", type: "md" },
-  ],
+  fileTree: [],
 };
 
 export const fallbackRuntimeProject: RuntimeProject = FALLBACK_PROJECT;
@@ -266,7 +216,7 @@ export const fileSnapshotFromFallback = (
     path: filePath || displayPath,
     displayPath,
     lang: extensionOf(displayPath),
-    content: `// ${displayPath}\n// Browser preview is using bundled project data.`,
+    content: `// ${displayPath}\n// Desktop runtime is not connected. Open a real project folder in the installed app to read file contents.`,
     isText: true,
     truncated: false,
     dirty: false,

@@ -29,15 +29,18 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - current provider-auth automation is contract/preview coverage, not final `OAuth/session login` validation
 - agent request -> suggestion -> approval flow
 - new design shell render, scaled proportions, and titlebar/statusbar contracts through `tests/e2e/design-prototype.spec.ts`
-- independent left `Projects` and `Files` accordion collapse behavior, settings-modal open, backend-bridge state, and file-open content (same spec)
+- independent left `Projects` and `Files` accordion collapse behavior, settings-modal open, backend-bridge state, and the empty browser fallback with no bundled project files (same spec)
 - custom frameless titlebar coverage in the same spec: OS-specific window chrome, responsive collapse, injected native window-control routing, and titlebar drag-region behavior
 - runtime project-service fallback behavior through `tests/e2e/runtime-project-service.spec.ts`
 - terminal runtime service contract behavior through `tests/e2e/runtime-terminal-service.spec.ts`
 - injected terminal runtime bridge coverage in `tests/e2e/design-prototype.spec.ts` for new-tab creation and close/terminate routing
 - agent suggestion runtime service contract behavior through `tests/e2e/runtime-agent-suggestions-service.spec.ts`
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
+- Codex suggestion failure coverage now verifies CLI invocation failures, error-only structured responses, empty-command responses, and browser-preview runtime-unavailable requests do not create approval cards or canned replies.
+- Rust unit coverage now guards app-data startup normalization for missing directories, existing directories, and legacy file-path migration.
 - agent auth runtime service contract behavior through `tests/e2e/runtime-agent-auth-service.spec.ts`
 - injected Codex CLI login launcher coverage in `tests/e2e/design-prototype.spec.ts`
+- frontend no-mock baseline coverage in `tests/e2e/design-prototype.spec.ts`: browser preview starts at `Open a project`, exposes an empty bridge `projectPath`, contains no `aurora-monorepo`/`OnboardingFunnel.tsx` default data, and shows runtime-required messages instead of canned responses.
 
 Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The specs listed above are the active E2E coverage; the aging scenario must be re-gathered on the new shell.
 
@@ -54,6 +57,19 @@ Before using web-preview results as evidence, the current sprint or release pass
 - open a real project folder through the native picker
 - create, read, execute, and close PTY-backed terminal tabs
 - launch `codex login --device-auth`, reconnect Codex, and request a real Codex suggestion
+
+## 2026-06-01 Windows Installable Smoke
+
+Local Windows installable validation was run from the generated release executable on June 1, 2026.
+
+- `npm run tauri:build` succeeds when run outside the process-spawn sandbox and produces `src-tauri/target/release/gtum.exe`.
+- Launching `gtum.exe` from the release target now keeps the `gtum` process alive instead of exiting with code `101`.
+- The smoke found a real legacy-state collision: `%APPDATA%\com.gagakor.gtum` existed as a file from an older build, while the current runtime expects that path to be a directory.
+- Startup now backs up that legacy file beside the app-data root as `com.gagakor.gtum.legacy-file-<timestamp>.json`, creates `%APPDATA%\com.gagakor.gtum`, and initializes distinct `agent-auth.json`, `workspace-state.json`, and `telegram-state.json` files.
+- The local Codex CLI prerequisite is now installed from `@openai/codex`, reports `codex-cli 0.135.0`, and `codex login status` reports a ChatGPT login. A direct `codex exec` smoke was not run because it would transmit local repository context to the external Codex service from this validation environment.
+- A Codex-connect smoke exposed a Windows PTY startup problem where `cmd.exe /Q /K` could raise an application-error dialog before fallback. Windows PTY sessions now prefer `powershell.exe -NoLogo` and keep `cmd.exe` only as fallback.
+- A connected Codex request exposed a Windows `codex.cmd` batch-argument failure. The runtime now keeps the prompt out of `.cmd` arguments, writes it to stdin, and prefers the direct Node `codex.js` entrypoint when available.
+- This pass confirms Windows build, launch, and state-root initialization. Native folder picker, PTY command execution, Codex login launcher, and a first real Codex suggestion still need manual installed-app sign-off.
 
 ## 2026-06-01 macOS Installable Smoke
 
@@ -123,6 +139,6 @@ At the current stage, `gtum` satisfies the core MVP flows defined in the plannin
 - expanded long-running manual aging validation
 - Telegram external-channel integration
 
-A code-verified state-persistence bug was found and fixed during the deployment-readiness review: the auth, workspace, and telegram stores previously resolved to the same `app_data_dir` directory path on installed builds and clobbered each other. They now persist to distinct files (`agent-auth.json`, `workspace-state.json`, `telegram-state.json`). On-device verification of reload-restore is still pending, and there are no Rust unit tests guarding this path.
+A code-verified state-persistence bug was found and fixed during the deployment-readiness review: the auth, workspace, and telegram stores previously resolved to the same `app_data_dir` directory path on installed builds and clobbered each other. They now persist to distinct files (`agent-auth.json`, `workspace-state.json`, `telegram-state.json`). A follow-on Windows launch blocker caused by a legacy file at the app-data root is also fixed and guarded by Rust unit tests. On-device verification of full reload-restore is still pending.
 
 For the consolidated deployment/operation readiness assessment, open blockers, and the ship/no-ship verdict, see `docs/release-build-ci.md` (`Current Release Status Snapshot` through `First-Release Go / No-Go Matrix`).

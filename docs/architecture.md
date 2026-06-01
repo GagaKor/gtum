@@ -84,7 +84,7 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/shared/api/runtimeWorkspace.ts` is the typed frontend seam for workspace restore and repeated-use persistence. The prototype reads the runtime workspace snapshot on desktop startup, reopens the last project through `runtimeProjects.ts`, persists successful runtime-backed project opens, and persists execution mode changes.
    - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for PTY-backed terminal sessions. The prototype uses it for new terminal tabs, log polling, tab close termination, and approved command writes when a tab is runtime-backed.
    - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for provider connection snapshots, disconnects, `begin_agent_login`, and the workspace-native `codex login --device-auth` terminal launcher.
-   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics and `request_agent_suggestions`. The prototype uses it for Codex runtime-backed suggestion requests while keeping canned browser-preview replies when Tauri is unavailable.
+   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics and `request_agent_suggestions`. The prototype uses it for Codex runtime-backed suggestion requests; when Tauri is unavailable, browser preview shows a runtime-unavailable state instead of canned agent replies.
    - Desktop runtime provider flows must not silently fall back to prototype data. Non-`Codex` providers surface an explicit deferred state, and Codex commands that point at non-runtime tabs are rerouted into new PTY-backed tabs.
    - The fixed uploaded-design shell is `1320x824`; `src-tauri/tauri.conf.json` uses the same default launch size so the frameless desktop window opens without shell letterboxing.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
@@ -92,6 +92,8 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
 2. `Runtime Layer`
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
    - registers Tauri commands, initializes managers, and resolves app storage paths
+   - ensures the resolved app-data root is a directory before state managers start; a legacy file at that path is moved to a sibling `.legacy-file-<timestamp>.json` backup
+   - [`src-tauri/tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json) and [`src-tauri/tauri.macos.conf.json`](../src-tauri/tauri.macos.conf.json) pin platform bundle targets while the base Tauri config keeps shared app settings
    - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default`, `dialog:allow-open`, and only the explicit native window permissions needed by the custom chrome (`close`, `minimize`, `toggleMaximize`, `startDragging`) before calling filesystem commands
 3. `Runtime Modules`
    - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
@@ -117,16 +119,16 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - renders readiness, branch, changed-file count, ahead/behind, tab/group status, execution mode, and palette hint
 - [`src/prototype.jsx`](../src/prototype.jsx)
   - legacy uploaded design module used by the TSX app entry during migration
-  - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
-  - consumes `src/shared/api/runtimeProjects.ts` for `ProjectOverview` and `ProjectFileSnapshot` payloads while preserving the rich uploaded-design browser fixture fallback
+  - contains the shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls; the default project/workspace state is now empty until a real runtime project opens
+  - consumes `src/shared/api/runtimeProjects.ts` for `ProjectOverview` and `ProjectFileSnapshot` payloads while browser preview stays on an empty no-runtime fallback
   - consumes `src/shared/api/runtimeWorkspace.ts` for desktop workspace snapshot restore, `remember_workspace_project`, and `set_workspace_execution_mode`
   - consumes `src/shared/api/runtimeWindow.ts` so the custom titlebar controls the frameless Tauri window while keeping browser preview no-op fallbacks
-  - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime
+  - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime, without bundling a demo project or file tree
 - [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts)
   - typed project/file runtime service for future TSX components
   - wraps Tauri filesystem commands and browser fallback project/file snapshots
   - supports injected E2E runtime overrides through `window.__GTUM_PROJECT_RUNTIME__`
-  - allows the legacy prototype to inject its curated design fixture file reader so browser preview content does not collapse to generic placeholders
+  - supports injected test file readers, while the product browser fallback itself remains empty and runtime-required
   - exposes the same injected runtime override shape as the other `src/shared/api/*` seams so E2E can verify runtime-backed project states without launching Tauri
 - [`src/shared/api/runtimeWorkspace.ts`](../src/shared/api/runtimeWorkspace.ts)
   - typed workspace persistence service for future TSX components
@@ -188,7 +190,8 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src-tauri/src/runtime/telegram.rs`](../src-tauri/src/runtime/telegram.rs)
   - manages post-MVP Telegram draft, bridge, and runtime state
 - [`src-tauri/src/runtime/platform/mod.rs`](../src-tauri/src/runtime/platform/mod.rs)
-  - provides OS-aware path normalization, shell candidates, and git helpers
+  - provides OS-aware path normalization, `~` home-directory expansion, shell candidates, and git helpers
+  - owns runtime OS branching for shell candidates and terminal newline submission so feature modules do not duplicate Windows/macOS checks
 
 ## Tauri Command Boundary
 
@@ -232,6 +235,8 @@ The current commands group into these domains:
 Current persistence is split like this:
 
 - runtime app-data JSON
+  - startup normalizes the app-data root before any manager initializes storage
+  - if an older install left a file at the app-data root, startup renames it to a sibling `.legacy-file-<timestamp>.json` backup, creates the directory, and then initializes the per-store files
   - agent auth state
   - workspace state: recent project paths, last opened project path, execution mode, storage version, and timestamps
   - Telegram state

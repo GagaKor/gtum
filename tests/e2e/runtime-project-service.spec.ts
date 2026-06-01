@@ -19,17 +19,17 @@ const fallbackProject: RuntimeProject = {
   runtimeBacked: false,
 }
 
-test('uses the injected design fixture reader when desktop runtime is unavailable', async () => {
+test('uses an injected fallback file reader when desktop runtime is unavailable', async () => {
   let invokedRuntime = false
 
   const fixtureSnapshot = (filePath: string, fallbackName?: string): ProjectFileSnapshot => ({
-    id: 'ed-fixture',
+    id: 'ed-fallback',
     type: 'editor',
     title: fallbackName ?? 'fixture.tsx',
     path: filePath,
     displayPath: filePath,
     lang: 'tsx',
-    content: 'design fixture content',
+    content: 'injected fallback content',
     isText: true,
     truncated: false,
     dirty: false,
@@ -52,11 +52,11 @@ test('uses the injected design fixture reader when desktop runtime is unavailabl
 
   const snapshot = await service.readProjectFile(
     fallbackProject,
-    'apps/web/src/OnboardingFunnel.tsx',
-    'OnboardingFunnel.tsx',
+    'src/main.tsx',
+    'main.tsx',
   )
 
-  expect(snapshot.content).toBe('design fixture content')
-  expect(snapshot.title).toBe('OnboardingFunnel.tsx')
+  expect(snapshot.content).toBe('injected fallback content')
+  expect(snapshot.title).toBe('main.tsx')
   expect(invokedRuntime).toBe(false)
 })

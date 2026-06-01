@@ -4,21 +4,20 @@ import { StatusBar } from './StatusBar'
 import { Titlebar } from './Titlebar'
 
 const workspace = {
-  activeGroupId: 'group-1',
+  activeGroupId: 'group-empty',
   groups: {
-    'group-1': {
-      id: 'group-1',
-      activeTabId: 'tab-1',
-      tabs: [{ id: 'tab-1', title: 'backend', status: 'running' }],
+    'group-empty': {
+      id: 'group-empty',
+      tabs: [],
     },
   },
 }
 
 const project = {
-  name: 'aurora-monorepo',
-  branch: 'feature/onboarding-funnel',
-  changedFiles: 7,
-  ahead: 3,
+  name: 'Open a project',
+  branch: 'no-project',
+  changedFiles: 0,
+  ahead: 0,
   behind: 0,
 }
 

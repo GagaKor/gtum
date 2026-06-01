@@ -1834,14 +1834,16 @@ Current status:
 - The frontend has now been fully reset because the prior implementation continued to overlap the design draft. The old `src/app`, `src/features`, `src/widgets`, `src/shared`, `src/stores`, and `src/lib` frontend implementation is deleted.
 - The active frontend now starts at `src/app/main.tsx`, which mounts the uploaded design prototype through `src/app/providers/legacy-prototype.ts` while the design is migrated into reusable TSX/FSD components.
 - Sprint 18 extraction has started: `Titlebar` and `StatusBar` now live in `src/widgets/app-shell/ui` as TSX components while preserving the uploaded design class names, anchors, visible copy, and settings entry behavior.
-- The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and preserve the rich uploaded-design browser fixture fallback.
+- The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and keep browser/Vite preview on an empty no-runtime fallback instead of a bundled project fixture.
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
 - The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, browser preview keeps injectable/no-op fallbacks for E2E, and native maximize polling is intentionally disabled to avoid macOS installed-app resize/style-mask churn.
 - The Tauri launch window starts at the uploaded-design baseline (`1320x824`), and the shell now fills the entire viewport after native resize or maximize instead of preserving a fixed canvas with letterboxing.
 - The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: new terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, closing runtime-backed tabs terminates the PTY session, and approved commands write to runtime-backed tabs after the risk gate.
 - The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and execution mode, then normalize Codex responses into existing approval cards.
-- Desktop-runtime provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, and Codex suggestions targeting design/mock tabs are executed in a new PTY-backed tab instead of simulated in-place output.
-- Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
+- Provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, browser preview no longer fabricates agent replies, and Codex suggestions targeting non-runtime-backed tabs are executed in a new PTY-backed tab instead of simulated in-place output.
+- Windows Codex suggestion execution now avoids passing the full prompt through `codex.cmd`; the runtime sends the prompt over stdin and prefers the direct Node `codex.js` entrypoint when available.
+- Windows release-executable smoke now launches successfully and initializes app-data state after migrating a legacy `%APPDATA%\com.gagakor.gtum` file into a sibling `.legacy-file-<timestamp>.json` backup.
+- Browser/Vite preview starts from the empty `Open a project` state and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri or bundled project data.
 - Validation priority is now installable-desktop first: Windows manual install/launch smoke and native runtime behavior must be checked before using web/Vite preview as secondary regression evidence.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
 - Verification passed on 2026-06-01 with `npm run lint`, `npm run build`, `npm run test:e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, `git diff --check`, and a macOS DMG smoke from `npx tauri build --bundles dmg --verbose`.
@@ -1888,13 +1890,17 @@ Sprint 17 initial backlog:
 - `P0` done: delete the previous frontend implementation and replace it with the uploaded design prototype as the only active frontend
 - `P0` done: reconnect the clean prototype to the Tauri filesystem backend for project overview and file reads
 - `P0` done: add the TSX app entry and FSD-style type/service seams without changing the uploaded design DOM
-- `P0` done: route the legacy prototype's project overview and file-open behavior through `src/shared/api/runtimeProjects.ts` while preserving browser fixture content
+- `P0` done: route the legacy prototype's project overview and file-open behavior through `src/shared/api/runtimeProjects.ts` while keeping browser preview on an empty runtime-required fallback
 - `P0` done: make the custom titlebar the real frameless desktop window chrome through `src/shared/api/runtimeWindow.ts` and Tauri window-control permissions
 - `P0` done: wire terminal tabs to real PTY create/read/write/terminate behavior through `src/shared/api/runtimeTerminals.ts`
 - `P0` done: wire agent suggestions to the real Codex session-backed request path and diagnostics through `src/shared/api/runtimeAgentSuggestions.ts`
+- `P0` done: surface Codex suggestion runtime failures as visible messages instead of approval cards, covering CLI failures, unstructured output, error-only responses, and empty-command responses
+- `P0` done: remove browser-preview canned agent replies and show a desktop-runtime-required state for Codex requests without Tauri
+- `P0` done: fix the Windows Codex request launch path that failed with `batch file arguments are invalid` by moving the prompt to stdin and bypassing the npm `.cmd` shim when possible
+- `P0` done: fix Windows installed-app startup when a legacy file occupies the app-data root, including Rust unit coverage and release-executable launch smoke
 - `P0` done: replace the simulated Codex provider-login path in the runtime desktop flow with `src/shared/api/runtimeAgentAuth.ts`, a `codex login --device-auth` terminal launcher, runtime connection hydration, disconnect handling, and Codex reconnect/error display
 - `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to broaden approval E2E coverage
-- `P0` next: run an installable desktop smoke pass first, starting with Windows install/launch, state-file persistence, native folder picker, PTY terminal, Codex login launcher, and first real suggestion request
+- `P0` partial: run an installable desktop smoke pass first; Windows build/launch/state-file initialization is covered, while native folder picker, PTY terminal, Codex login launcher, and first real suggestion request still need manual sign-off
 - `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files after the installed-app smoke baseline is captured
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
 - `P1` start workbench tab model design for Sprint 18

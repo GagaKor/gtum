@@ -105,18 +105,18 @@ test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
   await expect(statusbar).toHaveAttribute('data-comment-anchor', 'statusbar')
 
   await expect(titlebar).toContainText('gtum')
-  await expect(titlebar).toContainText('aurora-monorepo')
-  await expect(titlebar).toContainText('feature/onboarding-funnel')
-  await expect(titlebar).toContainText('[backend]')
-  await expect(titlebar).toContainText('라이브 · 1 활성 에이전트')
+  await expect(titlebar).toContainText('Open a project')
+  await expect(titlebar).toContainText('no-project')
+  await expect(titlebar).toContainText('[--]')
+  await expect(titlebar).toContainText('Live / 0 active agent')
 
-  await expect(statusbar).toContainText('준비됨')
-  await expect(statusbar).toContainText('feature/onboarding-funnel')
-  await expect(statusbar).toContainText('7 변경')
-  await expect(statusbar).toContainText('↑3 ↓0')
-  await expect(statusbar).toContainText('5 터미널 탭 · 2 그룹 · 2 실패 · 2 실행 중')
-  await expect(statusbar).toContainText('모드: Balanced')
-  await expect(statusbar).toContainText('Cmd+K로 명령 팔레트')
+  await expect(statusbar).toContainText('Ready')
+  await expect(statusbar).toContainText('no-project')
+  await expect(statusbar).toContainText('0 changes')
+  await expect(statusbar).toContainText('up 0 / down 0')
+  await expect(statusbar).toContainText('0 tabs / 1 groups')
+  await expect(statusbar).toContainText('Mode: Balanced')
+  await expect(statusbar).toContainText('Cmd+K')
 
   await titlebar.locator('.pill.icon-only').click()
   await expect(page.locator('.settings-modal')).toBeVisible()
@@ -125,15 +125,16 @@ test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
 test('preserves prototype interactions without legacy frontend state', async ({ page }) => {
   await page.goto('/')
 
-  const projectsSection = page.locator('.sb-section').filter({ hasText: '프로젝트' })
-  const filesSection = page.locator('.sb-section').filter({ hasText: '파일' })
+  const projectsSection = page.locator('.sb-section').filter({ hasText: 'Projects' })
+  const filesSection = page.locator('.sb-section').filter({ hasText: 'Files' })
 
-  await expect(projectsSection.getByText('aurora-monorepo')).toBeVisible()
-  await expect(filesSection.getByText('OnboardingFunnel.tsx')).toBeVisible()
+  await expect(projectsSection.getByText('aurora-monorepo')).toHaveCount(0)
+  await expect(filesSection.getByText('OnboardingFunnel.tsx')).toHaveCount(0)
+  await expect(filesSection.getByText('Open a real project folder in the desktop app.')).toBeVisible()
 
   await projectsSection.locator('.sb-section-h').click()
-  await expect(projectsSection.getByText('aurora-monorepo')).toBeHidden()
-  await expect(filesSection.getByText('OnboardingFunnel.tsx')).toBeVisible()
+  await expect(projectsSection.getByText('Open project folder')).toBeHidden()
+  await expect(filesSection.getByText('Open a real project folder in the desktop app.')).toBeVisible()
 })
 
 test('exposes backend bridge state while keeping browser fallback stable', async ({ page }) => {
@@ -151,10 +152,28 @@ test('exposes backend bridge state while keeping browser fallback stable', async
 
   expect(bridge.desktop).toBe(false)
   expect(bridge.runtimeBacked).toBe(false)
-  expect(bridge.projectPath).toContain('aurora-monorepo')
+  expect(bridge.projectPath).toBe('')
 
   await page.locator('.project-item.action').click()
-  await expect(page.locator('.titlebar').getByText('aurora-monorepo')).toBeVisible()
+  await expect(page.locator('.titlebar').getByText('Open a project')).toBeVisible()
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Opening a real project folder is available in the installed desktop app.',
+  )
+})
+
+test('does not create canned agent replies when desktop runtime is unavailable', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.locator('.sugg')).toHaveCount(0)
+  const initialSuggestionCount = 0
+
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.msg.assistant').last()).toContainText('Codex')
+  await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
+  await expect(page.locator('.msg.assistant').last()).not.toContainText('pnpm test:funnel')
+  await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
 })
 
 test('restores the last runtime project and execution mode from workspace persistence', async ({ page }) => {
@@ -216,7 +235,7 @@ test('restores the last runtime project and execution mode from workspace persis
   await page.goto('/')
 
   await expect(page.locator('.titlebar')).toContainText('restored-workspace')
-  await expect(page.locator('.statusbar')).toContainText('모드: Deep')
+  await expect(page.locator('.statusbar')).toContainText('Mode: Deep')
 
   const calls = await page.evaluate(
     () => {
@@ -312,7 +331,7 @@ test('persists runtime project opens and execution mode changes', async ({ page 
   })
 
   await page.goto('/')
-  await page.getByText('프로젝트 폴더 열기').click()
+  await page.getByText('Open project folder').click()
   await page.locator('.agent-model-row .mode-pill button').nth(2).click()
 
   await expect
@@ -360,7 +379,7 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
   await page.addInitScript(() => {
     const snapshot = {
       sessionId: 77,
-      name: '새 탭',
+      name: 'New tab',
       cwd: '/workspace/project',
       shell: '/bin/zsh',
       shellArgs: ['-i'],
@@ -374,11 +393,39 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
       lastEvent: 'session created',
     }
     const bridgeWindow = window as Window & {
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_PROJECT_RUNTIME__: unknown
       __GTUM_TERMINAL_RUNTIME__: unknown
     }
 
+    bridgeWindow.__projectCalls = []
     bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'pty-project',
+            path: '/workspace/project',
+          },
+          tree: {
+            name: 'pty-project',
+            path: '/workspace/project',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'dev',
+            branchType: 'local',
+            changedFilesCount: 0,
+          },
+        }
+      },
+    }
     bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
@@ -406,6 +453,8 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
   })
 
   await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect(page.locator('.titlebar')).toContainText('pty-project')
   await page.locator('.gt-add').first().click()
 
   await expect
@@ -507,7 +556,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   })
 
   await page.goto('/')
-  await page.getByText('프로젝트 폴더 열기').click()
+  await page.getByText('Open project folder').click()
   await expect
     .poll(async () =>
       page.evaluate(
@@ -521,7 +570,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
     )
     .toBe(true)
 
-  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 
   await expect(page.locator('.sugg').last()).toContainText('Run the failing funnel test')
@@ -541,14 +590,196 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
     provider: 'codex',
     projectName: 'aurora-monorepo',
     projectPath: '~/code/aurora-monorepo',
-    activeTabId: 't-backend',
-    activeTabTitle: 'backend',
+    activeTabId: null,
+    activeTabTitle: null,
     executionMode: 'balanced',
-    userTask: '테스트 다시 실행해줘',
+    userTask: 'test prompt',
   })
-  expect(requestCall?.args?.request?.lastNLogLines).toContain(
+  expect(requestCall?.args?.request?.lastNLogLines ?? []).not.toContain(
     'Error: listen EADDRINUSE: address already in use :::3001',
   )
+})
+
+test('surfaces Codex runtime failures without canned replies or approval cards', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'request_agent_suggestions') {
+          throw new Error('Codex CLI exited with status 1.')
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  const initialSuggestionCount = await page.locator('.sugg').count()
+
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Codex CLI exited with status 1.',
+  )
+  await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
+  await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
+})
+
+test('renders Codex error-only suggestions as messages without approval', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'request_agent_suggestions') {
+          return [
+            {
+              id: 'codex-runtime-error',
+              provider: 'codex',
+              summary: 'No safe command',
+              command: '',
+              preferredTarget: 'new_tab',
+              confidence: 'low',
+              error: 'No safe read-only command is available.',
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  const initialSuggestionCount = await page.locator('.sugg').count()
+
+  await page.getByPlaceholder('Ask Codex').fill('Suggest a safe command')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Codex could not produce a safe command: No safe read-only command is available.',
+  )
+  await expect(page.locator('.msg.assistant').last()).not.toContainText('Needs approval')
+  await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
 })
 
 test('requires a runtime-backed project before desktop Codex requests', async ({ page }) => {
@@ -595,16 +826,17 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
     .toMatchObject({
       desktop: true,
       runtimeBacked: false,
-      projectPath: '~/code/aurora-monorepo',
+      projectPath: '',
     })
 
   const initialSuggestionCount = await page.locator('.sugg').count()
 
-  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 
-  await expect(page.locator('.msg.assistant').last()).toContainText('프로젝트')
-  await expect(page.locator('.msg.assistant').last()).toContainText('로컬 폴더')
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Open a real local folder as a project in the desktop app before running a Codex request.',
+  )
   await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
   await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
 
@@ -622,9 +854,51 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
 
 test('does not use canned agent replies for deferred desktop providers', async ({ page }) => {
   await page.addInitScript(() => {
-    ;(window as Window & {
+    const bridgeWindow = window as Window & {
+      __GTUM_AGENT_AUTH_RUNTIME__?: unknown
       __GTUM_AGENT_RUNTIME__?: unknown
-    }).__GTUM_AGENT_RUNTIME__ = {
+    }
+
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        const claudeConnection = {
+          provider: 'claude',
+          displayName: 'Claude',
+          status: 'connected',
+          connectionKind: 'real',
+          accountLabel: 'Claude CLI',
+          accountEmail: null,
+          requiredScopes: ['exec.suggest'],
+          expiresAt: null,
+          callbackUrl: null,
+          authUrl: null,
+          activeLoginId: null,
+          activeLoginState: null,
+          connectedAt: 100,
+          lastLoginAttemptAt: 100,
+          updatedAt: 100,
+          lastError: null,
+        }
+
+        if (command === 'list_agent_connections') {
+          return [claudeConnection]
+        }
+
+        if (command === 'agent_auth_runtime_snapshot') {
+          return {
+            storagePath: '/tmp/gtum-auth-state.json',
+            supportedProviders: ['codex', 'claude'],
+            connections: [claudeConnection],
+            pendingLogins: [],
+            lastSyncedAt: 100,
+          }
+        }
+
+        return []
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async () => {
         throw new Error('runtime should not be called for deferred providers')
@@ -635,15 +909,15 @@ test('does not use canned agent replies for deferred desktop providers', async (
   await page.goto('/')
   await page.locator('.model-picker-btn').click()
   await page.locator('.model-picker-item').filter({ hasText: 'Claude Sonnet' }).click()
-  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 
   await expect(page.locator('.msg.assistant').last()).toContainText('Claude')
-  await expect(page.locator('.msg.assistant').last()).toContainText('보류')
+  await expect(page.locator('.msg.assistant').last()).toContainText('deferred')
   await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
 })
 
-test('runs approved Codex commands in a real PTY when the suggested target is a mock tab', async ({ page }) => {
+test('runs approved Codex commands in a real PTY when the suggested target is not runtime-backed', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -741,7 +1015,7 @@ test('runs approved Codex commands in a real PTY when the suggested target is a 
   })
 
   await page.goto('/')
-  await page.getByText('프로젝트 폴더 열기').click()
+  await page.getByText('Open project folder').click()
   await expect
     .poll(async () =>
       page.evaluate(
@@ -755,13 +1029,13 @@ test('runs approved Codex commands in a real PTY when the suggested target is a 
     )
     .toBe(true)
 
-  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
   await expect(page.locator('.sugg').last()).toContainText('Run the current tab test command')
 
-  await page.locator('.sugg').last().getByRole('button', { name: '검토' }).click()
+  await page.locator('.sugg').last().getByRole('button', { name: 'Review' }).click()
   await expect(page.locator('.modal')).toBeVisible()
-  await page.locator('.modal-foot').getByRole('button', { name: '승인' }).click()
+  await page.locator('.modal-foot').getByRole('button', { name: 'Approve' }).click()
 
   await expect
     .poll(async () =>
@@ -891,7 +1165,7 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
   await page
     .locator('.settings-provider')
     .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: '연결' })
+    .getByRole('button', { name: 'Connect' })
     .click()
 
   await expect
@@ -929,7 +1203,7 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
     request: {
       session: {
         name: 'Codex Login',
-        cwd: '~/code/aurora-monorepo',
+        cwd: '',
       },
       command: 'codex login --device-auth',
     },
@@ -1003,7 +1277,7 @@ test('keeps exact Codex login failure visible in settings', async ({ page }) => 
   await page
     .locator('.settings-provider')
     .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: '연결' })
+    .getByRole('button', { name: 'Connect' })
     .click()
 
   await expect(page.locator('.settings-modal')).toBeVisible()
@@ -1074,7 +1348,7 @@ test('does not validate Codex when the login terminal is cancelled', async ({ pa
   await page
     .locator('.settings-provider')
     .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: '연결' })
+    .getByRole('button', { name: 'Connect' })
     .click()
 
   await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
@@ -1174,34 +1448,30 @@ test('reconnects Codex after the CLI session is completed', async ({ page }) => 
   await page.locator('.titlebar .pill.icon-only').click()
   const codexRow = page.locator('.settings-provider').filter({ hasText: 'Codex' })
 
-  await codexRow.getByRole('button', { name: '연결' }).click()
+  await codexRow.getByRole('button', { name: 'Connect' }).click()
   await expect(codexRow).toContainText(
     'Codex CLI session is missing or expired. Run codex login, then reconnect.',
   )
-  await codexRow.getByRole('button', { name: '연결' }).click()
+  await codexRow.getByRole('button', { name: 'Connect' }).click()
 
   await expect(page.locator('.settings-modal')).toBeHidden()
   await page.locator('.titlebar .pill.icon-only').click()
   await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    '연결됨',
+    'Connected',
   )
   await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    'CLI 세션',
+    'CLI session',
   )
 })
 
-test('keeps rich prototype file content when browser fallback opens a file', async ({ page }) => {
+test('starts browser fallback without bundled project files', async ({ page }) => {
   await page.goto('/')
 
-  const filesSection = page.locator('.sb-section').filter({ hasText: '파일' })
+  const filesSection = page.locator('.sb-section').filter({ hasText: 'Files' })
 
-  await filesSection.getByText('OnboardingFunnel.tsx').click()
-
-  await expect(page.locator('.group-tabbar').getByText('OnboardingFunnel.tsx')).toBeVisible()
-  await expect(page.locator('.editor-code')).toContainText('export function OnboardingFunnel')
-  await expect(page.locator('.editor-code')).not.toContainText(
-    'Browser preview is using bundled project data',
-  )
+  await expect(filesSection.getByText('OnboardingFunnel.tsx')).toHaveCount(0)
+  await expect(filesSection.getByText('Open a real project folder in the desktop app.')).toBeVisible()
+  await expect(page.locator('.group-tabbar').getByText('OnboardingFunnel.tsx')).toHaveCount(0)
 })
 
 test('renders Windows caption buttons when the OS override is windows', async ({ page }) => {

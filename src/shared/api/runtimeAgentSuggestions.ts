@@ -146,6 +146,15 @@ const riskFromConfidence = (confidence: AgentSuggestionConfidence): 'low' | 'mid
   return 'low'
 }
 
+const normalizeText = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : ''
+
+const normalizeConfidence = (value: unknown): AgentSuggestionConfidence =>
+  value === 'low' || value === 'medium' || value === 'high' ? value : 'low'
+
+const normalizeTarget = (value: unknown): AgentSuggestionTarget =>
+  value === 'current_tab' ? 'current_tab' : 'new_tab'
+
 const targetFromRuntime = (
   preferredTarget: AgentSuggestionTarget,
   activeTab?: AgentSuggestionTabInput | null,
@@ -159,22 +168,35 @@ const targetFromRuntime = (
 export const suggestionCardFromRuntime = (
   suggestion: RuntimeAgentSuggestionResponse,
   activeTab?: AgentSuggestionTabInput | null,
-): AgentSuggestionCard => ({
-  id: suggestion.id,
-  provider: suggestion.provider,
-  title: suggestion.summary || 'Codex suggestion',
-  commands: suggestion.command
-    ? [
-        {
-          cmd: suggestion.command,
-          risk: riskFromConfidence(suggestion.confidence),
-          target: targetFromRuntime(suggestion.preferredTarget, activeTab),
-        },
-      ]
-    : [],
-  note: suggestion.error || `Codex confidence: ${suggestion.confidence}`,
-  error: suggestion.error ?? null,
-})
+): AgentSuggestionCard => {
+  const command = normalizeText(suggestion.command)
+  const error = normalizeText(suggestion.error)
+  const confidence = normalizeConfidence(suggestion.confidence)
+  const preferredTarget = normalizeTarget(suggestion.preferredTarget)
+
+  if (!command && !error) {
+    throw new Error('Codex CLI returned an empty command without an error reason.')
+  }
+
+  return {
+    id: normalizeText(suggestion.id) || `codex-${Date.now()}`,
+    provider: suggestion.provider,
+    title:
+      normalizeText(suggestion.summary) ||
+      (error ? 'Codex suggestion unavailable' : 'Codex suggestion'),
+    commands: command
+      ? [
+          {
+            cmd: command,
+            risk: riskFromConfidence(confidence),
+            target: targetFromRuntime(preferredTarget, activeTab),
+          },
+        ]
+      : [],
+    note: error || `Codex confidence: ${confidence}`,
+    error: error || null,
+  }
+}
 
 const fallbackDiagnostics = (provider: AgentProviderId): RuntimeAgentProviderDiagnostics => ({
   provider,

@@ -154,6 +154,92 @@ test('routes current-tab suggestions to a new tab when the active tab is not run
   expect(suggestions[0].commands[0].target).toBe('new')
 })
 
+test('surfaces Codex CLI invocation failures', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      throw new Error('Codex CLI exited with status 1.')
+    },
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'codex',
+      project: {
+        name: 'gtum',
+        path: '/workspace/gtum',
+      },
+      activeTab: null,
+      userTask: 'suggest a next command',
+      executionMode: 'balanced',
+    }),
+  ).rejects.toThrow('Codex CLI exited with status 1.')
+})
+
+test('normalizes Codex error-only responses without approval commands', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      {
+        ...runtimeSuggestion,
+        summary: 'No safe command',
+        command: '   ',
+        confidence: 'medium',
+        error: 'No safe read-only command is available.',
+      },
+    ],
+  })
+
+  const suggestions = await service.requestSuggestions({
+    provider: 'codex',
+    project: {
+      name: 'gtum',
+      path: '/workspace/gtum',
+    },
+    activeTab: null,
+    userTask: 'delete the project',
+    executionMode: 'balanced',
+  })
+
+  expect(suggestions).toEqual([
+    {
+      id: 'codex-1',
+      provider: 'codex',
+      title: 'No safe command',
+      commands: [],
+      note: 'No safe read-only command is available.',
+      error: 'No safe read-only command is available.',
+    },
+  ])
+})
+
+test('rejects empty Codex responses without an error reason', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      {
+        ...runtimeSuggestion,
+        summary: ' ',
+        command: '',
+        error: null,
+      },
+    ],
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'codex',
+      project: {
+        name: 'gtum',
+        path: '/workspace/gtum',
+      },
+      activeTab: null,
+      userTask: 'suggest a next command',
+      executionMode: 'balanced',
+    }),
+  ).rejects.toThrow('Codex CLI returned an empty command without an error reason.')
+})
+
 test('reads provider diagnostics through the runtime command', async () => {
   const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
   const service = createAgentSuggestionRuntimeService({
