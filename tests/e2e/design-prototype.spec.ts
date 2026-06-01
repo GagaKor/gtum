@@ -491,7 +491,6 @@ test('collapses side panels responsively when the maximized window is narrow', a
 test('routes custom caption buttons to native window controls when available', async ({ page }) => {
   await page.addInitScript(() => {
     const events: string[] = []
-    let maximized = false
 
     ;(window as Window & {
       __GTUM_OS__?: string
@@ -503,11 +502,7 @@ test('routes custom caption buttons to native window controls when available', a
       available: true,
       minimize: async () => events.push('minimize'),
       close: async () => events.push('close'),
-      toggleMaximize: async () => {
-        maximized = !maximized
-        events.push('toggleMaximize')
-      },
-      isMaximized: async () => maximized,
+      toggleMaximize: async () => events.push('toggleMaximize'),
       startDragging: async () => events.push('startDragging'),
     }
   })
@@ -528,6 +523,50 @@ test('routes custom caption buttons to native window controls when available', a
   expect(events).toEqual(['minimize', 'toggleMaximize', 'toggleMaximize', 'close'])
 })
 
+test('does not poll native maximized state from resize events', async ({ page }) => {
+  await page.addInitScript(() => {
+    const events: string[] = []
+
+    ;(window as Window & {
+      __GTUM_OS__?: string
+      __GTUM_WINDOW_EVENTS__?: string[]
+      __GTUM_WINDOW_CONTROLS__?: unknown
+    }).__GTUM_OS__ = 'mac'
+    ;(window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__ = events
+    ;(window as Window & { __GTUM_WINDOW_CONTROLS__?: unknown }).__GTUM_WINDOW_CONTROLS__ = {
+      available: true,
+      minimize: async () => events.push('minimize'),
+      close: async () => events.push('close'),
+      toggleMaximize: async () => events.push('toggleMaximize'),
+      startDragging: async () => events.push('startDragging'),
+      isMaximized: async () => {
+        events.push('isMaximized')
+        return false
+      },
+      onResized: async (handler: () => void) => {
+        events.push('onResized')
+        handler()
+        handler()
+
+        return () => events.push('unlisten')
+      },
+    }
+  })
+  await page.goto('/')
+  await expect(page.locator('.gtum-window')).toBeVisible()
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      }),
+  )
+
+  const events = await page.evaluate(() =>
+    (window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__,
+  )
+  expect(events).toEqual([])
+})
+
 test('starts native window dragging from the titlebar background only', async ({ page }) => {
   await page.addInitScript(() => {
     const events: string[] = []
@@ -543,7 +582,6 @@ test('starts native window dragging from the titlebar background only', async ({
       minimize: async () => events.push('minimize'),
       close: async () => events.push('close'),
       toggleMaximize: async () => events.push('toggleMaximize'),
-      isMaximized: async () => false,
       startDragging: async () => events.push('startDragging'),
     }
   })

@@ -90,7 +90,7 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
 2. `Runtime Layer`
    - [`src-tauri/src/lib.rs`](../src-tauri/src/lib.rs)
    - registers Tauri commands, initializes managers, and resolves app storage paths
-   - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default`, `dialog:allow-open`, and explicit `core:window:*` permissions so the prototype can open a native project folder picker and control the frameless desktop window before calling filesystem commands
+   - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default`, `dialog:allow-open`, and only the explicit native window permissions needed by the custom chrome (`close`, `minimize`, `toggleMaximize`, `startDragging`) before calling filesystem commands
 3. `Runtime Modules`
    - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
    - own the actual system behavior and persistence
@@ -126,6 +126,7 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src/shared/api/runtimeWindow.ts`](../src/shared/api/runtimeWindow.ts)
   - typed native window-control service for custom chrome
   - wraps Tauri `getCurrentWindow()` actions behind injected/browser fallbacks for deterministic E2E coverage
+  - intentionally avoids native maximize-state polling; the prototype keeps maximize as local UI state to prevent macOS installed-app resize/style-mask feedback
 - [`src/entities`, `src/features`, `src/shared`](../src)
   - initial FSD-style type, policy, and service seams for extracting the uploaded design into reusable TSX components
 - [`src/styles.css`](../src/styles.css)

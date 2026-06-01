@@ -7,9 +7,7 @@ export type RuntimeWindowControls = {
   minimize: () => Promise<void>;
   close: () => Promise<void>;
   toggleMaximize: () => Promise<void>;
-  isMaximized: () => Promise<boolean>;
   startDragging: () => Promise<void>;
-  onResized?: (handler: () => void) => Promise<RuntimeWindowUnlisten>;
 };
 
 type RuntimeWindowOverride = Partial<RuntimeWindowControls> & {
@@ -21,7 +19,6 @@ const noopControls: RuntimeWindowControls = {
   minimize: async () => undefined,
   close: async () => undefined,
   toggleMaximize: async () => undefined,
-  isMaximized: async () => false,
   startDragging: async () => undefined,
 };
 
@@ -37,9 +34,7 @@ const overrideControls = (): RuntimeWindowControls | null => {
     minimize: candidate.minimize ?? noopControls.minimize,
     close: candidate.close ?? noopControls.close,
     toggleMaximize: candidate.toggleMaximize ?? noopControls.toggleMaximize,
-    isMaximized: candidate.isMaximized ?? noopControls.isMaximized,
     startDragging: candidate.startDragging ?? noopControls.startDragging,
-    onResized: candidate.onResized,
   };
 };
 
@@ -60,13 +55,7 @@ export const createRuntimeWindowControls = async (): Promise<RuntimeWindowContro
       minimize: () => appWindow.minimize(),
       close: () => appWindow.close(),
       toggleMaximize: () => appWindow.toggleMaximize(),
-      isMaximized: () => appWindow.isMaximized(),
       startDragging: () => appWindow.startDragging(),
-      onResized: async (handler) => {
-        const unlisten = await appWindow.onResized(() => handler());
-
-        return unlisten;
-      },
     };
   } catch {
     return noopControls;

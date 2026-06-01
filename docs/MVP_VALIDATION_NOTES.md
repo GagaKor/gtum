@@ -55,6 +55,25 @@ Before using web-preview results as evidence, the current sprint or release pass
 - create, read, execute, and close PTY-backed terminal tabs
 - launch `codex login --device-auth`, reconnect Codex, and request a real Codex suggestion
 
+## 2026-06-01 macOS Installable Smoke
+
+Local macOS installable validation was run from the generated DMG on June 1, 2026.
+
+- `npx tauri build --bundles dmg --verbose` succeeds when run outside the filesystem sandbox; the earlier `hdiutil create failed - device not configured` failure was sandbox-related.
+- Generated artifact: `src-tauri/target/release/bundle/dmg/gtum_0.1.0_aarch64.dmg`.
+- The DMG mounts at `/Volumes/gtum` and contains `gtum.app`, a `/Applications` symlink, `.VolumeIcon.icns`, and `.DS_Store`.
+- `gtum.app` has bundle identifier `com.gagakor.gtum`, version `0.1.0`, and an arm64 Mach-O executable.
+- Launching directly from the mounted DMG opens one `1320x824` window, matching the uploaded design shell and Tauri launch size.
+- The previous installed-app idle CPU regression is fixed: the app no longer polls native maximize state from resize events, and settled DMG-launch CPU stayed near idle (`gtum` about 1%, WebContent about 1-2% in the sampled environment).
+- The app support directory contains distinct state files: `agent-auth.json`, `workspace-state.json`, and `telegram-state.json`.
+
+Residual notes:
+
+- macOS logs still include expected WebKit sandbox noise for pasteboard/audio bootstrap lookup in this unsigned local build.
+- A one-time Tauri/AppKit `is_zoomed` warning can still appear from Tauri internals on mounted-DMG launch, but the bundled frontend no longer calls `isMaximized` or subscribes to resize-driven maximize polling.
+- Screenshot capture through `screencapture` failed in this Codex environment, likely due macOS screen-recording permission, so the window was verified through CoreGraphics metadata rather than pixels.
+- This does not replace Windows real-device sign-off, which remains the first daily-use platform gate.
+
 ## Aging Test 초안 / Initial Aging Test
 
 ### 한국어

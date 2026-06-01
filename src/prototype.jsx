@@ -3947,34 +3947,13 @@ function App() {
 
   const [windowControls, setWindowControls] = React.useState(initialRuntimeWindowControls);
   React.useEffect(() => {
+    if (windowControls.available) return undefined;
     let alive = true;
     createRuntimeWindowControls().then((controls) => { if (alive) setWindowControls(controls); });
     return () => { alive = false; };
-  }, []);
+  }, [windowControls.available]);
 
   const [maximized, setMaximized] = React.useState(false);
-  React.useEffect(() => {
-    if (!windowControls.available) return undefined;
-    let alive = true;
-
-    const syncMaximized = () => {
-      windowControls.isMaximized()
-        .then((value) => { if (alive) setMaximized(value); })
-        .catch(() => undefined);
-    };
-
-    syncMaximized();
-
-    let removeResizeListener;
-    windowControls.onResized?.(syncMaximized)
-      .then((unlisten) => { removeResizeListener = unlisten; })
-      .catch(() => undefined);
-
-    return () => {
-      alive = false;
-      removeResizeListener?.();
-    };
-  }, [windowControls]);
 
   const onToggleMax = React.useCallback(async () => {
     if (!windowControls.available) {
@@ -3984,7 +3963,7 @@ function App() {
 
     try {
       await windowControls.toggleMaximize();
-      setMaximized(await windowControls.isMaximized());
+      setMaximized((m) => !m);
     } catch {
       setMaximized((m) => !m);
     }

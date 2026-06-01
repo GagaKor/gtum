@@ -271,20 +271,21 @@ Done (verified against code/config):
 - Application shell and core product surfaces render (Sprint 17 new design); project/filesystem reads, source control (status/diff/stage/unstage/commit/push), multi-session PTY terminal, and execution modes are implemented.
 - Cross-platform build is wired: `bundle.targets = "all"`, CI compile smoke on Ubuntu/Windows/macOS, and a `release.yml` that publishes a GitHub Release on `master` push with Windows `.exe`/`.msi` and macOS `.app`/`.dmg` artifact-presence checks.
 - Per-store state now persists to distinct files under `app_data_dir` (`agent-auth.json`, `workspace-state.json`, `telegram-state.json`); see the Verified Release Blockers section for the fix that made this true.
+- Local macOS installable smoke was run on June 1, 2026: the DMG builds successfully outside the Codex filesystem sandbox, mounts at `/Volumes/gtum`, contains `gtum.app`, launches at `1320x824`, and the installed-app CPU regression from resize-driven maximize polling is fixed.
 
 Partial:
 
 - Provider auth: the Codex real path now has a workspace-native `codex login --device-auth` terminal launcher, but cancellation, reconnect-after-expiry, and missing-scope UX still need broader validation.
 - Agent suggestions/approval: approval-policy logic is duplicated between `src/prototype.jsx` and the FSD helper and is not wired to real command execution.
 - Frontend architecture: `src/prototype.jsx` is still ~4462 lines; only `Titlebar`/`StatusBar` are extracted to TSX.
-- Testing: browser/Vite E2E now covers the active design shell and typed service seams, but installed-app smoke and real-device validation are the first release-readiness gate; there are still no Rust unit tests around persistence.
+- Testing: browser/Vite E2E now covers the active design shell and typed service seams, and local macOS DMG smoke has been recorded. Windows real-device validation remains the first release-readiness gate; there are still no Rust unit tests around persistence.
 
 Missing for production deployment:
 
 - macOS code signing + notarization, and Windows Authenticode signing.
 - The auto-update pipeline (the spec in `Auto Update Specification` above is 0% implemented).
 - A version-bump gate and a Linux release-artifact presence check.
-- Installed-app smoke sign-off, starting with Windows real-device validation (Windows is the declared first daily-use platform).
+- Installed-app sign-off on Windows real hardware (Windows is the declared first daily-use platform).
 
 ## Production Readiness Checklist (Core Deployment)
 
@@ -331,7 +332,7 @@ Action: treat the updater as a single dedicated sprint deliverable; it is requir
 3. `open` — **Auto-update unimplemented.** Installed apps cannot self-update. Blocks the operational goal of Electron-style auto-update; does not block a manual-install release.
 4. `open` — **Version-bump / tag-collision.** A `master` merge without a version bump fails or collides on the `v__VERSION__` tag and confuses any future updater channel. Mitigate with a CI version-bump gate.
 5. `open` — **Windows real-device sign-off.** Windows is the first daily-use platform but only the compile path is automated; install + launch + Codex-connect + suggestion run on real hardware is not yet validated.
-6. `open` — **Installed-app validation priority.** Web/Vite preview remains useful for fast UI regression checks, but it is explicitly secondary. Release readiness must be judged from installable desktop artifacts first.
+6. `partial` — **Installed-app validation priority.** Web/Vite preview remains useful for fast UI regression checks, but it is explicitly secondary. Local macOS DMG smoke is recorded; Windows real-device install + launch + Codex-connect + suggestion execution is still required.
 
 ## First-Release Go / No-Go Matrix
 
@@ -339,7 +340,7 @@ Action: treat the updater as a single dedicated sprint deliverable; it is requir
 | --- | --- | --- | --- |
 | State persistence (storage-path fix) | resolved (verify on-device) | Yes — must confirm restore works on a real build | Yes |
 | Windows real-device sign-off | open | Yes — required for the Windows-first claim | Yes |
-| Installed-app smoke before web preview | open | Yes — desktop artifact must be tested first | Yes |
+| Installed-app smoke before web preview | partial | Yes — Windows real-device smoke remains required | Yes |
 | macOS signing + notarization | missing | No — usable with a documented Gatekeeper workaround | Yes |
 | Windows Authenticode signing | missing | No — usable with a documented SmartScreen workaround | Yes |
 | Auto-update pipeline | missing | No — manual install is acceptable initially | Yes |

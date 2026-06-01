@@ -1836,14 +1836,14 @@ Current status:
 - Sprint 18 extraction has started: `Titlebar` and `StatusBar` now live in `src/widgets/app-shell/ui` as TSX components while preserving the uploaded design class names, anchors, visible copy, and settings entry behavior.
 - The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and preserve the rich uploaded-design browser fixture fallback.
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
-- The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, and browser preview keeps injectable/no-op fallbacks for E2E.
+- The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, browser preview keeps injectable/no-op fallbacks for E2E, and native maximize polling is intentionally disabled to avoid macOS installed-app resize/style-mask churn.
 - The Tauri launch window now matches the fixed uploaded-design shell size (`1320x824`) so the app opens without shell letterboxing before maximize or manual resizing.
 - The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: new terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, closing runtime-backed tabs terminates the PTY session, and approved commands write to runtime-backed tabs after the risk gate.
 - The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and execution mode, then normalize Codex responses into existing approval cards.
 - Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
 - Validation priority is now installable-desktop first: Windows manual install/launch smoke and native runtime behavior must be checked before using web/Vite preview as secondary regression evidence.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
-- Verification passed on 2026-06-01 with `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml`, `npm run test:e2e`, `npm run tauri:build`, and a `npm run tauri:dev` launch smoke.
+- Verification passed on 2026-06-01 with `npm run lint`, `npm run build`, `npm run test:e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, `git diff --check`, and a macOS DMG smoke from `npx tauri build --bundles dmg --verbose`.
 
 Phase:
 

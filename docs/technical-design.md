@@ -350,7 +350,8 @@ The frontend should be organized by feature domain.
   - hold feature contracts such as workbench tab layout and approval policy logic.
 - `shared/api`
   - holds backend-facing service seams such as `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file-read commands with browser fallback.
-  - includes `src/shared/api/runtimeWindow.ts`, the browser-safe seam for Tauri native window controls (`minimize`, `close`, `toggleMaximize`, `isMaximized`, and `startDragging`) used by the custom frameless titlebar.
+  - includes `src/shared/api/runtimeWindow.ts`, the browser-safe seam for Tauri native window controls (`minimize`, `close`, `toggleMaximize`, and `startDragging`) used by the custom frameless titlebar.
+  - native maximize state is local UI state only. The frontend must not poll Tauri `isMaximized` or subscribe to resize-driven maximize synchronization because that path can trigger macOS `is_zoomed`/style-mask churn in installed builds.
 - `shared/lib`, `shared/types`
   - hold cross-feature helpers and compatibility types needed while the uploaded design moves from JSX to TSX.
 - `widgets/*/ui`
