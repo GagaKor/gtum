@@ -9,6 +9,12 @@ import {
   createRuntimeWindowControls,
   initialRuntimeWindowControls,
 } from './shared/api/runtimeWindow'
+import {
+  CODEX_LOGIN_COMMAND,
+  CODEX_REQUIRED_SCOPES,
+  createAgentAuthRuntimeService,
+  providerViewStateFromConnection,
+} from './shared/api/runtimeAgentAuth'
 import { createAgentSuggestionRuntimeService } from './shared/api/runtimeAgentSuggestions'
 import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
@@ -1492,8 +1498,28 @@ const projectRuntimeService = createProjectRuntimeService({
   fallbackProject: PROJECT,
   fallbackFileReader: tabFromFile,
 });
+const agentAuthRuntimeService = createAgentAuthRuntimeService();
 const agentSuggestionRuntimeService = createAgentSuggestionRuntimeService();
 const terminalRuntimeService = createTerminalRuntimeService();
+
+function mergeRuntimeProviderConnections(providers, connections) {
+  const patches = new Map(connections.map((connection) => {
+    const patch = providerViewStateFromConnection(connection);
+    return [patch.id, patch];
+  }));
+
+  return providers.map((provider) => {
+    const patch = patches.get(provider.id);
+    if (!patch) return provider;
+
+    return {
+      ...provider,
+      ...patch,
+      activeModel: provider.activeModel,
+      models: provider.models,
+    };
+  });
+}
 
 async function readRuntimeProjectOverview(path) {
   const result = await projectRuntimeService.readProjectOverview(path);
@@ -3500,11 +3526,17 @@ function SettingsModal({
                           ? <>
                               <span className="dot-ok" /> {t(lang, "connected")}
                               <span className="dot-sep">·</span>
-                              {t(lang, "sessionExpiry")} {p.expiresInDays}{t(lang, "days")}
+                              {p.expiresInDays == null
+                                ? (lang === "ko" ? "CLI 세션" : "CLI session")
+                                : <>{t(lang, "sessionExpiry")} {p.expiresInDays}{t(lang, "days")}</>}
                               <span className="dot-sep">·</span>
                               {p.scope.length} {lang === "ko" ? "권한" : "scopes"}
                             </>
-                          : <span style={{ color: "var(--text-dim)" }}>{lang === "ko" ? "연결되지 않음" : "Not connected"}</span>}
+                          : p.state === "error"
+                            ? <span style={{ color: "var(--warn)" }}>{p.lastError || (lang === "ko" ? "연결 확인 필요" : "Connection needs attention")}</span>
+                            : p.state === "pending"
+                              ? <span style={{ color: "var(--text-dim)" }}>{lang === "ko" ? "로그인 확인 중" : "Checking login"}</span>
+                              : <span style={{ color: "var(--text-dim)" }}>{lang === "ko" ? "연결되지 않음" : "Not connected"}</span>}
                       </div>
                     </div>
                     {p.state === "connected" ? (
@@ -4076,7 +4108,9 @@ function App() {
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [activeProviderId, setActiveProviderId] = React.useState(
-    agentSuggestionRuntimeService.hasRuntime() ? "codex" : "claude"
+    agentAuthRuntimeService.hasRuntime() || agentSuggestionRuntimeService.hasRuntime()
+      ? "codex"
+      : "claude"
   );
   const [parallelLimit, setParallelLimit] = React.useState(3);
   const [approvalPolicy, setApprovalPolicy] = React.useState(APPROVAL_POLICY_INIT);
@@ -4102,7 +4136,28 @@ function App() {
     setProviders((prev) => prev.map((p) =>
       p.id === providerId ? { ...p, activeModel: modelId } : p));
   };
-  const onDisconnect = (providerId) => {
+  const applyProviderConnection = React.useCallback((connection) => {
+    setProviders((prev) => mergeRuntimeProviderConnections(prev, [connection]));
+    if (connection.status === "connected") setActiveProviderId(connection.provider);
+  }, []);
+  const markProviderError = React.useCallback((providerId, message) => {
+    setProviders((prev) => prev.map((p) => p.id === providerId
+      ? { ...p, state: "error", lastError: message, expiresInDays: null }
+      : p));
+  }, []);
+  const onDisconnect = async (providerId) => {
+    if (agentAuthRuntimeService.hasRuntime()) {
+      try {
+        const connection = await agentAuthRuntimeService.disconnect(providerId);
+        applyProviderConnection(connection);
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError(providerId, message);
+        return;
+      }
+    }
+
     setProviders((prev) => prev.map((p) =>
       p.id === providerId ? { ...p, state: "disconnected", scope: [], expiresInDays: null } : p));
   };
@@ -4117,6 +4172,27 @@ function App() {
   React.useEffect(() => {
     window.__GTUM_BACKEND_BRIDGE__ = projectRuntimeService.getBridgeState(activeProject);
   }, [activeProject]);
+  React.useEffect(() => {
+    if (!agentAuthRuntimeService.hasRuntime()) return undefined;
+
+    let cancelled = false;
+    agentAuthRuntimeService.listConnections()
+      .then((connections) => {
+        if (cancelled) return;
+        setProviders((prev) => mergeRuntimeProviderConnections(prev, connections));
+        const codex = connections.find((connection) => connection.provider === "codex");
+        if (codex?.status === "connected") setActiveProviderId("codex");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError("codex", message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [markProviderError]);
   React.useEffect(() => {
     if (!terminalRuntimeService.hasRuntime()) return undefined;
 
@@ -4562,7 +4638,77 @@ function App() {
                   _policyBlocker: decision.blocker?.decision?.pattern || null });
   };
 
+  const openRuntimeCodexLogin = async () => {
+    const localId = "t-codex-login-" + Date.now();
+    const title = "Codex Login";
+    setWorkspace((w) => openTab(w, w.activeGroupId, {
+      id: localId,
+      title,
+      shell: "zsh",
+      cwd: ".",
+      status: "running",
+      cmd: CODEX_LOGIN_COMMAND,
+      runtimeBacked: false,
+      terminalSessionId: null,
+      lines: [{ kind: "cmd", text: CODEX_LOGIN_COMMAND }],
+    }));
+
+    try {
+      const runtimeTab = await agentAuthRuntimeService.openCodexLoginTerminal({
+        projectPath: activeProject.path,
+        title,
+        cwd: ".",
+      });
+      if (!runtimeTab) return;
+
+      setWorkspace((w) => updateTab(w, localId, (tab) => ({
+        ...tab,
+        ...runtimeTab,
+        id: localId,
+        title,
+        cmd: CODEX_LOGIN_COMMAND,
+        status: "running",
+        lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
+      })));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkspace((w) => updateTab(w, localId, (tab) => ({
+        ...tab,
+        status: "failed",
+        lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
+      })));
+      throw error;
+    }
+  };
   const openOAuth = (providerId) => setOauth({ providerId });
+  const handleProviderConnect = async (providerId) => {
+    if (providerId === "codex" && agentAuthRuntimeService.hasRuntime()) {
+      setSettingsOpen(false);
+      setActiveProviderId("codex");
+      try {
+        await openRuntimeCodexLogin();
+        const connection = await agentAuthRuntimeService.beginLogin("codex", CODEX_REQUIRED_SCOPES);
+        applyProviderConnection(connection);
+        if (connection.status !== "connected") {
+          markProviderError("codex", connection.lastError || (
+            lang === "ko"
+              ? "Codex CLI 로그인을 완료한 뒤 다시 연결해야 해."
+              : "Complete Codex CLI login, then reconnect."
+          ));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError("codex", message);
+        pushProjectMessage(lang === "ko"
+          ? `Codex 로그인을 시작하지 못했어: ${message}`
+          : `Could not start Codex login: ${message}`);
+      }
+      return;
+    }
+
+    setSettingsOpen(false);
+    openOAuth(providerId);
+  };
   const onConnect = (id) => {
     setProviders((prev) => prev.map((p) => p.id === id
       ? { ...p, state: "connected", scope: ["files.read", "terminal.read", "exec.suggest"], expiresInDays: 30 }
@@ -4708,7 +4854,7 @@ function App() {
           autoApprovalLog={autoApprovalLog}
           streamResponses={streamResponses}
           onClose={() => setSettingsOpen(false)}
-          onConnect={(id) => { setSettingsOpen(false); openOAuth(id); }}
+          onConnect={handleProviderConnect}
           onDisconnect={onDisconnect}
           onSwitchModel={onSwitchModel}
           onSetAccent={(v) => setTweak("accent", v)}

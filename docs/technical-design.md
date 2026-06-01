@@ -964,6 +964,13 @@ The target path for the first daily-use release is `OAuth/session login` for `Co
 - do not store sensitive credentials in plain-text config files
 - if the session expires or loses scope, show a clear reconnect state in the UI
 
+#### Current Implementation Notes
+
+- The active frontend auth seam is `src/shared/api/runtimeAgentAuth.ts`; it wraps `list_agent_connections`, `begin_agent_login`, `disconnect_agent_provider`, `agent_auth_runtime_snapshot`, and the `create_terminal_session_with_command` launcher used for Codex login.
+- In the desktop runtime path, clicking `Connect Codex` opens a new terminal tab that runs `codex login --device-auth`, then calls `begin_agent_login` so the Rust auth manager can validate the local ChatGPT-backed Codex CLI session.
+- The current Codex runtime scope contract is `project:read` and `terminal:read`; missing or expired session state maps to provider `error` and can be retried by reconnecting after the CLI login finishes.
+- The browser preview path keeps the uploaded design's simulated OAuth modal so design QA can run without a Tauri runtime.
+
 ## 외부 채널 연동 설계 / External Channel Integration Design
 
 ### 한국어

@@ -327,6 +327,34 @@ git add src/shared/api/runtimeAgentSuggestions.ts src/entities/agent/model/types
 git commit -m "feat: add agent suggestion runtime service"
 ```
 
+### Task 8A: Add Provider Auth Runtime Service And Codex Login Launcher
+
+**Files:**
+- Create: `src/shared/api/runtimeAgentAuth.ts`
+- Modify: `src/prototype.jsx`
+- Create: `tests/e2e/runtime-agent-auth-service.spec.ts`
+- Modify: `tests/e2e/design-prototype.spec.ts`
+- Modify: `docs/message-flow.md`
+- Modify: `docs/architecture.md`
+- Modify: `docs/technical-design.md`
+- Modify: `docs/MVP_VALIDATION_NOTES.md`
+
+- [x] **Step 1: Write failing service tests for provider connection commands and `codex login --device-auth` terminal launcher payloads**
+- [x] **Step 2: Implement the typed auth runtime service and provider snapshot normalization**
+- [x] **Step 3: Hydrate provider state from the runtime in the uploaded design prototype**
+- [x] **Step 4: Replace runtime-backed Codex settings connect with a CLI login terminal launcher plus `begin_agent_login` validation**
+- [x] **Step 5: Keep browser preview on the simulated OAuth modal**
+- [x] **Step 6: Run targeted red/green verification**
+
+Run:
+
+```bash
+npm run build
+npm run test:e2e -- tests/e2e/runtime-agent-auth-service.spec.ts tests/e2e/design-prototype.spec.ts --grep "Codex CLI login|provider connections"
+```
+
+Expected: PASS.
+
 ### Task 9: Implement Approval Execution Path
 
 **Files:**

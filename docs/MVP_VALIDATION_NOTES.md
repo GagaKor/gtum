@@ -36,6 +36,8 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - injected terminal runtime bridge coverage in `tests/e2e/design-prototype.spec.ts` for new-tab creation and close/terminate routing
 - agent suggestion runtime service contract behavior through `tests/e2e/runtime-agent-suggestions-service.spec.ts`
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
+- agent auth runtime service contract behavior through `tests/e2e/runtime-agent-auth-service.spec.ts`
+- injected Codex CLI login launcher coverage in `tests/e2e/design-prototype.spec.ts`
 
 Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The specs listed above are the active E2E coverage; the aging scenario must be re-gathered on the new shell.
 
@@ -81,8 +83,7 @@ That spec was removed in the Sprint 17 frontend reset and has **not yet been re-
 
 At the current stage, `gtum` satisfies the core MVP flows defined in the planning documents. The following remain post-MVP or later stabilization work:
 
-- real `Codex` `OAuth/session login` implementation
-- session expiry, cancellation, reconnect, and missing-scope validation
+- broader `Codex` login UX validation for cancellation, reconnect-after-expiry, and missing-scope states
 - real-device Windows/macOS validation
 - signed and notarized macOS distribution
 - expanded long-running manual aging validation

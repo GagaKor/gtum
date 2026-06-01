@@ -1889,7 +1889,8 @@ Sprint 17 initial backlog:
 - `P0` done: make the custom titlebar the real frameless desktop window chrome through `src/shared/api/runtimeWindow.ts` and Tauri window-control permissions
 - `P0` done: wire terminal tabs to real PTY create/read/write/terminate behavior through `src/shared/api/runtimeTerminals.ts`
 - `P0` done: wire agent suggestions to the real Codex session-backed request path and diagnostics through `src/shared/api/runtimeAgentSuggestions.ts`
-- `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to broaden approval E2E coverage and replace the simulated provider-login modal with Codex CLI login launcher/detection
+- `P0` done: replace the simulated Codex provider-login path in the runtime desktop flow with `src/shared/api/runtimeAgentAuth.ts`, a `codex login --device-auth` terminal launcher, runtime connection hydration, disconnect handling, and Codex reconnect/error display
+- `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to broaden approval E2E coverage
 - `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
 - `P1` start workbench tab model design for Sprint 18

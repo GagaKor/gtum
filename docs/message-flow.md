@@ -53,15 +53,16 @@ This document exceeds 200 lines. Do not reread every flow by default.
 
 ## Flow 3. Provider Diagnostics And Codex Connect
 
-1. On initial load, the app reads both provider connections and provider diagnostics.
+1. On initial load, the app reads provider connections through [`src/shared/api/runtimeAgentAuth.ts`](../src/shared/api/runtimeAgentAuth.ts) when the desktop runtime is available.
 2. `Codex` diagnostics in [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs) check:
    - whether the `codex` CLI exists
    - whether `~/.codex/auth.json` exists
    - whether a ChatGPT-backed session is available
-3. When the user clicks `Connect Codex`, `begin_agent_login` runs.
-4. The auth manager updates state based on the real path being local `Codex CLI` session validation rather than callback-only auth.
-5. When the user clicks `Open Codex Login`, the app launches `codex login --device-auth` in a new terminal session.
-6. Successful validation sets the provider to `connected`, failure sets `error`, and `Claude` remains in a deferred/not-yet-daily-use state.
+3. When the user clicks `Connect Codex` in settings, the prototype opens a runtime-backed terminal tab and runs `codex login --device-auth`.
+4. After launching the terminal login helper, the frontend calls `begin_agent_login` with the `Codex` provider and the documented runtime scopes.
+5. The auth manager updates state based on the real path being local `Codex CLI` ChatGPT-session validation rather than callback-only auth.
+6. Successful validation sets the provider to `connected`; failure sets `error` with the runtime message so the user can finish CLI login and reconnect.
+7. `Claude` remains in a deferred/not-yet-daily-use state.
 
 ## Flow 4. Agent Request Envelope
 
@@ -121,8 +122,10 @@ It covers:
 - terminal runtime service contract coverage through [`tests/e2e/runtime-terminal-service.spec.ts`](../tests/e2e/runtime-terminal-service.spec.ts)
 - agent suggestion runtime service contract coverage through [`tests/e2e/runtime-agent-suggestions-service.spec.ts`](../tests/e2e/runtime-agent-suggestions-service.spec.ts)
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
+- agent auth runtime service contract coverage through [`tests/e2e/runtime-agent-auth-service.spec.ts`](../tests/e2e/runtime-agent-auth-service.spec.ts)
+- injected Codex CLI login launcher coverage in `tests/e2e/design-prototype.spec.ts`
 
-Deleted FSD-era E2E specs must not be referenced as current coverage. Provider login, aging, and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
+Deleted FSD-era E2E specs must not be referenced as current coverage. Provider login launcher coverage now exists for the new shell, but aging and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
 
 ## Documentation Rule
 

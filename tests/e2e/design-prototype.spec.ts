@@ -295,6 +295,149 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   )
 })
 
+test('launches Codex CLI login from settings through the auth runtime bridge', async ({ page }) => {
+  await page.addInitScript(() => {
+    const codexDisconnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const codexConnected = {
+      ...codexDisconnected,
+      status: 'connected',
+      accountLabel: 'Codex ChatGPT Session',
+      connectedAt: 130,
+      lastLoginAttemptAt: 125,
+      updatedAt: 140,
+    }
+    const claudeDeferred = {
+      provider: 'claude',
+      displayName: 'Claude',
+      status: 'error',
+      connectionKind: 'prototype',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['provider:deferred'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: 'Claude real-provider support is deferred.',
+    }
+    const loginTerminal = {
+      sessionId: 88,
+      name: 'Codex Login',
+      cwd: '/workspace/project',
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: 9088,
+      status: 'running',
+      createdAt: 100,
+      updatedAt: 120,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: 'session created',
+    }
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+
+        if (command === 'list_agent_connections') return [claudeDeferred, codexDisconnected]
+        if (command === 'begin_agent_login') return codexConnected
+        if (command === 'create_terminal_session_with_command') return loginTerminal
+        if (command === 'read_agent_provider_diagnostics') {
+          return {
+            provider: 'codex',
+            setupState: 'ready',
+            connectionPath: 'Codex CLI ChatGPT session',
+            summary: 'Codex CLI is ready',
+            guidance: 'Run codex login, then reconnect.',
+            baseUrl: null,
+            model: 'Codex CLI default',
+            requirements: [],
+          }
+        }
+
+        return codexDisconnected
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  await page
+    .locator('.settings-provider')
+    .filter({ hasText: 'Codex' })
+    .getByRole('button', { name: '연결' })
+    .click()
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __authCalls?: Array<{ command: string }>
+            }
+          ).__authCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toEqual(
+      expect.arrayContaining([
+        'list_agent_connections',
+        'create_terminal_session_with_command',
+        'begin_agent_login',
+      ]),
+    )
+
+  await expect(page.locator('.group-tabbar.active')).toContainText('Codex Login')
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __authCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__authCalls ?? [],
+  )
+  const loginLaunch = calls.find((call) => call.command === 'create_terminal_session_with_command')
+
+  expect(loginLaunch?.args).toMatchObject({
+    request: {
+      session: {
+        name: 'Codex Login',
+        cwd: '~/code/aurora-monorepo',
+      },
+      command: 'codex login --device-auth',
+    },
+  })
+})
+
 test('keeps rich prototype file content when browser fallback opens a file', async ({ page }) => {
   await page.goto('/')
 
