@@ -370,6 +370,7 @@ pub fn run() {
                 .handle()
                 .path()
                 .app_data_dir()
+                .map(|dir| dir.join("agent-auth.json"))
                 .or_else(|_| {
                     std::env::current_dir().map(|cwd| cwd.join(".gtum").join("agent-auth.json"))
                 })
@@ -383,6 +384,7 @@ pub fn run() {
                 .handle()
                 .path()
                 .app_data_dir()
+                .map(|dir| dir.join("workspace-state.json"))
                 .or_else(|_| {
                     std::env::current_dir()
                         .map(|cwd| cwd.join(".gtum").join("workspace-state.json"))
@@ -397,6 +399,7 @@ pub fn run() {
                 .handle()
                 .path()
                 .app_data_dir()
+                .map(|dir| dir.join("telegram-state.json"))
                 .or_else(|_| {
                     std::env::current_dir()
                         .map(|cwd| cwd.join(".gtum").join("telegram-state.json"))
