@@ -302,8 +302,9 @@ If it is ambiguous, update more than one canonical doc and reduce repeated expla
 
 Record verification in this order:
 
-1. add automation under `tests/` whenever possible
-2. reflect coverage expectations in canonical docs
-3. record non-automatable real-device validation in [`MVP_VALIDATION_NOTES.md`](./MVP_VALIDATION_NOTES.md)
+1. validate the installable Tauri desktop path first when the change affects release readiness, native runtime behavior, persistence, or provider login
+2. add automation under `tests/` whenever possible
+3. reflect coverage expectations in canonical docs
+4. record non-automatable real-device validation in [`MVP_VALIDATION_NOTES.md`](./MVP_VALIDATION_NOTES.md)
 
 `WORKLOG` is not the default place for validation evidence.

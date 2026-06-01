@@ -1841,6 +1841,7 @@ Current status:
 - The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: new terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, closing runtime-backed tabs terminates the PTY session, and approved commands write to runtime-backed tabs after the risk gate.
 - The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and execution mode, then normalize Codex responses into existing approval cards.
 - Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
+- Validation priority is now installable-desktop first: Windows manual install/launch smoke and native runtime behavior must be checked before using web/Vite preview as secondary regression evidence.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
 - Verification passed on 2026-06-01 with `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml`, `npm run test:e2e`, `npm run tauri:build`, and a `npm run tauri:dev` launch smoke.
 
@@ -1891,7 +1892,8 @@ Sprint 17 initial backlog:
 - `P0` done: wire agent suggestions to the real Codex session-backed request path and diagnostics through `src/shared/api/runtimeAgentSuggestions.ts`
 - `P0` done: replace the simulated Codex provider-login path in the runtime desktop flow with `src/shared/api/runtimeAgentAuth.ts`, a `codex login --device-auth` terminal launcher, runtime connection hydration, disconnect handling, and Codex reconnect/error display
 - `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to broaden approval E2E coverage
-- `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files
+- `P0` next: run an installable desktop smoke pass first, starting with Windows install/launch, state-file persistence, native folder picker, PTY terminal, Codex login launcher, and first real suggestion request
+- `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files after the installed-app smoke baseline is captured
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
 - `P1` start workbench tab model design for Sprint 18
 - `P1` extract the legacy `Titlebar`, `Sidebar`, `Workspace`, `AgentPanel`, and modal surfaces into TSX components that consume typed runtime services

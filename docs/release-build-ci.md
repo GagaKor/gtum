@@ -56,7 +56,7 @@ The current build-related commands in `package.json` are:
 
 - `npm run build`
   - produces the frontend bundle
-  - serves as the baseline verification step before release artifacts
+  - serves as a fast frontend compile check, but does not count as release acceptance by itself
 - `npm run tauri:build`
   - runs `tauri build --no-bundle`
   - validates the Rust/Tauri compilation path without packaging
@@ -66,15 +66,20 @@ The current build-related commands in `package.json` are:
 - `npm run tauri`
   - provides the base Tauri CLI entrypoint expected by GitHub Actions `tauri-action`
 
-For release purposes, the usual order is:
+For release and user-acceptance purposes, the installable desktop path has priority over the web/Vite preview path. The usual order is:
 
 1. `npm run lint`
 2. `npm run build`
 3. `cargo check --manifest-path src-tauri/Cargo.toml`
-4. `npm run tauri:bundle`
-5. upload to GitHub Releases
+4. `npm run tauri:build`
+5. `npm run tauri:bundle`
+6. install or launch the generated desktop artifact on the target OS and run the smoke checklist
+7. run web/Vite preview E2E only as secondary regression coverage for layout and browser fallback behavior
+8. upload to GitHub Releases
 
 The Windows and macOS CI smoke paths use `npm run tauri:build`, which runs `tauri build --no-bundle`. This validates native app compile paths before release packaging. The macOS smoke path does not require code signing or notarization.
+
+Web preview coverage must not be used as the final gate for native runtime behavior such as installed-state persistence, native window controls, PTY sessions, folder picker behavior, Codex CLI login, or release/update flows.
 
 Local Tauri native builds require a Rust toolchain with `cargo` available on `PATH`. CI installs Rust through `dtolnay/rust-toolchain` before running native build or bundle steps.
 
@@ -135,7 +140,8 @@ Important operating rules:
 The repository should follow these CI/CD principles:
 
 - separate PR verification from release publishing
-- use lint, build, cargo check, and Playwright E2E for PR validation
+- prioritize installable desktop validation before web-preview validation for release readiness
+- use lint, build, cargo check, and Playwright E2E for PR regression coverage
 - perform per-platform builds and artifact upload during the release stage when possible
 - trigger release workflows from pushes to `master`
 - allow manual reruns through `workflow_dispatch` when needed
@@ -268,17 +274,17 @@ Done (verified against code/config):
 
 Partial:
 
-- Provider auth: the Codex real path works but depends on the user running `codex login` in an external terminal; there is no in-app login launcher.
+- Provider auth: the Codex real path now has a workspace-native `codex login --device-auth` terminal launcher, but cancellation, reconnect-after-expiry, and missing-scope UX still need broader validation.
 - Agent suggestions/approval: approval-policy logic is duplicated between `src/prototype.jsx` and the FSD helper and is not wired to real command execution.
 - Frontend architecture: `src/prototype.jsx` is still ~4462 lines; only `Titlebar`/`StatusBar` are extracted to TSX.
-- Testing: after the Sprint 17 reset only two E2E specs remain (`tests/e2e/design-prototype.spec.ts`, `tests/e2e/runtime-project-service.spec.ts`); there are no Rust unit tests around persistence.
+- Testing: browser/Vite E2E now covers the active design shell and typed service seams, but installed-app smoke and real-device validation are the first release-readiness gate; there are still no Rust unit tests around persistence.
 
 Missing for production deployment:
 
 - macOS code signing + notarization, and Windows Authenticode signing.
 - The auto-update pipeline (the spec in `Auto Update Specification` above is 0% implemented).
 - A version-bump gate and a Linux release-artifact presence check.
-- Real-device Windows sign-off (Windows is the declared first daily-use platform).
+- Installed-app smoke sign-off, starting with Windows real-device validation (Windows is the declared first daily-use platform).
 
 ## Production Readiness Checklist (Core Deployment)
 
@@ -325,6 +331,7 @@ Action: treat the updater as a single dedicated sprint deliverable; it is requir
 3. `open` — **Auto-update unimplemented.** Installed apps cannot self-update. Blocks the operational goal of Electron-style auto-update; does not block a manual-install release.
 4. `open` — **Version-bump / tag-collision.** A `master` merge without a version bump fails or collides on the `v__VERSION__` tag and confuses any future updater channel. Mitigate with a CI version-bump gate.
 5. `open` — **Windows real-device sign-off.** Windows is the first daily-use platform but only the compile path is automated; install + launch + Codex-connect + suggestion run on real hardware is not yet validated.
+6. `open` — **Installed-app validation priority.** Web/Vite preview remains useful for fast UI regression checks, but it is explicitly secondary. Release readiness must be judged from installable desktop artifacts first.
 
 ## First-Release Go / No-Go Matrix
 
@@ -332,6 +339,7 @@ Action: treat the updater as a single dedicated sprint deliverable; it is requir
 | --- | --- | --- | --- |
 | State persistence (storage-path fix) | resolved (verify on-device) | Yes — must confirm restore works on a real build | Yes |
 | Windows real-device sign-off | open | Yes — required for the Windows-first claim | Yes |
+| Installed-app smoke before web preview | open | Yes — desktop artifact must be tested first | Yes |
 | macOS signing + notarization | missing | No — usable with a documented Gatekeeper workaround | Yes |
 | Windows Authenticode signing | missing | No — usable with a documented SmartScreen workaround | Yes |
 | Auto-update pipeline | missing | No — manual install is acceptable initially | Yes |

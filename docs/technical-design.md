@@ -358,10 +358,11 @@ The frontend should be organized by feature domain.
 
 #### UI Verification Principles
 
+- validate the installable Tauri desktop app before treating web/Vite preview results as release evidence
 - validate core UI flows with an E2E automation tool such as `Playwright`
 - each sprint should leave behind at least one E2E scenario for the new user-facing flow it delivers
 - separate smoke tests from feature-specific scenarios, and aim to keep smoke tests green at the end of every sprint
-- separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
+- separate Tauri desktop verification from web-frontend verification, keep the user-flow naming aligned across both, and treat web preview as secondary fallback/design coverage
 - review frontend layout and interaction quality against `docs/frontend-design-benchmarks.md`
 - review UI tokens, colors, radius, and component state representation against `docs/design-system.md`
 - check whether the UI still preserves the editor hierarchy of `VS Code`, the agent-workflow clarity of `conductor`, and the tabbed-terminal strength of `cmux`

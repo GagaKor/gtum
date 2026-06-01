@@ -41,6 +41,20 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 
 Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The specs listed above are the active E2E coverage; the aging scenario must be re-gathered on the new shell.
 
+## Validation Priority
+
+The installable desktop app is the primary validation target. Web/Vite preview is secondary and should be used for fast layout, design-shell, and browser-fallback regression coverage only.
+
+Before using web-preview results as evidence, the current sprint or release pass should first answer whether the installable app can:
+
+- build as a native desktop artifact for the target platform
+- install or launch from the generated artifact
+- open at the expected desktop window size without shell letterboxing
+- persist auth, workspace, and telegram state into distinct `app_data_dir` files
+- open a real project folder through the native picker
+- create, read, execute, and close PTY-backed terminal tabs
+- launch `codex login --device-auth`, reconnect Codex, and request a real Codex suggestion
+
 ## Aging Test 초안 / Initial Aging Test
 
 ### 한국어
@@ -71,20 +85,20 @@ That spec was removed in the Sprint 17 frontend reset and has **not yet been re-
   - shell-candidate abstraction and command-submission newline handling are in place
   - native app compile path is covered by the `windows-install-smoke` CI job
   - Release workflow requires at least one `.exe` or `.msi` artifact from the Windows runner
-  - real-device validation is still required
+  - installed-app real-device validation is the first manual test priority
 - `macOS`
   - covered by the non-Windows shell abstraction path
   - native app compile path is covered by the `macos-install-smoke` CI job
   - Release workflow requires both `.app` and `.dmg` artifacts from the macOS runner
   - signing and notarization are not implemented yet
-  - real-device validation is still required
+  - installed-app real-device validation is required after the Windows-first pass
 
 ## Current MVP Assessment
 
 At the current stage, `gtum` satisfies the core MVP flows defined in the planning documents. The following remain post-MVP or later stabilization work:
 
 - broader `Codex` login UX validation for cancellation, reconnect-after-expiry, and missing-scope states
-- real-device Windows/macOS validation
+- installed-app Windows/macOS validation, with Windows first
 - signed and notarized macOS distribution
 - expanded long-running manual aging validation
 - Telegram external-channel integration
