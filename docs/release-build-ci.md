@@ -47,6 +47,8 @@ This document exceeds 200 lines. Read only the route that matches your question.
   - read `Release Artifacts` and the platform-specific notes only
 - when you are changing GitHub Release, tagging, or CI flow
   - continue only into the later release/CI sections
+- when you need the current deployment/operation readiness, what is done versus missing, the open blockers, or a ship/no-ship verdict
+  - read `Current Release Status Snapshot` through `First-Release Go / No-Go Matrix` at the end of this document
 
 ## Build Stages
 
@@ -253,3 +255,91 @@ Important operating rules:
 - The real `.github/workflows` are now present and must match the policy defined here.
 - If release decisions feel unclear, reread `docs/DOCS_READING_ORDER.md` and this document.
 - The baseline credential required for release automation is `GITHUB_TOKEN`. Consider `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` only if code signing or macOS notarization is introduced later.
+
+## Current Release Status Snapshot
+
+This section is the readiness view: what is already shippable, what is partial, and what is missing before `gtum` can be **successfully deployed and operated** in production. It is intentionally scoped to core deployment concerns (build/packaging, code signing, auto-update, CI/CD and versioning). For the full feature trace see `docs/sprint-plan.md`; for validation/aging coverage see `docs/MVP_VALIDATION_NOTES.md`. The project is currently at Sprint 17 (active), with Sprints 18–20 planned.
+
+Done (verified against code/config):
+
+- Application shell and core product surfaces render (Sprint 17 new design); project/filesystem reads, source control (status/diff/stage/unstage/commit/push), multi-session PTY terminal, and execution modes are implemented.
+- Cross-platform build is wired: `bundle.targets = "all"`, CI compile smoke on Ubuntu/Windows/macOS, and a `release.yml` that publishes a GitHub Release on `master` push with Windows `.exe`/`.msi` and macOS `.app`/`.dmg` artifact-presence checks.
+- Per-store state now persists to distinct files under `app_data_dir` (`agent-auth.json`, `workspace-state.json`, `telegram-state.json`); see the Verified Release Blockers section for the fix that made this true.
+
+Partial:
+
+- Provider auth: the Codex real path works but depends on the user running `codex login` in an external terminal; there is no in-app login launcher.
+- Agent suggestions/approval: approval-policy logic is duplicated between `src/prototype.jsx` and the FSD helper and is not wired to real command execution.
+- Frontend architecture: `src/prototype.jsx` is still ~4462 lines; only `Titlebar`/`StatusBar` are extracted to TSX.
+- Testing: after the Sprint 17 reset only two E2E specs remain (`tests/e2e/design-prototype.spec.ts`, `tests/e2e/runtime-project-service.spec.ts`); there are no Rust unit tests around persistence.
+
+Missing for production deployment:
+
+- macOS code signing + notarization, and Windows Authenticode signing.
+- The auto-update pipeline (the spec in `Auto Update Specification` above is 0% implemented).
+- A version-bump gate and a Linux release-artifact presence check.
+- Real-device Windows sign-off (Windows is the declared first daily-use platform).
+
+## Production Readiness Checklist (Core Deployment)
+
+Status legend: `done` = implemented and verified; `partial` = present but incomplete/at risk; `missing` = not implemented.
+
+### 1. Build and cross-platform packaging
+
+- `done` — Bundle targets: `src-tauri/tauri.conf.json` sets `bundle.targets = "all"` and `bundle.active = true`. Keep targets pinned and confirm `rpm`/AppImage actually emit on the `ubuntu-22.04` runner.
+- `done` — CI compile smoke per platform: `ci.yml` runs the Ubuntu `validate` job plus `windows-install-smoke` and `macos-install-smoke` via `npm run tauri:build` (`tauri build --no-bundle`).
+- `partial` — Release artifact verification: `release.yml` verifies Windows `.exe`/`.msi` and macOS `.app`/`.dmg`, but there is **no artifact-presence check for the Ubuntu leg**. Action: add a Linux AppImage/deb/rpm presence step mirroring the Windows/macOS checks.
+- `partial` — Linux packaging reliability: AppImage bundling has previously failed in this environment (see `Platform Caveats`). Action: validate deb/AppImage/rpm output on a clean `ubuntu-22.04` host; if AppImage is unreliable, narrow Linux targets to deb/rpm and document it.
+
+### 2. Code signing and notarization
+
+- `missing` — macOS Developer ID signing: no `bundle.macOS.signingIdentity` in `tauri.conf.json` and no signing secrets in `release.yml`. Action: add a Developer ID Application certificate and wire `APPLE_CERTIFICATE`/`APPLE_CERTIFICATE_PASSWORD`/`APPLE_SIGNING_IDENTITY` into `tauri-action`.
+- `missing` — macOS notarization + stapling: release body still advertises "unsigned app bundle / dmg". Action: configure `APPLE_ID`/`APPLE_PASSWORD` (app-specific)/`APPLE_TEAM_ID` so `tauri-action` notarizes and staples; verify with `spctl`/`stapler`.
+- `missing` — Windows Authenticode signing: no `bundle.windows.certificateThumbprint`/`signCommand`. Without it, SmartScreen warns on every install — critical for the "Windows first daily-use" goal. Action: acquire an Authenticode (ideally EV) certificate and configure signing in `tauri.conf.json` + `release.yml`.
+
+### 3. Auto-update
+
+The full updater contract is specified above in `Auto Update Specification` but **none of it is implemented** (confirmed by repo-wide search: every updater reference lives only in docs).
+
+- `missing` — `tauri-plugin-updater` (Rust) + `@tauri-apps/plugin-updater` (JS) dependencies, and registering the plugin in `src-tauri/src/lib.rs`.
+- `missing` — `bundle.createUpdaterArtifacts = true`.
+- `missing` — `plugins.updater` block with `endpoints` (GitHub Releases `latest.json`) and `pubkey`.
+- `missing` — updater signing keypair; `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets passed to `tauri-action`; `latest.json` uploaded as a release asset.
+- `missing` — `updater:default` permission in `src-tauri/capabilities/default.json`.
+- `missing` — frontend check/prompt/restart UI.
+
+Action: treat the updater as a single dedicated sprint deliverable; it is required before any "auto-updating" GA claim, but it does not block a manual-install first release.
+
+### 4. CI/CD and versioning discipline
+
+- `done` — Branch flow: `ci.yml` runs on PR/push to `dev` and `master`; `release.yml` runs only on `master` push + `workflow_dispatch`.
+- `partial` — Tag-collision risk: `release.yml` tags `v__VERSION__` from `tauri.conf.json` on every `master` push, so merging without a version bump collides with the existing release/tag. Action: fail the release if the `v<version>` tag already exists, or trigger releases from tag-push only.
+- `missing` — Version-bump gate: no CI check enforces that `tauri.conf.json` (and `package.json`) version increased before a `master` merge. Action: add a required PR check that blocks merge when the version did not increase.
+- `partial` — Version sync: `package.json` and `tauri.conf.json` are both `0.1.0` but kept in sync by hand. Action: assert `package.json.version === tauri.conf.json.version` in CI.
+- `partial` — Release notes: `release.yml` uses a static `releaseBody`. Action: maintain a `CHANGELOG.md` and feed it into the release notes, or enable auto-generated notes.
+
+## Verified Release Blockers (P0)
+
+1. `resolved` — **State storage-path collision.** Previously `src-tauri/src/lib.rs` resolved the storage path for all three managers (auth, workspace, telegram) to the bare `app_data_dir()` directory on the happy path; the `.gtum/<file>.json` filenames only applied in the `.or_else` error fallback. Because each manager treats its path as a file (`initialize_storage` reads it as a string; `persist` does `fs::write`), on a real installed build all three resolved to the same path and clobbered each other — breaking auth/workspace persistence and "workspace restore". Fixed by appending a distinct filename to `app_data_dir()` before the fallback. Follow-up: add a backend persistence/path-resolution test (this regression passed `cargo check`), and validate on-device that `app_data_dir` now holds three distinct JSON files.
+2. `open` — **Unsigned binaries.** macOS artifacts are unsigned/un-notarized (Gatekeeper blocks normal launch) and Windows artifacts are unsigned (SmartScreen warns). Blocks trusted/public distribution; for an early manual-install release, document the right-click-Open / "more info → run anyway" workarounds.
+3. `open` — **Auto-update unimplemented.** Installed apps cannot self-update. Blocks the operational goal of Electron-style auto-update; does not block a manual-install release.
+4. `open` — **Version-bump / tag-collision.** A `master` merge without a version bump fails or collides on the `v__VERSION__` tag and confuses any future updater channel. Mitigate with a CI version-bump gate.
+5. `open` — **Windows real-device sign-off.** Windows is the first daily-use platform but only the compile path is automated; install + launch + Codex-connect + suggestion run on real hardware is not yet validated.
+
+## First-Release Go / No-Go Matrix
+
+| Concern | Status | Gates a manual-install first release? | Gates public / auto-updating GA? |
+| --- | --- | --- | --- |
+| State persistence (storage-path fix) | resolved (verify on-device) | Yes — must confirm restore works on a real build | Yes |
+| Windows real-device sign-off | open | Yes — required for the Windows-first claim | Yes |
+| macOS signing + notarization | missing | No — usable with a documented Gatekeeper workaround | Yes |
+| Windows Authenticode signing | missing | No — usable with a documented SmartScreen workaround | Yes |
+| Auto-update pipeline | missing | No — manual install is acceptable initially | Yes |
+| Version-bump gate / tag collision | partial | No — manageable by release discipline | Yes (automate it) |
+| Linux release-artifact check | missing | No | Recommended |
+
+Verdict: a **manual-install first release to Windows is a conditional GO** once (1) the storage-path fix is verified on-device and (2) Windows real-device sign-off is recorded, with the unsigned-install workaround documented in the release notes. It is a **NO-GO for public, store, or auto-updating GA** until code signing + notarization and the auto-update pipeline are implemented.
+
+## Deferred Readiness Pass
+
+The following are known gaps deliberately **out of scope for this core-deployment pass** and tracked for a later readiness review, not silently dropped: security hardening (the webview CSP is currently `null`) and capability least-privilege scoping; observability (release-build logging is debug-only, no crash reporting); privacy/data-flow disclosure (terminal logs and file snippets are sent to the Codex CLI as prompt context; auth/telegram state is plaintext JSON); supply-chain scanning (`cargo audit`/`npm audit`/Dependabot); support intake and a diagnostics bundle; and legal/store metadata (`Cargo.toml` `license` is empty, `repository` is empty, third-party attribution is not aggregated).

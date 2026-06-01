@@ -28,10 +28,11 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - preview/deferred provider connection states and diagnostics
 - current provider-auth automation is contract/preview coverage, not final `OAuth/session login` validation
 - agent request -> suggestion -> approval flow
-- initial aging test with repetition and reload
-- new design shell landmarks through `tests/e2e/new-design-shell.spec.ts`
-- independent left `Projects` and `Files` accordion collapse behavior
-- project workspace regression retargeted to `left-projects-section` and `left-files-section`
+- new design shell render, scaled proportions, and titlebar/statusbar contracts through `tests/e2e/design-prototype.spec.ts`
+- independent left `Projects` and `Files` accordion collapse behavior, settings-modal open, backend-bridge state, and file-open content (same spec)
+- runtime project-service fallback behavior through `tests/e2e/runtime-project-service.spec.ts`
+
+Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The two specs above are the only active E2E coverage; the aging scenario must be re-gathered on the new shell.
 
 ## Aging Test 초안 / Initial Aging Test
 
@@ -50,16 +51,9 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 
 ### English
 
-The current aging test repeats the following in Playwright:
+The earlier MVP aging test was a Playwright scenario that repeated: open a project, connect a provider, capture active logs, switch `Fast`/`Balanced`/`Deep` modes, request suggestions and approve execution, then reload and verify project/task-history restore.
 
-- open a project
-- connect a provider
-- capture active logs
-- switch `Fast`, `Balanced`, and `Deep` modes
-- request suggestions and approve execution
-- reload the page and verify project/task-history restore
-
-This does not replace long-duration manual aging validation, but it serves as the first evidence of state persistence and repeated-use stability for the MVP.
+That spec was removed in the Sprint 17 frontend reset and has **not yet been re-created on the new shell**, so there is currently no automated aging evidence for the current UI. Re-establishing this scenario (and confirming reload-restore works against the per-store state files in `app_data_dir`) is required before claiming repeated-use stability. It still does not replace long-duration manual aging validation.
 
 ## Platform Status
 
@@ -88,3 +82,7 @@ At the current stage, `gtum` satisfies the core MVP flows defined in the plannin
 - signed and notarized macOS distribution
 - expanded long-running manual aging validation
 - Telegram external-channel integration
+
+A code-verified state-persistence bug was found and fixed during the deployment-readiness review: the auth, workspace, and telegram stores previously resolved to the same `app_data_dir` directory path on installed builds and clobbered each other. They now persist to distinct files (`agent-auth.json`, `workspace-state.json`, `telegram-state.json`). On-device verification of reload-restore is still pending, and there are no Rust unit tests guarding this path.
+
+For the consolidated deployment/operation readiness assessment, open blockers, and the ship/no-ship verdict, see `docs/release-build-ci.md` (`Current Release Status Snapshot` through `First-Release Go / No-Go Matrix`).
