@@ -3979,26 +3979,6 @@ function App() {
     windowControls.startDragging().catch(() => undefined);
   }, [windowControls]);
 
-  React.useLayoutEffect(() => {
-    const fit = () => {
-      const stage = stageRef.current;
-      const scaler = scalerRef.current;
-      if (!stage || !scaler) return;
-      if (maximized) {
-        scaler.style.setProperty("--scale", 1);
-        return;
-      }
-      const sw = stage.clientWidth;
-      const sh = stage.clientHeight;
-      const scale = Math.min(sw / 1320, sh / 824, 1);
-      scaler.style.setProperty("--scale", scale);
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(document.documentElement);
-    return () => ro.disconnect();
-  }, [maximized]);
-
   // Responsive: measure the window's real (design-space) width and derive a
   // width class that drives breadcrumb/pill compaction in CSS.
   const [winW, setWinW] = React.useState(1320);
@@ -4058,8 +4038,8 @@ function App() {
     const startW = side === "left" ? sidebarWidth : agentWidth;
     const setW   = side === "left" ? setSidebarWidth : setAgentWidth;
     const setOpen = side === "left" ? setSidebarOpen : setAgentOpen;
-    // Account for transform scale on .gtum-scaler so 1px of pointer movement
-    // corresponds to 1px of design-space movement.
+    // Keep the drag math resilient if a future shell reintroduces transform
+    // scaling; today's shell fills the viewport with --scale resolving to 1.
     const scale = parseFloat(getComputedStyle(scalerRef.current).getPropertyValue("--scale")) || 1;
     document.body.classList.add(side === "left" ? "resizing-h-left" : "resizing-h-right");
 

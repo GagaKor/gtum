@@ -227,6 +227,7 @@ For the current active slice, the frontend should follow these rules:
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - remove the default bottom panel from the primary layout and solve needed details through panes or overlays
 - the approval rail should show which file, line anchor, and logs produced a suggestion without pushing the editor and agent board away
+- the app shell should fill the full desktop viewport after any native resize or maximize; fixed-aspect canvas letterboxing is not allowed
 - the first code-reading slice should stop at a read-only viewer
 - line-anchor state and restore state should stay legible to users rather than hidden as internal implementation
 - binary and large-file fallback should read like bounded preview modes, not generic errors

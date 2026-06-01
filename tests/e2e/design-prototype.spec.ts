@@ -78,6 +78,21 @@ test('fits the Tauri launch window without shell letterboxing', async ({ page })
   expect(Math.round(shell!.y - stage!.y)).toBe(0)
 })
 
+test('fills larger resized desktop windows without fixed-canvas letterboxing', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto('/')
+
+  const stage = await page.locator('.gtum-stage').boundingBox()
+  const shell = await page.locator('.gtum-window').boundingBox()
+
+  expect(stage).not.toBeNull()
+  expect(shell).not.toBeNull()
+  expect(Math.round(shell!.width)).toBe(Math.round(stage!.width))
+  expect(Math.round(shell!.height)).toBe(Math.round(stage!.height))
+  expect(Math.round(shell!.x - stage!.x)).toBe(0)
+  expect(Math.round(shell!.y - stage!.y)).toBe(0)
+})
+
 test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
   await page.goto('/')
 

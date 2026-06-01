@@ -64,6 +64,7 @@ Local macOS installable validation was run from the generated DMG on June 1, 202
 - The DMG mounts at `/Volumes/gtum` and contains `gtum.app`, a `/Applications` symlink, `.VolumeIcon.icns`, and `.DS_Store`.
 - `gtum.app` has bundle identifier `com.gagakor.gtum`, version `0.1.0`, and an arm64 Mach-O executable.
 - Launching directly from the mounted DMG opens one `1320x824` window, matching the uploaded design shell and Tauri launch size.
+- Follow-up viewport validation now covers larger desktop windows: the shell fills the stage after resize instead of keeping the `1320x824` fixed canvas centered with top/bottom or side letterboxing.
 - The previous installed-app idle CPU regression is fixed: the app no longer polls native maximize state from resize events, and settled DMG-launch CPU stayed near idle (`gtum` about 1%, WebContent about 1-2% in the sampled environment).
 - The app support directory contains distinct state files: `agent-auth.json`, `workspace-state.json`, and `telegram-state.json`.
 

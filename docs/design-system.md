@@ -96,9 +96,10 @@ The default screen is composed of five areas:
 - `Status/pill strip`
   - Prefer small status pills inside the workbench over a permanent bottom panel.
 - `Desktop launch geometry`
-  - The fixed uploaded-design canvas is `1320x824`.
-  - The default Tauri launch window must use the same `1320x824` size so the frameless shell opens without letterboxing.
-  - Larger desktop sizes should come from native maximize/restore or user resizing, while the scaler keeps smaller windows fitted.
+  - The uploaded-design baseline and default Tauri launch window are `1320x824`.
+  - The frameless shell must fill the entire viewport at every restored, resized, and maximized desktop size.
+  - Do not preserve the `1320x824` aspect ratio through fixed-canvas scaling when the window is larger; top, bottom, left, or right letterboxing is a regression.
+  - Smaller windows should reflow through compact shell states and panel collapse rather than centered transform scaling.
 
 ## 토큰 / Tokens
 
