@@ -185,6 +185,8 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - Avoid repeated generic card treatment; vary density and structure by role.
 - `dock-resize-handle`
   - A 4px vertical handle pinned to the inner edge of each side panel. Highlight it with `--accent` on hover and drag; it must not look like a separate text button.
+- `titlebar`
+  - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. These controls must call the native window API, while browser preview keeps safe no-op fallbacks.
 - `agent-model-row`
   - Compactly shows the current provider/model and execution mode as the first row of the right agent workspace.
 - `suggestion-card`
@@ -204,6 +206,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 ### English
 
 - Panel collapse, tab switching, provider selection, and line-anchor navigation must respond immediately.
+- Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
 - Command execution always separates pre-approval review from post-approval execution.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.

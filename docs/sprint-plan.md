@@ -1836,9 +1836,10 @@ Current status:
 - Sprint 18 extraction has started: `Titlebar` and `StatusBar` now live in `src/widgets/app-shell/ui` as TSX components while preserving the uploaded design class names, anchors, visible copy, and settings entry behavior.
 - The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and preserve the rich uploaded-design browser fixture fallback.
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
+- The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, and browser preview keeps injectable/no-op fallbacks for E2E.
 - Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
-- Verification passed on 2026-05-28 with `npm run build` and `npm run test:e2e`.
+- Verification passed on 2026-06-01 with `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml`, `npm run test:e2e`, `npm run tauri:build`, and a `npm run tauri:dev` launch smoke.
 
 Phase:
 
@@ -1882,6 +1883,11 @@ Sprint 17 initial backlog:
 - `P0` done: reconnect the clean prototype to the Tauri filesystem backend for project overview and file reads
 - `P0` done: add the TSX app entry and FSD-style type/service seams without changing the uploaded design DOM
 - `P0` done: route the legacy prototype's project overview and file-open behavior through `src/shared/api/runtimeProjects.ts` while preserving browser fixture content
+- `P0` done: make the custom titlebar the real frameless desktop window chrome through `src/shared/api/runtimeWindow.ts` and Tauri window-control permissions
+- `P0` next: wire the terminal tabs to real PTY create/read/write/terminate behavior instead of prototype log fixtures
+- `P0` next: wire agent suggestions to the real Codex session-backed request path and diagnostics
+- `P0` next: connect approved commands to real execution behind the risk-based approval gate
+- `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
 - `P1` start workbench tab model design for Sprint 18
 - `P1` extract the legacy `Titlebar`, `Sidebar`, `Workspace`, `AgentPanel`, and modal surfaces into TSX components that consume typed runtime services

@@ -105,6 +105,7 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src/widgets/app-shell/ui/Titlebar.tsx`](../src/widgets/app-shell/ui/Titlebar.tsx)
   - extracted TSX titlebar preserving the uploaded design root `.titlebar` and `data-comment-anchor="titlebar"`
   - renders project name, branch, active tab, workspace status, connected provider count, and settings entry
+  - owns the macOS traffic-light and Windows caption-button layouts, and forwards native window actions/dragging through the runtime window bridge
 - [`src/widgets/app-shell/ui/StatusBar.tsx`](../src/widgets/app-shell/ui/StatusBar.tsx)
   - extracted TSX statusbar preserving the uploaded design root `.statusbar` and `data-comment-anchor="statusbar"`
   - renders readiness, branch, changed-file count, ahead/behind, tab/group status, execution mode, and palette hint
@@ -112,11 +113,15 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - legacy uploaded design module used by the TSX app entry during migration
   - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
   - consumes `src/shared/api/runtimeProjects.ts` for `ProjectOverview` and `ProjectFileSnapshot` payloads while preserving the rich uploaded-design browser fixture fallback
+  - consumes `src/shared/api/runtimeWindow.ts` so the custom titlebar controls the frameless Tauri window while keeping browser preview no-op fallbacks
   - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime
 - [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts)
   - typed project/file runtime service for future TSX components
   - wraps Tauri filesystem commands and browser fallback project/file snapshots
   - allows the legacy prototype to inject its curated design fixture file reader so browser preview content does not collapse to generic placeholders
+- [`src/shared/api/runtimeWindow.ts`](../src/shared/api/runtimeWindow.ts)
+  - typed native window-control service for custom chrome
+  - wraps Tauri `getCurrentWindow()` actions behind injected/browser fallbacks for deterministic E2E coverage
 - [`src/entities`, `src/features`, `src/shared`](../src)
   - initial FSD-style type, policy, and service seams for extracting the uploaded design into reusable TSX components
 - [`src/styles.css`](../src/styles.css)
