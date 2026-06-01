@@ -142,6 +142,87 @@ test('exposes backend bridge state while keeping browser fallback stable', async
   await expect(page.locator('.titlebar').getByText('aurora-monorepo')).toBeVisible()
 })
 
+test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ page }) => {
+  await page.addInitScript(() => {
+    const snapshot = {
+      sessionId: 77,
+      name: '새 탭',
+      cwd: '/workspace/project',
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: 1234,
+      status: 'running',
+      createdAt: 100,
+      updatedAt: 100,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: 'session created',
+    }
+    const bridgeWindow = window as Window & {
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+
+        if (command === 'read_terminal_session_logs') {
+          return {
+            sessionId: 77,
+            status: 'running',
+            limit: 100,
+            logLineCount: 1,
+            truncated: false,
+            entries: ['runtime ready'],
+            updatedAt: 120,
+          }
+        }
+
+        if (command === 'close_terminal_session') {
+          return { ...snapshot, status: 'terminated', updatedAt: 130 }
+        }
+
+        return snapshot
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.gt-add').first().click()
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __terminalCalls?: Array<{ command: string }>
+            }
+          ).__terminalCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toContain('create_terminal_session')
+
+  await page.locator('.group.active .gt.active .x-btn').click()
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __terminalCalls?: Array<{ command: string }>
+            }
+          ).__terminalCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toContain('close_terminal_session')
+})
+
 test('keeps rich prototype file content when browser fallback opens a file', async ({ page }) => {
   await page.goto('/')
 

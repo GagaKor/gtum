@@ -692,6 +692,9 @@ The terminal should be treated as a long-lived session object, not just a text v
 - Ubuntu and macOS can share a common POSIX shell flow
 - Windows needs a dedicated shell strategy that abstracts `powershell`, `pwsh`, and `cmd`
 - detect default shells per OS and allow users to override them in settings
+- The active frontend terminal seam is `src/shared/api/runtimeTerminals.ts`; it wraps `create_terminal_session`, `create_terminal_session_with_command`, `read_terminal_session_logs`, `execute_terminal_session_command`, and `close_terminal_session`.
+- `src/prototype.jsx` now uses that seam for new terminal tabs, runtime log polling, tab close termination, and approved command writes when a tab has a live runtime session.
+- Browser preview remains deterministic through the same service fallback, while real PTY ownership stays in `src-tauri/src/runtime/pty/mod.rs`.
 
 ## 크로스 플랫폼 전략 / Cross-Platform Strategy
 

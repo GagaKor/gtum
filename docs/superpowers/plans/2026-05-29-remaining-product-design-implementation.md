@@ -232,20 +232,22 @@ git commit -m "refactor: extract workspace stage"
 
 **Files:**
 - Create: `src/shared/api/runtimeTerminals.ts`
-- Create: `tests/e2e/terminal-runtime.spec.ts`
+- Create: `tests/e2e/runtime-terminal-service.spec.ts`
+- Modify: `tests/e2e/design-prototype.spec.ts`
+- Modify: `src/prototype.jsx`
 - Modify: `docs/message-flow.md`
 - Modify: `docs/technical-design.md`
 
-- [ ] **Step 1: Write service contract test for `create_terminal_session_with_command`**
-- [ ] **Step 2: Implement `createTerminalSession`, `readTerminalLogs`, `executeTerminalCommand`, and `closeTerminalSession` wrappers**
-- [ ] **Step 3: Wire a first terminal tab action to the service behind browser fallback**
-- [ ] **Step 4: Run verification**
+- [x] **Step 1: Write service contract test for terminal create/read/write/close command payloads**
+- [x] **Step 2: Implement `createTerminalTab`, `readLogs`, `executeCommand`, and `closeSession` wrappers**
+- [x] **Step 3: Wire terminal tab creation, runtime log polling, close termination, and approved command writes to the service behind browser fallback**
+- [x] **Step 4: Run verification**
 
 Run:
 
 ```bash
 npm run build
-npm run test:e2e -- tests/e2e/terminal-runtime.spec.ts
+npm run test:e2e -- tests/e2e/runtime-terminal-service.spec.ts tests/e2e/design-prototype.spec.ts --grep "runtime PTY bridge|runtime-backed terminal|executes commands|browser preview terminal"
 ```
 
 Expected: PASS in browser fallback and type-checks desktop command payloads.
@@ -253,7 +255,7 @@ Expected: PASS in browser fallback and type-checks desktop command payloads.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/shared/api/runtimeTerminals.ts tests/e2e/terminal-runtime.spec.ts docs/message-flow.md docs/technical-design.md
+git add src/shared/api/runtimeTerminals.ts tests/e2e/runtime-terminal-service.spec.ts tests/e2e/design-prototype.spec.ts src/prototype.jsx docs/message-flow.md docs/technical-design.md
 git commit -m "feat: add terminal runtime service"
 ```
 

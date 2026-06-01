@@ -9,6 +9,7 @@ import {
   createRuntimeWindowControls,
   initialRuntimeWindowControls,
 } from './shared/api/runtimeWindow'
+import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
 import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
@@ -1490,6 +1491,7 @@ const projectRuntimeService = createProjectRuntimeService({
   fallbackProject: PROJECT,
   fallbackFileReader: tabFromFile,
 });
+const terminalRuntimeService = createTerminalRuntimeService();
 
 async function readRuntimeProjectOverview(path) {
   const result = await projectRuntimeService.readProjectOverview(path);
@@ -2039,6 +2041,24 @@ function openTab(state, groupId, tab) {
   };
 }
 
+function updateTab(state, tabId, updater) {
+  let changed = false;
+  const groups = {};
+  for (const [groupId, group] of Object.entries(state.groups)) {
+    let groupChanged = false;
+    const tabs = group.tabs.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      const next = typeof updater === "function" ? updater(tab, group) : { ...tab, ...updater };
+      groupChanged = next !== tab;
+      changed = changed || groupChanged;
+      return next;
+    });
+    groups[groupId] = groupChanged ? { ...group, tabs } : group;
+  }
+
+  return changed ? { ...state, groups } : state;
+}
+
 // openFile — open a file as an editor tab in the active group.
 // If a tab already exists for that path (in any group), focus it instead.
 function openFile(state, groupId, fileTab) {
@@ -2100,7 +2120,7 @@ Object.assign(window, {
   reorderTab, moveTab, moveTabToNewGroup,
   splitGroup, dropTabOnEdge,
   closeTab, closeOtherTabs, closeTabsToRight, closeTabsToLeft, closeAllTabs,
-  openTab, resizeSplit, openFile,
+  openTab, updateTab, resizeSplit, openFile,
 });
 
 
@@ -3979,6 +3999,7 @@ function App() {
   const widthClass = winW < 940 ? "w-sm" : winW < 1180 ? "w-md" : "w-lg";
 
   const [workspace, setWorkspace] = React.useState(WORKSPACE_INITIAL);
+  const workspaceRef = React.useRef(WORKSPACE_INITIAL);
   const [activeProject, setActiveProject] = React.useState(PROJECT);
   const [projectBusy, setProjectBusy] = React.useState(false);
   const [projectError, setProjectError] = React.useState(null);
@@ -4061,6 +4082,17 @@ function App() {
   const activeModelId = providers.find((p) => p.id === activeProviderId)?.activeModel
     || providers.find((p) => p.state === "connected")?.activeModel;
 
+  React.useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  const closeRuntimeTabs = React.useCallback((tabs) => {
+    for (const tab of tabs) {
+      if (tab?.terminalSessionId == null) continue;
+      terminalRuntimeService.closeSession(tab.terminalSessionId).catch(() => undefined);
+    }
+  }, []);
+
   const onSwitchModel = (providerId, modelId) => {
     setActiveProviderId(providerId);
     setProviders((prev) => prev.map((p) =>
@@ -4081,6 +4113,62 @@ function App() {
   React.useEffect(() => {
     window.__GTUM_BACKEND_BRIDGE__ = projectRuntimeService.getBridgeState(activeProject);
   }, [activeProject]);
+  React.useEffect(() => {
+    if (!terminalRuntimeService.hasRuntime()) return undefined;
+
+    let cancelled = false;
+    const pollRuntimeTerminals = async () => {
+      const runtimeTabs = allTabs(workspaceRef.current)
+        .map(({ tab }) => tab)
+        .filter((tab) => tab?.runtimeBacked && tab.terminalSessionId != null);
+
+      for (const tab of runtimeTabs) {
+        try {
+          const logs = await terminalRuntimeService.readLogs(tab.terminalSessionId, 400);
+          if (cancelled) return;
+          setWorkspace((current) => updateTab(current, tab.id, (currentTab) => {
+            if (
+              currentTab.lastLogLineCount === logs.logLineCount &&
+              currentTab.runtimeUpdatedAt === logs.updatedAt &&
+              currentTab.status === logs.status
+            ) {
+              return currentTab;
+            }
+
+            return {
+              ...currentTab,
+              status: logs.status,
+              runtimeStatus: logs.runtimeStatus,
+              lastLogLineCount: logs.logLineCount,
+              runtimeUpdatedAt: logs.updatedAt,
+              lines: logs.lines.length > 0 ? logs.lines : currentTab.lines,
+            };
+          }));
+        } catch (error) {
+          if (cancelled) return;
+          const message = error instanceof Error ? error.message : String(error);
+          setWorkspace((current) => updateTab(current, tab.id, (currentTab) => ({
+            ...currentTab,
+            status: "failed",
+            lines: [
+              ...currentTab.lines,
+              { kind: "log", text: `terminal read failed: ${message}`, color: "err" },
+            ],
+          })));
+        }
+      }
+    };
+
+    void pollRuntimeTerminals();
+    const interval = window.setInterval(() => {
+      void pollRuntimeTerminals();
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const pushProjectMessage = (message) => {
     setMessages((prev) => [...prev, {
@@ -4150,17 +4238,72 @@ function App() {
     moveTabToNewGroup: (gId, tId, pos) => setWorkspace((w) => moveTabToNewGroup(w, gId, tId, pos)),
     splitGroup: (gId, pos) => setWorkspace((w) => splitGroup(w, gId, pos)),
     dropTabOnEdge: (tId, fromG, toG, pos) => setWorkspace((w) => dropTabOnEdge(w, tId, fromG, toG, pos)),
-    closeTab: (gId, tId) => setWorkspace((w) => closeTab(w, gId, tId)),
-    closeOtherTabs: (gId, tId) => setWorkspace((w) => closeOtherTabs(w, gId, tId)),
-    closeTabsToRight: (gId, tId) => setWorkspace((w) => closeTabsToRight(w, gId, tId)),
-    closeTabsToLeft: (gId, tId) => setWorkspace((w) => closeTabsToLeft(w, gId, tId)),
-    closeAllTabs: (gId) => setWorkspace((w) => closeAllTabs(w, gId)),
-    newTab: (gId) => setWorkspace((w) => openTab(w, gId, {
-      title: lang === "ko" ? "새 탭" : "new",
-      cwd: ".",
-      lines: [{ kind: "log", text: `${activeProject.path} (${activeProject.branch}) $`, color: "dim" }],
-    })),
-  }), [lang, activeProject.path, activeProject.branch]);
+    closeTab: (gId, tId) => {
+      const found = findTab(workspaceRef.current, tId);
+      if (found?.tab) closeRuntimeTabs([found.tab]);
+      setWorkspace((w) => closeTab(w, gId, tId));
+    },
+    closeOtherTabs: (gId, tId) => {
+      const group = workspaceRef.current.groups[gId];
+      if (group) closeRuntimeTabs(group.tabs.filter((tab) => tab.id !== tId));
+      setWorkspace((w) => closeOtherTabs(w, gId, tId));
+    },
+    closeTabsToRight: (gId, tId) => {
+      const group = workspaceRef.current.groups[gId];
+      if (group) {
+        const idx = group.tabs.findIndex((tab) => tab.id === tId);
+        closeRuntimeTabs(idx >= 0 ? group.tabs.slice(idx + 1) : []);
+      }
+      setWorkspace((w) => closeTabsToRight(w, gId, tId));
+    },
+    closeTabsToLeft: (gId, tId) => {
+      const group = workspaceRef.current.groups[gId];
+      if (group) {
+        const idx = group.tabs.findIndex((tab) => tab.id === tId);
+        closeRuntimeTabs(idx >= 0 ? group.tabs.slice(0, idx) : []);
+      }
+      setWorkspace((w) => closeTabsToLeft(w, gId, tId));
+    },
+    closeAllTabs: (gId) => {
+      const group = workspaceRef.current.groups[gId];
+      if (group) closeRuntimeTabs(group.tabs);
+      setWorkspace((w) => closeAllTabs(w, gId));
+    },
+    newTab: (gId) => {
+      const localId = uid("t");
+      const title = lang === "ko" ? "새 탭" : "new";
+      setWorkspace((w) => openTab(w, gId, {
+        id: localId,
+        title,
+        cwd: ".",
+        status: "running",
+        runtimeBacked: false,
+        terminalSessionId: null,
+        lines: [{ kind: "log", text: `${activeProject.path} (${activeProject.branch}) $`, color: "dim" }],
+      }));
+
+      terminalRuntimeService.createTerminalTab({
+        projectPath: activeProject.path,
+        title,
+        cwd: ".",
+      }).then((runtimeTab) => {
+        setWorkspace((w) => updateTab(w, localId, (tab) => ({
+          ...tab,
+          ...runtimeTab,
+          id: localId,
+          title,
+          lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
+        })));
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setWorkspace((w) => updateTab(w, localId, (tab) => ({
+          ...tab,
+          status: "failed",
+          lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
+        })));
+      });
+    },
+  }), [closeRuntimeTabs, lang, activeProject.path, activeProject.branch]);
 
   // ── Send / approve flow uses workspace lookups ────────────────────────
   const activeTab = activeTabOf(workspace);
@@ -4224,43 +4367,88 @@ function App() {
     for (let i = 0; i < sugg.commands.length; i++) {
       const c = sugg.commands[i];
       let targetTabId = c.target;
+      let handledByRuntime = false;
       if (targetTabId === "new") {
         // Add a new tab into the active group, marked as running
         const newId = "t-fix-" + Date.now() + "-" + i;
-        setWorkspace((w) => {
-          const gId = w.activeGroupId;
-          const g = w.groups[gId];
-          const newTab = {
-            id: newId, title: lang === "ko" ? `수정-${i + 1}` : `fix-${i + 1}`,
-            shell: "zsh", cwd: ".", status: "running", cmd: c.cmd,
-            lines: [{ kind: "cmd", text: c.cmd }],
-          };
-          return {
-            ...w,
-            groups: {
-              ...w.groups,
-              [gId]: { ...g, tabs: [...g.tabs, newTab], activeTabId: newId },
-            },
-          };
-        });
+        const title = lang === "ko" ? `수정-${i + 1}` : `fix-${i + 1}`;
+        setWorkspace((w) => openTab(w, w.activeGroupId, {
+          id: newId,
+          title,
+          shell: "zsh", cwd: ".", status: "running", cmd: c.cmd,
+          runtimeBacked: false,
+          terminalSessionId: null,
+          lines: [{ kind: "cmd", text: c.cmd }],
+        }));
         targetTabId = newId;
+
+        if (terminalRuntimeService.hasRuntime()) {
+          setExecuting(c.cmd);
+          try {
+            const runtimeTab = await terminalRuntimeService.createTerminalTabWithCommand({
+              projectPath: activeProject.path,
+              title,
+              cwd: ".",
+              command: c.cmd,
+            });
+            setWorkspace((w) => updateTab(w, newId, (tab) => ({
+              ...tab,
+              ...runtimeTab,
+              id: newId,
+              title,
+              cmd: c.cmd,
+              status: "running",
+              lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
+            })));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setWorkspace((w) => updateTab(w, newId, (tab) => ({
+              ...tab,
+              status: "failed",
+              lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
+            })));
+          } finally {
+            setExecuting(null);
+          }
+          handledByRuntime = true;
+        }
       } else {
-        appendToTab(targetTabId, [{ kind: "log", text: "" }, { kind: "cmd", text: c.cmd }]);
-        setTabStatus(targetTabId, "running", c.cmd);
         setWorkspace((w) => {
           const f = findTab(w, targetTabId);
           if (!f) return w;
           return setActiveTab(w, f.group.id, targetTabId);
         });
+
+        const found = findTab(workspaceRef.current, targetTabId);
+        if (found?.tab?.runtimeBacked && found.tab.terminalSessionId != null) {
+          appendToTab(targetTabId, [{ kind: "log", text: "" }, { kind: "cmd", text: c.cmd }]);
+          setTabStatus(targetTabId, "running", c.cmd);
+          setExecuting(c.cmd);
+          try {
+            await terminalRuntimeService.executeCommand(found.tab.terminalSessionId, c.cmd);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            appendToTab(targetTabId, [{ kind: "log", text: message, color: "err" }]);
+            setTabStatus(targetTabId, "failed", c.cmd);
+          } finally {
+            setExecuting(null);
+          }
+          handledByRuntime = true;
+        } else {
+          appendToTab(targetTabId, [{ kind: "log", text: "" }, { kind: "cmd", text: c.cmd }]);
+          setTabStatus(targetTabId, "running", c.cmd);
+        }
       }
 
-      setExecuting(c.cmd);
-      await sleep(900);
-      const out = EXEC_OUTPUTS[c.cmd] || [{ kind: "log", text: "✓ done", color: "ok" }];
-      appendToTab(targetTabId, out);
-      setExecuting(null);
-      const finalStatus = c.cmd.startsWith("pnpm dev") ? "running" : "idle";
-      setTabStatus(targetTabId, finalStatus);
+      if (!handledByRuntime) {
+        setExecuting(c.cmd);
+        await sleep(900);
+        const out = EXEC_OUTPUTS[c.cmd] || [{ kind: "log", text: "✓ done", color: "ok" }];
+        appendToTab(targetTabId, out);
+        setExecuting(null);
+        const finalStatus = c.cmd.startsWith("pnpm dev") ? "running" : "idle";
+        setTabStatus(targetTabId, finalStatus);
+      }
 
       ranCommands.push({ tabId: targetTabId, cmd: c.cmd, risk: c.risk });
 

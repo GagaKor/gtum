@@ -94,8 +94,9 @@ The active design prototype does not currently call this runtime command. When t
    - `confidence`
    - `error`
 6. `src/prototype.jsx` owns the approval UI state. No command runs before approval.
-7. After approval, current prototype behavior appends simulated command output into the chosen tab. A future terminal slice must replace this with the existing Tauri PTY commands instead of restoring deleted FSD frontend helpers.
-8. Task history records request and approval outcomes.
+7. Runtime-backed terminal tabs route approved commands through `src/shared/api/runtimeTerminals.ts`, which writes to `execute_terminal_session_command` or starts a new PTY through `create_terminal_session_with_command`.
+8. Browser preview and non-runtime tabs keep the simulated fallback path so the uploaded design remains testable without Tauri.
+9. Task history records request and approval outcomes.
 
 ## Flow 6. Restore And Repeated Use
 
@@ -116,8 +117,10 @@ It covers:
 - design proportions after the frontend reset
 - project and files accordion behavior without legacy frontend state
 - browser fallback for the backend bridge state
+- injected terminal runtime bridge coverage for new-tab creation and close/terminate routing
+- terminal runtime service contract coverage through [`tests/e2e/runtime-terminal-service.spec.ts`](../tests/e2e/runtime-terminal-service.spec.ts)
 
-Deleted FSD-era E2E specs must not be referenced as current coverage. When terminal, provider, agent request, aging, or restore behavior is reintroduced on top of the prototype, add new tests beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
+Deleted FSD-era E2E specs must not be referenced as current coverage. Provider, agent request, aging, and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
 
 ## Documentation Rule
 
