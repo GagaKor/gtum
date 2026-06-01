@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test'
 
 import {
   CODEX_LOGIN_COMMAND,
+  CODEX_LOGIN_CANCELLED_MESSAGE,
+  codexLoginTerminalStartError,
   createAgentAuthRuntimeService,
   providerViewStateFromConnection,
   type RuntimeAgentConnectionSnapshot,
@@ -125,4 +127,23 @@ test('normalizes runtime connection snapshots for provider UI state', async () =
     connectionKind: 'real',
     lastError: null,
   })
+})
+
+test('classifies cancelled Codex login terminals before validating the session', async () => {
+  expect(codexLoginTerminalStartError(null)).toBe('Codex login terminal did not start.')
+  expect(codexLoginTerminalStartError({
+    id: 't-codex-login',
+    type: 'terminal',
+    title: 'Codex Login',
+    shell: 'zsh',
+    cwd: '.',
+    status: 'idle',
+    cmd: CODEX_LOGIN_COMMAND,
+    lines: [],
+    terminalSessionId: 91,
+    runtimeBacked: true,
+    runtimeStatus: 'terminated',
+    lastLogLineCount: 1,
+    runtimeUpdatedAt: 120,
+  })).toBe(CODEX_LOGIN_CANCELLED_MESSAGE)
 })

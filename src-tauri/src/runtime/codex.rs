@@ -132,25 +132,11 @@ impl CodexCliStatus {
 }
 
 pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
-    let status = read_codex_cli_status();
-    let requirements = vec![
-        AgentProviderRequirementStatus {
-            name: "codex CLI".into(),
-            required: true,
-            present: status.binary_available,
-        },
-        AgentProviderRequirementStatus {
-            name: CODEX_AUTH_PATH_LABEL.into(),
-            required: true,
-            present: status.auth_file_exists,
-        },
-        AgentProviderRequirementStatus {
-            name: "ChatGPT session".into(),
-            required: true,
-            present: status.has_chatgpt_session,
-        },
-    ];
+    diagnostics_from_status(read_codex_cli_status())
+}
 
+fn diagnostics_from_status(status: CodexCliStatus) -> AgentProviderDiagnostics {
+    let requirements = requirements_from_status(&status);
     let (setup_state, summary, guidance) = if !status.binary_available {
         (
             AgentProviderSetupState::NeedsSetup,
@@ -172,8 +158,8 @@ pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
     } else if !status.has_chatgpt_session {
         (
             AgentProviderSetupState::NeedsSetup,
-            "Codex CLI session is not ready for the ChatGPT-based daily-use path yet.".into(),
-            "Refresh the local Codex login with `codex login`, then reconnect Codex.".into(),
+            "Codex CLI session is missing or expired for the ChatGPT-based daily-use path.".into(),
+            "Run `codex login`, then reconnect Codex.".into(),
         )
     } else {
         (
@@ -193,6 +179,26 @@ pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
         model: Some("Codex CLI default".into()),
         requirements,
     }
+}
+
+fn requirements_from_status(status: &CodexCliStatus) -> Vec<AgentProviderRequirementStatus> {
+    vec![
+        AgentProviderRequirementStatus {
+            name: "codex CLI".into(),
+            required: true,
+            present: status.binary_available,
+        },
+        AgentProviderRequirementStatus {
+            name: CODEX_AUTH_PATH_LABEL.into(),
+            required: true,
+            present: status.auth_file_exists,
+        },
+        AgentProviderRequirementStatus {
+            name: "ChatGPT session".into(),
+            required: true,
+            present: status.has_chatgpt_session,
+        },
+    ]
 }
 
 pub fn deferred_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
@@ -219,8 +225,10 @@ pub fn deferred_provider_diagnostics(provider: AgentProvider) -> AgentProviderDi
 }
 
 pub fn validate_codex_connection() -> Result<String, String> {
-    let status = read_codex_cli_status();
+    validate_codex_status(read_codex_cli_status())
+}
 
+fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
     if !status.binary_available {
         return Err("Codex CLI is not installed. Install it and run `codex login` before connecting Codex.".into());
     }
@@ -232,9 +240,16 @@ pub fn validate_codex_connection() -> Result<String, String> {
         );
     }
 
-    if !status.auth_file_exists || !status.has_chatgpt_session {
+    if !status.auth_file_exists {
         return Err(
-            "Codex CLI is not logged in with ChatGPT for this desktop user. Run `codex login`, finish the browser sign-in, then connect again."
+            "Codex CLI is installed, but no local session file was found. Run `codex login`, finish sign-in, then reconnect Codex."
+                .into(),
+        );
+    }
+
+    if !status.has_chatgpt_session {
+        return Err(
+            "Codex CLI session is missing or expired. Run `codex login`, then reconnect Codex."
                 .into(),
         );
     }
@@ -512,4 +527,65 @@ fn unix_timestamp_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status(
+        binary_available: bool,
+        auth_file_exists: bool,
+        auth_mode: Option<&str>,
+        has_chatgpt_session: bool,
+    ) -> CodexCliStatus {
+        CodexCliStatus {
+            binary_available,
+            auth_file_exists,
+            auth_mode: auth_mode.map(str::to_string),
+            has_chatgpt_session,
+        }
+    }
+
+    #[test]
+    fn diagnostics_report_missing_cli_as_needs_setup() {
+        let diagnostics = diagnostics_from_status(status(false, false, None, false));
+
+        assert_eq!(diagnostics.setup_state, AgentProviderSetupState::NeedsSetup);
+        assert_eq!(
+            diagnostics.summary,
+            "Desktop Codex access is blocked until Codex CLI is installed on this machine."
+        );
+        assert!(diagnostics
+            .requirements
+            .iter()
+            .any(|requirement| requirement.name == "codex CLI" && !requirement.present));
+    }
+
+    #[test]
+    fn validation_reports_missing_auth_file_separately() {
+        let error = validate_codex_status(status(true, false, None, false)).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Codex CLI is installed, but no local session file was found. Run `codex login`, finish sign-in, then reconnect Codex."
+        );
+    }
+
+    #[test]
+    fn validation_reports_missing_or_expired_chatgpt_session() {
+        let error = validate_codex_status(status(true, true, Some("chatgpt"), false)).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Codex CLI session is missing or expired. Run `codex login`, then reconnect Codex."
+        );
+    }
+
+    #[test]
+    fn validation_accepts_chatgpt_session() {
+        let account = validate_codex_status(status(true, true, Some("chatgpt"), true)).unwrap();
+
+        assert_eq!(account, "Codex ChatGPT Session");
+    }
 }

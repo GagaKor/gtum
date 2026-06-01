@@ -936,6 +936,260 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
   })
 })
 
+test('keeps exact Codex login failure visible in settings', async ({ page }) => {
+  await page.addInitScript(() => {
+    const codexDisconnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const codexError = {
+      ...codexDisconnected,
+      status: 'error',
+      lastLoginAttemptAt: 125,
+      updatedAt: 130,
+      lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
+    }
+    const loginTerminal = {
+      sessionId: 90,
+      name: 'Codex Login',
+      cwd: '/workspace/project',
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: 9090,
+      status: 'running',
+      createdAt: 100,
+      updatedAt: 120,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: 'session created',
+    }
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+
+        if (command === 'list_agent_connections') return [codexDisconnected]
+        if (command === 'create_terminal_session_with_command') return loginTerminal
+        if (command === 'begin_agent_login') return codexError
+
+        return codexDisconnected
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  await page
+    .locator('.settings-provider')
+    .filter({ hasText: 'Codex' })
+    .getByRole('button', { name: '연결' })
+    .click()
+
+  await expect(page.locator('.settings-modal')).toBeVisible()
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+    'Codex CLI session is missing or expired. Run codex login, then reconnect.',
+  )
+})
+
+test('does not validate Codex when the login terminal is cancelled', async ({ page }) => {
+  await page.addInitScript(() => {
+    const codexDisconnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const cancelledTerminal = {
+      sessionId: 91,
+      name: 'Codex Login',
+      cwd: '/workspace/project',
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: null,
+      status: 'terminated',
+      createdAt: 100,
+      updatedAt: 120,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: 'user cancelled login terminal',
+    }
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+
+        if (command === 'list_agent_connections') return [codexDisconnected]
+        if (command === 'create_terminal_session_with_command') return cancelledTerminal
+        if (command === 'begin_agent_login') {
+          throw new Error('begin_agent_login should not be called after cancellation')
+        }
+
+        return codexDisconnected
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  await page
+    .locator('.settings-provider')
+    .filter({ hasText: 'Codex' })
+    .getByRole('button', { name: '연결' })
+    .click()
+
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+    'Codex login was cancelled before the session could be validated.',
+  )
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __authCalls?: Array<{ command: string }>
+        }
+      ).__authCalls?.map((call) => call.command) ?? [],
+  )
+
+  expect(calls).toContain('create_terminal_session_with_command')
+  expect(calls).not.toContain('begin_agent_login')
+})
+
+test('reconnects Codex after the CLI session is completed', async ({ page }) => {
+  await page.addInitScript(() => {
+    const codexDisconnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const codexError = {
+      ...codexDisconnected,
+      status: 'error',
+      lastLoginAttemptAt: 125,
+      updatedAt: 130,
+      lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
+    }
+    const codexConnected = {
+      ...codexDisconnected,
+      status: 'connected',
+      accountLabel: 'Codex ChatGPT Session',
+      connectedAt: 150,
+      lastLoginAttemptAt: 145,
+      updatedAt: 155,
+      lastError: null,
+    }
+    const loginTerminal = {
+      sessionId: 92,
+      name: 'Codex Login',
+      cwd: '/workspace/project',
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: 9092,
+      status: 'running',
+      createdAt: 100,
+      updatedAt: 120,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: 'session created',
+    }
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __beginAttempts: number
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__beginAttempts = 0
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+
+        if (command === 'list_agent_connections') return [codexDisconnected]
+        if (command === 'create_terminal_session_with_command') return loginTerminal
+        if (command === 'begin_agent_login') {
+          bridgeWindow.__beginAttempts += 1
+          return bridgeWindow.__beginAttempts === 1 ? codexError : codexConnected
+        }
+
+        return codexDisconnected
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  const codexRow = page.locator('.settings-provider').filter({ hasText: 'Codex' })
+
+  await codexRow.getByRole('button', { name: '연결' }).click()
+  await expect(codexRow).toContainText(
+    'Codex CLI session is missing or expired. Run codex login, then reconnect.',
+  )
+  await codexRow.getByRole('button', { name: '연결' }).click()
+
+  await expect(page.locator('.settings-modal')).toBeHidden()
+  await page.locator('.titlebar .pill.icon-only').click()
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+    '연결됨',
+  )
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+    'CLI 세션',
+  )
+})
+
 test('keeps rich prototype file content when browser fallback opens a file', async ({ page }) => {
   await page.goto('/')
 

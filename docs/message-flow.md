@@ -58,12 +58,14 @@ This document exceeds 200 lines. Do not reread every flow by default.
 2. `Codex` diagnostics in [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs) check:
    - whether the `codex` CLI exists
    - whether `~/.codex/auth.json` exists
-   - whether a ChatGPT-backed session is available
+   - whether a ChatGPT-backed session is available and not stale
 3. When the user clicks `Connect Codex` in settings, the prototype opens a runtime-backed terminal tab and runs `codex login --device-auth`.
-4. After launching the terminal login helper, the frontend calls `begin_agent_login` with the `Codex` provider and the documented runtime scopes.
-5. The auth manager updates state based on the real path being local `Codex CLI` ChatGPT-session validation rather than callback-only auth.
-6. Successful validation sets the provider to `connected`; failure sets `error` with the runtime message so the user can finish CLI login and reconnect.
-7. `Claude` remains in a deferred/not-yet-daily-use state.
+4. If the login terminal is cancelled, failed, or exits before validation can begin, the UI keeps settings open, marks Codex as `error`, and does not call `begin_agent_login`.
+5. After the login terminal starts successfully, the frontend calls `begin_agent_login` with the `Codex` provider and the documented runtime scopes.
+6. The auth manager updates state based on the real path being local `Codex CLI` ChatGPT-session validation rather than callback-only auth.
+7. Successful validation sets the provider to `connected` and closes settings. Failure sets `error` with the exact runtime message in the existing provider row subtext so the user can finish CLI login and reconnect.
+8. Reconnect is an explicit second `Connect Codex` attempt after the CLI login completes. The app reopens the login helper, calls `begin_agent_login` again, and replaces the error row with the connected CLI-session state on success.
+9. `Claude` remains in a deferred/not-yet-daily-use state.
 
 ## Flow 4. Agent Request Envelope
 
@@ -137,6 +139,8 @@ It covers:
 - PTY reroute coverage that verifies Codex commands targeting mock tabs start a new runtime-backed terminal session
 - agent auth runtime service contract coverage through [`tests/e2e/runtime-agent-auth-service.spec.ts`](../tests/e2e/runtime-agent-auth-service.spec.ts)
 - injected Codex CLI login launcher coverage in `tests/e2e/design-prototype.spec.ts`
+- Codex login error, cancellation, and reconnect coverage in `tests/e2e/design-prototype.spec.ts`
+- Codex diagnostic status normalization coverage in Rust unit tests under [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs)
 
 Deleted FSD-era E2E specs must not be referenced as current coverage. Provider login launcher coverage now exists for the new shell, but aging and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
 

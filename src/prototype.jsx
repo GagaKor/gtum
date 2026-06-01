@@ -11,6 +11,7 @@ import {
 } from './shared/api/runtimeWindow'
 import {
   CODEX_LOGIN_COMMAND,
+  codexLoginTerminalStartError,
   CODEX_REQUIRED_SCOPES,
   createAgentAuthRuntimeService,
   providerViewStateFromConnection,
@@ -4713,7 +4714,7 @@ function App() {
         title,
         cwd: ".",
       });
-      if (!runtimeTab) return;
+      if (!runtimeTab) return null;
 
       setWorkspace((w) => updateTab(w, localId, (tab) => ({
         ...tab,
@@ -4721,9 +4722,9 @@ function App() {
         id: localId,
         title,
         cmd: CODEX_LOGIN_COMMAND,
-        status: "running",
         lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
       })));
+      return runtimeTab;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkspace((w) => updateTab(w, localId, (tab) => ({
@@ -4737,13 +4738,17 @@ function App() {
   const openOAuth = (providerId) => setOauth({ providerId });
   const handleProviderConnect = async (providerId) => {
     if (providerId === "codex" && agentAuthRuntimeService.hasRuntime()) {
-      setSettingsOpen(false);
       setActiveProviderId("codex");
       try {
-        await openRuntimeCodexLogin();
+        const loginTab = await openRuntimeCodexLogin();
+        const loginStartError = codexLoginTerminalStartError(loginTab);
+        if (loginStartError) throw new Error(loginStartError);
+
         const connection = await agentAuthRuntimeService.beginLogin("codex", CODEX_REQUIRED_SCOPES);
         applyProviderConnection(connection);
-        if (connection.status !== "connected") {
+        if (connection.status === "connected") {
+          setSettingsOpen(false);
+        } else {
           markProviderError("codex", connection.lastError || (
             lang === "ko"
               ? "Codex CLI 로그인을 완료한 뒤 다시 연결해야 해."

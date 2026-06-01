@@ -14,6 +14,8 @@ import {
 
 export const CODEX_LOGIN_COMMAND = 'codex login --device-auth'
 export const CODEX_REQUIRED_SCOPES = ['project:read', 'terminal:read'] as const
+export const CODEX_LOGIN_CANCELLED_MESSAGE =
+  'Codex login was cancelled before the session could be validated.'
 
 export type RuntimeAgentConnectionStatus =
   | 'disconnected'
@@ -100,6 +102,17 @@ export type AgentAuthRuntimeService = {
   disconnect(provider: AgentProviderId): Promise<RuntimeAgentConnectionSnapshot>
   readRuntimeSnapshot(): Promise<RuntimeAgentAuthSnapshot | null>
   openCodexLoginTerminal(request: OpenCodexLoginTerminalRequest): Promise<RuntimeTerminalTab | null>
+}
+
+export const codexLoginTerminalStartError = (
+  tab: RuntimeTerminalTab | null,
+): string | null => {
+  if (!tab) return 'Codex login terminal did not start.'
+  if (tab.runtimeStatus === 'terminated') return CODEX_LOGIN_CANCELLED_MESSAGE
+  if (tab.runtimeStatus === 'failed') return 'Codex login terminal failed before validation.'
+  if (tab.runtimeStatus === 'exited') return 'Codex login terminal exited before validation.'
+
+  return null
 }
 
 type RuntimeAgentAuthOverride = {
