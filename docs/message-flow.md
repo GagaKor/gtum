@@ -37,8 +37,9 @@ This document exceeds 200 lines. Do not reread every flow by default.
 4. After a folder is selected, [`src/prototype.jsx`](../src/prototype.jsx) calls the typed service seam in [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts).
 5. `runtimeProjects.ts` calls `invoke("read_project_overview", { path })` in desktop runtime and preserves the uploaded design fixture in browser preview.
 6. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) returns project metadata, file tree, and Git overview.
-7. The frontend maps the normalized `RuntimeProject` into the titlebar, sidebar project card, file tree, agent context branch, and statusbar.
-8. PTY/session restore remains deferred for the next backend slice. It must be added on top of the TSX/FSD migration seam instead of restoring the deleted FSD frontend.
+7. After a runtime-backed project opens successfully, [`src/prototype.jsx`](../src/prototype.jsx) calls `remember_workspace_project` through [`src/shared/api/runtimeWorkspace.ts`](../src/shared/api/runtimeWorkspace.ts).
+8. The frontend maps the normalized `RuntimeProject` into the titlebar, sidebar project card, file tree, agent context branch, and statusbar.
+9. PTY/session restore remains deferred for a later backend slice. It must be added on top of the TSX/FSD migration seam instead of restoring the deleted FSD frontend.
 
 ## Flow 2. File Focus And Code Surface
 
@@ -104,12 +105,15 @@ The active design prototype now calls this runtime command through [`src/shared/
 
 ## Flow 6. Restore And Repeated Use
 
-1. The active prototype starts from design fixture state on page load.
-2. Runtime persistence commands still exist in Tauri: `read_workspace_runtime_snapshot`, `save_workspace_runtime_snapshot`, `remember_workspace_project`, and `set_workspace_execution_mode`.
-3. Repeated-use behavior should persist the last project path, selected file, provider choice, execution mode, and task history from the prototype state.
-4. On app restart, the frontend should reopen the last project through Flow 1 and prefer the previously selected file through Flow 2 when still valid.
-5. Provider connection lists should reload from the runtime, but real-provider state must be revalidated so stale connected state does not survive unchecked.
-6. PTY session objects are memory-backed and are not fully restorable after a process restart.
+1. Browser/Vite preview starts from the uploaded design fixture and keeps workspace persistence local-only.
+2. Desktop startup calls `read_workspace_runtime_snapshot` through [`src/shared/api/runtimeWorkspace.ts`](../src/shared/api/runtimeWorkspace.ts).
+3. If the snapshot includes an execution mode, the frontend applies it locally without writing it back during restore.
+4. If the snapshot includes `lastOpenedProjectPath`, the frontend reopens that path through Flow 1 by calling `read_project_overview`; the stored path is not treated as a complete project object.
+5. Successful runtime-backed project opens call `remember_workspace_project`.
+6. Execution mode changes from the agent panel, settings modal, or tweak controls call `set_workspace_execution_mode`.
+7. The current Rust workspace contract persists recent project paths, last opened project path, execution mode, storage version, and timestamps. Selected file, provider choice, task history, and line anchors remain future contract fields.
+8. Provider connection lists reload from the runtime, but real-provider state must be revalidated so stale connected state does not survive unchecked.
+9. PTY session objects are memory-backed and are not fully restorable after a process restart.
 
 ## Linked Test Flows
 
@@ -123,6 +127,9 @@ It covers:
 - browser fallback for the backend bridge state
 - injected terminal runtime bridge coverage for new-tab creation and close/terminate routing
 - terminal runtime service contract coverage through [`tests/e2e/runtime-terminal-service.spec.ts`](../tests/e2e/runtime-terminal-service.spec.ts)
+- workspace runtime service contract coverage through [`tests/e2e/workspace-runtime-service.spec.ts`](../tests/e2e/workspace-runtime-service.spec.ts)
+- workspace restore coverage that verifies startup reopens the saved runtime project and applies the saved execution mode
+- workspace persistence coverage that verifies project opens and execution mode changes call the runtime workspace commands
 - agent suggestion runtime service contract coverage through [`tests/e2e/runtime-agent-suggestions-service.spec.ts`](../tests/e2e/runtime-agent-suggestions-service.spec.ts)
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
 - runtime-project gating coverage that verifies Codex does not call `request_agent_suggestions` while the active project is still the browser fixture

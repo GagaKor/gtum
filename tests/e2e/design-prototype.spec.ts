@@ -157,6 +157,205 @@ test('exposes backend bridge state while keeping browser fallback stable', async
   await expect(page.locator('.titlebar').getByText('aurora-monorepo')).toBeVisible()
 })
 
+test('restores the last runtime project and execution mode from workspace persistence', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __workspaceCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_WORKSPACE_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__workspaceCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_WORKSPACE_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__workspaceCalls.push({ command, args })
+
+        return {
+          storagePath: '/tmp/gtum-workspace-state.json',
+          snapshot: {
+            recentProjects: ['/workspace/restored'],
+            lastOpenedProjectPath: '/workspace/restored',
+            executionMode: 'deep',
+            updatedAt: 100,
+            storageVersion: 1,
+          },
+          restoredAt: 120,
+        }
+      },
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'restored-workspace',
+            path: '/workspace/restored',
+          },
+          tree: {
+            name: 'restored-workspace',
+            path: '/workspace/restored',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/runtime-restore',
+            branchType: 'feature',
+            changedFilesCount: 2,
+          },
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+
+  await expect(page.locator('.titlebar')).toContainText('restored-workspace')
+  await expect(page.locator('.statusbar')).toContainText('모드: Deep')
+
+  const calls = await page.evaluate(
+    () => {
+      const bridgeWindow = window as Window & {
+        __workspaceCalls?: Array<{ command: string }>
+        __projectCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+      }
+
+      return {
+        workspaceCalls: bridgeWindow.__workspaceCalls ?? [],
+        projectCalls: bridgeWindow.__projectCalls ?? [],
+      }
+    },
+  )
+
+  expect(calls.workspaceCalls.map((call) => call.command)).toContain(
+    'read_workspace_runtime_snapshot',
+  )
+  expect(calls.projectCalls).toEqual([
+    {
+      command: 'read_project_overview',
+      args: {
+        path: '/workspace/restored',
+      },
+    },
+  ])
+})
+
+test('persists runtime project opens and execution mode changes', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __workspaceCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_WORKSPACE_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__workspaceCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_WORKSPACE_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__workspaceCalls.push({ command, args })
+
+        if (command === 'read_workspace_runtime_snapshot') {
+          return {
+            storagePath: '/tmp/gtum-workspace-state.json',
+            snapshot: {
+              recentProjects: [],
+              lastOpenedProjectPath: null,
+              executionMode: 'balanced',
+              updatedAt: 100,
+              storageVersion: 1,
+            },
+            restoredAt: 120,
+          }
+        }
+
+        return {
+          recentProjects: ['/workspace/gtum'],
+          lastOpenedProjectPath: '/workspace/gtum',
+          executionMode: command === 'set_workspace_execution_mode' ? 'deep' : 'balanced',
+          updatedAt: 140,
+          storageVersion: 1,
+        }
+      },
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'gtum-runtime',
+            path: '/workspace/gtum',
+          },
+          tree: {
+            name: 'gtum-runtime',
+            path: '/workspace/gtum',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'dev',
+            branchType: 'local',
+            changedFilesCount: 1,
+          },
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('프로젝트 폴더 열기').click()
+  await page.locator('.agent-model-row .mode-pill button').nth(2).click()
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __workspaceCalls?: Array<{ command: string }>
+            }
+          ).__workspaceCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toEqual(
+      expect.arrayContaining([
+        'remember_workspace_project',
+        'set_workspace_execution_mode',
+      ]),
+    )
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __workspaceCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__workspaceCalls ?? [],
+  )
+  const rememberCall = calls.find((call) => call.command === 'remember_workspace_project')
+  const modeCall = calls.find((call) => call.command === 'set_workspace_execution_mode')
+
+  expect(rememberCall?.args).toEqual({
+    request: {
+      path: '/workspace/gtum',
+    },
+  })
+  expect(modeCall?.args).toEqual({
+    request: {
+      executionMode: 'deep',
+    },
+  })
+})
+
 test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ page }) => {
   await page.addInitScript(() => {
     const snapshot = {

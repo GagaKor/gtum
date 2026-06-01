@@ -81,6 +81,7 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/prototype.jsx` is a clean Vite entry assembled from the uploaded draft files in `/Users/kwon/Downloads/test (1)`: `tweaks-panel.jsx`, `data.jsx`, `workspace-store.jsx`, `sidebar.jsx`, `workspace.jsx`, `agent.jsx`, `modals.jsx`, and `app.jsx`.
    - `src/widgets/app-shell/ui/Titlebar.tsx` and `src/widgets/app-shell/ui/StatusBar.tsx` are the first extracted TSX/FSD app-shell components. They preserve the uploaded design class names and visible shell contract.
    - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
+   - `src/shared/api/runtimeWorkspace.ts` is the typed frontend seam for workspace restore and repeated-use persistence. The prototype reads the runtime workspace snapshot on desktop startup, reopens the last project through `runtimeProjects.ts`, persists successful runtime-backed project opens, and persists execution mode changes.
    - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for PTY-backed terminal sessions. The prototype uses it for new terminal tabs, log polling, tab close termination, and approved command writes when a tab is runtime-backed.
    - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for provider connection snapshots, disconnects, `begin_agent_login`, and the workspace-native `codex login --device-auth` terminal launcher.
    - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics and `request_agent_suggestions`. The prototype uses it for Codex runtime-backed suggestion requests while keeping canned browser-preview replies when Tauri is unavailable.
@@ -118,13 +119,20 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - legacy uploaded design module used by the TSX app entry during migration
   - contains the design draft state, workspace mock data, shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls
   - consumes `src/shared/api/runtimeProjects.ts` for `ProjectOverview` and `ProjectFileSnapshot` payloads while preserving the rich uploaded-design browser fixture fallback
+  - consumes `src/shared/api/runtimeWorkspace.ts` for desktop workspace snapshot restore, `remember_workspace_project`, and `set_workspace_execution_mode`
   - consumes `src/shared/api/runtimeWindow.ts` so the custom titlebar controls the frameless Tauri window while keeping browser preview no-op fallbacks
   - preserves browser/Vite preview fallback so design E2E tests do not require the desktop runtime
 - [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts)
   - typed project/file runtime service for future TSX components
   - wraps Tauri filesystem commands and browser fallback project/file snapshots
+  - supports injected E2E runtime overrides through `window.__GTUM_PROJECT_RUNTIME__`
   - allows the legacy prototype to inject its curated design fixture file reader so browser preview content does not collapse to generic placeholders
   - exposes the same injected runtime override shape as the other `src/shared/api/*` seams so E2E can verify runtime-backed project states without launching Tauri
+- [`src/shared/api/runtimeWorkspace.ts`](../src/shared/api/runtimeWorkspace.ts)
+  - typed workspace persistence service for future TSX components
+  - wraps `read_workspace_runtime_snapshot`, `save_workspace_runtime_snapshot`, `remember_workspace_project`, and `set_workspace_execution_mode`
+  - returns `null` in browser preview instead of pretending desktop persistence succeeded
+  - supports injected E2E runtime overrides through `window.__GTUM_WORKSPACE_RUNTIME__`
 - [`src/shared/api/runtimeWindow.ts`](../src/shared/api/runtimeWindow.ts)
   - typed native window-control service for custom chrome
   - wraps Tauri `getCurrentWindow()` actions behind injected/browser fallbacks for deterministic E2E coverage
@@ -219,63 +227,31 @@ The current commands group into these domains:
   - `queue_telegram_remote_command`
   - `resolve_telegram_remote_command`
 
-## 상태와 저장 위치 / State And Persistence
-
-### 한국어
-
-현재 저장 위치는 아래처럼 나뉜다.
-
-- 프론트엔드 `localStorage`
-  - 최근 프로젝트 목록
-  - 마지막 프로젝트 경로
-  - 선택 파일 경로와 line anchor
-  - 선택 provider
-  - execution mode
-  - task history
-  - Telegram draft UI 상태
-- 런타임 app data JSON
-  - agent auth state
-  - workspace state
-  - Telegram state
-- 메모리 전용 상태
-  - PTY 세션 객체
-  - bounded terminal logs
-  - 현재 렌더 중인 UI 계산 상태
-
-즉, restore는 두 층으로 분리된다.
-
-- 프론트엔드 restore
-  - 현재 보고 있던 파일, line anchor, task history 같은 UI 맥락
-- 런타임 restore
-  - provider 연결 상태, workspace 메타데이터, Telegram 상태 같은 앱 저장 맥락
-
-### English
+## State And Persistence
 
 Current persistence is split like this:
 
-- frontend `localStorage`
-  - recent project list
-  - last project path
-  - selected file path and line anchor
-  - selected provider
-  - execution mode
-  - task history
-  - Telegram draft UI state
 - runtime app-data JSON
   - agent auth state
-  - workspace state
+  - workspace state: recent project paths, last opened project path, execution mode, storage version, and timestamps
   - Telegram state
+- frontend `localStorage`
+  - tweak/edit-mode values used by the design prototype
+  - browser-preview-only UI defaults
+  - future selected-file, line-anchor, provider-choice, and task-history restore metadata once those fields receive a runtime contract
 - memory-only state
   - PTY session objects
   - bounded terminal logs
   - transient UI-derived state
 
-Restore is therefore split into two layers:
+Restore is split into two layers:
 
-- frontend restore
-  - UI context such as the viewed file, line anchor, and task history
 - runtime restore
   - app-persisted context such as provider state, workspace metadata, and Telegram state
+  - desktop startup reads `read_workspace_runtime_snapshot`, applies the saved execution mode, and reopens the saved project through `read_project_overview`
+- frontend restore
+  - UI context such as the viewed file, line anchor, and task history
+  - this remains deferred until the runtime workspace contract expands beyond project path and execution mode
 
 ## 현재 구조상 중요한 판단 / Important Current Architectural Truths
 

@@ -17,6 +17,7 @@ import {
 } from './shared/api/runtimeAgentAuth'
 import { createAgentSuggestionRuntimeService } from './shared/api/runtimeAgentSuggestions'
 import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
+import { createWorkspaceRuntimeService } from './shared/api/runtimeWorkspace'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
 import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
@@ -1501,6 +1502,7 @@ const projectRuntimeService = createProjectRuntimeService({
 const agentAuthRuntimeService = createAgentAuthRuntimeService();
 const agentSuggestionRuntimeService = createAgentSuggestionRuntimeService();
 const terminalRuntimeService = createTerminalRuntimeService();
+const workspaceRuntimeService = createWorkspaceRuntimeService();
 
 function mergeRuntimeProviderConnections(providers, connections) {
   const patches = new Map(connections.map((connection) => {
@@ -4209,7 +4211,7 @@ function App() {
     };
   }, []);
 
-  const pushProjectMessage = (message) => {
+  const pushProjectMessage = React.useCallback((message) => {
     setMessages((prev) => [...prev, {
       id: "project-" + Date.now(),
       role: "assistant",
@@ -4217,7 +4219,54 @@ function App() {
       at: nowHm(),
       content: message,
     }]);
-  };
+  }, [lang]);
+
+  const handleSetMode = React.useCallback((nextMode, options = {}) => {
+    setMode(nextMode);
+    setTweak("modeDefault", nextMode);
+
+    if (options.persist === false || !workspaceRuntimeService.hasRuntime()) return;
+
+    workspaceRuntimeService.setExecutionMode(nextMode).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      pushProjectMessage(lang === "ko"
+        ? `실행 모드를 저장하지 못했어: ${message}`
+        : `Could not persist execution mode: ${message}`);
+    });
+  }, [lang, pushProjectMessage, setTweak]);
+
+  React.useEffect(() => {
+    if (!workspaceRuntimeService.hasRuntime()) return undefined;
+
+    let cancelled = false;
+
+    workspaceRuntimeService.readRuntimeSnapshot()
+      .then(async (runtimeSnapshot) => {
+        if (cancelled || !runtimeSnapshot) return;
+
+        const snapshot = runtimeSnapshot.snapshot;
+        if (snapshot.executionMode) {
+          handleSetMode(snapshot.executionMode, { persist: false });
+        }
+
+        if (!snapshot.lastOpenedProjectPath) return;
+
+        const restoredProject = await readRuntimeProjectOverview(snapshot.lastOpenedProjectPath);
+        if (cancelled) return;
+        setActiveProject(restoredProject);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        pushProjectMessage(lang === "ko"
+          ? `워크스페이스를 복원하지 못했어: ${message}`
+          : `Could not restore the workspace: ${message}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handleSetMode, lang, pushProjectMessage]);
 
   const handleOpenProject = async () => {
     setProjectBusy(true);
@@ -4227,6 +4276,14 @@ function App() {
       if (!selectedPath) return;
       const nextProject = await readRuntimeProjectOverview(selectedPath);
       setActiveProject(nextProject);
+      if (nextProject.runtimeBacked && workspaceRuntimeService.hasRuntime()) {
+        workspaceRuntimeService.rememberProject(nextProject.path).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          pushProjectMessage(lang === "ko"
+            ? `프로젝트 경로를 저장하지 못했어: ${message}`
+            : `Could not persist the project path: ${message}`);
+        });
+      }
       setHistory((prev) => [...prev, {
         at: nowHm(),
         tab: "workspace",
@@ -4805,7 +4862,7 @@ function App() {
                   activeTab={activeTab || { title: "—", lines: [] }}
                   activePane={activeTab || { lines: [] }}
                   mode={mode}
-                  setMode={setMode}
+                  setMode={handleSetMode}
                   onSend={onSend}
                   onOpenApproval={requestApproval}
                   providers={providers}
@@ -4866,7 +4923,7 @@ function App() {
           onDisconnect={onDisconnect}
           onSwitchModel={onSwitchModel}
           onSetAccent={(v) => setTweak("accent", v)}
-          onSetMode={(v) => { setMode(v); setTweak("modeDefault", v); }}
+          onSetMode={handleSetMode}
           onSetParallelLimit={setParallelLimit}
           onSetApprovalPolicy={setApprovalPolicy}
           onSetStreamResponses={setStreamResponses}
@@ -4921,7 +4978,7 @@ function App() {
             { value: "balanced", label: "Bal" },
             { value: "deep", label: "Deep" },
           ]}
-          onChange={(v) => { setMode(v); setTweak("modeDefault", v); }}
+          onChange={handleSetMode}
         />
       </TweaksPanel>
     </>
