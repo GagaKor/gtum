@@ -35,12 +35,17 @@ export function renderAppShellContract(): ReactElement {
     <>
       <Titlebar
         lang="en"
+        os="mac"
+        maximized={false}
         workspace={workspace}
         providers={[{ state: 'connected' }]}
         project={project}
         icons={icons}
         translate={translate}
         openSettings={() => undefined}
+        onMinimize={() => undefined}
+        onToggleMax={() => undefined}
+        onClose={() => undefined}
       />
       <StatusBar
         lang="en"

@@ -76,6 +76,8 @@ body {
   transform-origin: center center;
   flex-shrink: 0;
 }
+/* Maximized — window fills the stage at 1:1 (real px → responsive reflow) */
+.gtum-scaler.is-max { width: 100%; height: 100%; }
 
 .gtum-window {
   width: 100%;
@@ -89,50 +91,90 @@ body {
     0 0 0 1px rgba(255,255,255,0.06),
     0 0 0 1px rgba(0,0,0,0.4),
     0 30px 90px rgba(0,0,0,0.55);
+  transition: border-radius .3s ease;
 }
+.gtum-window.os-windows { border-radius: 8px; }
+.gtum-window.is-max { border-radius: 0; }
 
-/* ── Title bar ───────────────────────────────────────────────────── */
+/* ── Title bar / window header ───────────────────────────────────── */
 .titlebar {
   height: 40px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
   align-items: center;
-  padding: 0 12px;
   background: linear-gradient(180deg, var(--surface-1), var(--bg));
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   user-select: none;
+  position: relative;
 }
-.traffic { display: flex; gap: 8px; align-items: center; }
-.traffic .dot { width: 12px; height: 12px; border-radius: 50%; }
-.traffic .dot.red    { background: #ff5f57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); }
-.traffic .dot.yellow { background: #febc2e; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); }
-.traffic .dot.green  { background: #28c840; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.2); }
 
-.title-center {
+/* macOS — traffic lights left, breadcrumb centered */
+.titlebar.os-mac {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 0 14px;
+}
+.titlebar.os-mac .title-center { justify-content: center; }
+
+/* Windows — breadcrumb left, caption buttons flush to the corner */
+.titlebar.os-windows {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
+  gap: 10px;
+  padding: 0 0 0 14px;
 }
-.title-center > * { flex-shrink: 0; }
-.title-center .brand {
-  font-weight: 600;
-  color: var(--text);
-  font-family: var(--font-mono);
-  letter-spacing: -0.02em;
+.titlebar.os-windows .title-left { display: flex; align-items: center; min-width: 0; }
+.titlebar.os-windows .title-spacer { flex: 1; }
+.titlebar.os-windows .title-right { margin-right: 8px; }
+
+/* breadcrumb (shared between layouts) */
+.breadcrumb {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-muted);
+  min-width: 0; white-space: nowrap; overflow: hidden;
 }
-.title-center .brand-dot {
+.breadcrumb > * { flex-shrink: 0; }
+.breadcrumb .brand {
+  font-weight: 600; color: var(--text);
+  font-family: var(--font-mono); letter-spacing: -0.02em;
+}
+.breadcrumb .brand-dot {
   width: 6px; height: 6px; border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
 }
-.title-center .sep { color: var(--text-faint); }
+.breadcrumb .sep { color: var(--text-faint); }
+
+.title-center { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+
+/* macOS traffic lights — glyphs reveal on group hover */
+.traffic.mac { display: flex; gap: 8px; align-items: center; }
+.traffic.mac .dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  padding: 0; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.28);
+}
+.traffic.mac .dot.red    { background: #ff5f57; }
+.traffic.mac .dot.yellow { background: #febc2e; }
+.traffic.mac .dot.green  { background: #28c840; }
+.traffic.mac .dot svg { width: 12px; height: 12px; opacity: 0; transition: opacity .12s; }
+.traffic.mac .dot svg path { stroke: rgba(0,0,0,0.55); stroke-width: 1.3; stroke-linecap: round; fill: none; }
+.traffic.mac .dot.green svg path { fill: rgba(0,0,0,0.6); stroke: none; }
+.traffic.mac:hover .dot svg { opacity: 1; }
+.traffic.mac .dot:active { filter: brightness(0.88); }
+
+/* Windows caption buttons — full-bleed, close goes red */
+.win-controls { display: flex; align-self: stretch; height: 100%; }
+.win-controls .winbtn {
+  width: 46px; align-self: stretch; height: 100%;
+  border: none; background: transparent; cursor: pointer;
+  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s, color .12s;
+}
+.win-controls .winbtn:hover { background: rgba(255,255,255,0.09); color: var(--text); }
+.win-controls .winbtn:active { background: rgba(255,255,255,0.05); }
+.win-controls .winbtn.close:hover { background: #e81123; color: #fff; }
+.win-controls .winbtn.close:active { background: #f1707a; color: #fff; }
 
 .title-right {
   display: flex; justify-content: flex-end; gap: 4px; align-items: center;
@@ -149,6 +191,11 @@ body {
 }
 .title-right .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .title-right .pill .dot.warn { background: var(--warn); }
+
+/* Responsive compaction — driven by the window width class (w-lg/w-md/w-sm) */
+.gtum-window.w-md .bc-detail,
+.gtum-window.w-sm .bc-detail { display: none; }
+.gtum-window.w-sm .title-right .pill:not(.icon-only) { display: none; }
 
 /* ── Main body grid ──────────────────────────────────────────────── */
 /* Grid template columns vary by which side panels are mounted.

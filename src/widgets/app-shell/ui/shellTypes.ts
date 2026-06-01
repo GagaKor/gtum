@@ -4,6 +4,11 @@ export type ShellLanguage = 'ko' | 'en' | string
 
 export type ShellTranslate = (language: ShellLanguage, key: string) => string
 
+// Window-chrome platform variant. Drives whether the titlebar renders macOS
+// traffic lights (left) or Windows caption buttons (right). Linux maps to 'mac'
+// because the design draft only defines mac/windows window chrome.
+export type ShellOs = 'mac' | 'windows'
+
 export type ShellIcon = (props?: Record<string, unknown>) => ReactElement
 
 export interface ShellIcons {

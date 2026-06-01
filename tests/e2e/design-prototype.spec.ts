@@ -114,3 +114,39 @@ test('keeps rich prototype file content when browser fallback opens a file', asy
     'Browser preview is using bundled project data',
   )
 })
+
+test('renders Windows caption buttons when the OS override is windows', async ({ page }) => {
+  await page.addInitScript(() => {
+    ;(window as Window & { __GTUM_OS__?: string }).__GTUM_OS__ = 'windows'
+  })
+  await page.goto('/')
+
+  await expect(page.locator('.titlebar.os-windows')).toBeVisible()
+  await expect(page.locator('.win-controls .winbtn')).toHaveCount(3)
+  await expect(page.locator('.win-controls .winbtn.close')).toHaveCount(1)
+  await expect(page.locator('.traffic.mac')).toHaveCount(0)
+})
+
+test('renders macOS traffic lights when the OS override is mac', async ({ page }) => {
+  await page.addInitScript(() => {
+    ;(window as Window & { __GTUM_OS__?: string }).__GTUM_OS__ = 'mac'
+  })
+  await page.goto('/')
+
+  await expect(page.locator('.titlebar.os-mac')).toBeVisible()
+  await expect(page.locator('.traffic.mac .dot')).toHaveCount(3)
+  await expect(page.locator('.win-controls')).toHaveCount(0)
+})
+
+test('collapses side panels responsively when the maximized window is narrow', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 800 })
+  await page.goto('/')
+
+  // Maximize so the window fills the stage at 1:1 — only then does the real
+  // window width (here 900px) drive the responsive width class and auto-collapse.
+  await page.getByLabel('Maximize').first().click()
+
+  await expect(page.locator('.gtum-window')).toHaveClass(/w-sm/)
+  await expect(page.locator('.body-grid')).toHaveClass(/sidebar-closed/)
+  await expect(page.locator('.body-grid')).toHaveClass(/agent-closed/)
+})
