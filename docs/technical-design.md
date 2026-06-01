@@ -122,6 +122,7 @@ This document assumes the following decisions:
 - initial agent providers: `Codex`, `Claude`
 - the source-of-truth first daily-use `Codex` path is `OAuth/session login`
 - any `OPENAI_API_KEY` bridge should be treated as a temporary development path only
+- prototype or browser-preview fallbacks must not be treated as desktop-runtime success; installed-app provider and terminal flows should either use real runtime contracts or surface explicit unavailable/deferred states
 
 ## 전체 아키텍처 / High-Level Architecture
 

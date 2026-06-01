@@ -35,6 +35,8 @@ test('requests Codex suggestions with the documented agent envelope', async () =
     activeTab: {
       id: 't-tests',
       title: 'tests',
+      runtimeBacked: true,
+      terminalSessionId: 42,
       lines: [
         { kind: 'cmd', text: 'pnpm test' },
         { kind: 'log', text: 'expected 50 but got 60' },
@@ -123,6 +125,32 @@ test('attaches selected editor context instead of terminal logs', async () => {
       },
     },
   })
+  expect(suggestions[0].commands[0].target).toBe('new')
+})
+
+test('routes current-tab suggestions to a new tab when the active tab is not runtime-backed', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [runtimeSuggestion],
+  })
+
+  const suggestions = await service.requestSuggestions({
+    provider: 'codex',
+    project: {
+      name: 'gtum',
+      path: '/workspace/gtum',
+    },
+    activeTab: {
+      id: 't-mock-tests',
+      title: 'tests',
+      runtimeBacked: false,
+      terminalSessionId: null,
+      lines: [{ kind: 'cmd', text: 'pnpm test' }],
+    },
+    userTask: 'rerun tests',
+    executionMode: 'balanced',
+  })
+
   expect(suggestions[0].commands[0].target).toBe('new')
 })
 

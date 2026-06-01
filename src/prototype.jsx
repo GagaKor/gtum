@@ -4311,6 +4311,21 @@ function App() {
     }
   }, [activeProject, activeProviderId, lang, mode]);
 
+  const appendProviderUnavailableMessage = React.useCallback((providerId, messageId) => {
+    const provider = providers.find((p) => p.id === providerId);
+    const label = provider?.label || providerId;
+    setMessages((prev) => [...prev, {
+      id: messageId + "-provider-unavailable",
+      role: "assistant",
+      roleLabel: label,
+      at: nowHm(),
+      content: lang === "ko"
+        ? `${label} 실제 연동은 아직 보류 상태야. 설치형 앱에서는 mock 답변으로 진행하지 않고 Codex 연결을 먼저 사용해야 해.`
+        : `${label} real-provider integration is deferred. The desktop app will not continue with a mock reply; connect Codex first.`,
+    }]);
+    setIsTyping(false);
+  }, [lang, providers]);
+
   // ── workspace actions (thin wrappers around the pure store) ──────────
   const actions = React.useMemo(() => ({
     setActiveTab: (gId, tId) => setWorkspace((w) => setActiveTab(w, gId, tId)),
@@ -4403,8 +4418,13 @@ function App() {
     }]);
     setIsTyping(true);
 
-    if (agentSuggestionRuntimeService.hasRuntime() && activeProviderId === "codex") {
-      void requestRuntimeAgentSuggestions(text, id, attachedTab);
+    if (agentSuggestionRuntimeService.hasRuntime()) {
+      if (activeProviderId === "codex") {
+        void requestRuntimeAgentSuggestions(text, id, attachedTab);
+        return;
+      }
+
+      appendProviderUnavailableMessage(activeProviderId, id);
       return;
     }
 
@@ -4662,6 +4682,17 @@ function App() {
           ? `Codex 로그인을 시작하지 못했어: ${message}`
           : `Could not start Codex login: ${message}`);
       }
+      return;
+    }
+
+    if (agentAuthRuntimeService.hasRuntime()) {
+      const provider = providers.find((p) => p.id === providerId);
+      const label = provider?.label || providerId;
+      setSettingsOpen(false);
+      markProviderError(providerId, `${label} real-provider support is deferred.`);
+      pushProjectMessage(lang === "ko"
+        ? `${label} 실제 연동은 아직 보류 상태야. 설치형 앱에서는 mock OAuth로 연결하지 않아.`
+        : `${label} real-provider support is deferred. The desktop app does not connect it through mock OAuth.`);
       return;
     }
 

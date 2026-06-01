@@ -310,6 +310,137 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   )
 })
 
+test('does not use canned agent replies for deferred desktop providers', async ({ page }) => {
+  await page.addInitScript(() => {
+    ;(window as Window & {
+      __GTUM_AGENT_RUNTIME__?: unknown
+    }).__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => {
+        throw new Error('runtime should not be called for deferred providers')
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.model-picker-btn').click()
+  await page.locator('.model-picker-item').filter({ hasText: 'Claude Sonnet' }).click()
+  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.msg.assistant').last()).toContainText('Claude')
+  await expect(page.locator('.msg.assistant').last()).toContainText('보류')
+  await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
+})
+
+test('runs approved Codex commands in a real PTY when the suggested target is a mock tab', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        return [
+          {
+            id: 'codex-runtime-current-tab',
+            provider: 'codex',
+            summary: 'Run the current tab test command',
+            command: 'pnpm test:funnel --reporter=verbose',
+            preferredTarget: 'current_tab',
+            confidence: 'low',
+            error: null,
+          },
+        ]
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+
+        if (command === 'create_terminal_session_with_command') {
+          return {
+            sessionId: 101,
+            name: 'fix-1',
+            cwd: '/workspace/gtum',
+            shell: '/bin/zsh',
+            shellArgs: ['-i'],
+            processId: 9101,
+            status: 'running',
+            createdAt: 100,
+            updatedAt: 120,
+            exitCode: null,
+            logLineCount: 1,
+            maxLogEntries: 400,
+            lastEvent: 'session created',
+          }
+        }
+
+        if (command === 'read_terminal_session_logs') {
+          return {
+            sessionId: 101,
+            status: 'running',
+            limit: 400,
+            logLineCount: 1,
+            truncated: false,
+            entries: ['pnpm test:funnel --reporter=verbose'],
+            updatedAt: 130,
+          }
+        }
+
+        return []
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.locator('.composer-input .send').click()
+  await expect(page.locator('.sugg').last()).toContainText('Run the current tab test command')
+
+  await page.locator('.sugg').last().getByRole('button', { name: '검토' }).click()
+  await expect(page.locator('.modal')).toBeVisible()
+  await page.locator('.modal-foot').getByRole('button', { name: '승인' }).click()
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __terminalCalls?: Array<{ command: string }>
+            }
+          ).__terminalCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toContain('create_terminal_session_with_command')
+
+  const terminalCalls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __terminalCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__terminalCalls ?? [],
+  )
+  const runCall = terminalCalls.find((call) => call.command === 'create_terminal_session_with_command')
+
+  expect(runCall?.args).toMatchObject({
+    request: {
+      command: 'pnpm test:funnel --reporter=verbose',
+    },
+  })
+})
+
 test('launches Codex CLI login from settings through the auth runtime bridge', async ({ page }) => {
   await page.addInitScript(() => {
     const codexDisconnected = {

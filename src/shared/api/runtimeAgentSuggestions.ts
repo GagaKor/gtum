@@ -54,6 +54,8 @@ export type AgentSuggestionTabInput = {
   content?: string | null
   activeLine?: number | null
   lines?: readonly (TerminalLine | string)[]
+  runtimeBacked?: boolean | null
+  terminalSessionId?: number | null
 }
 
 export type RequestAgentSuggestionsInput = {
@@ -149,6 +151,7 @@ const targetFromRuntime = (
   activeTab?: AgentSuggestionTabInput | null,
 ): string => {
   if (preferredTarget === 'new_tab') return 'new'
+  if (!activeTab?.runtimeBacked || activeTab.terminalSessionId == null) return 'new'
 
   return activeTab?.id || 'new'
 }
