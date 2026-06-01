@@ -108,6 +108,11 @@ export type ProjectRuntimeServiceOptions = {
   invokeRuntime?: RuntimeInvoker;
 };
 
+type RuntimeProjectOverride = {
+  hasRuntime?: RuntimeAvailability;
+  invokeRuntime?: RuntimeInvoker;
+};
+
 export type ProjectRuntimeService = {
   hasRuntime: RuntimeAvailability;
   getBridgeState(project?: RuntimeProject): ProjectRuntimeBridgeState;
@@ -188,6 +193,15 @@ export const hasTauriRuntime = (): boolean =>
   typeof window !== "undefined" &&
   typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !==
     "undefined";
+
+const projectOverride = (): RuntimeProjectOverride | null => {
+  if (typeof window === "undefined") return null;
+
+  return (
+    (window as Window & { __GTUM_PROJECT_RUNTIME__?: RuntimeProjectOverride })
+      .__GTUM_PROJECT_RUNTIME__ ?? null
+  );
+};
 
 export const basenameOfPath = (value: string | null | undefined): string => {
   const parts = String(value || "").replace(/\\/g, "/").split("/").filter(Boolean);
@@ -300,10 +314,11 @@ export const fileSnapshotFromRuntime = (
 export const createProjectRuntimeService = (
   options: ProjectRuntimeServiceOptions = {},
 ): ProjectRuntimeService => {
+  const override = projectOverride();
   const fallbackProject = options.fallbackProject || fallbackRuntimeProject;
   const fallbackFileReader = options.fallbackFileReader || fileSnapshotFromFallback;
-  const hasRuntime = options.hasRuntime || hasTauriRuntime;
-  const invokeRuntime = options.invokeRuntime || invoke as RuntimeInvoker;
+  const hasRuntime = options.hasRuntime || override?.hasRuntime || hasTauriRuntime;
+  const invokeRuntime = options.invokeRuntime || override?.invokeRuntime || invoke as RuntimeInvoker;
 
   const getBridgeState = (project: RuntimeProject = fallbackProject): ProjectRuntimeBridgeState => ({
     desktop: hasRuntime(),

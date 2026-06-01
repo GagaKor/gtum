@@ -4326,6 +4326,19 @@ function App() {
     setIsTyping(false);
   }, [lang, providers]);
 
+  const appendRuntimeProjectRequiredMessage = React.useCallback((messageId) => {
+    setMessages((prev) => [...prev, {
+      id: messageId + "-runtime-project-required",
+      role: "assistant",
+      roleLabel: "Codex",
+      at: nowHm(),
+      content: lang === "ko"
+        ? "Codex 요청을 실행하려면 먼저 데스크톱 앱에서 실제 로컬 폴더를 프로젝트로 열어야 해."
+        : "Open a real local folder as a project in the desktop app before running a Codex request.",
+    }]);
+    setIsTyping(false);
+  }, [lang]);
+
   // ── workspace actions (thin wrappers around the pure store) ──────────
   const actions = React.useMemo(() => ({
     setActiveTab: (gId, tId) => setWorkspace((w) => setActiveTab(w, gId, tId)),
@@ -4420,6 +4433,11 @@ function App() {
 
     if (agentSuggestionRuntimeService.hasRuntime()) {
       if (activeProviderId === "codex") {
+        if (!activeProject.runtimeBacked) {
+          appendRuntimeProjectRequiredMessage(id);
+          return;
+        }
+
         void requestRuntimeAgentSuggestions(text, id, attachedTab);
         return;
       }

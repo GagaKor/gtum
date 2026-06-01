@@ -242,10 +242,38 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
     }
 
     bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
@@ -280,6 +308,20 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   })
 
   await page.goto('/')
+  await page.getByText('프로젝트 폴더 열기').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
   await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
   await page.locator('.composer-input .send').click()
 
@@ -310,6 +352,75 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   )
 })
 
+test('requires a runtime-backed project before desktop Codex requests', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        return []
+      },
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => {
+        throw new Error('project runtime should not be invoked before a real project is opened')
+      },
+    }
+  })
+
+  await page.goto('/')
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: {
+                desktop: boolean
+                projectPath: string
+                runtimeBacked: boolean
+              }
+            }
+          ).__GTUM_BACKEND_BRIDGE__,
+      ),
+    )
+    .toMatchObject({
+      desktop: true,
+      runtimeBacked: false,
+      projectPath: '~/code/aurora-monorepo',
+    })
+
+  const initialSuggestionCount = await page.locator('.sugg').count()
+
+  await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.msg.assistant').last()).toContainText('프로젝트')
+  await expect(page.locator('.msg.assistant').last()).toContainText('로컬 폴더')
+  await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
+  await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __agentCalls?: Array<{ command: string }>
+        }
+      ).__agentCalls ?? [],
+  )
+
+  expect(calls.map((call) => call.command)).not.toContain('request_agent_suggestions')
+})
+
 test('does not use canned agent replies for deferred desktop providers', async ({ page }) => {
   await page.addInitScript(() => {
     ;(window as Window & {
@@ -337,13 +448,41 @@ test('runs approved Codex commands in a real PTY when the suggested target is a 
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
       __GTUM_TERMINAL_RUNTIME__: unknown
     }
 
     bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
     bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
@@ -403,6 +542,20 @@ test('runs approved Codex commands in a real PTY when the suggested target is a 
   })
 
   await page.goto('/')
+  await page.getByText('프로젝트 폴더 열기').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
   await page.getByPlaceholder('에이전트에게 질문하기').fill('테스트 다시 실행해줘')
   await page.locator('.composer-input .send').click()
   await expect(page.locator('.sugg').last()).toContainText('Run the current tab test command')

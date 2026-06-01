@@ -124,6 +124,7 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - typed project/file runtime service for future TSX components
   - wraps Tauri filesystem commands and browser fallback project/file snapshots
   - allows the legacy prototype to inject its curated design fixture file reader so browser preview content does not collapse to generic placeholders
+  - exposes the same injected runtime override shape as the other `src/shared/api/*` seams so E2E can verify runtime-backed project states without launching Tauri
 - [`src/shared/api/runtimeWindow.ts`](../src/shared/api/runtimeWindow.ts)
   - typed native window-control service for custom chrome
   - wraps Tauri `getCurrentWindow()` actions behind injected/browser fallbacks for deterministic E2E coverage

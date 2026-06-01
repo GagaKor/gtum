@@ -80,26 +80,27 @@ The input contract for `request_agent_suggestions` is fixed around these fields:
 - `userTask`
 - `executionMode`
 
-The active design prototype now calls this runtime command through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts) when the desktop runtime is available and the active provider is `Codex`. Browser preview keeps the canned reply path so the uploaded design remains testable without Tauri.
+The active design prototype now calls this runtime command through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts) when the desktop runtime is available, the active provider is `Codex`, and the active project is runtime-backed. Browser preview keeps the canned reply path so the uploaded design remains testable without Tauri.
 
 ## Flow 5. Suggestion Request And Approval Execution
 
 1. The user must enter a request while the provider is connected.
 2. The active prototype routes runtime-backed `Codex` requests through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts). Browser preview may keep canned chat responses from [`src/prototype.jsx`](../src/prototype.jsx) for design regression only.
-3. In the desktop runtime, non-`Codex` providers must not silently fall back to canned replies. `Claude` remains deferred until a real provider contract exists, and the UI must show that state explicitly.
-4. The runtime path packs active project metadata, selected file context, recent terminal logs, and the user request into the Flow 4 envelope.
-5. After validating the connection, the `Codex` runtime requests suggestions through `codex exec --sandbox read-only`.
-6. The response is normalized into:
+3. In the desktop runtime, `Codex` requests require a runtime-backed project opened through the native project flow. If the active project is still the browser fixture, the UI must show an "open a real local folder first" state and must not call `request_agent_suggestions`.
+4. In the desktop runtime, non-`Codex` providers must not silently fall back to canned replies. `Claude` remains deferred until a real provider contract exists, and the UI must show that state explicitly.
+5. The runtime path packs active project metadata, selected file context, recent terminal logs, and the user request into the Flow 4 envelope.
+6. After validating the connection, the `Codex` runtime requests suggestions through `codex exec --sandbox read-only`.
+7. The response is normalized into:
    - `summary`
    - `command`
    - `preferredTarget`
    - `confidence`
    - `error`
-7. `src/prototype.jsx` owns the approval UI state. No command runs before approval unless the current approval policy auto-runs the command.
-8. Runtime-backed terminal tabs route approved commands through `src/shared/api/runtimeTerminals.ts`, which writes to `execute_terminal_session_command` or starts a new PTY through `create_terminal_session_with_command`.
-9. If a Codex suggestion targets the current tab but that tab is only a design/mock tab, the command must be rerouted into a new runtime-backed PTY tab instead of simulating success in the mock tab.
-10. Browser preview may keep the simulated fallback path so the uploaded design remains testable without Tauri.
-11. Task history records request and approval outcomes.
+8. `src/prototype.jsx` owns the approval UI state. No command runs before approval unless the current approval policy auto-runs the command.
+9. Runtime-backed terminal tabs route approved commands through `src/shared/api/runtimeTerminals.ts`, which writes to `execute_terminal_session_command` or starts a new PTY through `create_terminal_session_with_command`.
+10. If a Codex suggestion targets the current tab but that tab is only a design/mock tab, the command must be rerouted into a new runtime-backed PTY tab instead of simulating success in the mock tab.
+11. Browser preview may keep the simulated fallback path so the uploaded design remains testable without Tauri.
+12. Task history records request and approval outcomes.
 
 ## Flow 6. Restore And Repeated Use
 
@@ -124,6 +125,7 @@ It covers:
 - terminal runtime service contract coverage through [`tests/e2e/runtime-terminal-service.spec.ts`](../tests/e2e/runtime-terminal-service.spec.ts)
 - agent suggestion runtime service contract coverage through [`tests/e2e/runtime-agent-suggestions-service.spec.ts`](../tests/e2e/runtime-agent-suggestions-service.spec.ts)
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
+- runtime-project gating coverage that verifies Codex does not call `request_agent_suggestions` while the active project is still the browser fixture
 - deferred desktop-provider coverage that verifies the UI does not answer with canned prototype data
 - PTY reroute coverage that verifies Codex commands targeting mock tabs start a new runtime-backed terminal session
 - agent auth runtime service contract coverage through [`tests/e2e/runtime-agent-auth-service.spec.ts`](../tests/e2e/runtime-agent-auth-service.spec.ts)
