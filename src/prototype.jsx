@@ -7,6 +7,7 @@ import {
 } from './shared/api/runtimeProjects'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
+import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
 import './styles.css'
 
 const ReactDOM = { createRoot }
@@ -3875,12 +3876,34 @@ function App() {
   const accent = t_.accent;
   const stageRef = React.useRef(null);
   const scalerRef = React.useRef(null);
+  const windowRef = React.useRef(null);
+
+  // OS window-chrome variant (mac traffic lights vs Windows caption buttons).
+  // Start from a synchronous best guess, then refine via the Tauri runtime.
+  const [os, setOs] = React.useState(initialOs);
+  React.useEffect(() => {
+    let alive = true;
+    detectRuntimeOs().then((detected) => { if (alive) setOs(detected); });
+    return () => { alive = false; };
+  }, []);
+
+  // Visual maximize state. NOTE: this only toggles the in-canvas presentation
+  // (scaler fills the stage at 1:1, window loses its corner radius). Real OS
+  // window control (minimize/close + frameless decorations) is a follow-up.
+  const [maximized, setMaximized] = React.useState(false);
+  const onToggleMax = () => setMaximized((m) => !m);
+  const onMinimize = () => {}; // TODO(follow-up): wire to Tauri window.minimize()
+  const onClose = () => {};    // TODO(follow-up): wire to Tauri window.close()
 
   React.useLayoutEffect(() => {
     const fit = () => {
       const stage = stageRef.current;
       const scaler = scalerRef.current;
       if (!stage || !scaler) return;
+      if (maximized) {
+        scaler.style.setProperty("--scale", 1);
+        return;
+      }
       const sw = stage.clientWidth;
       const sh = stage.clientHeight;
       const scale = Math.min(sw / 1320, sh / 824, 1);
@@ -3890,7 +3913,19 @@ function App() {
     const ro = new ResizeObserver(fit);
     ro.observe(document.documentElement);
     return () => ro.disconnect();
+  }, [maximized]);
+
+  // Responsive: measure the window's real (design-space) width and derive a
+  // width class that drives breadcrumb/pill compaction in CSS.
+  const [winW, setWinW] = React.useState(1320);
+  React.useEffect(() => {
+    const el = windowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setWinW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
+  const widthClass = winW < 940 ? "w-sm" : winW < 1180 ? "w-md" : "w-lg";
 
   const [workspace, setWorkspace] = React.useState(WORKSPACE_INITIAL);
   const [activeProject, setActiveProject] = React.useState(PROJECT);
@@ -3913,6 +3948,20 @@ function App() {
   const AGENT_DEFAULT = 380;
   const SIDEBAR_BOUNDS = { min: 180, max: 440, collapse: Math.round(SIDEBAR_DEFAULT * 0.2) };
   const AGENT_BOUNDS   = { min: 240, max: 560, collapse: Math.round(AGENT_DEFAULT * 0.2) };
+
+  // Edge-triggered responsive reflow: collapse the agent panel below ~1180px
+  // and the sidebar below ~940px, re-opening when crossing back. Only fires on
+  // threshold crossings so manual toggles between breakpoints stick.
+  const prevWRef = React.useRef(winW);
+  React.useEffect(() => {
+    const w = winW;
+    const p = prevWRef.current;
+    prevWRef.current = w;
+    if (p >= 1180 && w < 1180) setAgentOpen(false);
+    else if (p < 1180 && w >= 1180) setAgentOpen(true);
+    if (p >= 940 && w < 940) setSidebarOpen(false);
+    else if (p < 940 && w >= 940) setSidebarOpen(true);
+  }, [winW]);
 
   // Resize a side panel by dragging the divider. Tracks pointer delta and
   // either snaps to bounds or collapses the panel if dragged past the
@@ -4231,16 +4280,24 @@ function App() {
   return (
     <>
       <div className="gtum-stage" ref={stageRef}>
-        <div className="gtum-scaler" ref={scalerRef}>
-          <div className="gtum-window">
+        <div className={"gtum-scaler" + (maximized ? " is-max" : "")} ref={scalerRef}>
+          <div
+            className={"gtum-window os-" + os + " " + widthClass + (maximized ? " is-max" : "")}
+            ref={windowRef}
+          >
             <Titlebar
               lang={lang}
+              os={os}
+              maximized={maximized}
               workspace={workspace}
               providers={providers}
               project={activeProject}
               icons={Icon}
               translate={t}
               openSettings={() => setSettingsOpen(true)}
+              onMinimize={onMinimize}
+              onToggleMax={onToggleMax}
+              onClose={onClose}
             />
             <div
               className={"body-grid" +
