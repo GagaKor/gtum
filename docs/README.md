@@ -19,6 +19,7 @@
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
+- [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
@@ -82,6 +83,8 @@
   - `/Users/kwon/Downloads/test (1)` 새 디자인 시안을 실제 구현 스프린트로 나눠 실행할 때 읽는다.
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
   - TSX/FSD 컴포넌트 추출, terminal/provider/approval/restore backend 연결, legacy prototype retirement를 순서대로 진행할 때 읽는다.
+- [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
+  - Codex login, real suggestion, approval, PTY execution, restore, and installable-app smoke를 mock fallback 없이 완성할 때 읽는다.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)

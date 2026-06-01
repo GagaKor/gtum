@@ -1853,6 +1853,7 @@ Phase:
 Detailed execution plan:
 
 - [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
+- [Real Runtime Loop Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-06-01-real-runtime-loop.md)
 
 Scope:
 
