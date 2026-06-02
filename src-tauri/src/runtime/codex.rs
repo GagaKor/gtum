@@ -1,17 +1,17 @@
 use std::{
-    env, fs,
-    path::PathBuf,
-    process::Command,
+    env,
+    ffi::OsString,
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    process::{Command, Output, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::runtime::{
-    auth::AgentProvider,
-    workspace::ExecutionMode,
-};
+use crate::runtime::{auth::AgentProvider, workspace::ExecutionMode};
 
 const CODEX_AUTH_PATH_LABEL: &str = "~/.codex/auth.json";
 const CODEX_CONNECTION_PATH: &str = "Codex CLI ChatGPT session";
@@ -230,7 +230,10 @@ pub fn validate_codex_connection() -> Result<String, String> {
 
 fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
     if !status.binary_available {
-        return Err("Codex CLI is not installed. Install it and run `codex login` before connecting Codex.".into());
+        return Err(
+            "Codex CLI is not installed. Install it and run `codex login` before connecting Codex."
+                .into(),
+        );
     }
 
     if matches!(status.auth_mode.as_deref(), Some("api_key")) {
@@ -268,20 +271,13 @@ pub fn request_codex_suggestions(
 
     write_schema_file(&schema_path)?;
 
-    let output = Command::new(codex_command_name())
-        .arg("exec")
-        .arg("--sandbox")
-        .arg("read-only")
-        .arg("--skip-git-repo-check")
-        .arg("--output-schema")
-        .arg(&schema_path)
-        .arg("-o")
-        .arg(&output_path)
-        .arg("-C")
-        .arg(&request.project_path)
-        .arg(&prompt)
-        .output()
-        .map_err(|error| format!("failed to launch Codex CLI: {error}"))?;
+    let output = match run_codex_exec(&request.project_path, &schema_path, &output_path, &prompt) {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = cleanup_temp_files(&schema_path, &output_path);
+            return Err(error);
+        }
+    };
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -298,32 +294,18 @@ pub fn request_codex_suggestions(
         return Err(message);
     }
 
-    let raw_output = fs::read_to_string(&output_path)
-        .map_err(|error| format!("failed to read Codex CLI output: {error}"))?;
-    let structured = serde_json::from_str::<CodexStructuredSuggestion>(&raw_output)
-        .map_err(|error| format!("failed to parse Codex CLI structured response: {error}"))?;
+    let raw_output = match fs::read_to_string(&output_path) {
+        Ok(contents) => contents,
+        Err(error) => {
+            let _ = cleanup_temp_files(&schema_path, &output_path);
+            return Err(format!("failed to read Codex CLI output: {error}"));
+        }
+    };
+    let response = response_from_codex_output(&raw_output, request.provider);
 
     let _ = cleanup_temp_files(&schema_path, &output_path);
 
-    let normalized_error = structured
-        .error
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let normalized_command = structured.command.trim().to_string();
-
-    if normalized_error.is_none() && normalized_command.is_empty() {
-        return Err("Codex CLI returned an empty command without an error reason.".into());
-    }
-
-    Ok(vec![AgentSuggestionResponse {
-        id: format!("codex-{}", unix_timestamp_ms()),
-        provider: request.provider,
-        summary: structured.summary.trim().to_string(),
-        command: normalized_command,
-        preferred_target: structured.preferred_target,
-        confidence: structured.confidence,
-        error: normalized_error,
-    }])
+    Ok(vec![response?])
 }
 
 fn read_codex_cli_status() -> CodexCliStatus {
@@ -337,7 +319,8 @@ fn read_codex_cli_status() -> CodexCliStatus {
         let tokens = auth.tokens.unwrap_or_default();
         let has_required_tokens = token_present(tokens.access_token.as_deref())
             && token_present(tokens.refresh_token.as_deref());
-        let _has_identity = token_present(tokens.account_id.as_deref()) || token_present(tokens.id_token.as_deref());
+        let _has_identity = token_present(tokens.account_id.as_deref())
+            || token_present(tokens.id_token.as_deref());
         has_required_tokens && codex_login_status_reports_chatgpt()
     } else {
         false
@@ -368,7 +351,8 @@ fn codex_login_status_reports_chatgpt() -> bool {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             output.status.success()
-                && (stdout.contains("Logged in using ChatGPT") || stderr.contains("Logged in using ChatGPT"))
+                && (stdout.contains("Logged in using ChatGPT")
+                    || stderr.contains("Logged in using ChatGPT"))
         })
         .unwrap_or(false)
 }
@@ -399,16 +383,16 @@ fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
-        .or_else(|| {
-            match (env::var_os("HOMEDRIVE"), env::var_os("HOMEPATH")) {
+        .or_else(
+            || match (env::var_os("HOMEDRIVE"), env::var_os("HOMEPATH")) {
                 (Some(drive), Some(path)) => {
                     let mut value = PathBuf::from(drive);
                     value.push(path);
                     Some(value)
                 }
                 _ => None,
-            }
-        })
+            },
+        )
 }
 
 fn codex_command_name() -> &'static str {
@@ -417,6 +401,116 @@ fn codex_command_name() -> &'static str {
     } else {
         "codex"
     }
+}
+
+fn codex_exec_args(
+    project_path: &str,
+    schema_path: &PathBuf,
+    output_path: &PathBuf,
+) -> Vec<OsString> {
+    vec![
+        "exec".into(),
+        "--sandbox".into(),
+        "read-only".into(),
+        "--skip-git-repo-check".into(),
+        "--output-schema".into(),
+        schema_path.as_os_str().to_os_string(),
+        "-o".into(),
+        output_path.as_os_str().to_os_string(),
+        "-C".into(),
+        project_path.into(),
+    ]
+}
+
+fn codex_exec_invocation(
+    project_path: &str,
+    schema_path: &PathBuf,
+    output_path: &PathBuf,
+) -> (OsString, Vec<OsString>) {
+    let args = codex_exec_args(project_path, schema_path, output_path);
+
+    if cfg!(target_os = "windows") {
+        if let Some((node_program, script_path)) = windows_codex_node_entrypoint() {
+            let mut node_args = vec![script_path.into_os_string()];
+            node_args.extend(args);
+            return (node_program, node_args);
+        }
+    }
+
+    (codex_command_name().into(), args)
+}
+
+fn windows_codex_node_entrypoint() -> Option<(OsString, PathBuf)> {
+    find_executable_in_path("codex.cmd")
+        .and_then(|path| windows_codex_node_entrypoint_from_cmd_path(&path))
+}
+
+fn windows_codex_node_entrypoint_from_cmd_path(
+    codex_cmd_path: &Path,
+) -> Option<(OsString, PathBuf)> {
+    let install_dir = codex_cmd_path.parent()?;
+    let script_path = install_dir
+        .join("node_modules")
+        .join("@openai")
+        .join("codex")
+        .join("bin")
+        .join("codex.js");
+
+    if !script_path.is_file() {
+        return None;
+    }
+
+    let local_node = install_dir.join("node.exe");
+    let node_program = if local_node.is_file() {
+        local_node.into_os_string()
+    } else {
+        "node.exe".into()
+    };
+
+    Some((node_program, script_path))
+}
+
+fn find_executable_in_path(name: &str) -> Option<PathBuf> {
+    env::var_os("PATH").and_then(|path| {
+        env::split_paths(&path)
+            .map(|entry| entry.join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn run_codex_exec(
+    project_path: &str,
+    schema_path: &PathBuf,
+    output_path: &PathBuf,
+    prompt: &str,
+) -> Result<Output, String> {
+    let (program, args) = codex_exec_invocation(project_path, schema_path, output_path);
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to launch Codex CLI: {error}"))?;
+
+    match child.stdin.take() {
+        Some(mut stdin) => {
+            if let Err(error) = stdin.write_all(prompt.as_bytes()) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("failed to write Codex CLI prompt: {error}"));
+            }
+        }
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("failed to open Codex CLI prompt stream".into());
+        }
+    }
+
+    child
+        .wait_with_output()
+        .map_err(|error| format!("failed to wait for Codex CLI: {error}"))
 }
 
 fn temp_file_path(prefix: &str, extension: &str) -> PathBuf {
@@ -462,6 +556,52 @@ fn cleanup_temp_files(schema_path: &PathBuf, output_path: &PathBuf) -> Result<()
     let _ = fs::remove_file(schema_path);
     let _ = fs::remove_file(output_path);
     Ok(())
+}
+
+fn response_from_codex_output(
+    raw_output: &str,
+    provider: AgentProvider,
+) -> Result<AgentSuggestionResponse, String> {
+    let structured = serde_json::from_str::<CodexStructuredSuggestion>(raw_output)
+        .map_err(|error| format!("failed to parse Codex CLI structured response: {error}"))?;
+
+    normalize_codex_suggestion(structured, provider)
+}
+
+fn normalize_codex_suggestion(
+    structured: CodexStructuredSuggestion,
+    provider: AgentProvider,
+) -> Result<AgentSuggestionResponse, String> {
+    let normalized_error = structured
+        .error
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let normalized_command = structured.command.trim().to_string();
+
+    if normalized_error.is_none() && normalized_command.is_empty() {
+        return Err("Codex CLI returned an empty command without an error reason.".into());
+    }
+
+    let fallback_summary = if normalized_error.is_some() && normalized_command.is_empty() {
+        "Codex could not suggest a command."
+    } else {
+        "Codex suggestion"
+    };
+    let normalized_summary = structured.summary.trim();
+
+    Ok(AgentSuggestionResponse {
+        id: format!("codex-{}", unix_timestamp_ms()),
+        provider,
+        summary: if normalized_summary.is_empty() {
+            fallback_summary.into()
+        } else {
+            normalized_summary.into()
+        },
+        command: normalized_command,
+        preferred_target: structured.preferred_target,
+        confidence: structured.confidence,
+        error: normalized_error,
+    })
 }
 
 fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
@@ -587,5 +727,128 @@ mod tests {
         let account = validate_codex_status(status(true, true, Some("chatgpt"), true)).unwrap();
 
         assert_eq!(account, "Codex ChatGPT Session");
+    }
+
+    #[test]
+    fn codex_exec_args_do_not_include_prompt_text() {
+        let schema_path = PathBuf::from("schema.json");
+        let output_path = PathBuf::from("output.json");
+        let args = codex_exec_args("C:\\workspace\\gtum", &schema_path, &output_path)
+            .into_iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            args,
+            vec![
+                "exec",
+                "--sandbox",
+                "read-only",
+                "--skip-git-repo-check",
+                "--output-schema",
+                "schema.json",
+                "-o",
+                "output.json",
+                "-C",
+                "C:\\workspace\\gtum"
+            ]
+        );
+        assert!(!args.iter().any(|arg| arg.contains("You are Codex")));
+    }
+
+    #[test]
+    fn windows_codex_node_entrypoint_uses_node_script_next_to_cmd() {
+        let root = temp_file_path("gtum-codex-entrypoint-test", "dir");
+        let script_path = root
+            .join("node_modules")
+            .join("@openai")
+            .join("codex")
+            .join("bin")
+            .join("codex.js");
+        fs::create_dir_all(script_path.parent().unwrap()).unwrap();
+        fs::write(root.join("codex.cmd"), "@echo off").unwrap();
+        fs::write(root.join("node.exe"), "").unwrap();
+        fs::write(&script_path, "").unwrap();
+
+        let (program, script) =
+            windows_codex_node_entrypoint_from_cmd_path(&root.join("codex.cmd")).unwrap();
+
+        assert_eq!(PathBuf::from(program), root.join("node.exe"));
+        assert_eq!(script, script_path);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn parser_reports_unstructured_codex_output() {
+        let error = match response_from_codex_output("not json", AgentProvider::Codex) {
+            Ok(_) => panic!("expected unstructured output to fail"),
+            Err(error) => error,
+        };
+
+        assert!(error.starts_with("failed to parse Codex CLI structured response:"));
+    }
+
+    #[test]
+    fn normalization_rejects_empty_command_without_error() {
+        let error = match normalize_codex_suggestion(
+            CodexStructuredSuggestion {
+                summary: " ".into(),
+                command: " ".into(),
+                preferred_target: AgentExecutionTarget::NewTab,
+                confidence: AgentSuggestionConfidence::Low,
+                error: None,
+            },
+            AgentProvider::Codex,
+        ) {
+            Ok(_) => panic!("expected empty command without error to fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            "Codex CLI returned an empty command without an error reason."
+        );
+    }
+
+    #[test]
+    fn normalization_allows_error_only_suggestion() {
+        let response = normalize_codex_suggestion(
+            CodexStructuredSuggestion {
+                summary: " ".into(),
+                command: " ".into(),
+                preferred_target: AgentExecutionTarget::NewTab,
+                confidence: AgentSuggestionConfidence::Low,
+                error: Some(" No safe command is available. ".into()),
+            },
+            AgentProvider::Codex,
+        )
+        .unwrap();
+
+        assert_eq!(response.summary, "Codex could not suggest a command.");
+        assert!(response.command.is_empty());
+        assert_eq!(
+            response.error.as_deref(),
+            Some("No safe command is available.")
+        );
+    }
+
+    #[test]
+    fn normalization_trims_command_suggestions() {
+        let response = normalize_codex_suggestion(
+            CodexStructuredSuggestion {
+                summary: " Run focused tests ".into(),
+                command: " cargo test ".into(),
+                preferred_target: AgentExecutionTarget::CurrentTab,
+                confidence: AgentSuggestionConfidence::High,
+                error: None,
+            },
+            AgentProvider::Codex,
+        )
+        .unwrap();
+
+        assert_eq!(response.summary, "Run focused tests");
+        assert_eq!(response.command, "cargo test");
+        assert_eq!(response.preferred_target, AgentExecutionTarget::CurrentTab);
     }
 }

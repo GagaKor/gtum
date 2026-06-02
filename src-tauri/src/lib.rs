@@ -33,6 +33,11 @@ use runtime::workspace::{
     SetWorkspaceExecutionModeRequest, WorkspaceRuntimeSnapshot, WorkspaceSnapshot,
     WorkspaceStateManager,
 };
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tauri::Manager;
 
 #[derive(serde::Serialize)]
@@ -64,12 +69,18 @@ fn read_project_overview(
 }
 
 #[tauri::command]
-fn read_project_file(project_path: String, file_path: String) -> Result<ProjectFileSnapshot, String> {
+fn read_project_file(
+    project_path: String,
+    file_path: String,
+) -> Result<ProjectFileSnapshot, String> {
     runtime::filesystem::read_project_file(project_path, file_path)
 }
 
 #[tauri::command]
-fn search_project_text(project_path: String, query: String) -> Result<Vec<ProjectSearchResult>, String> {
+fn search_project_text(
+    project_path: String,
+    query: String,
+) -> Result<Vec<ProjectSearchResult>, String> {
     runtime::filesystem::search_project_text(project_path, query)
 }
 
@@ -207,9 +218,9 @@ fn request_agent_suggestions(
 
     match request.provider {
         AgentProvider::Codex => runtime::codex::request_codex_suggestions(request),
-        AgentProvider::Claude => Err(
-            "Claude real-provider support is deferred for the first daily-use release.".into(),
-        ),
+        AgentProvider::Claude => {
+            Err("Claude real-provider support is deferred for the first daily-use release.".into())
+        }
     }
 }
 
@@ -320,6 +331,75 @@ fn resolve_telegram_remote_command(
     state.resolve_remote_command(request)
 }
 
+fn resolve_app_storage_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let storage_dir = app
+        .path()
+        .app_data_dir()
+        .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(".gtum")))
+        .map_err(|error| format!("failed to resolve app storage directory: {error}"))?;
+
+    ensure_app_storage_dir(&storage_dir)?;
+
+    Ok(storage_dir)
+}
+
+fn ensure_app_storage_dir(storage_dir: &Path) -> Result<(), String> {
+    if storage_dir.exists() {
+        if storage_dir.is_dir() {
+            return Ok(());
+        }
+
+        let backup_path = next_legacy_app_data_backup_path(storage_dir)?;
+        fs::rename(storage_dir, &backup_path).map_err(|error| {
+            format!(
+                "failed to move legacy app data file from {} to {}: {error}",
+                storage_dir.display(),
+                backup_path.display()
+            )
+        })?;
+    }
+
+    fs::create_dir_all(storage_dir).map_err(|error| {
+        format!(
+            "failed to create app storage directory at {}: {error}",
+            storage_dir.display()
+        )
+    })
+}
+
+fn next_legacy_app_data_backup_path(storage_dir: &Path) -> Result<PathBuf, String> {
+    let parent = storage_dir.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve legacy app data backup parent for {}",
+            storage_dir.display()
+        )
+    })?;
+    let file_name = storage_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("gtum");
+    let timestamp = unix_timestamp_ms();
+
+    for suffix in std::iter::once(String::new()).chain((1..1000).map(|index| format!("-{index}"))) {
+        let candidate = parent.join(format!("{file_name}.legacy-file-{timestamp}{suffix}.json"));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(format!(
+        "failed to find an available legacy app data backup path for {}",
+        storage_dir.display()
+    ))
+}
+
+fn unix_timestamp_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -366,47 +446,23 @@ pub fn run() {
             resolve_telegram_remote_command
         ])
         .setup(|app| {
-            let auth_storage_path = app
-                .handle()
-                .path()
-                .app_data_dir()
-                .map(|dir| dir.join("agent-auth.json"))
-                .or_else(|_| {
-                    std::env::current_dir().map(|cwd| cwd.join(".gtum").join("agent-auth.json"))
-                })
-                .map_err(|error| format!("failed to resolve auth storage path: {error}"))?;
+            let app_handle = app.handle();
+            let app_storage_dir = resolve_app_storage_dir(app_handle)?;
+            let auth_storage_path = app_storage_dir.join("agent-auth.json");
 
-            app.handle()
+            app_handle
                 .state::<AgentAuthManager>()
                 .initialize_storage(auth_storage_path)?;
 
-            let workspace_storage_path = app
-                .handle()
-                .path()
-                .app_data_dir()
-                .map(|dir| dir.join("workspace-state.json"))
-                .or_else(|_| {
-                    std::env::current_dir()
-                        .map(|cwd| cwd.join(".gtum").join("workspace-state.json"))
-                })
-                .map_err(|error| format!("failed to resolve workspace storage path: {error}"))?;
+            let workspace_storage_path = app_storage_dir.join("workspace-state.json");
 
-            app.handle()
+            app_handle
                 .state::<WorkspaceStateManager>()
                 .initialize_storage(workspace_storage_path)?;
 
-            let telegram_storage_path = app
-                .handle()
-                .path()
-                .app_data_dir()
-                .map(|dir| dir.join("telegram-state.json"))
-                .or_else(|_| {
-                    std::env::current_dir()
-                        .map(|cwd| cwd.join(".gtum").join("telegram-state.json"))
-                })
-                .map_err(|error| format!("failed to resolve telegram storage path: {error}"))?;
+            let telegram_storage_path = app_storage_dir.join("telegram-state.json");
 
-            app.handle()
+            app_handle
                 .state::<TelegramBridgeManager>()
                 .initialize_storage(telegram_storage_path)?;
 
@@ -421,4 +477,90 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unique_temp_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "gtum-{label}-{}-{}",
+            std::process::id(),
+            unix_timestamp_ms()
+        ))
+    }
+
+    fn remove_test_path(path: &Path) {
+        if path.is_dir() {
+            let _ = fs::remove_dir_all(path);
+        } else if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn app_storage_dir_is_created_when_missing() {
+        let storage_dir = unique_temp_path("missing-storage-dir");
+        remove_test_path(&storage_dir);
+
+        ensure_app_storage_dir(&storage_dir).unwrap();
+
+        assert!(storage_dir.is_dir());
+
+        remove_test_path(&storage_dir);
+    }
+
+    #[test]
+    fn app_storage_dir_preserves_existing_directory() {
+        let storage_dir = unique_temp_path("existing-storage-dir");
+        remove_test_path(&storage_dir);
+        fs::create_dir_all(&storage_dir).unwrap();
+        let marker_path = storage_dir.join("workspace-state.json");
+        fs::write(&marker_path, "{}").unwrap();
+
+        ensure_app_storage_dir(&storage_dir).unwrap();
+
+        assert!(storage_dir.is_dir());
+        assert_eq!(fs::read_to_string(marker_path).unwrap(), "{}");
+
+        remove_test_path(&storage_dir);
+    }
+
+    #[test]
+    fn app_storage_dir_migrates_legacy_file_path() {
+        let storage_dir = unique_temp_path("legacy-file-storage-dir");
+        remove_test_path(&storage_dir);
+        fs::write(&storage_dir, "{\"legacy\":true}").unwrap();
+
+        ensure_app_storage_dir(&storage_dir).unwrap();
+
+        assert!(storage_dir.is_dir());
+
+        let parent = storage_dir.parent().unwrap();
+        let backup_prefix = format!(
+            "{}.legacy-file-",
+            storage_dir.file_name().unwrap().to_string_lossy()
+        );
+        let backups: Vec<PathBuf> = fs::read_dir(parent)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with(&backup_prefix) && name.ends_with(".json"))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        assert_eq!(backups.len(), 1);
+        assert_eq!(
+            fs::read_to_string(&backups[0]).unwrap(),
+            "{\"legacy\":true}"
+        );
+
+        remove_test_path(&storage_dir);
+        let _ = fs::remove_file(&backups[0]);
+    }
 }

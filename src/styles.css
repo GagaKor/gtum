@@ -2009,6 +2009,12 @@ body.resizing-h-left, body.resizing-h-right {
   font-size: 13px;
 }
 .empty-card .empty-title { color: var(--text-muted); }
+.empty-mini {
+  padding: 8px 12px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 /* Context menu */
 .tab-ctx-menu {

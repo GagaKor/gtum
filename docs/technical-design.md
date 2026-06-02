@@ -746,6 +746,10 @@ The structural support scope still covers all three platforms, but the first dai
 - only normalized information should be exposed to the frontend
 - OS-specific exception handling should be designed into the infrastructure layer early
 - Windows path handling, shell behavior, folder-picker behavior, and newline differences should be validated first as part of the initial daily-use baseline
+- home-directory expansion for runtime paths must accept `HOME`, `USERPROFILE`, and `HOMEDRIVE` plus `HOMEPATH`, because installed Windows app launches may not provide `HOME`
+- runtime behavior should branch inside the Rust `platform` module with `cfg(target_os = "...")` rather than scattering OS checks through feature modules
+- build-time bundle differences should live in Tauri platform config files such as `tauri.windows.conf.json` and `tauri.macos.conf.json`; release artifacts should be produced on native OS runners instead of relying on cross-compilation for Windows/macOS
+- Windows PTY sessions should prefer `powershell.exe` and keep `cmd.exe` only as a fallback, because installed WebView/ConPTY launches can surface `cmd.exe` application-error dialogs before the fallback path is reached
 
 ## Git 워크플로우 설계 / Git Workflow Design
 
@@ -972,7 +976,7 @@ The target path for the first daily-use release is `OAuth/session login` for `Co
 - The active frontend auth seam is `src/shared/api/runtimeAgentAuth.ts`; it wraps `list_agent_connections`, `begin_agent_login`, `disconnect_agent_provider`, `agent_auth_runtime_snapshot`, and the `create_terminal_session_with_command` launcher used for Codex login.
 - In the desktop runtime path, clicking `Connect Codex` opens a new terminal tab that runs `codex login --device-auth`, then calls `begin_agent_login` so the Rust auth manager can validate the local ChatGPT-backed Codex CLI session.
 - The current Codex runtime scope contract is `project:read` and `terminal:read`; missing or expired session state maps to provider `error` and can be retried by reconnecting after the CLI login finishes.
-- The browser preview path keeps the uploaded design's simulated OAuth modal so design QA can run without a Tauri runtime.
+- Browser preview keeps only explicit no-runtime fallbacks. It does not load a bundled project fixture, fabricate provider answers, or treat simulated browser-only UI as desktop-runtime success.
 
 ## 외부 채널 연동 설계 / External Channel Integration Design
 
@@ -1280,7 +1284,8 @@ Because `gtum` interacts with local files and shell execution, security boundari
 - provider responses should be normalized into shared internal formats before being exposed to the UI
 - the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
 - The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_diagnostics` and `request_agent_suggestions`, then normalizes the Codex response into the existing approval-card command shape.
-- `src/prototype.jsx` uses that seam only when the desktop runtime is available and `Codex` is the active provider. Browser preview and deferred providers keep the canned response path.
+- `src/prototype.jsx` uses that seam only when the desktop runtime is available, `Codex` is the active provider, and the project is runtime-backed. Browser preview and deferred providers must not keep a canned agent response path; they surface explicit unavailable states instead.
+- Windows `Codex` suggestion requests must avoid passing the full prompt as a `codex.cmd` batch-file argument. The runtime sends the prompt over stdin and, when the npm shim can be resolved, executes `node.exe <codex.js>` directly before falling back to `codex.cmd`.
 
 ## MVP 구현 순서 / MVP Implementation Order
 

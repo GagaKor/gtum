@@ -73,7 +73,7 @@ const ReactDOM = { createRoot }
 //     );
 //   }
 //
-// ─────────────────────────────────────────────────────────────────────────────
+// ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 const __TWEAKS_STYLE = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -185,9 +185,9 @@ const __TWEAKS_STYLE = `
     filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
 `;
 
-// ── useTweaks ───────────────────────────────────────────────────────────────
+// ???? useTweaks ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 // Single source of truth for tweak values. setTweak persists via the host
-// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+// (__edit_mode_set_keys ??host rewrites the EDITMODE block on disk).
 function useTweaks(defaults) {
   const [values, setValues] = React.useState(defaults);
   // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
@@ -199,15 +199,15 @@ function useTweaks(defaults) {
     setValues((prev) => ({ ...prev, ...edits }));
     window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
     // Same-window signal so in-page listeners (deck-stage rail thumbnails)
-    // can react — the parent message only reaches the host, not peers.
+    // can react ??the parent message only reaches the host, not peers.
     window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
   }, []);
   return [values, setTweak];
 }
 
-// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// ???? TweaksPanel ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 // Floating shell. Registers the protocol listener BEFORE announcing
-// availability — if the announce ran first, the host's activate could land
+// availability ??if the announce ran first, the host's activate could land
 // before our handler exists and the toolbar toggle would silently no-op.
 // The close button posts __edit_mode_dismissed so the host's toolbar toggle
 // flips off in lockstep; the host echoes __deactivate_edit_mode back which
@@ -292,7 +292,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
           <b>{title}</b>
           <button className="twk-x" aria-label="Close tweaks"
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={dismiss}>✕</button>
+                  onClick={dismiss}>x</button>
         </div>
         <div className="twk-body">
           {children}
@@ -302,7 +302,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
   );
 }
 
-// ── Layout helpers ──────────────────────────────────────────────────────────
+// ???? Layout helpers ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 function TweakSection({ label, children }) {
   return (
@@ -325,7 +325,7 @@ function TweakRow({ label, value, children, inline = false }) {
   );
 }
 
-// ── Controls ────────────────────────────────────────────────────────────────
+// ???? Controls ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
   return (
@@ -351,20 +351,20 @@ function TweakRadio({ label, value, options, onChange }) {
   const trackRef = React.useRef(null);
   const [dragging, setDragging] = React.useState(false);
   // The active value is read by pointer-move handlers attached for the lifetime
-  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  // of a drag ??ref it so a stale closure doesn't fire onChange for every move.
   const valueRef = React.useRef(value);
   valueRef.current = value;
 
   // Segments wrap mid-word once per-segment width runs out. The track is
-  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
-  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // ~248px (280 panel ??28 body pad ??4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char ??so 2
   // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
   // back to a dropdown rather than wrap.
   const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
   const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
   const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
   if (!fitsAsSegments) {
-    // <select> emits strings — map back to the original option value so the
+    // <select> emits strings ??map back to the original option value so the
     // fallback stays type-preserving (numbers, booleans) like the segment path.
     const resolve = (s) => {
       const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
@@ -476,7 +476,7 @@ function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) 
   );
 }
 
-// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// Relative-luminance contrast pick ??checkmarks drawn over a swatch need to
 // read on both #111 and #fafafa without per-option configuration. Hex input
 // only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
 function __twkIsLight(hex) {
@@ -496,8 +496,8 @@ const __TwkCheck = ({ light }) => (
   </svg>
 );
 
-// TweakColor — curated color/palette picker. Each option is either a single
-// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// TweakColor ??curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts ??a lone color
 // renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
 // rest stacked in a sharp column on the right. onChange emits the
 // option in the shape it was passed (string stays string, array stays array).
@@ -528,7 +528,7 @@ function TweakColor({ label, value, options, onChange }) {
           return (
             <button key={i} type="button" className="twk-chip" role="radio"
                     aria-checked={on} data-on={on ? '1' : '0'}
-                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    aria-label={colors.join(', ')} title={colors.join(' /')}
                     style={{ background: hero }}
                     onClick={() => onChange(o)}>
               {sup.length > 0 && (
@@ -560,414 +560,142 @@ Object.assign(window, {
 
 
 // ----- src/data.jsx -----
-// data.jsx — scenario data, i18n strings, icons
+// data.jsx ??scenario data, i18n strings, icons
 
 const STR = {
-  ko: {
-    appName: "gtum",
-    project: "프로젝트",
-    workspace: "워크스페이스",
-    branch: "브랜치",
-    tasks: "작업",
-    providers: "에이전트 연결",
-    connect: "연결",
-    connected: "연결됨",
-    disconnect: "연결 해제",
-    files: "파일",
-    gitStatus: "Git 상태",
-    changes: "변경",
-    ahead: "앞섬",
-    behind: "뒤짐",
-    clean: "깨끗함",
-    dirty: "변경 있음",
-    newTab: "새 탭",
-    closeTab: "탭 닫기",
-    renameTab: "이름 바꾸기",
-    running: "실행 중",
-    failed: "실패",
-    idle: "유휴",
-    passing: "통과",
-    agentChat: "에이전트",
-    suggestedActions: "제안된 작업",
-    approve: "승인",
-    deny: "거절",
-    runInCurrent: "현재 탭에서 실행",
-    runInNew: "새 탭에서 실행",
-    needsApproval: "승인 필요",
-    typeMessage: "에이전트에게 질문하기",
-    askAgent: "질문",
-    explain: "이 오류 설명해줘",
-    suggestFix: "고치는 방법 제안",
-    rerunTests: "테스트 재실행",
-    fast: "Fast",
-    balanced: "Balanced",
-    deep: "Deep",
-    mode: "모드",
-    sendCtx: "현재 탭 출력 첨부됨",
-    contextSize: "컨텍스트",
-    connectProvider: "제공자 연결",
-    connectIntro: "에이전트 제공자 계정을 연결하세요. OAuth 공식 로그인 흐름만 사용합니다.",
-    connectDetails: "API 토큰을 직접 입력하지 않습니다. 세션은 OS 보안 저장소에 보관됩니다.",
-    openBrowser: "브라우저에서 로그인",
-    cancel: "취소",
-    waitingCallback: "콜백을 기다리는 중…",
-    connectSuccess: "연결 완료",
-    sessionScope: "권한 범위",
-    sessionExpiry: "세션 만료",
-    days: "일",
-    review: "검토",
-    runCommand: "명령 실행",
-    target: "대상",
-    command: "명령",
-    cwd: "작업 디렉토리",
-    riskLow: "낮은 위험",
-    riskMid: "중간 위험",
-    riskHigh: "높은 위험",
-    risk: "위험도",
-    rollback: "필요시 되돌리기",
-    explainBeforeRun: "실행 전 설명",
-    you: "사용자",
-    assistant: "에이전트",
-    typing: "응답 생성 중",
-    nowExecuting: "실행 중…",
-    completed: "완료됨",
-    commandHistory: "명령 기록",
-    quickActions: "빠른 작업",
-    statusReady: "준비됨",
-    sessionsLabel: "세션",
-    openProjectFolder: "프로젝트 폴더 열기",
-    statusBarHint: "Cmd+K로 명령 팔레트",
-    workspaceTitle: "오로라 모노레포",
-    aboutContext: "에이전트가 읽을 수 있는 컨텍스트",
-    contextFiles: "선택된 파일",
-    contextTab: "현재 탭 출력",
-    contextHistory: "최근 명령",
-    save: "저장됨",
-    settings: "설정",
-    tabsLabel: "터미널 탭",
-    activeAgent: "활성 에이전트",
-    none: "없음",
-    diffPreview: "diff 미리보기",
-    permRead: "읽기",
-    permExec: "실행",
-    permEdit: "파일 수정",
-    permApprove: "승인 필요",
-    permGranted: "허용",
-    role: "역할",
-    conductor: "지휘자",
-    explorer: "탐색자",
-    tester: "테스터",
-    operator: "운영자",
-    reviewer: "리뷰어",
-    coder: "코더",
-    activity: "활동",
-    parallelAgents: "병렬 에이전트",
-    maxFiles: "최대 파일",
-    maxLogs: "최대 로그",
-    crossReview: "교차 리뷰",
-    on: "켜짐",
-    off: "꺼짐",
-    splitRight: "오른쪽으로 분할",
-    splitDown: "아래로 분할",
-    closePane: "패널 닫기",
-    pane: "패널",
-    panes: "패널",
-    collapse: "접기",
-    expand: "펼치기",
-    collapseSidebar: "사이드바 접기",
-    expandSidebar: "사이드바 펼치기",
-    collapseAgent: "에이전트 접기",
-    expandAgent: "에이전트 펼치기",
-    mergeToSingle: "하나로 합치기",
-    detach: "분리",
-    ctxClose: "닫기",
-    ctxCloseOthers: "다른 탭 닫기",
-    ctxCloseRight: "오른쪽 탭 모두 닫기",
-    ctxCloseLeft: "왼쪽 탭 모두 닫기",
-    ctxCloseAll: "모든 탭 닫기",
-    ctxSplitRight: "오른쪽으로 분할",
-    ctxSplitDown: "아래로 분할",
-    ctxSplitLeft: "왼쪽으로 분할",
-    ctxSplitUp: "위로 분할",
-    ctxMoveRight: "오른쪽 새 그룹으로 이동",
-    ctxMoveDown: "아래 새 그룹으로 이동",
-    ctxNewGroup: "새 그룹으로 이동",
-    emptyGroup: "탭을 끌어다 놓거나 새로 여세요",
-    newTabHere: "여기에 새 탭",
-    settings: "설정",
-    settingsTitle: "설정",
-    settingsConnections: "에이전트 연결",
-    settingsModels: "모델",
-    settingsAppearance: "외관",
-    settingsExecution: "실행",
-    settingsAbout: "정보",
-    selectedModel: "선택된 모델",
-    activeProvider: "활성 제공자",
-    contextWindow: "컨텍스트 창",
-    responseSpeed: "응답 속도",
-    tier: "분류",
-    saveSettings: "저장",
-    pickModel: "모델 선택",
-    noConnectedProviders: "연결된 제공자가 없습니다",
-    parallelLimit: "병렬 워커 수",
-    autoApproveLow: "낮은 위험 자동 승인",
-    streamResponses: "응답 스트리밍",
-    approvalPolicy: "승인 정책",
-    presetCautious: "신중",
-    presetDefault: "기본",
-    presetBold: "공격적",
-    presetCustom: "맞춤",
-    approvalLevel: "승인 수준",
-    actionAlwaysAsk: "항상 묻기",
-    actionAuto: "자동 승인",
-    actionAutoTrusted: "신뢰된 경로만",
-    riskLowFull: "낮은 위험 명령",
-    riskMidFull: "중간 위험 명령",
-    riskHighFull: "높은 위험 명령",
-    riskLowDesc: "읽기, 빌드, 테스트, 포트 점유 해소 등",
-    riskMidDesc: "프로세스 종료, 패키지 설치, 캐시 삭제",
-    riskHighDesc: "git push --force, fly deploy, rm -rf 등",
-    trustedDirs: "신뢰된 경로",
-    trustedDirsHint: "이 디렉토리 안에서만 자동 승인이 적용됩니다",
-    forbiddenPatterns: "차단된 패턴",
-    forbiddenPatternsHint: "이 패턴은 정책과 무관하게 항상 확인합니다",
-    addPattern: "패턴 추가",
-    addDir: "경로 추가",
-    autoApproveLog: "최근 자동 승인",
-    noAutoApprovals: "아직 자동 승인된 명령이 없습니다",
-    undo: "되돌리기",
-    toastAutoRan: "자동 실행됨",
-    autoRanInline: "낮은 위험 — 자동 실행",
-    blockedByPattern: "차단된 패턴",
-    requiresHigher: "이 명령은 더 높은 위험 등급이므로 확인이 필요합니다",
-    streamResponsesHint: "에이전트 응답을 한 글자씩 흘려보냅니다",
-    parallelLimitHint: "동시에 실행되는 워커의 최대 개수",
-    auditTrail: "감사 로그",
-    revert: "되돌리기",
-  },
+  ko: {},
   en: {
-    appName: "gtum",
-    project: "Project",
-    workspace: "Workspace",
+    activeAgent: "active agent",
+    addDir: "Add directory",
+    addPattern: "Add pattern",
+    agentChat: "Agent",
+    approvalLevel: "Approval level",
+    approvalPolicy: "Approval policy",
+    auditTrail: "Audit trail",
+    autoApproveLog: "Recent auto-approvals",
+    autoApproveLow: "Auto-approve low risk",
+    autoRanInline: "Low risk auto-ran",
+    aboutContext: "Context",
+    approve: "Approve",
+    balanced: "Balanced",
+    blockedByPattern: "Blocked by pattern",
     branch: "Branch",
-    tasks: "Tasks",
-    providers: "Agent providers",
+    changes: "changes",
+    closeTab: "Close tab",
+    collapseAgent: "Collapse agent",
+    collapseSidebar: "Collapse sidebar",
+    commandHistory: "Command history",
+    conductor: "Codex",
     connect: "Connect",
     connected: "Connected",
-    disconnect: "Disconnect",
-    files: "Files",
-    gitStatus: "Git status",
-    changes: "changes",
-    ahead: "ahead",
-    behind: "behind",
-    clean: "clean",
-    dirty: "dirty",
-    newTab: "New tab",
-    closeTab: "Close tab",
-    renameTab: "Rename",
-    running: "Running",
-    failed: "Failed",
-    idle: "Idle",
-    passing: "Passing",
-    agentChat: "Agent",
-    suggestedActions: "Suggested actions",
-    approve: "Approve",
-    deny: "Deny",
-    runInCurrent: "Run in current tab",
-    runInNew: "Run in new tab",
-    needsApproval: "Needs approval",
-    typeMessage: "Ask the agent",
-    askAgent: "Ask",
-    explain: "Explain this error",
-    suggestFix: "Suggest a fix",
-    rerunTests: "Rerun tests",
-    fast: "Fast",
-    balanced: "Balanced",
-    deep: "Deep",
-    mode: "Mode",
-    sendCtx: "current tab output attached",
-    contextSize: "Context",
-    connectProvider: "Connect a provider",
-    connectIntro: "Connect your agent provider account. OAuth official sign-in only.",
-    connectDetails: "We never ask for raw API tokens. Sessions live in the OS secure store.",
-    openBrowser: "Open browser to sign in",
-    cancel: "Cancel",
-    waitingCallback: "Waiting for callback…",
-    connectSuccess: "Connected",
-    sessionScope: "Granted scope",
-    sessionExpiry: "Session expires in",
-    days: "days",
-    review: "Review",
-    runCommand: "Run command",
-    target: "Target",
-    command: "Command",
-    cwd: "Working directory",
-    riskLow: "Low risk",
-    riskMid: "Medium risk",
-    riskHigh: "High risk",
-    risk: "Risk",
-    rollback: "Reversible",
-    explainBeforeRun: "Pre-run notes",
-    you: "You",
-    assistant: "Agent",
-    typing: "thinking",
-    nowExecuting: "Executing…",
-    completed: "Completed",
-    commandHistory: "Command history",
-    quickActions: "Quick actions",
-    statusReady: "Ready",
-    sessionsLabel: "Sessions",
-    openProjectFolder: "Open project folder",
-    statusBarHint: "Cmd+K for palette",
-    workspaceTitle: "aurora-monorepo",
-    aboutContext: "Context the agent can read",
-    contextFiles: "Selected files",
-    contextTab: "Current tab output",
-    contextHistory: "Recent commands",
-    save: "Saved",
-    settings: "Settings",
-    tabsLabel: "Terminal tabs",
-    activeAgent: "Active agent",
-    none: "None",
-    diffPreview: "Diff preview",
-    permRead: "Read",
-    permExec: "Execute",
-    permEdit: "Edit files",
-    permApprove: "Approval required",
-    permGranted: "Allowed",
-    role: "Role",
-    conductor: "Conductor",
-    explorer: "Explorer",
-    tester: "Tester",
-    operator: "Operator",
-    reviewer: "Reviewer",
-    coder: "Coder",
-    activity: "Activity",
-    parallelAgents: "Parallel agents",
-    maxFiles: "Max files",
-    maxLogs: "Max log lines",
-    crossReview: "Cross review",
-    on: "on",
-    off: "off",
-    splitRight: "Split right",
-    splitDown: "Split down",
-    closePane: "Close pane",
-    pane: "pane",
-    panes: "panes",
-    collapse: "Collapse",
-    expand: "Expand",
-    collapseSidebar: "Collapse sidebar",
-    expandSidebar: "Expand sidebar",
-    collapseAgent: "Collapse agent",
-    expandAgent: "Expand agent",
-    mergeToSingle: "Merge to single",
-    detach: "Detach",
+    connectDetails: "Connect a provider to enable runtime-backed requests.",
+    connectIntro: "Choose a provider and complete the desktop login flow.",
+    connectProvider: "Connect provider",
+    connectSuccess: "connected",
+    contextFiles: "Selected file",
+    contextTab: "Current tab",
     ctxClose: "Close",
+    ctxCloseAll: "Close All",
+    ctxCloseLeft: "Close to the Left",
     ctxCloseOthers: "Close Others",
     ctxCloseRight: "Close to the Right",
-    ctxCloseLeft: "Close to the Left",
-    ctxCloseAll: "Close All",
-    ctxSplitRight: "Split Right",
+    ctxMoveDown: "Move into New Group Down",
+    ctxMoveRight: "Move into New Group Right",
+    ctxNewGroup: "Move into New Group",
     ctxSplitDown: "Split Down",
     ctxSplitLeft: "Split Left",
+    ctxSplitRight: "Split Right",
     ctxSplitUp: "Split Up",
-    ctxMoveRight: "Move into New Group Right",
-    ctxMoveDown: "Move into New Group Down",
-    ctxNewGroup: "Move into New Group",
-    emptyGroup: "Drag a tab here, or open a new one",
-    newTabHere: "New tab here",
-    settingsTitle: "Settings",
-    settingsConnections: "Agent connections",
-    settingsModels: "Models",
-    settingsAppearance: "Appearance",
-    settingsExecution: "Execution",
-    settingsAbout: "About",
-    selectedModel: "Selected model",
-    activeProvider: "Active provider",
-    contextWindow: "Context window",
-    responseSpeed: "Response speed",
-    tier: "Tier",
-    saveSettings: "Save",
-    pickModel: "Pick model",
-    noConnectedProviders: "No providers connected",
-    parallelLimit: "Parallel workers",
-    autoApproveLow: "Auto-approve low risk",
-    streamResponses: "Stream responses",
-    approvalPolicy: "Approval policy",
-    presetCautious: "Cautious",
-    presetDefault: "Default",
-    presetBold: "Bold",
-    presetCustom: "Custom",
-    approvalLevel: "Approval level",
-    actionAlwaysAsk: "Always ask",
-    actionAuto: "Auto-approve",
-    actionAutoTrusted: "Trusted dirs only",
-    riskLowFull: "Low-risk commands",
-    riskMidFull: "Medium-risk commands",
-    riskHighFull: "High-risk commands",
-    riskLowDesc: "Reads, builds, tests, freeing a port",
-    riskMidDesc: "Killing processes, installing packages, clearing caches",
-    riskHighDesc: "git push --force, fly deploy, rm -rf, etc.",
-    trustedDirs: "Trusted directories",
-    trustedDirsHint: "Auto-approve only applies inside these paths",
+    deep: "Deep",
+    days: " days",
+    detach: "Detach",
+    disconnect: "Disconnect",
+    emptyGroup: "Drag a tab here, or open a real project",
+    expandAgent: "Expand agent",
+    expandSidebar: "Expand sidebar",
+    explain: "Explain current state",
+    failed: "failed",
+    fast: "Fast",
     forbiddenPatterns: "Forbidden patterns",
     forbiddenPatternsHint: "Always confirm these regardless of policy",
-    addPattern: "Add pattern",
-    addDir: "Add directory",
-    autoApproveLog: "Recent auto-approvals",
+    high: "High",
+    idle: "idle",
+    low: "Low",
+    mergeToSingle: "Merge to single",
+    mid: "Medium",
+    mode: "Mode",
+    needsApproval: "Needs approval",
+    newTab: "New tab",
+    newTabHere: "New tab here",
     noAutoApprovals: "No commands auto-approved yet",
-    undo: "Undo",
-    toastAutoRan: "Auto-ran",
-    autoRanInline: "Low risk — auto-ran",
-    blockedByPattern: "Blocked by pattern",
+    noConnectedProviders: "No providers connected",
+    nowExecuting: "Executing",
+    openProjectFolder: "Open project folder",
+    passing: "passing",
+    pickModel: "Pick model",
+    presetBold: "Bold",
+    presetCautious: "Cautious",
+    presetCustom: "Custom",
+    presetDefault: "Default",
     requiresHigher: "This command needs explicit approval at its risk level",
-    streamResponsesHint: "Stream agent replies character by character",
-    parallelLimitHint: "Max workers running in parallel",
-    auditTrail: "Audit trail",
+    responseSpeed: "Response speed",
+    review: "Review",
     revert: "Revert",
+    riskHighDesc: "Destructive commands and production deploys",
+    riskHighFull: "High-risk commands",
+    riskLowDesc: "Reads, builds, and tests",
+    riskLowFull: "Low-risk commands",
+    riskMidDesc: "Killing processes, installing packages, clearing caches",
+    riskMidFull: "Medium-risk commands",
+    running: "running",
+    saveSettings: "Save",
+    selectedModel: "Selected model",
+    sendCtx: "send context",
+    sessionExpiry: "Session expires in ",
+    settingsAbout: "About",
+    settingsAppearance: "Appearance",
+    settingsConnections: "Agent connections",
+    settingsExecution: "Execution",
+    settingsModels: "Models",
+    settingsTitle: "Settings",
+    statusBarHint: "Command palette",
+    statusReady: "Ready",
+    streamResponses: "Stream responses",
+    streamResponsesHint: "Stream agent replies character by character",
+    suggestFix: "Suggest a fix",
+    suggestedActions: "suggested actions",
+    tabsLabel: "tabs",
+    tasks: "Tasks",
+    tier: "Tier",
+    typing: "typing",
+    toastAutoRan: "Auto-ran",
+    trustedDirs: "Trusted directories",
+    trustedDirsHint: "Auto-approve only applies inside these paths",
+    typeMessage: "Ask Codex",
+    undo: "Undo",
+    waitingCallback: "Waiting for callback",
+    workspaceTitle: "Open a project",
+    you: "You"
   },
 };
-
 const t = (lang, key) => (STR[lang] && STR[lang][key]) || STR.en[key] || key;
 
 const PROJECT = {
-  name: "aurora-monorepo",
-  path: "~/code/aurora-monorepo",
-  branch: "feature/onboarding-funnel",
-  branchType: "feature",
-  ahead: 3,
+  name: "Open a project",
+  path: "",
+  branch: "no-project",
+  branchType: "none",
+  ahead: 0,
   behind: 0,
-  changedFiles: 7,
-  fileTree: [
-    { name: "apps", type: "dir", open: true, children: [
-      { name: "web", type: "dir", open: true, children: [
-        { name: "src", type: "dir", open: true, children: [
-          { name: "OnboardingFunnel.tsx", type: "ts", changed: true, selected: true },
-          { name: "useFunnelState.ts", type: "ts", changed: true },
-          { name: "main.tsx", type: "ts" },
-        ]},
-        { name: "package.json", type: "json" },
-        { name: "vite.config.ts", type: "ts" },
-      ]},
-      { name: "api", type: "dir", open: true, children: [
-        { name: "src", type: "dir", open: false },
-        { name: "server.ts", type: "ts", changed: true },
-        { name: "package.json", type: "json", changed: true },
-      ]},
-    ]},
-    { name: "packages", type: "dir", open: false },
-    { name: "tests", type: "dir", open: true, children: [
-      { name: "funnel.spec.ts", type: "ts", changed: true },
-      { name: "checkout.spec.ts", type: "ts" },
-    ]},
-    { name: "package.json", type: "json" },
-    { name: "pnpm-workspace.yaml", type: "yaml" },
-    { name: "README.md", type: "md" },
-  ],
+  changedFiles: 0,
+  runtimeBacked: false,
+  fileTree: [],
 };
 
-async function selectRuntimeProjectFolder(defaultPath) {
-  if (!hasTauriRuntime()) return defaultPath || PROJECT.path;
+async function selectRuntimeProjectFolder(defaultPath, runtimeAvailable = hasTauriRuntime()) {
+  if (!hasTauriRuntime()) {
+    return runtimeAvailable ? (defaultPath || PROJECT.path || ".") : null;
+  }
 
   const selected = await openDialog({
     directory: true,
@@ -979,177 +707,22 @@ async function selectRuntimeProjectFolder(defaultPath) {
   return typeof selected === "string" ? selected : null;
 }
 
-// VS Code-style workspace.
-//
-// layoutTree is a binary tree where:
-//   - leaves are { type: 'group', groupId } pointing into `groups`
-//   - branches are { type: 'split', direction: 'horizontal'|'vertical',
-//                    children: [TreeNode, ...], sizes: [pct, ...] }
-//     'horizontal' = children laid out side-by-side (row)
-//     'vertical'   = children stacked top-to-bottom (column)
-//
-// `groups` is a dictionary keyed by groupId for O(1) lookup; each group has
-// its own tabbar (tabs[] + activeTabId). Tabs own the shell session data.
+// Start from a real empty workbench. Runtime-backed project, file, terminal,
+// chat, task, and history data are populated only after the desktop app opens
+// a local project or receives an explicit runtime response.
 const WORKSPACE_INITIAL = {
-  layoutTree: {
-    type: "split",
-    direction: "vertical",
-    sizes: [62, 38],
-    children: [
-      { type: "group", groupId: "g-1" },
-      { type: "group", groupId: "g-2" },
-    ],
-  },
-  activeGroupId: "g-1",
+  layoutTree: { type: "group", groupId: "g-empty" },
+  activeGroupId: "g-empty",
   groups: {
-    "g-1": {
-      id: "g-1",
-      activeTabId: "t-backend",
-      tabs: [
-        {
-          id: "t-frontend", title: "frontend",
-          shell: "pnpm", cwd: "apps/web",
-          status: "running", cmd: "pnpm dev",
-          lines: [
-            { kind: "cmd", text: "pnpm dev" },
-            { kind: "log", text: "> aurora-web@0.4.2 dev /Users/yj/code/aurora-monorepo/apps/web" },
-            { kind: "log", text: "> vite --port 5173" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "  VITE v5.2.11  ready in 412 ms", color: "ok" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "  ➜  Local:   http://localhost:5173/" },
-            { kind: "log", text: "  ➜  Network: use --host to expose" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "10:24:18 [vite] hmr update /src/OnboardingFunnel.tsx", color: "dim" },
-            { kind: "log", text: "10:24:51 [vite] hmr update /src/useFunnelState.ts", color: "dim" },
-            { kind: "log", text: "10:25:14 [vite] page reload /src/main.tsx", color: "dim" },
-          ],
-        },
-        {
-          id: "t-backend", title: "backend",
-          shell: "pnpm", cwd: "apps/api",
-          status: "failed", cmd: "pnpm dev:api",
-          lines: [
-            { kind: "cmd", text: "pnpm dev:api" },
-            { kind: "log", text: "> aurora-api@0.4.2 dev:api /Users/yj/code/aurora-monorepo/apps/api" },
-            { kind: "log", text: "> tsx watch src/server.ts" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "[api] initializing kysely pool…", color: "dim" },
-            { kind: "log", text: "[api] loaded 12 routes" },
-            { kind: "log", text: "[api] listening on http://localhost:3001 ⏳", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "Error: listen EADDRINUSE: address already in use :::3001", color: "err" },
-            { kind: "log", text: "    at Server.setupListenHandle [as _listen2] (node:net:1908:16)", color: "err-dim" },
-            { kind: "log", text: "    at listenInCluster (node:net:1956:12)", color: "err-dim" },
-            { kind: "log", text: "    at Server.listen (node:net:2058:7)", color: "err-dim" },
-            { kind: "log", text: "    at start (file:///…/apps/api/src/server.ts:48:10)", color: "err-dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "node:events:497", color: "err-dim" },
-            { kind: "log", text: "      throw er; // Unhandled 'error' event", color: "err-dim" },
-            { kind: "log", text: "      ^", color: "err-dim" },
-            { kind: "log", text: "✖ process exited with code 1", color: "err" },
-          ],
-        },
-        {
-          id: "t-tests", title: "tests",
-          shell: "pnpm", cwd: ".",
-          status: "failed", cmd: "pnpm test:funnel",
-          lines: [
-            { kind: "cmd", text: "pnpm test:funnel" },
-            { kind: "log", text: "> aurora@0.4.2 test:funnel" },
-            { kind: "log", text: "> vitest run tests/funnel.spec.ts" },
-            { kind: "log", text: "" },
-            { kind: "log", text: " RUN  v1.6.0  /Users/yj/code/aurora-monorepo", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: " ❯ tests/funnel.spec.ts  (8)", color: "warn" },
-            { kind: "log", text: "   ✓ persists step on refresh", color: "ok" },
-            { kind: "log", text: "   ✓ goes back without losing answers", color: "ok" },
-            { kind: "log", text: "   ✓ submits valid payload", color: "ok" },
-            { kind: "log", text: "   ✓ derives progress %", color: "ok" },
-            { kind: "log", text: "   ✓ blocks empty step", color: "ok" },
-            { kind: "log", text: "   ✓ handles back from final step", color: "ok" },
-            { kind: "log", text: "   ✗ FunnelState › skipping optional step keeps progress", color: "err" },
-            { kind: "log", text: "       AssertionError: expected 60 to be 50", color: "err-dim" },
-            { kind: "log", text: "       ❯ tests/funnel.spec.ts:74:22", color: "err-dim" },
-            { kind: "log", text: "   ✗ FunnelState › resume after 24h marks stale", color: "err" },
-            { kind: "log", text: "       Error: expected staleness flag to be set", color: "err-dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: " Test Files  1 failed (1)", color: "err" },
-            { kind: "log", text: "      Tests  2 failed | 6 passed (8)", color: "err" },
-            { kind: "log", text: "   Duration  1.42s", color: "dim" },
-          ],
-        },
-      ],
-    },
-    "g-2": {
-      id: "g-2",
-      activeTabId: "t-fly",
-      tabs: [
-        {
-          id: "t-git", title: "git",
-          shell: "zsh", cwd: ".",
-          status: "passing", cmd: "git status",
-          lines: [
-            { kind: "cmd", text: "git status" },
-            { kind: "log", text: "On branch feature/onboarding-funnel" },
-            { kind: "log", text: "Your branch is ahead of 'origin/master' by 3 commits.", color: "dim" },
-            { kind: "log", text: "  (use \"git push\" to publish your local commits)", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "Changes not staged for commit:", color: "warn" },
-            { kind: "log", text: "  (use \"git add <file>...\" to update what will be committed)", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "        modified:   apps/web/src/OnboardingFunnel.tsx", color: "err" },
-            { kind: "log", text: "        modified:   apps/web/src/useFunnelState.ts", color: "err" },
-            { kind: "log", text: "        modified:   apps/api/src/server.ts", color: "err" },
-            { kind: "log", text: "        modified:   apps/api/package.json", color: "err" },
-            { kind: "log", text: "        modified:   tests/funnel.spec.ts", color: "err" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "no changes added to commit (use \"git add\" and/or \"git commit -a\")", color: "dim" },
-          ],
-        },
-        {
-          id: "t-fly", title: "fly deploy",
-          shell: "fly", cwd: ".",
-          status: "running", cmd: "fly deploy --watch",
-          lines: [
-            { kind: "cmd", text: "fly deploy --watch" },
-            { kind: "log", text: "==> Verifying app config" },
-            { kind: "log", text: "Validating /Users/yj/code/aurora-monorepo/fly.toml", color: "dim" },
-            { kind: "log", text: "Platform: machines" },
-            { kind: "log", text: "✓ Configuration is valid", color: "ok" },
-            { kind: "log", text: "--> Verified app config" },
-            { kind: "log", text: "==> Building image" },
-            { kind: "log", text: "Remote builder fly-builder-jolly-snow ready", color: "dim" },
-            { kind: "log", text: " => [internal] load build definition       0.0s", color: "dim" },
-            { kind: "log", text: " => [build 1/8] FROM docker.io/node:20-bookworm  4.2s", color: "dim" },
-            { kind: "log", text: " => [build 2/8] WORKDIR /app                0.1s", color: "dim" },
-            { kind: "log", text: " => [build 3/8] COPY pnpm-lock.yaml         0.0s", color: "dim" },
-            { kind: "log", text: " => [build 4/8] RUN corepack enable         1.8s", color: "dim" },
-            { kind: "log", text: " => [build 5/8] RUN pnpm install --frozen-lockfile  12.4s", color: "dim" },
-            { kind: "log", text: " => [build 6/8] COPY . .                    0.3s", color: "dim" },
-            { kind: "log", text: " => [build 7/8] RUN pnpm -r build           ⏳", color: "warn" },
-          ],
-        },
-      ],
+    "g-empty": {
+      id: "g-empty",
+      activeTabId: null,
+      tabs: [],
     },
   },
 };
 
 const PROVIDERS_INIT = [
-  {
-    id: "claude",
-    label: "Claude",
-    abbr: "Cl",
-    state: "connected",
-    scope: ["files.read", "terminal.read", "exec.suggest"],
-    expiresInDays: 27,
-    activeModel: "claude-sonnet-4.5",
-    models: [
-      { id: "claude-opus-4.5",   label: "Claude Opus 4.5",   tier: "deep",     ctx: "200K", speed: "느림" },
-      { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5", tier: "balanced", ctx: "200K", speed: "보통" },
-      { id: "claude-haiku-4.5",  label: "Claude Haiku 4.5",  tier: "fast",     ctx: "200K", speed: "빠름" },
-    ],
-  },
   {
     id: "codex",
     label: "Codex",
@@ -1159,74 +732,31 @@ const PROVIDERS_INIT = [
     expiresInDays: null,
     activeModel: "gpt-5-codex",
     models: [
-      { id: "gpt-5",         label: "GPT-5",         tier: "deep",     ctx: "256K", speed: "느림" },
-      { id: "gpt-5-codex",   label: "GPT-5 Codex",   tier: "balanced", ctx: "200K", speed: "보통" },
-      { id: "gpt-5-mini",    label: "GPT-5 mini",    tier: "fast",     ctx: "128K", speed: "빠름" },
-      { id: "o4-mini",       label: "o4-mini",       tier: "deep",     ctx: "128K", speed: "느림" },
+      { id: "gpt-5", label: "GPT-5", tier: "deep", ctx: "256K", speed: "deep" },
+      { id: "gpt-5-codex", label: "GPT-5 Codex", tier: "balanced", ctx: "200K", speed: "balanced" },
+      { id: "gpt-5-mini", label: "GPT-5 mini", tier: "fast", ctx: "128K", speed: "fast" },
+      { id: "o4-mini", label: "o4-mini", tier: "deep", ctx: "128K", speed: "deep" },
+    ],
+  },
+  {
+    id: "claude",
+    label: "Claude",
+    abbr: "Cl",
+    state: "disconnected",
+    scope: [],
+    expiresInDays: null,
+    activeModel: "claude-sonnet-4.5",
+    models: [
+      { id: "claude-opus-4.5", label: "Claude Opus 4.5", tier: "deep", ctx: "200K", speed: "deep" },
+      { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5", tier: "balanced", ctx: "200K", speed: "balanced" },
+      { id: "claude-haiku-4.5", label: "Claude Haiku 4.5", tier: "fast", ctx: "200K", speed: "fast" },
     ],
   },
 ];
 
-const CHAT_INIT = (lang) => [
-  {
-    id: "m1",
-    role: "user",
-    at: "10:24",
-    content: lang === "ko"
-      ? "백엔드 탭이 떨어졌어. 한번 봐줘."
-      : "Backend tab just crashed. Take a look.",
-    contextAttached: ["t-backend"],
-  },
-  {
-    id: "m2",
-    role: "assistant",
-    at: "10:24",
-    roleLabel: lang === "ko" ? "탐색자" : "Explorer",
-    content: lang === "ko"
-      ? "backend 탭 로그를 읽었어. `tsx watch src/server.ts`가 `EADDRINUSE :::3001`로 죽었어 — 누군가 이미 3001을 쓰고 있어."
-      : "I read the backend tab output. `tsx watch src/server.ts` died with `EADDRINUSE :::3001` — something else is already on 3001.",
-  },
-  {
-    id: "m3",
-    role: "assistant",
-    at: "10:24",
-    roleLabel: lang === "ko" ? "리뷰어" : "Reviewer",
-    content: lang === "ko"
-      ? "최근 명령 기록을 보니 4분 전에 같은 서버를 한번 띄웠어. 좀비 프로세스일 가능성이 커. 죽이고 다시 띄우는 게 안전해."
-      : "Recent history shows the same server was launched 4 minutes ago. Likely a zombie process — safe to kill and restart.",
-  },
-  {
-    id: "m4",
-    role: "assistant",
-    at: "10:25",
-    suggestion: {
-      id: "sg-1",
-      title: lang === "ko" ? "포트 3001 점유 프로세스 종료 후 backend 재실행" : "Kill the process on :3001, restart backend",
-      commands: [
-        { cmd: "lsof -ti:3001 | xargs -r kill -9", risk: "mid", target: "new" },
-        { cmd: "pnpm dev:api", risk: "low", target: "t-backend" },
-      ],
-      note: lang === "ko"
-        ? "되돌리기 쉬움. 첫 명령은 새 탭에서, 두 번째는 backend 탭에서 실행."
-        : "Reversible. First command in a new tab, second in the backend tab.",
-    },
-  },
-];
-
-const COMMAND_HISTORY_INIT = [
-  { at: "10:18", tab: "frontend", cmd: "pnpm dev", ok: true },
-  { at: "10:20", tab: "backend", cmd: "pnpm dev:api", ok: true },
-  { at: "10:21", tab: "tests", cmd: "pnpm test:funnel", ok: false },
-  { at: "10:24", tab: "backend", cmd: "pnpm dev:api", ok: false },
-];
-
-const TASKS_INIT = (lang) => [
-  { id: "tk1", label: lang === "ko" ? "온보딩 퍼널 — 진행률 계산 버그 수정" : "Onboarding funnel — progress bug fix", status: "active", agent: "Coder" },
-  { id: "tk2", label: lang === "ko" ? "stale resume 플래그 동작 검증" : "Verify stale-resume flag behavior", status: "waiting", agent: "Tester" },
-  { id: "tk3", label: lang === "ko" ? "Kysely 풀 종료 핸들러 추가" : "Add Kysely pool shutdown handler", status: "queued", agent: "Coder" },
-  { id: "tk4", label: lang === "ko" ? "변경 사항 PR 초안 작성" : "Draft PR summary for changes", status: "queued", agent: "Reviewer" },
-];
-
+const CHAT_INIT = () => [];
+const COMMAND_HISTORY_INIT = [];
+const TASKS_INIT = () => [];
 const Icon = {
   chevron: (props) => (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" {...props}>
@@ -1334,7 +864,7 @@ const Icon = {
   ),
 };
 
-// Derive a status badge for a whole group from its tabs — worst-status wins.
+// Derive a status badge for a whole group from its tabs ??worst-status wins.
 // Used in sidebar / activity indicators / drag chrome.
 const STATUS_ORDER = { failed: 4, running: 3, passing: 2, idle: 1 };
 function groupStatus(group) {
@@ -1353,7 +883,7 @@ function workspaceStatus(workspace) {
   }
   return best;
 }
-// Active tab of the active group — used by the agent context summary, etc.
+// Active tab of the active group ??used by the agent context summary, etc.
 function activeTabOf(workspace) {
   const g = workspace.groups[workspace.activeGroupId];
   if (!g) return null;
@@ -1374,109 +904,8 @@ function allTabs(workspace) {
   return out;
 }
 
-// File content for editor tabs — keyed by full path in the file tree.
-const FILE_CONTENTS = {
-  "apps/web/src/OnboardingFunnel.tsx": { lang: "tsx", dirty: true, text:
-`import { useEffect } from "react";
-import { useFunnelState } from "./useFunnelState";
-import { StepCard } from "./StepCard";
-import { ProgressBar } from "./ProgressBar";
-
-type Props = {
-  steps: FunnelStep[];
-  onSubmit: (payload: FunnelPayload) => void;
-};
-
-export function OnboardingFunnel({ steps, onSubmit }: Props) {
-  const funnel = useFunnelState(steps);
-
-  useEffect(() => {
-    if (funnel.isComplete) onSubmit(funnel.payload);
-  }, [funnel.isComplete, funnel.payload, onSubmit]);
-
-  return (
-    <div className="funnel">
-      <ProgressBar value={funnel.progress} />
-      <StepCard
-        step={funnel.current}
-        answer={funnel.answer}
-        onChange={funnel.answer$.next}
-        onBack={funnel.back}
-        onNext={funnel.next}
-      />
-    </div>
-  );
-}` },
-  "apps/web/src/useFunnelState.ts": { lang: "ts", dirty: true, text:
-`import { useMemo, useState } from "react";
-import { Subject } from "rxjs";
-
-/**
- * useFunnelState — manages step navigation + progress
- * BUG: progress calc doesn't drop optional skipped steps
- */
-export function useFunnelState(steps: FunnelStep[]) {
-  const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, unknown>>({});
-
-  const current = steps[idx];
-  const answer$ = useMemo(() => new Subject<unknown>(), []);
-
-  // FIXME — should exclude optional steps that were skipped
-  const progress = Math.round(((idx + 1) / steps.length) * 100);
-
-  return {
-    current, answer: answers[current?.id],
-    progress,
-    isComplete: idx >= steps.length,
-    answer$,
-    payload: answers,
-    back: () => setIdx((i) => Math.max(0, i - 1)),
-    next: () => setIdx((i) => i + 1),
-  };
-}` },
-  "apps/api/src/server.ts": { lang: "ts", dirty: true, text:
-`import { createServer } from "node:http";
-import { router } from "./router";
-import { kysely } from "./db/kysely";
-
-const PORT = 3001;
-
-async function start() {
-  console.log("[api] initializing kysely pool…");
-  await kysely.connect();
-  const server = createServer(router);
-  // FIXME: no graceful shutdown — leaves the port hot on restart
-  server.listen(PORT, () => {
-    console.log(\`[api] listening on http://localhost:\${PORT}\`);
-  });
-}
-
-start().catch((err) => { console.error(err); process.exit(1); });` },
-  "tests/funnel.spec.ts": { lang: "ts", dirty: true, text:
-`import { renderHook, act } from "@testing-library/react";
-import { useFunnelState } from "../apps/web/src/useFunnelState";
-import { describe, it, expect } from "vitest";
-
-const steps = [
-  { id: "name",    optional: false },
-  { id: "email",   optional: false },
-  { id: "team",    optional: true  },
-  { id: "billing", optional: false },
-];
-
-describe("FunnelState", () => {
-  it("skipping optional step keeps progress", () => {
-    const { result } = renderHook(() => useFunnelState(steps));
-    act(() => result.current.next());
-    act(() => result.current.next());
-    act(() => result.current.next());
-    // expected 50, optional removed from denominator
-    expect(result.current.progress).toBe(50);
-  });
-});` },
-};
-
+// File content for editor tabs ??keyed by full path in the file tree.
+const FILE_CONTENTS = {};
 // Make an editor-shaped tab from a file tree node + its full path.
 function tabFromFile(path, name) {
   const c = FILE_CONTENTS[path];
@@ -1545,7 +974,7 @@ function pathOfNode(tree, target, parents = []) {
   return null;
 }
 
-// Lightweight syntax tokenizer for TS/TSX — keyword, string, comment, number.
+// Lightweight syntax tokenizer for TS/TSX ??keyword, string, comment, number.
 const __TS_KW = new Set("import|from|export|const|let|var|function|return|if|else|for|while|switch|case|default|break|continue|new|class|extends|implements|interface|type|enum|async|await|try|catch|finally|throw|typeof|instanceof|void|null|undefined|true|false|this|super|in|of|as|is|public|private|protected|readonly|static|abstract|yield|delete".split("|"));
 function tokenizeLine(line) {
   const out = [];
@@ -1578,20 +1007,20 @@ function tokenizeLine(line) {
   return out;
 }
 
-// ── Approval policy ─────────────────────────────────────────────────────
+// ???? Approval policy ??????????????????????????????????????????????????????????????????????????????????????????????????????????
 //
 // Policy decides whether a command is auto-approved or routed through the
 // approval modal. We model 3 risk levels with separate rules + an absolute
 // allowlist (trusted dirs) and denylist (forbidden patterns).
 //
 // Preset semantics:
-//   cautious — every command always asks; no shortcuts.
-//   default  — low-risk auto-runs anywhere; mid/high always ask.
-//   bold     — low+mid auto-run inside trusted dirs; high always asks.
+//   cautious ??every command always asks; no shortcuts.
+//   default  ??low-risk auto-runs anywhere; mid/high always ask.
+//   bold     ??low+mid auto-run inside trusted dirs; high always asks.
 //
 // Forbidden patterns are checked first and always force "always-ask",
 // even if the policy would auto-approve. High-risk is hard-coded to
-// always-ask — you cannot disable it.
+// always-ask ??you cannot disable it.
 const APPROVAL_PRESETS = {
   cautious: { lowRisk: "always-ask", midRisk: "always-ask" },
   default:  { lowRisk: "auto",       midRisk: "always-ask" },
@@ -1602,14 +1031,14 @@ const APPROVAL_POLICY_INIT = {
   preset: "default",
   lowRisk: "auto",
   midRisk: "always-ask",
-  // highRisk is always "always-ask" — not stored, just enforced.
-  trustedDirs: ["~/code/aurora-monorepo"],
+  // highRisk is always "always-ask" ??not stored, just enforced.
+  trustedDirs: [],
   forbiddenPatterns: ["rm -rf", "git push --force", "sudo", "dd if="],
 };
 
 // Decide what to do with a command:
-//   { action: 'auto' } → execute without modal
-//   { action: 'ask', reason }  → open approval modal
+//   { action: 'auto' } ??execute without modal
+//   { action: 'ask', reason }  ??open approval modal
 function policyDecideForCommand(policy, cmd, risk, cwd) {
   const text = cmd || "";
   // 1. Forbidden patterns override everything
@@ -1618,7 +1047,7 @@ function policyDecideForCommand(policy, cmd, risk, cwd) {
       return { action: "ask", reason: "forbidden", pattern: pat };
     }
   }
-  // 2. High risk → always ask
+  // 2. High risk ??always ask
   if (risk === "high") return { action: "ask", reason: "high-risk" };
   // 3. Policy by risk level
   const rule = risk === "low" ? policy.lowRisk : policy.midRisk;
@@ -1633,7 +1062,7 @@ function policyDecideForCommand(policy, cmd, risk, cwd) {
   return { action: "ask", reason: "policy" };
 }
 
-// Whole-suggestion decision — auto-runs only if EVERY command auto-runs.
+// Whole-suggestion decision ??auto-runs only if EVERY command auto-runs.
 // One blocker means we open the modal with the full list.
 function policyDecideForSuggestion(policy, suggestion, cwd) {
   const decisions = suggestion.commands.map(
@@ -1657,7 +1086,7 @@ Object.assign(window, {
 
 
 // ----- src/workspace-store.jsx -----
-// workspace-store.jsx — pure functions for VS Code-style workspace state.
+// workspace-store.jsx ??pure functions for VS Code-style workspace state.
 //
 // State shape:
 //   workspace = {
@@ -1679,9 +1108,9 @@ Object.assign(window, {
 //
 // 'horizontal' = side-by-side (row), 'vertical' = stacked (col).
 //
-// Every exported action is a pure function: (state, ...args) → newState.
+// Every exported action is a pure function: (state, ...args) ??newState.
 
-// ── id helpers ──────────────────────────────────────────────────────────
+// ???? id helpers ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 let __gtumIdCounter = 0;
 function uid(prefix) {
   __gtumIdCounter += 1;
@@ -1689,7 +1118,7 @@ function uid(prefix) {
   return prefix + "-" + Date.now().toString(36) + "-" + __gtumIdCounter;
 }
 
-// ── tree utils ──────────────────────────────────────────────────────────
+// ???? tree utils ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 // Walk the tree and call fn(node, path). path is array of [parent, childIdx].
 function visit(tree, fn, path = []) {
@@ -1751,7 +1180,7 @@ function findParentOfGroup(tree, groupId) {
   return result;
 }
 
-// ── pure actions ────────────────────────────────────────────────────────
+// ???? pure actions ????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 function setActiveTab(state, groupId, tabId) {
   const g = state.groups[groupId];
@@ -1810,7 +1239,7 @@ function moveTab(state, tabId, fromGroupId, toGroupId, targetIdx = null) {
       node.type === "group" && node.groupId === fromGroupId ? null : node
     );
     if (next.layoutTree == null) {
-      // workspace must keep at least one group — restore a fresh empty one
+      // workspace must keep at least one group ??restore a fresh empty one
       const emptyId = uid("g");
       groups[emptyId] = { id: emptyId, activeTabId: null, tabs: [] };
       next.layoutTree = { type: "group", groupId: emptyId };
@@ -1835,7 +1264,7 @@ function moveTab(state, tabId, fromGroupId, toGroupId, targetIdx = null) {
 
 // Split a group into two. The new group is empty; if `movingTabId` is given,
 // that tab moves from the source group into the new one. position is one of
-// 'right' | 'left' | 'down' | 'up' — relative to `groupId`.
+// 'right' | 'left' | 'down' | 'up' ??relative to `groupId`.
 function splitGroup(state, groupId, position, movingTabId = null) {
   const newGroupId = uid("g");
   const sourceGroup = state.groups[groupId];
@@ -1853,8 +1282,8 @@ function splitGroup(state, groupId, position, movingTabId = null) {
     if (!tab) return state;
     const remaining = sourceGroup.tabs.filter((tb) => tb.id !== movingTabId);
     if (remaining.length === 0) {
-      // Source group would become empty — that's a degenerate split. Just move active.
-      // Better UX: bail (no-op) — caller should detect and use moveTab instead.
+      // Source group would become empty ??that's a degenerate split. Just move active.
+      // Better UX: bail (no-op) ??caller should detect and use moveTab instead.
       return state;
     }
     groups[groupId] = {
@@ -1905,7 +1334,7 @@ function dropTabOnEdge(state, srcTabId, srcGroupId, targetGroupId, position) {
   const targetG = state.groups[targetGroupId];
   if (!targetG) return state;
 
-  // Same group + dropping a tab from a single-tab group on its own edge → no-op
+  // Same group + dropping a tab from a single-tab group on its own edge ??no-op
   if (srcGroupId === targetGroupId && srcG.tabs.length === 1) return state;
 
   // First create the new group adjacent to target, then move the tab in.
@@ -2090,7 +1519,7 @@ function updateTab(state, tabId, updater) {
   return changed ? { ...state, groups } : state;
 }
 
-// openFile — open a file as an editor tab in the active group.
+// openFile ??open a file as an editor tab in the active group.
 // If a tab already exists for that path (in any group), focus it instead.
 function openFile(state, groupId, fileTab) {
   // Look for existing editor tab matching this path
@@ -2156,7 +1585,7 @@ Object.assign(window, {
 
 
 // ----- src/sidebar.jsx -----
-// sidebar.jsx — VS Code-style two-section accordion:
+// sidebar.jsx ??VS Code-style two-section accordion:
 //   1. Projects (current + recents, branch/path inline)
 //   2. Files (file tree of the active project)
 // Each section header is a clickable toggle; sections collapse independently.
@@ -2189,7 +1618,6 @@ function FileTreeNode({ node, depth, lang, onSelect, selected }) {
   );
 }
 
-// Collapsible accordion section — VS Code style header with chevron.
 function Section({ label, count, open, onToggle, children }) {
   return (
     <div className={"sb-section" + (open ? " open" : " closed")}>
@@ -2203,14 +1631,8 @@ function Section({ label, count, open, onToggle, children }) {
   );
 }
 
-// Recent-project list. For the prototype, items beside the active one are
-// placeholders — clicking is non-destructive (we don't actually swap the
-// workspace), but UX shows hover/active states.
-const RECENT_PROJECTS = [
-  { id: "klystron", name: "klystron-cli",  path: "~/code/klystron-cli",  branch: "main",                changedFiles: 0, ahead: 0, behind: 1 },
-  { id: "harbor",   name: "harbor-mobile", path: "~/code/harbor-mobile", branch: "release/v2.3",        changedFiles: 2, ahead: 0, behind: 0 },
-  { id: "lumen",    name: "lumen-edge",    path: "~/code/lumen-edge",    branch: "feature/qos-shaping", changedFiles: 5, ahead: 1, behind: 0 },
-];
+// Recent projects are populated from runtime persistence after real project opens.
+const RECENT_PROJECTS = [];
 
 function ProjectItem({ project, active, lang, onSelect }) {
   return (
@@ -2225,7 +1647,7 @@ function ProjectItem({ project, active, lang, onSelect }) {
         <span className="project-name">
           <span className="nm">{project.name}</span>
           {active && (
-            <span className="project-tag">{lang === "ko" ? "현재" : "current"}</span>
+            <span className="project-tag">{"current"}</span>
           )}
         </span>
         <span className="project-meta">
@@ -2233,16 +1655,16 @@ function ProjectItem({ project, active, lang, onSelect }) {
           <span className="project-branch">{project.branch}</span>
           {project.changedFiles > 0 && (
             <>
-              <span className="project-meta-sep">·</span>
+              <span className="project-meta-sep">/</span>
               <span className="project-changes">
-                {project.changedFiles} {lang === "ko" ? "변경" : "changes"}
+                {project.changedFiles} changes
               </span>
             </>
           )}
           {(project.ahead > 0 || project.behind > 0) && (
             <>
-              <span className="project-meta-sep">·</span>
-              <span className="project-ahead">↑{project.ahead} ↓{project.behind}</span>
+              <span className="project-meta-sep">/</span>
+              <span className="project-ahead">up {project.ahead} / down {project.behind}</span>
             </>
           )}
         </span>
@@ -2252,7 +1674,7 @@ function ProjectItem({ project, active, lang, onSelect }) {
 }
 
 function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject }) {
-  const [selectedFile, setSelectedFile] = React.useState("OnboardingFunnel.tsx");
+  const [selectedFile, setSelectedFile] = React.useState(null);
   const [projectsOpen, setProjectsOpen] = React.useState(true);
   const [filesOpen, setFilesOpen] = React.useState(true);
   const activeProject = project || PROJECT;
@@ -2266,7 +1688,7 @@ function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, o
   return (
     <aside className="sidebar">
       <div className="sb-titlebar">
-        <span className="sb-title">{lang === "ko" ? "탐색기" : "Explorer"}</span>
+        <span className="sb-title">{"Explorer"}</span>
         <button
           className="rail-toggle"
           onClick={collapseSidebar}
@@ -2278,18 +1700,20 @@ function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, o
 
       <div className="sb-scroll">
         <Section
-          label={lang === "ko" ? "프로젝트" : "Projects"}
-          count={1 + RECENT_PROJECTS.length}
+          label={"Projects"}
+          count={activeProject.runtimeBacked ? 1 + RECENT_PROJECTS.length : RECENT_PROJECTS.length}
           open={projectsOpen}
           onToggle={() => setProjectsOpen((v) => !v)}
         >
           <div className="project-list">
-            <ProjectItem
-              project={activeProject}
-              active
-              lang={lang}
-              onSelect={() => {}}
-            />
+            {activeProject.runtimeBacked && (
+              <ProjectItem
+                project={activeProject}
+                active
+                lang={lang}
+                onSelect={() => {}}
+              />
+            )}
             {RECENT_PROJECTS.map((p) => (
               <ProjectItem
                 key={p.id}
@@ -2307,27 +1731,31 @@ function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, o
                 </span>
                 <span className="project-meta">
                   {openingProject
-                    ? (lang === "ko" ? "프로젝트를 여는 중" : "Opening project")
-                    : (lang === "ko" ? "로컬 폴더를 워크스페이스로 열기" : "Open a local folder as a workspace")}
+                    ? ("Opening project")
+                    : ("Open a local folder as a workspace")}
                 </span>
               </span>
-              <span className="kbd">⌘O</span>
+              <span className="kbd">Open</span>
             </button>
           </div>
         </Section>
 
         <Section
-          label={lang === "ko" ? "파일" : "Files"}
+          label={"Files"}
           count={activeProject.changedFiles > 0
-            ? `${activeProject.changedFiles} ${lang === "ko" ? "변경" : "changed"}`
+            ? `${activeProject.changedFiles} ${"changed"}`
             : null}
           open={filesOpen}
           onToggle={() => setFilesOpen((v) => !v)}
         >
-          {activeProject.fileTree.map((n, i) =>
+          {activeProject.fileTree.length > 0 ? activeProject.fileTree.map((n, i) =>
             <FileTreeNode key={i} node={n} depth={0} lang={lang}
               onSelect={handleFileClick}
               selected={selectedFile} />
+          ) : (
+            <div className="empty-mini">
+              {"Open a real project folder in the desktop app."}
+            </div>
           )}
         </Section>
       </div>
@@ -2339,14 +1767,14 @@ Object.assign(window, { Sidebar });
 
 
 // ----- src/workspace.jsx -----
-// workspace.jsx — VS Code-style workspace UI.
+// workspace.jsx ??VS Code-style workspace UI.
 // Renders the layout tree, each leaf is a Group (own tabbar + content),
 // each split is a SplitNode (children + drag-resize divider).
 
 const DROP_EDGE_RATIO = 0.18; // top/right/bottom/left ~ 18% wide each
 const MIN_PANE_PCT = 8;       // minimum % of a child after resizing
 
-// ── Code editor view ────────────────────────────────────────────────────
+// ???? Code editor view ????????????????????????????????????????????????????????????????????????????????????????????????????????
 function CodeEditor({ tab }) {
   const lines = (tab.content || "").split("\n");
   return (
@@ -2369,7 +1797,7 @@ function CodeEditor({ tab }) {
   );
 }
 
-// ── Tab body ────────────────────────────────────────────────────────────
+// ???? Tab body ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function TabBody({ tab }) {
   if (!tab) return null;
   if (tab.type === "editor") return <CodeEditor tab={tab} />;
@@ -2398,7 +1826,7 @@ function TerminalBody({ tab }) {
   );
 }
 
-// ── Empty group placeholder ─────────────────────────────────────────────
+// ???? Empty group placeholder ??????????????????????????????????????????????????????????????????????????????????????????
 function EmptyGroup({ lang, onNewTab }) {
   return (
     <div className="empty-group">
@@ -2413,7 +1841,7 @@ function EmptyGroup({ lang, onNewTab }) {
   );
 }
 
-// ── Right-click context menu ────────────────────────────────────────────
+// ???? Right-click context menu ????????????????????????????????????????????????????????????????????????????????????????
 function TabContextMenu({ lang, tab, group, position, onAction, onClose }) {
   React.useEffect(() => {
     const onDoc = (e) => { if (!e.target.closest(".tab-ctx-menu")) onClose(); };
@@ -2461,7 +1889,7 @@ function TabContextMenu({ lang, tab, group, position, onAction, onClose }) {
   );
 }
 
-// ── Group tabbar ────────────────────────────────────────────────────────
+// ???? Group tabbar ????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function GroupTabBar({
   group, isActiveGroup, lang,
   onSetActiveTab, onCloseTab, onNewTab,
@@ -2551,7 +1979,7 @@ function GroupTabBar({
   );
 }
 
-// ── Group (tabbar + content area) ───────────────────────────────────────
+// ???? Group (tabbar + content area) ??????????????????????????????????????????????????????????????????????????????
 function Group({
   group, isActive, lang, executing, project,
   onSetActiveTab, onCloseTab, onNewTab,
@@ -2640,8 +2068,8 @@ function Group({
                 <span className="cwd">
                   {activeTab.cwd === "." ? activeProject.path : `${activeProject.path}/${activeTab.cwd}`}
                 </span>
-                <span className="sep">·</span>
-                <span className="cmd">{activeTab.cmd || "—"}</span>
+                <span className="sep">/</span>
+                <span className="cmd">{activeTab.cmd || "--"}</span>
                 <span className={"badge " + activeTab.status}>{t(lang, activeTab.status)}</span>
               </div>
             )}
@@ -2649,7 +2077,7 @@ function Group({
               <div className="group-status editor-status">
                 <span className="cwd">{activeTab.displayPath || activeTab.path}</span>
                 {activeTab.dirty && <span className="dirty-dot" />}
-                <span className="sep">·</span>
+                <span className="sep">/</span>
                 <span className="cmd">{activeTab.lang}</span>
               </div>
             )}
@@ -2662,22 +2090,18 @@ function Group({
           <div className="run-banner">
             <span className="spin" />
             <span>{t(lang, "nowExecuting")}</span>
-            <span style={{ color: "var(--text-dim)" }}>· {executing}</span>
+            <span style={{ color: "var(--text-dim)" }}>/{executing}</span>
           </div>
         )}
         {edge && (
           <div className="group-drop-overlay" aria-hidden>
             <div className={"group-drop-zone " + edge} />
             {edge !== "center" && (
-              <div className="group-drop-label">
-                {lang === "ko"
-                  ? `${({left:"왼쪽",right:"오른쪽",top:"위",bottom:"아래"})[edge]}에 새 그룹`
-                  : `Split ${edge}`}
-              </div>
+              <div className="group-drop-label">{`Split ${edge}`}</div>
             )}
             {edge === "center" && (
               <div className="group-drop-label center">
-                {lang === "ko" ? "이 그룹에 추가" : "Add to this group"}
+                {"Add to this group"}
               </div>
             )}
           </div>
@@ -2687,7 +2111,7 @@ function Group({
   );
 }
 
-// ── Split node ──────────────────────────────────────────────────────────
+// ???? Split node ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function SplitNode({
   node, onResizeSizes, ...groupProps
 }) {
@@ -2721,7 +2145,7 @@ function SplitNode({
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      // Keep localSizes — clearing it would revert to node.sizes (the initial value)
+      // Keep localSizes ??clearing it would revert to node.sizes (the initial value)
       // which makes the resize feel like it doesn't stick.
     };
     window.addEventListener("mousemove", onMove);
@@ -2753,7 +2177,7 @@ function SplitNode({
   );
 }
 
-// ── Layout node dispatcher ──────────────────────────────────────────────
+// ???? Layout node dispatcher ????????????????????????????????????????????????????????????????????????????????????????????
 function LayoutNode({ node, workspace, ...rest }) {
   if (node.type === "group") {
     const group = workspace.groups[node.groupId];
@@ -2767,7 +2191,7 @@ function LayoutNode({ node, workspace, ...rest }) {
   return <SplitNode node={node} workspace={workspace} {...rest} />;
 }
 
-// ── Workspace root ──────────────────────────────────────────────────────
+// ???? Workspace root ????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function Workspace({
   workspace, lang, executing, project,
   sidebarOpen, openSidebar, agentOpen, openAgent,
@@ -2851,7 +2275,7 @@ Object.assign(window, { Workspace });
 
 
 // ----- src/agent.jsx -----
-// agent.jsx — right pane: chat-centric agent panel
+// agent.jsx ??right pane: chat-centric agent panel
 
 function ModePill({ mode, setMode, lang }) {
   return (
@@ -2871,9 +2295,18 @@ function ModePill({ mode, setMode, lang }) {
 
 function ContextSummary({ lang, activeTab, activePane, project }) {
   const activeProject = project || PROJECT;
+  const hasActiveTab = Boolean(activeTab?.id);
   const contextFiles = activeTab?.type === "editor"
     ? activeTab.displayPath || activeTab.path
-    : "OnboardingFunnel.tsx, useFunnelState.ts";
+    : hasActiveTab
+      ? ("Current terminal output")
+      : ("No file selected");
+  const tabLabel = hasActiveTab ? activeTab.title : ("No tab open");
+  const lineCount = activePane?.lines?.length || 0;
+  const branchLabel = activeProject.runtimeBacked
+    ? activeProject.branch
+    : ("Open a project first");
+
   return (
     <div className="context-summary">
       <div className="h">{t(lang, "aboutContext")}</div>
@@ -2883,16 +2316,15 @@ function ContextSummary({ lang, activeTab, activePane, project }) {
       </div>
       <div className="row">
         <span className="k">{t(lang, "contextTab")}:</span>
-        <span className="v">[{activeTab.title}] {activePane.lines.length} {lang === "ko" ? "줄" : "lines"}</span>
+        <span className="v">[{tabLabel}] {lineCount} lines</span>
       </div>
       <div className="row">
         <span className="k">{t(lang, "branch")}:</span>
-        <span className="v">{activeProject.branch}</span>
+        <span className="v">{branchLabel}</span>
       </div>
     </div>
   );
 }
-
 function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
   if (msg.role === "user") {
     return (
@@ -2905,7 +2337,7 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
         {msg.contextAttached && (
           <div className="ctx-attach">
             <span className="clip" />
-            <span>{lang === "ko" ? "첨부됨:" : "Attached:"} [{msg.contextAttached[0].replace("t-", "")}]</span>
+            <span>{"Attached:"} [{msg.contextAttached[0].replace("t-", "")}]</span>
           </div>
         )}
       </div>
@@ -2914,6 +2346,20 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
 
   if (msg.suggestion) {
     const s = msg.suggestion;
+    if (!s.commands?.length) {
+      return (
+        <div className="msg assistant">
+          <div className="msg-meta">
+            <span>{msg.at}</span>
+            <span className="role-tag assistant">Codex</span>
+          </div>
+          <div className="msg-bubble">
+            {s.error || s.note || s.title || "Codex could not produce a safe command."}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="msg assistant">
         <div className="msg-meta">
@@ -2921,7 +2367,7 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
           <span className="role-tag assistant">
             {t(lang, "conductor")}
           </span>
-          <span>· {t(lang, "suggestedActions")}</span>
+          <span>/{t(lang, "suggestedActions")}</span>
         </div>
         <div className="sugg">
           <div className="sugg-h">
@@ -2936,7 +2382,7 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
                 <span className="cmd-text">{c.cmd}</span>
                 <span className={"risk " + c.risk}>{t(lang, "risk" + c.risk[0].toUpperCase() + c.risk.slice(1))}</span>
                 <span className="target">
-                  {c.target === "new" ? (lang === "ko" ? "새 탭" : "new tab") : `[${c.target.replace("t-", "")}]`}
+                  {c.target === "new" ? ("new tab") : `[${c.target.replace("t-", "")}]`}
                 </span>
               </div>
             ))}
@@ -3002,7 +2448,7 @@ function TypingIndicator({ lang }) {
     <div className="msg assistant">
       <div className="msg-meta">
         <span className="role-tag assistant">{t(lang, "assistant")}</span>
-        <span>· {t(lang, "typing")}</span>
+        <span>/{t(lang, "typing")}</span>
       </div>
       <div className="typing">
         <span className="blob" />
@@ -3062,7 +2508,7 @@ function Composer({ lang, activeTab, onSend, mode, setMode }) {
         <div className="composer-foot">
           <span className="ctx-tag">
             <span className="clip" />
-            [{activeTab.title}] · {t(lang, "sendCtx")}
+            [{activeTab.title}] /{t(lang, "sendCtx")}
           </span>
           <ModePill mode={mode} setMode={setMode} lang={lang} />
           <button className="send" onClick={submit} disabled={!val.trim()}>
@@ -3148,11 +2594,11 @@ function AgentPanel({
           <div className="nm">
             {t(lang, "agentChat")}
             <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-              · {active.label}
+              /{active.label}
             </span>
           </div>
           <div className="sub">
-            {lang === "ko" ? "지휘자 + 4 워커 · " : "Conductor + 4 workers · "}
+            {"Codex runtime / "}
             {t(lang, mode)}
           </div>
         </div>
@@ -3213,7 +2659,7 @@ Object.assign(window, { AgentPanel });
 
 
 // ----- src/modals.jsx -----
-// modals.jsx — approval + OAuth provider connect
+// modals.jsx ??approval + OAuth provider connect
 
 function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) {
   if (!suggestion) return null;
@@ -3241,7 +2687,7 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) 
                     : suggestion._policyReason === "high-risk"
                       ? t(lang, "riskHighFull")
                       : suggestion._policyReason === "not-trusted"
-                        ? (lang === "ko" ? "신뢰된 경로 밖" : "Outside trusted dirs")
+                        ? ("Outside trusted dirs")
                         : t(lang, "requiresHigher")}
                 </div>
                 {suggestion._policyBlocker && (
@@ -3258,7 +2704,7 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) 
             <div className="lbl">{t(lang, "branch")}</div>
             <div className="val">
               <span className="accent">{activeProject.branch}</span>
-              <span className="meta"> · {activeProject.changedFiles} {t(lang, "changes")}</span>
+              <span className="meta"> /{activeProject.changedFiles} {t(lang, "changes")}</span>
             </div>
           </div>
           <div className="approval-row">
@@ -3266,13 +2712,13 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) 
             <div className="approval-cmd-list">
               {suggestion.commands.map((c, i) => {
                 const targetLabel = c.target === "new"
-                  ? (lang === "ko" ? "새 탭" : "new tab")
+                  ? ("new tab")
                   : tabs.find((tb) => tb.id === c.target)?.title || c.target;
                 return (
                   <div className="approval-cmd" key={i}>
                     <span><span className="order">{i + 1}.</span>{c.cmd}</span>
                     <span className={"risk " + c.risk}>{t(lang, "risk" + c.risk[0].toUpperCase() + c.risk.slice(1))}</span>
-                    <span style={{ color: "var(--text-dim)", fontSize: 10.5 }}>→ [{targetLabel}]</span>
+                    <span style={{ color: "var(--text-dim)", fontSize: 10.5 }}>??[{targetLabel}]</span>
                   </div>
                 );
               })}
@@ -3287,7 +2733,7 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) 
           <div className="approval-row">
             <div className="lbl">{t(lang, "rollback")}</div>
             <div className="val" style={{ color: "var(--accent)", fontFamily: "var(--font-ui)" }}>
-              {lang === "ko" ? "예 — 프로세스만 종료, 파일은 수정하지 않음" : "Yes — kills a process only, no file changes"}
+              {"Yes ??kills a process only, no file changes"}
             </div>
           </div>
         </div>
@@ -3316,13 +2762,13 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
     claude: {
       label: "Claude",
       abbr: "Cl",
-      sub: lang === "ko" ? "Anthropic 공식 OAuth" : "Anthropic official OAuth",
+      sub: "Anthropic official OAuth",
       url: "https://claude.ai/oauth/authorize?client_id=gtum&scope=read.files...",
     },
     codex: {
       label: "Codex",
       abbr: "Cx",
-      sub: lang === "ko" ? "OpenAI 공식 로그인" : "OpenAI official sign-in",
+      sub: "OpenAI official sign-in",
       url: "https://auth.openai.com/oauth/authorize?client_id=gtum&scope=...",
     },
   };
@@ -3352,7 +2798,7 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
                     <div className={"mark " + id}>{m.abbr}</div>
                     <div className="ttl">{m.label}</div>
                     <div className="sub">{m.sub}</div>
-                    {selected === id && <div className="check">✓</div>}
+                    {selected === id && <div className="check">??</div>}
                   </div>
                 );
               })}
@@ -3372,12 +2818,12 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
               </div>
               <div className="browser-body">
                 <div className="spin-big" />
-                <div style={{ color: "var(--text)" }}>{providerMeta[selected].label} {lang === "ko" ? "공식 로그인 페이지" : "official sign-in"}</div>
+                <div style={{ color: "var(--text)" }}>{providerMeta[selected].label} {"official sign-in"}</div>
                 <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t(lang, "waitingCallback")}</div>
               </div>
             </div>
             <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginTop: 8, fontFamily: "var(--font-mono)" }}>
-              {lang === "ko" ? "콜백 URL:" : "Callback URL:"} gtum://oauth/callback
+              Callback URL: gtum://oauth/callback
             </div>
           </div>
         )}
@@ -3393,13 +2839,13 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   fontSize: 16, fontWeight: 700,
                 }}
-              >✓</div>
+              >??</div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>
-                  {providerMeta[selected].label} · {t(lang, "connectSuccess")}
+                  {providerMeta[selected].label} /{t(lang, "connectSuccess")}
                 </div>
                 <div style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
-                  {t(lang, "sessionExpiry")} 30{t(lang, "days")} · {lang === "ko" ? "OS 보안 저장소에 저장됨" : "Saved to OS keychain"}
+                  {t(lang, "sessionExpiry")} 30{t(lang, "days")} /{"Saved to OS keychain"}
                 </div>
               </div>
             </div>
@@ -3433,7 +2879,7 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
           )}
           {stage === "success" && (
             <button className="btn btn-primary" onClick={() => { onConnect(selected); onClose(); }}>
-              {lang === "ko" ? "완료" : "Done"}
+              {"Done"}
             </button>
           )}
         </div>
@@ -3444,7 +2890,7 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
 
 Object.assign(window, { ApprovalModal, OAuthModal, SettingsModal, ApprovalToast });
 
-// ApprovalToast — bottom-right notification for auto-approved actions.
+// ApprovalToast ??bottom-right notification for auto-approved actions.
 // Includes a 'Undo' button. The host dismisses after a timeout but the
 // user can act on it manually before that.
 function ApprovalToast({ lang, toast, onDismiss, onUndo }) {
@@ -3468,7 +2914,7 @@ function ApprovalToast({ lang, toast, onDismiss, onUndo }) {
   );
 }
 
-// SettingsModal — full settings page with tabs in a left rail.
+// SettingsModal ??full settings page with tabs in a left rail.
 // Sections: Connections / Models / Appearance / Execution / About.
 function SettingsModal({
   lang, providers, onClose, onConnect, onDisconnect, onSwitchModel,
@@ -3528,18 +2974,18 @@ function SettingsModal({
                         {p.state === "connected"
                           ? <>
                               <span className="dot-ok" /> {t(lang, "connected")}
-                              <span className="dot-sep">·</span>
+                              <span className="dot-sep">/</span>
                               {p.expiresInDays == null
-                                ? (lang === "ko" ? "CLI 세션" : "CLI session")
+                                ? ("CLI session")
                                 : <>{t(lang, "sessionExpiry")} {p.expiresInDays}{t(lang, "days")}</>}
-                              <span className="dot-sep">·</span>
-                              {p.scope.length} {lang === "ko" ? "권한" : "scopes"}
+                              <span className="dot-sep">/</span>
+                              {p.scope.length} {"scopes"}
                             </>
                           : p.state === "error"
-                            ? <span style={{ color: "var(--warn)" }}>{p.lastError || (lang === "ko" ? "연결 확인 필요" : "Connection needs attention")}</span>
+                            ? <span style={{ color: "var(--warn)" }}>{p.lastError || ("Connection needs attention")}</span>
                             : p.state === "pending"
-                              ? <span style={{ color: "var(--text-dim)" }}>{lang === "ko" ? "로그인 확인 중" : "Checking login"}</span>
-                              : <span style={{ color: "var(--text-dim)" }}>{lang === "ko" ? "연결되지 않음" : "Not connected"}</span>}
+                              ? <span style={{ color: "var(--text-dim)" }}>{"Checking login"}</span>
+                              : <span style={{ color: "var(--text-dim)" }}>{"Not connected"}</span>}
                       </div>
                     </div>
                     {p.state === "connected" ? (
@@ -3557,7 +3003,7 @@ function SettingsModal({
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsModels")}</h3>
               <p className="settings-sub">
-                {lang === "ko" ? "각 제공자별로 사용할 기본 모델을 선택하세요." : "Pick the default model per provider."}
+                {"Pick the default model per provider."}
               </p>
               {providers.filter((p) => p.state === "connected").length === 0 && (
                 <div className="settings-empty">{t(lang, "noConnectedProviders")}</div>
@@ -3573,7 +3019,7 @@ function SettingsModal({
                       <div className="model-section-sub">
                         {p.state === "connected"
                           ? <>{t(lang, "activeProvider")}: <span style={{ color: "var(--accent)" }}>{p.activeModel}</span></>
-                          : (lang === "ko" ? "연결 후 모델을 선택할 수 있습니다" : "Connect to pick a model")}
+                          : ("Connect to pick a model")}
                       </div>
                     </div>
                   </div>
@@ -3591,7 +3037,7 @@ function SettingsModal({
                         </div>
                         <div className="model-card-meta">
                           <span>{t(lang, "contextWindow")}: <b>{m.ctx}</b></span>
-                          <span>· {t(lang, "responseSpeed")}: <b>{m.speed}</b></span>
+                          <span>/{t(lang, "responseSpeed")}: <b>{m.speed}</b></span>
                         </div>
                       </button>
                     ))}
@@ -3605,7 +3051,7 @@ function SettingsModal({
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsAppearance")}</h3>
               <div className="settings-row">
-                <div className="settings-row-label">{lang === "ko" ? "액센트 컬러" : "Accent color"}</div>
+                <div className="settings-row-label">{"Accent color"}</div>
                 <div className="accent-swatches">
                   {accentOptions.map((c) => (
                     <button
@@ -3624,7 +3070,7 @@ function SettingsModal({
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsExecution")}</h3>
               <p className="settings-sub">
-                {lang === "ko" ? "에이전트가 명령을 실제로 실행하기 전 확인하는 방식을 제어합니다." : "Controls how the agent confirms before running commands."}
+                {"Controls how the agent confirms before running commands."}
               </p>
 
               <ExecutionPolicy
@@ -3641,7 +3087,7 @@ function SettingsModal({
                 <div>
                   <div className="settings-row-label">{t(lang, "mode")}</div>
                   <div className="settings-row-hint">
-                    {lang === "ko" ? "컨텍스트 크기·모델·교차 리뷰를 조정하는 실행 정책" : "Policy bundling context size, model, cross-review"}
+                    {"Policy bundling context size, model, cross-review"}
                   </div>
                 </div>
                 <div className="mode-pill" style={{ width: "auto" }}>
@@ -3682,9 +3128,9 @@ function SettingsModal({
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsAbout")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7 }}>
-                <div><b style={{ color: "var(--text)" }}>gtum</b> · prototype build</div>
-                <div>{lang === "ko" ? "로컬 데스크톱 워크스페이스 — 프로젝트 + 멀티 터미널 + 멀티 에이전트" : "Local desktop workspace — projects + multi-terminal + multi-agent"}</div>
-                <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>Tauri · Rust · React · xterm.js</div>
+                <div><b style={{ color: "var(--text)" }}>gtum</b> /prototype build</div>
+                <div>{"Local desktop workspace ??projects + multi-terminal + multi-agent"}</div>
+                <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>Tauri /Rust /React /xterm.js</div>
               </div>
             </div>
           )}
@@ -3707,7 +3153,7 @@ function SettingsToggle({ value, onChange }) {
   );
 }
 
-// ── Execution policy editor ─────────────────────────────────────────────
+// ???? Execution policy editor ??????????????????????????????????????????????????????????????????????????????????????????
 // Preset bar + per-risk dropdowns + trusted dirs + forbidden patterns.
 // Choosing a preset overwrites lowRisk/midRisk to the preset values; editing
 // either dropdown flips the preset to 'custom'.
@@ -3744,9 +3190,7 @@ function ExecutionPolicy({ lang, policy, onChange }) {
         <div>
           <div className="settings-row-label">{t(lang, "approvalPolicy")}</div>
           <div className="settings-row-hint">
-            {lang === "ko"
-              ? "프리셋을 고르거나 위험 등급별로 세부 설정하세요."
-              : "Pick a preset, or fine-tune per risk level."}
+            {"Pick a preset, or fine-tune per risk level."}
           </div>
         </div>
         <div className="policy-preset-bar">
@@ -3756,7 +3200,7 @@ function ExecutionPolicy({ lang, policy, onChange }) {
               className={policy.preset === p ? "active" : ""}
               onClick={() => p !== "custom" && applyPreset(p)}
               disabled={p === "custom"}
-              title={p === "custom" ? (lang === "ko" ? "직접 수정하면 자동 전환됩니다" : "Auto-set when you customize") : ""}
+              title={p === "custom" ? ("Auto-set when you customize") : ""}
             >
               {t(lang, "preset" + p[0].toUpperCase() + p.slice(1))}
             </button>
@@ -3824,7 +3268,7 @@ function PolicyRow({ lang, level, value, options, onChange, locked }) {
         <div className="policy-row-title">
           <span className={"risk-dot " + level} />
           {t(lang, "risk" + level[0].toUpperCase() + level.slice(1) + "Full")}
-          {locked && <span className="lock-tag">🔒</span>}
+          {locked && <span className="lock-tag">?逾?</span>}
         </div>
         <div className="policy-row-hint">{t(lang, "risk" + level[0].toUpperCase() + level.slice(1) + "Desc")}</div>
       </div>
@@ -3875,13 +3319,13 @@ function ChipList({ label, hint, items, onAdd, onRemove, placeholder, chipClass 
   );
 }
 
-// ── Recent auto-approvals ────────────────────────────────────────────────
+// ???? Recent auto-approvals ????????????????????????????????????????????????????????????????????????????????????????????????
 function AutoApprovalLog({ lang, log }) {
   return (
     <div className="audit-box">
       <div className="audit-h">
         <div className="settings-row-label">{t(lang, "autoApproveLog")}</div>
-        <div className="settings-row-hint">{lang === "ko" ? "최근 20개" : "Last 20"}</div>
+        <div className="settings-row-hint">{"Last 20"}</div>
       </div>
       {log.length === 0 ? (
         <div className="audit-empty">{t(lang, "noAutoApprovals")}</div>
@@ -3891,10 +3335,10 @@ function AutoApprovalLog({ lang, log }) {
             <div key={entry.id} className={"audit-row" + (entry.undone ? " undone" : "")}>
               <span className="audit-time">{entry.at}</span>
               <span className="audit-cmds">
-                {entry.commands.map((c) => c.cmd).join("  ·  ")}
+                {entry.commands.map((c) => c.cmd).join("  / ")}
               </span>
               {entry.undone && (
-                <span className="audit-tag">{lang === "ko" ? "되돌림" : "reverted"}</span>
+                <span className="audit-tag">{"reverted"}</span>
               )}
             </div>
           ))}
@@ -3906,30 +3350,15 @@ function AutoApprovalLog({ lang, log }) {
 
 
 // ----- src/app.jsx -----
-// app.jsx — main app shell + state, using VS Code-style workspace store.
+// app.jsx ??main app shell + state, using VS Code-style workspace store.
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "accent": "#5DF18A",
-  "lang": "ko",
+  "lang": "en",
   "modeDefault": "balanced"
 }/*EDITMODE-END*/;
 
 const ACCENT_OPTIONS = ["#5DF18A", "#9D6BFF", "#FF7849", "#5BAEFF", "#F25DAB"];
-
-const EXEC_OUTPUTS = {
-  "lsof -ti:3001 | xargs -r kill -9": [
-    { kind: "log", text: "94821" },
-    { kind: "log", text: "✓ process killed", color: "ok" },
-  ],
-  "pnpm dev:api": [
-    { kind: "log", text: "> aurora-api@0.4.2 dev:api" },
-    { kind: "log", text: "> tsx watch src/server.ts" },
-    { kind: "log", text: "[api] initializing kysely pool…", color: "dim" },
-    { kind: "log", text: "[api] loaded 12 routes" },
-    { kind: "log", text: "[api] listening on http://localhost:3001 ✓", color: "ok" },
-    { kind: "log", text: "[api] ready in 642ms", color: "ok" },
-  ],
-};
 
 function App() {
   const [t_, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -4069,11 +3498,7 @@ function App() {
     window.addEventListener("pointerup", onUp);
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [activeProviderId, setActiveProviderId] = React.useState(
-    agentAuthRuntimeService.hasRuntime() || agentSuggestionRuntimeService.hasRuntime()
-      ? "codex"
-      : "claude"
-  );
+  const [activeProviderId, setActiveProviderId] = React.useState("codex");
   const [parallelLimit, setParallelLimit] = React.useState(3);
   const [approvalPolicy, setApprovalPolicy] = React.useState(APPROVAL_POLICY_INIT);
   const [autoApprovalLog, setAutoApprovalLog] = React.useState([]);
@@ -4216,7 +3641,7 @@ function App() {
     setMessages((prev) => [...prev, {
       id: "project-" + Date.now(),
       role: "assistant",
-      roleLabel: lang === "ko" ? "시스템" : "System",
+      roleLabel: "System",
       at: nowHm(),
       content: message,
     }]);
@@ -4230,9 +3655,7 @@ function App() {
 
     workspaceRuntimeService.setExecutionMode(nextMode).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      pushProjectMessage(lang === "ko"
-        ? `실행 모드를 저장하지 못했어: ${message}`
-        : `Could not persist execution mode: ${message}`);
+      pushProjectMessage(`Could not persist execution mode: ${message}`);
     });
   }, [lang, pushProjectMessage, setTweak]);
 
@@ -4259,9 +3682,7 @@ function App() {
       .catch((error) => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
-        pushProjectMessage(lang === "ko"
-          ? `워크스페이스를 복원하지 못했어: ${message}`
-          : `Could not restore the workspace: ${message}`);
+        pushProjectMessage(`Could not restore the workspace: ${message}`);
       });
 
     return () => {
@@ -4273,16 +3694,21 @@ function App() {
     setProjectBusy(true);
     setProjectError(null);
     try {
-      const selectedPath = await selectRuntimeProjectFolder(activeProject.path);
+      if (!projectRuntimeService.hasRuntime()) {
+        pushProjectMessage("Opening a real project folder is available in the installed desktop app.");
+        return;
+      }
+      const selectedPath = await selectRuntimeProjectFolder(
+        activeProject.path,
+        projectRuntimeService.hasRuntime(),
+      );
       if (!selectedPath) return;
       const nextProject = await readRuntimeProjectOverview(selectedPath);
       setActiveProject(nextProject);
       if (nextProject.runtimeBacked && workspaceRuntimeService.hasRuntime()) {
         workspaceRuntimeService.rememberProject(nextProject.path).catch((error) => {
           const message = error instanceof Error ? error.message : String(error);
-          pushProjectMessage(lang === "ko"
-            ? `프로젝트 경로를 저장하지 못했어: ${message}`
-            : `Could not persist the project path: ${message}`);
+          pushProjectMessage(`Could not persist the project path: ${message}`);
         });
       }
       setHistory((prev) => [...prev, {
@@ -4294,9 +3720,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setProjectError(message);
-      pushProjectMessage(lang === "ko"
-        ? `프로젝트를 열지 못했어: ${message}`
-        : `Could not open the project: ${message}`);
+      pushProjectMessage(`Could not open the project: ${message}`);
     } finally {
       setProjectBusy(false);
     }
@@ -4316,9 +3740,7 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setProjectError(message);
-      pushProjectMessage(lang === "ko"
-        ? `파일을 열지 못했어: ${message}`
-        : `Could not open the file: ${message}`);
+      pushProjectMessage(`Could not open the file: ${message}`);
     }
   };
 
@@ -4331,13 +3753,26 @@ function App() {
         userTask: text,
         executionMode: mode,
       });
+      const actionableSuggestions = suggestions.filter((suggestion) => suggestion.commands.length > 0);
+      const errorSuggestions = suggestions.filter((suggestion) => suggestion.error && suggestion.commands.length === 0);
 
-      const runtimeMessages = suggestions.map((suggestion, index) => ({
+      const runtimeMessages = actionableSuggestions.map((suggestion, index) => ({
         id: messageId + "-runtime-" + index,
         role: "assistant",
         at: nowHm(),
         suggestion,
       }));
+
+      if (errorSuggestions.length > 0 && runtimeMessages.length === 0) {
+        setMessages((prev) => [...prev, ...errorSuggestions.map((suggestion, index) => ({
+          id: messageId + "-runtime-error-" + index,
+          role: "assistant",
+          roleLabel: "Codex",
+          at: nowHm(),
+          content: `Codex could not produce a safe command: ${suggestion.error}`,
+        }))]);
+        return;
+      }
 
       if (runtimeMessages.length === 0) {
         setMessages((prev) => [...prev, {
@@ -4345,9 +3780,7 @@ function App() {
           role: "assistant",
           roleLabel: "Codex",
           at: nowHm(),
-          content: lang === "ko"
-            ? "Codex가 실행 가능한 제안을 반환하지 않았어."
-            : "Codex did not return an executable suggestion.",
+          content: "Codex did not return an executable suggestion.",
         }]);
         return;
       }
@@ -4360,9 +3793,7 @@ function App() {
         role: "assistant",
         roleLabel: "Codex",
         at: nowHm(),
-        content: lang === "ko"
-          ? `Codex 제안을 가져오지 못했어: ${message}`
-          : `Could not request Codex suggestions: ${message}`,
+        content: `Could not request Codex suggestions: ${message}`,
       }]);
     } finally {
       setIsTyping(false);
@@ -4377,9 +3808,7 @@ function App() {
       role: "assistant",
       roleLabel: label,
       at: nowHm(),
-      content: lang === "ko"
-        ? `${label} 실제 연동은 아직 보류 상태야. 설치형 앱에서는 mock 답변으로 진행하지 않고 Codex 연결을 먼저 사용해야 해.`
-        : `${label} real-provider integration is deferred. The desktop app will not continue with a mock reply; connect Codex first.`,
+      content: `${label} real-provider integration is deferred. The desktop app will not continue with a mock reply; connect Codex first.`,
     }]);
     setIsTyping(false);
   }, [lang, providers]);
@@ -4390,14 +3819,23 @@ function App() {
       role: "assistant",
       roleLabel: "Codex",
       at: nowHm(),
-      content: lang === "ko"
-        ? "Codex 요청을 실행하려면 먼저 데스크톱 앱에서 실제 로컬 폴더를 프로젝트로 열어야 해."
-        : "Open a real local folder as a project in the desktop app before running a Codex request.",
+      content: "Open a real local folder as a project in the desktop app before running a Codex request.",
     }]);
     setIsTyping(false);
-  }, [lang]);
+  }, []);
 
-  // ── workspace actions (thin wrappers around the pure store) ──────────
+  const appendRuntimeUnavailableMessage = React.useCallback((messageId) => {
+    setMessages((prev) => [...prev, {
+      id: messageId + "-runtime-unavailable",
+      role: "assistant",
+      roleLabel: "Codex",
+      at: nowHm(),
+      content: "Real Codex requests only run in the desktop runtime. Open the desktop app, choose a real local project folder, and connect Codex.",
+    }]);
+    setIsTyping(false);
+  }, []);
+
+  // ???? workspace actions (thin wrappers around the pure store) ????????????????????
   const actions = React.useMemo(() => ({
     setActiveTab: (gId, tId) => setWorkspace((w) => setActiveTab(w, gId, tId)),
     setActiveGroup: (gId) => setWorkspace((w) => setActiveGroup(w, gId)),
@@ -4443,7 +3881,23 @@ function App() {
     },
     newTab: (gId) => {
       const localId = uid("t");
-      const title = lang === "ko" ? "새 탭" : "new";
+      const title = "terminal";
+      if (!activeProject.runtimeBacked) {
+        setWorkspace((w) => openTab(w, gId, {
+          id: localId,
+          title,
+          cwd: ".",
+          status: "failed",
+          runtimeBacked: false,
+          terminalSessionId: null,
+          lines: [{
+            kind: "log",
+            text: "Open a real project folder before creating a terminal.",
+            color: "warn",
+          }],
+        }));
+        return;
+      }
       setWorkspace((w) => openTab(w, gId, {
         id: localId,
         title,
@@ -4475,9 +3929,9 @@ function App() {
         })));
       });
     },
-  }), [closeRuntimeTabs, lang, activeProject.path, activeProject.branch]);
+  }), [closeRuntimeTabs, lang, activeProject.path, activeProject.branch, activeProject.runtimeBacked]);
 
-  // ── Send / approve flow uses workspace lookups ────────────────────────
+  // ???? Send / approve flow uses workspace lookups ????????????????????????????????????????????????
   const activeTab = activeTabOf(workspace);
 
   const onSend = (text) => {
@@ -4504,13 +3958,7 @@ function App() {
       return;
     }
 
-    setTimeout(() => {
-      const reply = canned(text, lang, attachedTab);
-      setMessages((prev) => [...prev, ...reply.map((r, i) => ({
-        ...r, id: id + "-r" + i, at: nowHm(),
-      }))]);
-      setIsTyping(false);
-    }, mode === "fast" ? 700 : mode === "balanced" ? 1100 : 1700);
+    appendRuntimeUnavailableMessage(id);
   };
 
   // Append output to a specific tab (anywhere in any group)
@@ -4560,7 +4008,7 @@ function App() {
       if (targetTabId === "new") {
         // Add a new tab into the active group, marked as running
         const newId = "t-fix-" + Date.now() + "-" + i;
-        const title = lang === "ko" ? `수정-${i + 1}` : `fix-${i + 1}`;
+        const title = `fix-${i + 1}`;
         setWorkspace((w) => openTab(w, w.activeGroupId, {
           id: newId,
           title,
@@ -4630,13 +4078,12 @@ function App() {
       }
 
       if (!handledByRuntime) {
-        setExecuting(c.cmd);
-        await sleep(900);
-        const out = EXEC_OUTPUTS[c.cmd] || [{ kind: "log", text: "✓ done", color: "ok" }];
-        appendToTab(targetTabId, out);
-        setExecuting(null);
-        const finalStatus = c.cmd.startsWith("pnpm dev") ? "running" : "idle";
-        setTabStatus(targetTabId, finalStatus);
+        appendToTab(targetTabId, [{
+          kind: "log",
+          text: "desktop runtime is required to execute approved commands.",
+          color: "err",
+        }]);
+        setTabStatus(targetTabId, "failed", c.cmd);
       }
 
       ranCommands.push({ tabId: targetTabId, cmd: c.cmd, risk: c.risk });
@@ -4654,9 +4101,7 @@ function App() {
       at: nowHm(),
       autoRan: auto,
       completed: {
-        summary: lang === "ko"
-          ? `${sugg.commands.length}개 명령 실행 완료. backend가 다시 :3001에 떴어.`
-          : `Ran ${sugg.commands.length} commands. backend is back up on :3001.`,
+        summary: `Finished processing ${sugg.commands.length} command request(s).`,
         commands: sugg.commands.map((c) => c.cmd),
       },
     }]);
@@ -4672,7 +4117,7 @@ function App() {
       setAutoApprovalLog((prev) => [entry, ...prev].slice(0, 20));
       setToast({
         id: entry.id,
-        title: lang === "ko" ? "자동 실행됨" : "Auto-ran",
+        title: "Auto-ran",
         cmd: sugg.commands[0].cmd + (sugg.commands.length > 1 ? ` +${sugg.commands.length - 1}` : ""),
         suggestion: sugg,
       });
@@ -4680,7 +4125,7 @@ function App() {
     }
   };
 
-  // Policy-aware entry point — Decide whether to open modal or auto-run.
+  // Policy-aware entry point ??Decide whether to open modal or auto-run.
   const requestApproval = (sugg) => {
     const cwd = activeTab?.cwd || ".";
     const decision = policyDecideForSuggestion(approvalPolicy, sugg, cwd);
@@ -4750,17 +4195,13 @@ function App() {
           setSettingsOpen(false);
         } else {
           markProviderError("codex", connection.lastError || (
-            lang === "ko"
-              ? "Codex CLI 로그인을 완료한 뒤 다시 연결해야 해."
-              : "Complete Codex CLI login, then reconnect."
+            "Complete Codex CLI login, then reconnect."
           ));
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         markProviderError("codex", message);
-        pushProjectMessage(lang === "ko"
-          ? `Codex 로그인을 시작하지 못했어: ${message}`
-          : `Could not start Codex login: ${message}`);
+        pushProjectMessage(`Could not start Codex login: ${message}`);
       }
       return;
     }
@@ -4770,9 +4211,7 @@ function App() {
       const label = provider?.label || providerId;
       setSettingsOpen(false);
       markProviderError(providerId, `${label} real-provider support is deferred.`);
-      pushProjectMessage(lang === "ko"
-        ? `${label} 실제 연동은 아직 보류 상태야. 설치형 앱에서는 mock OAuth로 연결하지 않아.`
-        : `${label} real-provider support is deferred. The desktop app does not connect it through mock OAuth.`);
+      pushProjectMessage(`${label} real-provider support is deferred. The desktop app does not connect it through mock OAuth.`);
       return;
     }
 
@@ -4838,7 +4277,7 @@ function App() {
                 <div
                   className="resize-handle handle-left"
                   onPointerDown={startResize("left")}
-                  title={lang === "ko" ? "끌어서 크기 조정" : "Drag to resize"}
+                  title={"Drag to resize"}
                 />
               )}
               <Workspace
@@ -4856,7 +4295,7 @@ function App() {
                 <div
                   className="resize-handle handle-right"
                   onPointerDown={startResize("right")}
-                  title={lang === "ko" ? "끌어서 크기 조정" : "Drag to resize"}
+                  title={"Drag to resize"}
                 />
               )}
               {agentOpen && (
@@ -4864,7 +4303,7 @@ function App() {
                   lang={lang}
                   messages={messages}
                   isTyping={isTyping}
-                  activeTab={activeTab || { title: "—", lines: [] }}
+                  activeTab={activeTab || { title: "--", lines: [] }}
                   activePane={activeTab || { lines: [] }}
                   mode={mode}
                   setMode={handleSetMode}
@@ -4948,11 +4387,9 @@ function App() {
             setMessages((prev) => [...prev, {
               id: "undo-" + Date.now(),
               role: "assistant",
-              roleLabel: lang === "ko" ? "운영자" : "Operator",
+              roleLabel: "Operator",
               at: nowHm(),
-              content: lang === "ko"
-                ? `방금 자동 실행한 \`${toast.cmd}\`을 되돌렸어 (시뮬레이션).`
-                : `Reverted \`${toast.cmd}\` (simulated).`,
+              content: `Marked \`${toast.cmd}\` as reverted in the local audit log.`,
             }]);
             setToast(null);
           }}
@@ -4960,23 +4397,23 @@ function App() {
       )}
 
       <TweaksPanel title="Tweaks">
-        <TweakSection label={lang === "ko" ? "외관" : "Appearance"} />
+        <TweakSection label={"Appearance"} />
         <TweakColor
-          label={lang === "ko" ? "액센트 컬러" : "Accent color"}
+          label={"Accent color"}
           value={t_.accent}
           options={ACCENT_OPTIONS}
           onChange={(v) => setTweak("accent", v)}
         />
-        <TweakSection label={lang === "ko" ? "언어" : "Language"} />
+        <TweakSection label={"Language"} />
         <TweakRadio
-          label={lang === "ko" ? "UI 언어" : "UI language"}
+          label={"UI language"}
           value={t_.lang}
-          options={[{ value: "ko", label: "한국어" }, { value: "en", label: "English" }]}
+          options={[{ value: "ko", label: "Korean" }, { value: "en", label: "English" }]}
           onChange={(v) => setTweak("lang", v)}
         />
-        <TweakSection label={lang === "ko" ? "실행 모드" : "Execution"} />
+        <TweakSection label={"Execution"} />
         <TweakRadio
-          label={lang === "ko" ? "기본 모드" : "Default mode"}
+          label={"Default mode"}
           value={mode}
           options={[
             { value: "fast", label: "Fast" },
@@ -4990,44 +4427,9 @@ function App() {
   );
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 function nowHm() {
   const d = new Date();
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-}
-
-function canned(input, lang, activeTab) {
-  const s = input.toLowerCase();
-  if (s.includes("test") || s.includes("테스트")) {
-    return [
-      { role: "assistant", roleLabel: lang === "ko" ? "테스터" : "Tester",
-        content: lang === "ko"
-          ? "tests 탭에서 `vitest`를 다시 돌렸어. funnel.spec.ts에서 `skipping optional step` 케이스가 60이 아니라 50이 나와야 한다는데, `useFunnelState.ts`의 진행률 계산이 optional step을 빼지 않고 있어."
-          : "I reran `vitest`. `skipping optional step` expects 50 but got 60 — `useFunnelState.ts` doesn't exclude optional steps from progress." },
-      { role: "assistant", roleLabel: lang === "ko" ? "코더" : "Coder",
-        suggestion: {
-          id: "sg-test",
-          title: lang === "ko" ? "useFunnelState 진행률 계산 패치 후 재실행" : "Patch useFunnelState progress, rerun tests",
-          commands: [{ cmd: "pnpm test:funnel --reporter=verbose", risk: "low", target: "t-tests" }],
-          note: lang === "ko" ? "파일 수정은 아직 안 함 — 우선 재실행해서 실패 stack을 확인할 수 있음." : "No file edits yet — rerun first to inspect the failing stack.",
-        }},
-    ];
-  }
-  if (s.includes("explain") || s.includes("설명")) {
-    const status = activeTab?.status || "idle";
-    return [{
-      role: "assistant", roleLabel: lang === "ko" ? "탐색자" : "Explorer",
-      content: lang === "ko"
-        ? `현재 [${activeTab?.title || "-"}] 탭 상태는 \`${status}\`. ${status === "failed" ? "오류 스택을 보면 listener가 이미 점유 중인 포트에 다시 바인딩하려고 함." : "정상 동작 중."}`
-        : `Tab [${activeTab?.title || "-"}] is currently \`${status}\`. ${status === "failed" ? "Listener is trying to bind to a port already in use." : "Running normally."}`,
-    }];
-  }
-  return [{
-    role: "assistant", roleLabel: lang === "ko" ? "지휘자" : "Conductor",
-    content: lang === "ko"
-      ? "확인했어. 더 자세한 분석이 필요하면 mode를 Deep으로 올려서 다시 물어봐."
-      : "Got it. Switch to Deep mode for a more thorough analysis.",
-  }];
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);

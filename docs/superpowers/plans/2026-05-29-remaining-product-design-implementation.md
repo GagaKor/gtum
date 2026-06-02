@@ -307,7 +307,7 @@ git commit -m "refactor: extract agent panel"
 - [x] **Step 1: Write failing test for `request_agent_suggestions` payload shape**
 - [x] **Step 2: Implement provider diagnostics and suggestion request wrappers**
 - [x] **Step 3: Replace canned suggestion path only behind a runtime-backed Codex path**
-- [x] **Step 4: Keep browser fallback canned replies for design preview**
+- [x] **Step 4: Retire browser fallback canned replies and show runtime-unavailable state for agent requests**
 - [x] **Step 5: Run verification**
 
 Run:
