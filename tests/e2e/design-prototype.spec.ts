@@ -761,10 +761,13 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   await expect(agentTurn).toContainText(/Answered \d\d:\d\d \/ \d+s/)
   await expect(agentTurn).toContainText('Run the failing funnel test')
   await expect(agentTurn).toContainText('1 command')
-  await expect(agentTurn).toContainText('Permission request')
-  await expect(agentTurn).toContainText('Allow once')
-  await expect(agentTurn).toContainText('Always allow')
-  await expect(agentTurn).toContainText('Deny')
+  await expect(agentTurn).toContainText('Execution suggestion')
+  await expect(agentTurn.locator('.agent-event-card.command')).toHaveCount(0)
+  const permissionPanel = page.locator('.composer-approval')
+  await expect(permissionPanel).toContainText('Permission request')
+  await expect(permissionPanel).toContainText('Allow once')
+  await expect(permissionPanel).toContainText('Always allow')
+  await expect(permissionPanel).toContainText('Deny')
   await expect(agentTurn).not.toContainText('Review command')
   await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
   await expect(page.locator('.sugg')).toHaveCount(0)
@@ -1589,17 +1592,22 @@ test('keeps Codex command decisions in the agent panel without terminal executio
   )
   await expect(page.locator('.agent-turn').last()).not.toContainText('I found a command you can review')
   await expect(page.locator('.agent-turn').last()).toContainText('Needs review')
-  const commandEvent = page.locator('.agent-turn').last().locator('.agent-event-card.command')
-  await expect(commandEvent).toBeVisible()
-  await expect(commandEvent).toContainText('Permission request')
-  await expect(commandEvent).toContainText('Terminal command needs review')
-  await expect(commandEvent).toContainText('Command preview')
-  await expect(commandEvent).toContainText('pnpm test:funnel --reporter=verbose')
-  await expect(commandEvent.getByRole('button', { name: 'Allow once' })).toBeVisible()
-  await expect(commandEvent.getByRole('button', { name: 'Always allow' })).toBeVisible()
-  await expect(commandEvent.getByRole('button', { name: 'Deny' })).toBeVisible()
+  const activityRow = page.locator('.agent-turn').last().locator('.agent-command-activity')
+  await expect(activityRow).toBeVisible()
+  await expect(activityRow).toContainText('Execution suggestion')
+  await expect(activityRow).toContainText('1 command')
+  await expect(page.locator('.agent-turn').last().locator('.agent-event-card.command')).toHaveCount(0)
+
+  const permissionPanel = page.locator('.composer-approval')
+  await expect(permissionPanel).toBeVisible()
+  await expect(permissionPanel).toContainText('Permission request')
+  await expect(permissionPanel).toContainText('Terminal command needs review')
+  await expect(permissionPanel).toContainText('Command preview')
+  await expect(permissionPanel).toContainText('pnpm test:funnel --reporter=verbose')
+  await expect(permissionPanel.getByRole('button', { name: 'Allow once' })).toBeVisible()
+  await expect(permissionPanel.getByRole('button', { name: 'Always allow' })).toBeVisible()
+  await expect(permissionPanel.getByRole('button', { name: 'Deny' })).toBeVisible()
   await expect(page.locator('.agent-turn').last()).not.toContainText('Review command')
-  await expect(page.locator('.composer-approval')).toHaveCount(0)
   await expect
     .poll(async () =>
       page.locator('.chat').evaluate((chat) =>
@@ -1612,6 +1620,8 @@ test('keeps Codex command decisions in the agent panel without terminal executio
   await expect(page.locator('.composer-provider-chip')).toContainText('Codex')
   await expect(page.locator('.composer-provider-chip')).not.toContainText('gpt-5')
   await expect(page.locator('.composer-foot')).not.toContainText('Fast')
+  await expect(page.locator('.composer-scope-chip')).toContainText('Project scope')
+  await expect(page.locator('.composer-foot .ctx-tag')).toHaveCount(0)
 
   await expect
     .poll(async () =>
@@ -1626,11 +1636,12 @@ test('keeps Codex command decisions in the agent panel without terminal executio
     )
     .toEqual([])
 
-  await commandEvent.getByRole('button', { name: 'Allow once' }).click()
+  await permissionPanel.getByRole('button', { name: 'Allow once' }).click()
   await expect(page.locator('.msg.assistant').last()).toContainText(
     'Permission allowed once in the agent panel',
   )
-  await expect(commandEvent).toContainText('Allowed once')
+  await expect(page.locator('.composer-approval')).toHaveCount(0)
+  await expect(activityRow).toContainText('Allowed once')
 
   const terminalCalls = await page.evaluate(
     () =>

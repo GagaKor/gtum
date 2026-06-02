@@ -197,9 +197,11 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `agent-model-row`
   - Compactly shows the current provider and session/readiness state as the first row of the right agent workspace. Composer-level model picking is allowed only from runtime-backed provider capabilities, while execution-mode selection is not part of the current UI contract.
 - `agent-turn`
-  - Shows live agent work as one conversational assistant turn. Pending runtime progress appears inside the turn with concrete operation labels instead of generic lifecycle copy, and those labels reveal sequentially rather than all at once. After success the progress clears so the completed turn shows answer-time metadata and reads like normal assistant copy. Numbered reply choices become selectable decision event cards. Command-bearing responses become permission event cards with clear labels, reason copy, command preview, risk, and direct `Allow once`, `Always allow`, and `Deny` actions.
+  - Shows live agent work as one conversational assistant turn. Pending runtime progress appears inside the turn with concrete operation labels instead of generic lifecycle copy, and those labels reveal sequentially rather than all at once. After success the progress clears so the completed turn shows answer-time metadata and reads like normal assistant copy. Numbered reply choices become selectable decision event cards. Command-bearing responses stay lightweight inside the turn as execution-suggestion rows with command count, risk, and decision state.
 - `agent-event-card`
-  - Lives inside the conversational agent turn and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Permission cards decide directly in the card; they must not require an intermediate composer-level review panel.
+  - Lives inside the conversational agent turn for reply decisions such as numbered choices and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Command permission decisions do not live here; they open as a composer-level approval panel directly above the composer.
+- `composer-approval`
+  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision and must not execute or write into the center terminal.
 
 ## 인터랙션 기준 / Interaction Rules
 

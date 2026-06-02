@@ -636,6 +636,7 @@ const STR = {
     permissionAlwaysAllowed: "Always-allow recorded in the agent panel for this request. I will not run terminal commands.",
     permissionDenied: "Permission denied in the agent panel. I will not run terminal commands.",
     executionSuggestion: "Execution suggestion",
+    projectScope: "Project scope",
     commandCount: "command",
     commandCountPlural: "commands",
     decisionReviewing: "Reviewing",
@@ -2600,56 +2601,78 @@ function permissionDecisionLabel(lang, status) {
   return null;
 }
 
-function AgentCommandEvent({ lang, suggestion, risk, permissionDecision, onPermissionDecision }) {
-  const firstCommand = suggestion.commands[0];
+function AgentCommandActivity({ lang, suggestion, risk, permissionDecision }) {
   const decisionStatus = permissionDecision?.status || null;
   const decisionLabel = permissionDecisionLabel(lang, decisionStatus);
 
   return (
-    <div className="agent-event-card command" data-risk={risk}>
-      <div className="agent-event-head">
-        <div className="agent-event-icon">
+    <div className="agent-command-activity" data-risk={risk}>
+      <div className="agent-command-activity-icon">
+        <Icon.spark />
+      </div>
+      <div className="agent-command-activity-main">
+        <div className="agent-command-activity-kicker">{t(lang, "executionSuggestion")}</div>
+        <div className="agent-command-activity-title">{suggestion.title}</div>
+        <div className="agent-turn-meta">
+          <span>{commandCountLabel(lang, suggestion.commands.length)}</span>
+          <span className={"risk " + risk}>{riskLabel(lang, risk)}</span>
+          <span className="agent-status-badge">{decisionLabel || t(lang, "needsApproval")}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComposerPermissionRequest({ lang, suggestion, risk, onPermissionDecision }) {
+  if (!suggestion?.commands?.length) return null;
+
+  return (
+    <div className="composer-approval" data-risk={risk}>
+      <div className="composer-approval-head">
+        <div className="composer-approval-icon">
           <Icon.shield />
         </div>
-        <div className="agent-event-title">
+        <div className="composer-approval-title">
           <span>{t(lang, "permissionRequest")}</span>
           <strong>{t(lang, "terminalCommandReview")}</strong>
         </div>
-        {decisionLabel
-          ? <span className="agent-event-state">{decisionLabel}</span>
-          : <span className={"risk " + risk}>{riskLabel(lang, risk)}</span>}
+        <span className={"risk " + risk}>{riskLabel(lang, risk)}</span>
       </div>
-      <div className="agent-event-copy">{suggestion.title}</div>
-      <div className="agent-turn-meta">
-        <span>{commandCountLabel(lang, suggestion.commands.length)}</span>
-        {!decisionLabel && <span className="agent-status-badge">{t(lang, "needsApproval")}</span>}
-      </div>
+      <div className="composer-approval-summary">{suggestion.title}</div>
       <div className="agent-event-section-label">{t(lang, "commandPreview")}</div>
-      <div className="agent-event-command">
-        <span className="composer-approval-order">1</span>
-        <code>{firstCommand.cmd}</code>
-        <span className="target">{commandTargetLabel(firstCommand)}</span>
+      <div className="composer-approval-cmds">
+        {suggestion.commands.map((command, index) => (
+          <div className="composer-approval-cmd" key={command.cmd + index}>
+            <span className="composer-approval-order">{index + 1}</span>
+            <code>{command.cmd}</code>
+            <span className={"risk " + command.risk}>{riskLabel(lang, command.risk)}</span>
+            <span className="target">{commandTargetLabel(command)}</span>
+          </div>
+        ))}
       </div>
-      {suggestion.note && <div className="agent-turn-note">{suggestion.note}</div>}
-      {!decisionStatus && (
-        <div className="agent-event-actions">
-          <button className="btn btn-primary" onClick={() => onPermissionDecision(suggestion, "allow_once")}>
-            <Icon.shield /> {t(lang, "allowOnce")}
-          </button>
-          <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "always_allow")}>
-            {t(lang, "alwaysAllow")}
-          </button>
-          <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "denied")}>
-            {t(lang, "permissionDeny")}
-          </button>
+      {suggestion.note && (
+        <div className="composer-approval-reason">
+          <span>{t(lang, "reason")}</span>
+          <span>{suggestion.note}</span>
         </div>
       )}
+      <div className="composer-approval-actions">
+        <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "denied")}>
+          {t(lang, "permissionDeny")}
+        </button>
+        <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "always_allow")}>
+          {t(lang, "alwaysAllow")}
+        </button>
+        <button className="btn btn-primary" onClick={() => onPermissionDecision(suggestion, "allow_once")}>
+          <Icon.shield /> {t(lang, "allowOnce")}
+        </button>
+      </div>
     </div>
   );
 }
 
 function AgentTurn({
-  msg, lang, onChooseDecisionOption, onPermissionDecision,
+  msg, lang, onChooseDecisionOption,
 }) {
   const suggestion = msg.suggestion;
   const decisionEvent = msg.decisionEvent;
@@ -2702,12 +2725,11 @@ function AgentTurn({
         />
       )}
       {suggestion?.commands?.length > 0 && (
-        <AgentCommandEvent
+        <AgentCommandActivity
           lang={lang}
           suggestion={suggestion}
           risk={risk}
           permissionDecision={permissionDecision}
-          onPermissionDecision={onPermissionDecision}
         />
       )}
     </div>
@@ -2715,7 +2737,7 @@ function AgentTurn({
 }
 
 function MessageBubble({
-  msg, lang, onChooseDecisionOption, onPermissionDecision,
+  msg, lang, onChooseDecisionOption,
 }) {
   if (msg.role === "user") {
     const attachedContext = (msg.contextAttached || []).filter(Boolean);
@@ -2748,7 +2770,6 @@ function MessageBubble({
           msg={msg}
           lang={lang}
           onChooseDecisionOption={onChooseDecisionOption}
-          onPermissionDecision={onPermissionDecision}
         />
       </div>
     );
@@ -2780,7 +2801,6 @@ function MessageBubble({
           msg={{ ...msg, progress: { status: "completed", steps: [] } }}
           lang={lang}
           onChooseDecisionOption={onChooseDecisionOption}
-          onPermissionDecision={onPermissionDecision}
         />
       </div>
     );
@@ -2891,7 +2911,7 @@ function WindowResizeZones({ windowControls, maximized }) {
 }
 
 function Composer({
-  lang, activeTab, activeProvider, providerCapabilities, selectedModelId, onSelectModel,
+  lang, activeProvider, providerCapabilities, selectedModelId, onSelectModel,
   attachments, onPickAttachment, onRemoveAttachment, onSend,
 }) {
   const [val, setVal] = React.useState("");
@@ -3011,9 +3031,9 @@ function Composer({
             )}
             <span>{providerChipLabel}</span>
           </button>
-          <span className="ctx-tag">
+          <span className="composer-scope-chip">
             <span className="clip" />
-            [{activeTab.title}] /{t(lang, "sendCtx")}
+            {t(lang, "projectScope")}
           </span>
           <button className="send" onClick={submit} disabled={!val.trim()}>
             <Icon.send />
@@ -3033,6 +3053,13 @@ function AgentPanel({
   onChooseDecisionOption, onPermissionDecision,
 }) {
   const chatRef = React.useRef(null);
+  const pendingPermissionMessage = [...messages]
+    .reverse()
+    .find((message) => message.suggestion?.commands?.length > 0 && !message.permissionDecision);
+  const pendingPermissionSuggestion = pendingPermissionMessage?.suggestion || null;
+  const pendingPermissionRisk = pendingPermissionSuggestion
+    ? highestSuggestionRisk(pendingPermissionSuggestion)
+    : null;
   React.useLayoutEffect(() => {
     const chat = chatRef.current;
     if (!chat) return undefined;
@@ -3045,7 +3072,7 @@ function AgentPanel({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, isTyping, agentActivity]);
+  }, [messages, isTyping, agentActivity, pendingPermissionMessage?.id]);
 
   const active = providers.find((p) => p.id === activeProviderId) || providers.find((p) => p.state === "connected") || providers[0];
 
@@ -3097,15 +3124,22 @@ function AgentPanel({
             msg={m}
             lang={lang}
             onChooseDecisionOption={onChooseDecisionOption}
-            onPermissionDecision={onPermissionDecision}
           />
         ))}
         {isTyping && <TypingIndicator lang={lang} activity={agentActivity} />}
       </div>
 
+      {pendingPermissionSuggestion && (
+        <ComposerPermissionRequest
+          lang={lang}
+          suggestion={pendingPermissionSuggestion}
+          risk={pendingPermissionRisk}
+          onPermissionDecision={onPermissionDecision}
+        />
+      )}
+
       <Composer
         lang={lang}
-        activeTab={activeTab}
         activeProvider={active}
         providerCapabilities={providerCapabilities}
         selectedModelId={selectedModelId}

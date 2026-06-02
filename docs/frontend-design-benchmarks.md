@@ -223,7 +223,8 @@ For the current active slice, the frontend should follow these rules:
 - the `Test` tab is for structured test results and failing-test focus views rather than raw shell output
 - the `Preview` tab is for rendered surfaces such as Markdown, HTML, or generated output previews
 - the agent board should read like an `agent work window` where users assign work, read replies, and approve actions
-- runtime agent work should appear as a live conversational assistant turn: progress, final answer, command preview, and review action stay in the same thread item rather than detached cards
+- runtime agent work should appear as a live conversational assistant turn: progress and final answer stay in the thread, while command-bearing results stay lightweight as execution-suggestion activity rows and open the detailed permission request directly above the composer
+- composer controls should keep attachment and runtime-backed model selection inside the input toolbar, show project scope instead of a current-tab context chip, and avoid fixed `Fast`/`Balanced`/`Deep` controls unless runtime capabilities expose real behavior
 - the top of the right agent workspace should expose the current provider and session/readiness state through a compact row; composer-level model picking must come from `read_agent_provider_capabilities`, and execution modes must not appear as fixed values without runtime policy
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - remove the default bottom panel from the primary layout and solve needed details through panes or overlays
