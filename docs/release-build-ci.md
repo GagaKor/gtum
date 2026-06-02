@@ -274,7 +274,7 @@ This section is the readiness view: what is already shippable, what is partial, 
 
 Done (verified against code/config):
 
-- Application shell and core product surfaces render (Sprint 17 new design); project/filesystem reads, source control (status/diff/stage/unstage/commit/push), multi-session PTY terminal, and execution modes are implemented.
+- Application shell and core product surfaces render (Sprint 17 new design); project/filesystem reads, source control (status/diff/stage/unstage/commit/push), and multi-session PTY terminal are implemented. Execution-mode controls are deferred until runtime-backed scheduling policies exist.
 - Cross-platform build is wired: `bundle.targets = "all"`, CI compile smoke on Ubuntu/Windows/macOS, and a `release.yml` that publishes a GitHub Release on `master` push with Windows `.exe`/`.msi` and macOS `.app`/`.dmg` artifact-presence checks.
 - Per-store state now persists to distinct files under `app_data_dir` (`agent-auth.json`, `workspace-state.json`, `telegram-state.json`); see the Verified Release Blockers section for the fix that made this true.
 - Local macOS installable smoke was run on June 1, 2026: the DMG builds successfully outside the Codex filesystem sandbox, mounts at `/Volumes/gtum`, contains `gtum.app`, launches at `1320x824`, and the installed-app CPU regression from resize-driven maximize polling is fixed.

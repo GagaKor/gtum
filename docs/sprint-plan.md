@@ -1838,9 +1838,9 @@ Current status:
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
 - The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, browser preview keeps injectable/no-op fallbacks for E2E, and native maximize polling is intentionally disabled to avoid macOS installed-app resize/style-mask churn.
 - The Tauri launch window starts at the uploaded-design baseline (`1320x824`), and the shell now fills the entire viewport after native resize or maximize instead of preserving a fixed canvas with letterboxing.
-- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: new terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, closing runtime-backed tabs terminates the PTY session, and approved commands write to runtime-backed tabs after the risk gate.
-- The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and execution mode, then normalize Codex responses into existing approval cards.
-- Provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, browser preview no longer fabricates agent replies, and Codex suggestions targeting non-runtime-backed tabs are executed in a new PTY-backed tab instead of simulated in-place output.
+- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: user-created terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, and closing runtime-backed tabs terminates the PTY session. Agent command review and decisions stay in the right panel.
+- The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `read_agent_provider_capabilities` for runtime-backed model/attachment metadata, then call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and an optional selected model id.
+- Provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, browser preview no longer fabricates agent replies, and Codex command review/decisions stay in the right agent panel instead of creating user terminal tabs.
 - Windows Codex suggestion execution now avoids passing the full prompt through `codex.cmd`; the runtime sends the prompt over stdin and prefers the direct Node `codex.js` entrypoint when available.
 - Windows release-executable smoke now launches successfully and initializes app-data state after migrating a legacy `%APPDATA%\com.gagakor.gtum` file into a sibling `.legacy-file-<timestamp>.json` backup.
 - Browser/Vite preview starts from the empty `Open a project` state and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri or bundled project data.
@@ -1886,7 +1886,7 @@ Sprint 17 initial backlog:
 - `P0` done: prepare failing E2E coverage for the new shell landmarks
 - `P0` done: implement titlebar/statusbar and left `Projects/Files` accordion
 - `P0` done: refit the shell, left sidebar, right agent panel, and statusbar to the uploaded JSX/CSS source structure
-- `P0` done: keep the right agent model row visible with compact execution-mode controls
+- `P0` done: keep the right agent provider/readiness row visible and remove fixed execution-mode controls until runtime policy exists
 - `P0` done: delete the previous frontend implementation and replace it with the uploaded design prototype as the only active frontend
 - `P0` done: reconnect the clean prototype to the Tauri filesystem backend for project overview and file reads
 - `P0` done: add the TSX app entry and FSD-style type/service seams without changing the uploaded design DOM

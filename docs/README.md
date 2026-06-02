@@ -152,7 +152,7 @@
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
 - 에이전트 제공자는 우선 `Codex + Claude`이며, 첫 실사용 `Codex` 경로의 source of truth는 `OAuth/session login`이다
 - 현재 저장소의 `OPENAI_API_KEY` 기반 bridge는 개발용 임시 브리지로만 취급하며, 최종 사용자 기본 경로로 간주하지 않는다
-- 현재 Sprint 5 기준으로 task history, workspace restore, execution mode, aging test까지 포함한 MVP 흐름이 구현되어 있다
+- 현재 Sprint 5 기준의 task history, workspace restore, aging test 흐름은 이후 Sprint 17 UI reset과 runtime contract 정리로 재검증 대상이다
 - Sprint 7에서는 폴더 선택기 중심 프로젝트 열기, UI 정보 구조 재배치, provider auth mock/prototype/real 구분이 반영되어 있다
 - Sprint 10에서는 개발용 `Codex` bridge와 diagnostics 보강이 반영되어 있지만, 이는 최종 auth 방향이 아니라 임시 연결 슬라이스다
 - Sprint 11 첫 슬라이스에서는 `Codex CLI`의 ChatGPT session과 `codex exec`를 활용해 API key가 아닌 session-backed real path를 앱 안에서 시작할 수 있게 한다
@@ -161,7 +161,7 @@
 - Sprint 14에서는 `FSD` 기준의 `app / widgets / features / shared` 구조로 프론트 orchestration을 분해하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다
 - Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
 - Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
-- 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact agent model row를 기본값으로 사용한다
+- 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact provider/session row를 기본값으로 사용한다
 - Active frontend entry is `src/app/main.tsx`; it mounts the uploaded design prototype through `src/app/providers/legacy-prototype.ts` while Sprint 17 extracts `src/prototype.jsx` into TSX/FSD components. The reusable backend bridge starts in `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file reads with browser fallback.
 - Sprint 17부터는 `/Users/kwon/Downloads/test (1)` 새 제품 디자인 시안이 기존 구현과 충돌할 때 우선하며, 상세 실행 순서는 [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)을 따른다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다

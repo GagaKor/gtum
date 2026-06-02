@@ -10,8 +10,6 @@ import {
   initialRuntimeWindowControls,
 } from './shared/api/runtimeWindow'
 import {
-  CODEX_LOGIN_COMMAND,
-  codexLoginTerminalStartError,
   CODEX_REQUIRED_SCOPES,
   createAgentAuthRuntimeService,
   providerViewStateFromConnection,
@@ -577,7 +575,6 @@ const STR = {
     autoRanInline: "Low risk auto-ran",
     aboutContext: "Context",
     approve: "Approve",
-    balanced: "Balanced",
     blockedByPattern: "Blocked by pattern",
     branch: "Branch",
     changes: "changes",
@@ -606,16 +603,15 @@ const STR = {
     ctxSplitLeft: "Split Left",
     ctxSplitRight: "Split Right",
     ctxSplitUp: "Split Up",
-    deep: "Deep",
     days: " days",
     detach: "Detach",
+    attach: "Attach",
     disconnect: "Disconnect",
     emptyGroup: "Drag a tab here, or open a real project",
     expandAgent: "Expand agent",
     expandSidebar: "Expand sidebar",
     explain: "Explain current state",
     failed: "failed",
-    fast: "Fast",
     forbiddenPatterns: "Forbidden patterns",
     forbiddenPatternsHint: "Always confirm these regardless of policy",
     high: "High",
@@ -623,8 +619,30 @@ const STR = {
     low: "Low",
     mergeToSingle: "Merge to single",
     mid: "Medium",
-    mode: "Mode",
-    needsApproval: "Needs approval",
+    needsApproval: "Needs review",
+    permissionRequest: "Permission request",
+    decisionNeeded: "Decision needed",
+    chooseOneOption: "Choose one option",
+    selected: "Selected",
+    terminalCommandReview: "Terminal command needs review",
+    commandPreview: "Command preview",
+    allowOnce: "Allow once",
+    alwaysAllow: "Always allow",
+    permissionDeny: "Deny",
+    allowedOnce: "Allowed once",
+    alwaysAllowed: "Always allowed",
+    denied: "Denied",
+    permissionAllowedOnce: "Permission allowed once in the agent panel. I will not run terminal commands.",
+    permissionAlwaysAllowed: "Always-allow recorded in the agent panel for this request. I will not run terminal commands.",
+    permissionDenied: "Permission denied in the agent panel. I will not run terminal commands.",
+    executionSuggestion: "Execution suggestion",
+    commandCount: "command",
+    commandCountPlural: "commands",
+    decisionReviewing: "Reviewing",
+    reason: "Reason",
+    riskHigh: "high risk",
+    riskLow: "low risk",
+    riskMid: "medium risk",
     newTab: "New tab",
     newTabHere: "New tab here",
     noAutoApprovals: "No commands auto-approved yet",
@@ -632,14 +650,13 @@ const STR = {
     nowExecuting: "Executing",
     openProjectFolder: "Open project folder",
     passing: "passing",
-    pickModel: "Pick model",
     presetBold: "Bold",
     presetCautious: "Cautious",
     presetCustom: "Custom",
     presetDefault: "Default",
     requiresHigher: "This command needs explicit approval at its risk level",
-    responseSpeed: "Response speed",
-    review: "Review",
+    review: "Review command",
+    reviewBeforeRun: "Review in agent panel",
     revert: "Revert",
     riskHighDesc: "Destructive commands and production deploys",
     riskHighFull: "High-risk commands",
@@ -649,14 +666,12 @@ const STR = {
     riskMidFull: "Medium-risk commands",
     running: "running",
     saveSettings: "Save",
-    selectedModel: "Selected model",
     sendCtx: "send context",
     sessionExpiry: "Session expires in ",
     settingsAbout: "About",
     settingsAppearance: "Appearance",
     settingsConnections: "Agent connections",
     settingsExecution: "Execution",
-    settingsModels: "Models",
     settingsTitle: "Settings",
     statusBarHint: "Command palette",
     statusReady: "Ready",
@@ -666,9 +681,15 @@ const STR = {
     suggestedActions: "suggested actions",
     tabsLabel: "tabs",
     tasks: "Tasks",
-    tier: "Tier",
     typing: "typing",
+    activityPreparing: "Preparing context",
+    activityRequesting: "Requesting Codex",
+    activityWaiting: "Waiting for runtime",
+    activityFinalizing: "Preparing response",
     toastAutoRan: "Auto-ran",
+    keepInAgent: "Keep in agent",
+    terminalRunHint: "Terminal is user-owned. I will not run this command; keep the decision here and use your terminal manually if needed.",
+    decisionKept: "Decision kept in the agent panel. I will not run terminal commands.",
     trustedDirs: "Trusted directories",
     trustedDirsHint: "Auto-approve only applies inside these paths",
     typeMessage: "Ask Codex",
@@ -730,13 +751,6 @@ const PROVIDERS_INIT = [
     state: "disconnected",
     scope: [],
     expiresInDays: null,
-    activeModel: "gpt-5-codex",
-    models: [
-      { id: "gpt-5", label: "GPT-5", tier: "deep", ctx: "256K", speed: "deep" },
-      { id: "gpt-5-codex", label: "GPT-5 Codex", tier: "balanced", ctx: "200K", speed: "balanced" },
-      { id: "gpt-5-mini", label: "GPT-5 mini", tier: "fast", ctx: "128K", speed: "fast" },
-      { id: "o4-mini", label: "o4-mini", tier: "deep", ctx: "128K", speed: "deep" },
-    ],
   },
   {
     id: "claude",
@@ -745,12 +759,6 @@ const PROVIDERS_INIT = [
     state: "disconnected",
     scope: [],
     expiresInDays: null,
-    activeModel: "claude-sonnet-4.5",
-    models: [
-      { id: "claude-opus-4.5", label: "Claude Opus 4.5", tier: "deep", ctx: "200K", speed: "deep" },
-      { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5", tier: "balanced", ctx: "200K", speed: "balanced" },
-      { id: "claude-haiku-4.5", label: "Claude Haiku 4.5", tier: "fast", ctx: "200K", speed: "fast" },
-    ],
   },
 ];
 
@@ -934,6 +942,68 @@ const agentSuggestionRuntimeService = createAgentSuggestionRuntimeService();
 const terminalRuntimeService = createTerminalRuntimeService();
 const workspaceRuntimeService = createWorkspaceRuntimeService();
 
+function agentAttachmentPickerOverride() {
+  if (typeof window === "undefined") return null;
+  return window.__GTUM_AGENT_ATTACHMENT_PICKER__ || null;
+}
+
+function toArray(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function labelFromPath(path) {
+  const parts = String(path || "").replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.at(-1) || String(path || "attachment");
+}
+
+function normalizePickedAgentAttachment(value, fallbackKind) {
+  if (typeof value === "string") {
+    return {
+      kind: fallbackKind,
+      path: value,
+      label: labelFromPath(value),
+    };
+  }
+
+  if (!value || !value.path) return null;
+  return {
+    kind: value.kind || fallbackKind,
+    path: value.path,
+    label: value.label || labelFromPath(value.path),
+  };
+}
+
+async function pickAgentAttachments(providerCapabilities) {
+  const enabled = (providerCapabilities?.attachments || []).filter((attachment) => attachment.enabled);
+  const capability = enabled.find((attachment) => attachment.kind === "image")
+    || enabled.find((attachment) => attachment.kind === "file")
+    || enabled.find((attachment) => attachment.kind === "directory");
+  if (!capability) return [];
+
+  const override = agentAttachmentPickerOverride();
+  if (override?.pick) {
+    const picked = await override.pick({ capability, capabilities: enabled });
+    return toArray(picked)
+      .map((value) => normalizePickedAgentAttachment(value, capability.kind))
+      .filter(Boolean);
+  }
+
+  if (!hasTauriRuntime()) return [];
+
+  const selected = await openDialog({
+    multiple: true,
+    directory: capability.kind === "directory",
+    filters: capability.kind === "image"
+      ? [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }]
+      : undefined,
+  });
+
+  return toArray(selected)
+    .map((value) => normalizePickedAgentAttachment(value, capability.kind))
+    .filter(Boolean);
+}
+
 function mergeRuntimeProviderConnections(providers, connections) {
   const patches = new Map(connections.map((connection) => {
     const patch = providerViewStateFromConnection(connection);
@@ -947,8 +1017,6 @@ function mergeRuntimeProviderConnections(providers, connections) {
     return {
       ...provider,
       ...patch,
-      activeModel: provider.activeModel,
-      models: provider.models,
     };
   });
 }
@@ -2277,18 +2345,41 @@ Object.assign(window, { Workspace });
 // ----- src/agent.jsx -----
 // agent.jsx ??right pane: chat-centric agent panel
 
-function ModePill({ mode, setMode, lang }) {
+function providerSessionLabel(provider) {
+  if (!provider) return "No provider";
+  if (provider.state === "connected") return "CLI session";
+  if (provider.state === "pending") return "Checking login";
+  if (provider.state === "error") return "Needs attention";
+
+  return "Connect provider";
+}
+
+function ProviderSessionRow({ providers, activeProviderId, onSelectProvider }) {
+  const activeProvider = providers.find((p) => p.id === activeProviderId) || providers[0];
+
   return (
-    <div className="mode-pill">
-      {["fast", "balanced", "deep"].map((m) => (
-        <button
-          key={m}
-          className={mode === m ? "active" : ""}
-          onClick={() => setMode(m)}
-        >
-          {t(lang, m)}
-        </button>
-      ))}
+    <div className="agent-model-row">
+      <div className="agent-provider-tabs" aria-label="Agent providers">
+        {providers.map((provider) => (
+          <button
+            key={provider.id}
+            className={
+              "agent-provider-tab" +
+              (provider.id === activeProviderId ? " active" : "") +
+              (provider.state === "connected" ? " connected" : "")
+            }
+            onClick={() => onSelectProvider(provider.id)}
+          >
+            <span className={"provider-mark " + provider.id}>
+              {provider.abbr}
+            </span>
+            <span>{provider.label}</span>
+          </button>
+        ))}
+      </div>
+      <span className={"agent-runtime-state " + activeProvider.state}>
+        {providerSessionLabel(activeProvider)}
+      </span>
     </div>
   );
 }
@@ -2325,8 +2416,310 @@ function ContextSummary({ lang, activeTab, activePane, project }) {
     </div>
   );
 }
-function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
+
+function riskLabel(lang, risk) {
+  const key = "risk" + risk[0].toUpperCase() + risk.slice(1);
+  return t(lang, key);
+}
+
+function commandCountLabel(lang, count) {
+  const noun = count === 1 ? t(lang, "commandCount") : t(lang, "commandCountPlural");
+  return `${count} ${noun}`;
+}
+
+function commandTargetLabel(command) {
+  return command.target === "new" ? "new terminal tab" : `[${command.target.replace("t-", "")}]`;
+}
+
+function providerRuntimeLabel(providerId) {
+  if (providerId === "codex") return "Codex CLI";
+  if (providerId === "claude") return "Claude";
+  return "provider";
+}
+
+function progressStepLabel(lang, step) {
+  if (typeof step === "string") return t(lang, step);
+  return step?.label || "";
+}
+
+function progressStepDetail(step) {
+  if (typeof step === "string") return null;
+  return step?.detail || null;
+}
+
+function progressStepKey(step, index) {
+  if (typeof step === "string") return step;
+  return step?.id || step?.label || String(index);
+}
+
+function formatElapsedMs(elapsedMs) {
+  const seconds = Math.max(0, Math.round((Number(elapsedMs) || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${rest}s`;
+}
+
+function makeAgentAnswerMeta(startedAtMs) {
+  const answeredAtMs = Date.now();
+  return {
+    answeredAt: nowHmAt(answeredAtMs),
+    elapsedMs: answeredAtMs - startedAtMs,
+  };
+}
+
+function parseNumberedChoiceEvent(content) {
+  const text = String(content || "").trim();
+  if (!text) return null;
+
+  const optionPattern = /(^|\s)(\d{1,2})[.)]\s+([\s\S]*?)(?=(?:\s+\d{1,2}[.)]\s+)|$)/g;
+  const matches = [];
+  let match;
+
+  while ((match = optionPattern.exec(text)) !== null) {
+    const leading = match[1] || "";
+    const start = match.index + leading.length;
+    const optionNumber = Number(match[2]);
+    const label = match[3].trim();
+
+    if (!Number.isFinite(optionNumber) || !label) continue;
+    matches.push({
+      id: String(optionNumber),
+      label,
+      start,
+    });
+  }
+
+  if (matches.length < 2) return null;
+  if (!matches.every((option, index) => Number(option.id) === index + 1)) return null;
+
+  const prompt = text.slice(0, matches[0].start).trim();
+
+  return {
+    type: "choice",
+    prompt,
+    options: matches.map((option) => ({
+      id: option.id,
+      label: option.label,
+    })),
+    selectedOptionId: null,
+  };
+}
+
+function agentProgressStageDelayMs() {
+  const configuredDelay = typeof window !== "undefined"
+    ? Number(window.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__)
+    : NaN;
+
+  if (Number.isFinite(configuredDelay) && configuredDelay >= 0) {
+    return configuredDelay;
+  }
+
+  return 180;
+}
+
+function waitForAgentProgressStage() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, agentProgressStageDelayMs());
+  });
+}
+
+function makeCodexProgressSteps({ project, activeTab, providerId, model, attachments }) {
+  const runtimeLabel = providerRuntimeLabel(providerId);
+  const projectName = project?.name || "project";
+  const tabTitle = activeTab?.title || "no active tab";
+  const modelLabel = model || "runtime default model";
+  const attachmentCount = attachments?.length || 0;
+
+  return [
+    {
+      id: "context",
+      label: `Reading ${projectName} context`,
+      detail: `Active tab: ${tabTitle}`,
+    },
+    {
+      id: "request",
+      label: `Sending request to ${runtimeLabel} runtime`,
+      detail: `Model: ${modelLabel} / attachments: ${attachmentCount}`,
+    },
+    {
+      id: "waiting",
+      label: `Waiting for ${runtimeLabel} response`,
+      detail: "Desktop runtime is processing the request",
+    },
+  ];
+}
+
+function highestSuggestionRisk(suggestion) {
+  if (suggestion.commands.some((command) => command.risk === "high")) return "high";
+  if (suggestion.commands.some((command) => command.risk === "mid")) return "mid";
+  return "low";
+}
+
+function AgentChoiceEvent({ lang, event, onChoose }) {
+  const selectedOptionId = event.selectedOptionId || null;
+
+  return (
+    <div className="agent-event-card choice">
+      <div className="agent-event-head">
+        <div className="agent-event-icon">
+          <Icon.spark />
+        </div>
+        <div className="agent-event-title">
+          <span>{t(lang, "decisionNeeded")}</span>
+          <strong>{t(lang, "chooseOneOption")}</strong>
+        </div>
+        {selectedOptionId && <span className="agent-event-state">{t(lang, "selected")}</span>}
+      </div>
+      <div className="agent-choice-options">
+        {event.options.map((option) => {
+          const selected = selectedOptionId === option.id;
+          return (
+            <button
+              className={"agent-choice-option" + (selected ? " selected" : "")}
+              disabled={Boolean(selectedOptionId)}
+              key={option.id}
+              onClick={() => onChoose(option)}
+              type="button"
+            >
+              <span className="agent-choice-index">{option.id}</span>
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function permissionDecisionLabel(lang, status) {
+  if (status === "allow_once") return t(lang, "allowedOnce");
+  if (status === "always_allow") return t(lang, "alwaysAllowed");
+  if (status === "denied") return t(lang, "denied");
+  return null;
+}
+
+function AgentCommandEvent({ lang, suggestion, risk, permissionDecision, onPermissionDecision }) {
+  const firstCommand = suggestion.commands[0];
+  const decisionStatus = permissionDecision?.status || null;
+  const decisionLabel = permissionDecisionLabel(lang, decisionStatus);
+
+  return (
+    <div className="agent-event-card command" data-risk={risk}>
+      <div className="agent-event-head">
+        <div className="agent-event-icon">
+          <Icon.shield />
+        </div>
+        <div className="agent-event-title">
+          <span>{t(lang, "permissionRequest")}</span>
+          <strong>{t(lang, "terminalCommandReview")}</strong>
+        </div>
+        {decisionLabel
+          ? <span className="agent-event-state">{decisionLabel}</span>
+          : <span className={"risk " + risk}>{riskLabel(lang, risk)}</span>}
+      </div>
+      <div className="agent-event-copy">{suggestion.title}</div>
+      <div className="agent-turn-meta">
+        <span>{commandCountLabel(lang, suggestion.commands.length)}</span>
+        {!decisionLabel && <span className="agent-status-badge">{t(lang, "needsApproval")}</span>}
+      </div>
+      <div className="agent-event-section-label">{t(lang, "commandPreview")}</div>
+      <div className="agent-event-command">
+        <span className="composer-approval-order">1</span>
+        <code>{firstCommand.cmd}</code>
+        <span className="target">{commandTargetLabel(firstCommand)}</span>
+      </div>
+      {suggestion.note && <div className="agent-turn-note">{suggestion.note}</div>}
+      {!decisionStatus && (
+        <div className="agent-event-actions">
+          <button className="btn btn-primary" onClick={() => onPermissionDecision(suggestion, "allow_once")}>
+            <Icon.shield /> {t(lang, "allowOnce")}
+          </button>
+          <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "always_allow")}>
+            {t(lang, "alwaysAllow")}
+          </button>
+          <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "denied")}>
+            {t(lang, "permissionDeny")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentTurn({
+  msg, lang, onChooseDecisionOption, onPermissionDecision,
+}) {
+  const suggestion = msg.suggestion;
+  const decisionEvent = msg.decisionEvent;
+  const permissionDecision = msg.permissionDecision;
+  const isRunning = msg.progress?.status === "running";
+  const isFailed = msg.progress?.status === "failed";
+  const risk = suggestion?.commands?.length ? highestSuggestionRisk(suggestion) : null;
+  const title = isRunning ? "Working" : isFailed ? "Could not finish" : null;
+  const steps = msg.progress?.steps || [];
+  const showRuntimeState = Boolean(title);
+  const answerMeta = msg.answerMeta;
+
+  return (
+    <div className={"agent-turn" + (isRunning ? " running" : "") + (isFailed ? " failed" : "") + (!showRuntimeState ? " completed" : "")}>
+      {showRuntimeState && (
+        <div className="agent-turn-head">
+          <span>{title}</span>
+          <span>{msg.at}</span>
+        </div>
+      )}
+      {showRuntimeState && steps.length > 0 && (
+        <div className="agent-turn-progress">
+          {steps.map((step, index) => (
+            <div
+              className={"agent-turn-step " + (isRunning && index === steps.length - 1 ? "active" : "done")}
+              key={progressStepKey(step, index)}
+            >
+              <span className="agent-turn-dot" />
+              <span className="agent-turn-step-copy">
+                <span>{progressStepLabel(lang, step)}</span>
+                {progressStepDetail(step) && <span>{progressStepDetail(step)}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!showRuntimeState && answerMeta && (
+        <div className="agent-turn-answer-meta">
+          Answered {answerMeta.answeredAt} / {formatElapsedMs(answerMeta.elapsedMs)}
+        </div>
+      )}
+      {msg.content && (
+        <div className="agent-turn-copy" dangerouslySetInnerHTML={{ __html: renderInline(msg.content) }} />
+      )}
+      {decisionEvent?.type === "choice" && (
+        <AgentChoiceEvent
+          lang={lang}
+          event={decisionEvent}
+          onChoose={(option) => onChooseDecisionOption?.(msg.id, option)}
+        />
+      )}
+      {suggestion?.commands?.length > 0 && (
+        <AgentCommandEvent
+          lang={lang}
+          suggestion={suggestion}
+          risk={risk}
+          permissionDecision={permissionDecision}
+          onPermissionDecision={onPermissionDecision}
+        />
+      )}
+    </div>
+  );
+}
+
+function MessageBubble({
+  msg, lang, onChooseDecisionOption, onPermissionDecision,
+}) {
   if (msg.role === "user") {
+    const attachedContext = (msg.contextAttached || []).filter(Boolean);
+
     return (
       <div className="msg user">
         <div className="msg-meta">
@@ -2334,12 +2727,29 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
           <span className="role-tag user">{t(lang, "you")}</span>
         </div>
         <div className="msg-bubble">{msg.content}</div>
-        {msg.contextAttached && (
+        {attachedContext.length > 0 && (
           <div className="ctx-attach">
             <span className="clip" />
-            <span>{"Attached:"} [{msg.contextAttached[0].replace("t-", "")}]</span>
+            <span>{"Attached:"} [{attachedContext[0].replace("t-", "")}]</span>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (msg.progress) {
+    return (
+      <div className="msg assistant">
+        <div className="msg-meta">
+          <span>{msg.at}</span>
+          <span className="role-tag assistant">Codex</span>
+        </div>
+        <AgentTurn
+          msg={msg}
+          lang={lang}
+          onChooseDecisionOption={onChooseDecisionOption}
+          onPermissionDecision={onPermissionDecision}
+        />
       </div>
     );
   }
@@ -2364,37 +2774,14 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
       <div className="msg assistant">
         <div className="msg-meta">
           <span>{msg.at}</span>
-          <span className="role-tag assistant">
-            {t(lang, "conductor")}
-          </span>
-          <span>/{t(lang, "suggestedActions")}</span>
+          <span className="role-tag assistant">Codex</span>
         </div>
-        <div className="sugg">
-          <div className="sugg-h">
-            <span className="icon"><Icon.spark /></span>
-            <span>{s.title}</span>
-            <span className="need">{t(lang, "needsApproval")}</span>
-          </div>
-          <div className="sugg-cmds">
-            {s.commands.map((c, i) => (
-              <div className="sugg-cmd" key={i}>
-                <span style={{ color: "var(--accent)", flexShrink: 0 }}>$</span>
-                <span className="cmd-text">{c.cmd}</span>
-                <span className={"risk " + c.risk}>{t(lang, "risk" + c.risk[0].toUpperCase() + c.risk.slice(1))}</span>
-                <span className="target">
-                  {c.target === "new" ? ("new tab") : `[${c.target.replace("t-", "")}]`}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="sugg-note">{s.note}</div>
-          <div className="sugg-actions">
-            <button className="btn btn-primary" onClick={() => onOpenApproval(s)}>
-              <Icon.shield /> {t(lang, "review")}
-            </button>
-            <button className="btn btn-ghost">{t(lang, "deny")}</button>
-          </div>
-        </div>
+        <AgentTurn
+          msg={{ ...msg, progress: { status: "completed", steps: [] } }}
+          lang={lang}
+          onChooseDecisionOption={onChooseDecisionOption}
+          onPermissionDecision={onPermissionDecision}
+        />
       </div>
     );
   }
@@ -2443,7 +2830,7 @@ function renderInline(s) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-function TypingIndicator({ lang }) {
+function TypingIndicator({ lang, activity = [] }) {
   return (
     <div className="msg assistant">
       <div className="msg-meta">
@@ -2455,13 +2842,74 @@ function TypingIndicator({ lang }) {
         <span className="blob" />
         <span className="blob" />
       </div>
+      {activity.length > 0 && (
+        <div className="agent-activity">
+          {activity.map((key, index) => (
+            <div
+              className={"agent-activity-row " + (index === activity.length - 1 ? "active" : "done")}
+              key={key}
+            >
+              <span className="agent-activity-dot" />
+              <span>{t(lang, key)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function Composer({ lang, activeTab, onSend, mode, setMode }) {
+const WINDOW_RESIZE_ZONES = [
+  ["n", "North"],
+  ["e", "East"],
+  ["s", "South"],
+  ["w", "West"],
+  ["ne", "NorthEast"],
+  ["nw", "NorthWest"],
+  ["se", "SouthEast"],
+  ["sw", "SouthWest"],
+];
+
+function WindowResizeZones({ windowControls, maximized }) {
+  if (!windowControls.available || maximized) return null;
+
+  return (
+    <div className="window-resize-zones" aria-hidden="true">
+      {WINDOW_RESIZE_ZONES.map(([zone, direction]) => (
+        <div
+          className={"window-resize-zone " + zone}
+          key={zone}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            windowControls.startResizeDragging(direction).catch(() => undefined);
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function Composer({
+  lang, activeTab, activeProvider, providerCapabilities, selectedModelId, onSelectModel,
+  attachments, onPickAttachment, onRemoveAttachment, onSend,
+}) {
   const [val, setVal] = React.useState("");
+  const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
   const ref = React.useRef(null);
+  const providerChipLabel = activeProvider
+    ? `${activeProvider.label} ${activeProvider.state === "connected" ? "CLI session" : "provider"}`
+    : "No provider";
+  const availableModels = providerCapabilities?.availableModels || [];
+  const selectedModel = availableModels.find((model) => model.modelId === selectedModelId)
+    || providerCapabilities?.currentModel
+    || null;
+  const showModelPicker = Boolean(providerCapabilities?.supportsModelSelection && availableModels.length > 0);
+  const enabledAttachments = (providerCapabilities?.attachments || []).filter((attachment) => attachment.enabled);
+  const attachmentTitle = enabledAttachments.length > 0
+    ? `Attach ${enabledAttachments.map((attachment) => attachment.label).join(", ")}`
+    : t(lang, "attach");
+  const canAttach = enabledAttachments.length > 0;
   const submit = () => {
     const v = val.trim();
     if (!v) return;
@@ -2481,21 +2929,8 @@ function Composer({ lang, activeTab, onSend, mode, setMode }) {
     e.target.style.height = Math.min(120, e.target.scrollHeight) + "px";
   };
 
-  const quickPrompts = [
-    t(lang, "explain"),
-    t(lang, "suggestFix"),
-    t(lang, "rerunTests"),
-  ];
-
   return (
     <div className="composer">
-      <div className="composer-quick">
-        {quickPrompts.map((q, i) => (
-          <button key={i} className="qchip" onClick={() => onSend(q)}>
-            <Icon.spark /> {q}
-          </button>
-        ))}
-      </div>
       <div className="composer-input">
         <textarea
           ref={ref}
@@ -2505,12 +2940,81 @@ function Composer({ lang, activeTab, onSend, mode, setMode }) {
           placeholder={t(lang, "typeMessage")}
           rows={1}
         />
+        {attachments.length > 0 && (
+          <div className="composer-attachments" aria-label="Attached context">
+            {attachments.map((attachment) => (
+              <span className="composer-attachment-chip" key={attachment.path}>
+                <span>{attachment.label || labelFromPath(attachment.path)}</span>
+                <button
+                  type="button"
+                  title={`Remove ${attachment.label || labelFromPath(attachment.path)}`}
+                  onClick={() => onRemoveAttachment(attachment.path)}
+                >
+                  <Icon.x />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="composer-foot">
+          <button
+            className="composer-tool"
+            title={attachmentTitle}
+            type="button"
+            disabled={!canAttach}
+            onClick={onPickAttachment}
+          >
+            <Icon.plus />
+          </button>
+          {showModelPicker && (
+            <div className="composer-model-wrap">
+              <button
+                className="composer-model-chip"
+                type="button"
+                aria-expanded={modelMenuOpen}
+                onClick={() => setModelMenuOpen((open) => !open)}
+              >
+                <span>{selectedModel?.label || "Default model"}</span>
+                <Icon.chevronDown />
+              </button>
+              {modelMenuOpen && (
+                <div className="composer-model-menu" role="listbox" aria-label="Agent model">
+                  {availableModels.map((model) => (
+                    <button
+                      className={"composer-model-option" + (model.modelId === selectedModelId ? " active" : "")}
+                      key={model.modelId}
+                      type="button"
+                      role="option"
+                      aria-selected={model.modelId === selectedModelId}
+                      onClick={() => {
+                        onSelectModel(model.modelId);
+                        setModelMenuOpen(false);
+                      }}
+                    >
+                      <span>{model.label}</span>
+                      <code>{model.modelId}</code>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <button
+            className="composer-provider-chip"
+            title={providerSessionLabel(activeProvider)}
+            type="button"
+          >
+            {activeProvider && (
+              <span className={"provider-mark " + activeProvider.id}>
+                {activeProvider.abbr}
+              </span>
+            )}
+            <span>{providerChipLabel}</span>
+          </button>
           <span className="ctx-tag">
             <span className="clip" />
             [{activeTab.title}] /{t(lang, "sendCtx")}
           </span>
-          <ModePill mode={mode} setMode={setMode} lang={lang} />
           <button className="send" onClick={submit} disabled={!val.trim()}>
             <Icon.send />
           </button>
@@ -2520,67 +3024,28 @@ function Composer({ lang, activeTab, onSend, mode, setMode }) {
   );
 }
 
-function ModelPicker({ lang, providers, activeProviderId, activeModelId, onChange }) {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef(null);
-  React.useEffect(() => {
-    if (!open) return;
-    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    setTimeout(() => document.addEventListener("mousedown", close), 0);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-
-  const activeProvider = providers.find((p) => p.id === activeProviderId);
-  const activeModel = activeProvider?.models.find((m) => m.id === activeModelId);
-  const label = activeModel ? activeModel.label.replace("Claude ", "").replace("GPT-", "GPT-") : t(lang, "pickModel");
-
-  return (
-    <div className="model-picker" ref={ref}>
-      <button className="model-picker-btn" onClick={() => setOpen((v) => !v)}>
-        <Icon.spark />
-        <span className="ttl">{label}</span>
-        <Icon.chevronDown style={{ opacity: 0.6 }} />
-      </button>
-      {open && (
-        <div className="model-picker-menu">
-          {providers.filter((p) => p.state === "connected").map((p) => (
-            <React.Fragment key={p.id}>
-              <div className="model-picker-group-label">
-                <div className={"provider-mark " + p.id} style={{ width: 18, height: 18, fontSize: 9 }}>{p.abbr}</div>
-                {p.label}
-              </div>
-              {p.models.map((m) => (
-                <button
-                  key={m.id}
-                  className={"model-picker-item" + (p.id === activeProviderId && m.id === activeModelId ? " active" : "")}
-                  onClick={() => { onChange(p.id, m.id); setOpen(false); }}
-                >
-                  <span className="model-picker-name">{m.label}</span>
-                  <span className={"model-picker-tier " + m.tier}>{t(lang, m.tier)}</span>
-                </button>
-              ))}
-            </React.Fragment>
-          ))}
-          {providers.filter((p) => p.state === "connected").length === 0 && (
-            <div className="model-picker-empty">
-              {t(lang, "noConnectedProviders")}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function AgentPanel({
-  lang, messages, isTyping, activeTab, activePane, mode, setMode,
-  onSend, onOpenApproval, providers, collapseAgent,
-  activeProviderId, activeModelId, onSwitchModel, onOpenSettings, project,
+  lang, messages, isTyping, agentActivity = [], activeTab, activePane,
+  onSend, providers, collapseAgent,
+  activeProviderId, onSelectProvider, onOpenSettings, project,
+  providerCapabilities, selectedModelId, onSelectModel,
+  attachments, onPickAttachment, onRemoveAttachment,
+  onChooseDecisionOption, onPermissionDecision,
 }) {
   const chatRef = React.useRef(null);
-  React.useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
-  }, [messages.length, isTyping]);
+  React.useLayoutEffect(() => {
+    const chat = chatRef.current;
+    if (!chat) return undefined;
+
+    let frame = window.requestAnimationFrame(() => {
+      chat.scrollTop = chat.scrollHeight;
+      frame = window.requestAnimationFrame(() => {
+        chat.scrollTop = chat.scrollHeight;
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, isTyping, agentActivity]);
 
   const active = providers.find((p) => p.id === activeProviderId) || providers.find((p) => p.state === "connected") || providers[0];
 
@@ -2598,8 +3063,7 @@ function AgentPanel({
             </span>
           </div>
           <div className="sub">
-            {"Codex runtime / "}
-            {t(lang, mode)}
+            {active.label + " runtime / " + providerSessionLabel(active)}
           </div>
         </div>
         <button
@@ -2618,16 +3082,11 @@ function AgentPanel({
         </button>
       </div>
 
-      <div className="agent-model-row">
-        <ModelPicker
-          lang={lang}
-          providers={providers}
-          activeProviderId={activeProviderId}
-          activeModelId={activeModelId}
-          onChange={onSwitchModel}
-        />
-        <ModePill mode={mode} setMode={setMode} lang={lang} />
-      </div>
+      <ProviderSessionRow
+        providers={providers}
+        activeProviderId={activeProviderId}
+        onSelectProvider={onSelectProvider}
+      />
 
       <ContextSummary lang={lang} activeTab={activeTab} activePane={activePane} project={project} />
 
@@ -2637,19 +3096,24 @@ function AgentPanel({
             key={m.id}
             msg={m}
             lang={lang}
-            activeTab={activeTab}
-            onOpenApproval={onOpenApproval}
+            onChooseDecisionOption={onChooseDecisionOption}
+            onPermissionDecision={onPermissionDecision}
           />
         ))}
-        {isTyping && <TypingIndicator lang={lang} />}
+        {isTyping && <TypingIndicator lang={lang} activity={agentActivity} />}
       </div>
 
       <Composer
         lang={lang}
         activeTab={activeTab}
+        activeProvider={active}
+        providerCapabilities={providerCapabilities}
+        selectedModelId={selectedModelId}
+        onSelectModel={onSelectModel}
+        attachments={attachments}
+        onPickAttachment={onPickAttachment}
+        onRemoveAttachment={onRemoveAttachment}
         onSend={onSend}
-        mode={mode}
-        setMode={setMode}
       />
     </aside>
   );
@@ -2718,7 +3182,7 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) 
                   <div className="approval-cmd" key={i}>
                     <span><span className="order">{i + 1}.</span>{c.cmd}</span>
                     <span className={"risk " + c.risk}>{t(lang, "risk" + c.risk[0].toUpperCase() + c.risk.slice(1))}</span>
-                    <span style={{ color: "var(--text-dim)", fontSize: 10.5 }}>??[{targetLabel}]</span>
+                    <span style={{ color: "var(--text-dim)", fontSize: 10.5 }}>-&gt; [{targetLabel}]</span>
                   </div>
                 );
               })}
@@ -2733,7 +3197,7 @@ function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) 
           <div className="approval-row">
             <div className="lbl">{t(lang, "rollback")}</div>
             <div className="val" style={{ color: "var(--accent)", fontFamily: "var(--font-ui)" }}>
-              {"Yes ??kills a process only, no file changes"}
+              {"Yes - kills a process only, no file changes"}
             </div>
           </div>
         </div>
@@ -2798,7 +3262,7 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
                     <div className={"mark " + id}>{m.abbr}</div>
                     <div className="ttl">{m.label}</div>
                     <div className="sub">{m.sub}</div>
-                    {selected === id && <div className="check">??</div>}
+                    {selected === id && <div className="check">OK</div>}
                   </div>
                 );
               })}
@@ -2839,7 +3303,7 @@ function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   fontSize: 16, fontWeight: 700,
                 }}
-              >??</div>
+              >OK</div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>
                   {providerMeta[selected].label} /{t(lang, "connectSuccess")}
@@ -2915,11 +3379,10 @@ function ApprovalToast({ lang, toast, onDismiss, onUndo }) {
 }
 
 // SettingsModal ??full settings page with tabs in a left rail.
-// Sections: Connections / Models / Appearance / Execution / About.
+// Sections: Connections / Appearance / Execution / About.
 function SettingsModal({
-  lang, providers, onClose, onConnect, onDisconnect, onSwitchModel,
+  lang, providers, onClose, onConnect, onDisconnect,
   accent, accentOptions, onSetAccent,
-  mode, onSetMode,
   parallelLimit, onSetParallelLimit,
   approvalPolicy, onSetApprovalPolicy,
   autoApprovalLog,
@@ -2929,7 +3392,6 @@ function SettingsModal({
 
   const sections = [
     { id: "connections", label: t(lang, "settingsConnections") },
-    { id: "models",      label: t(lang, "settingsModels") },
     { id: "appearance",  label: t(lang, "settingsAppearance") },
     { id: "execution",   label: t(lang, "settingsExecution") },
     { id: "about",       label: t(lang, "settingsAbout") },
@@ -2999,54 +3461,6 @@ function SettingsModal({
             </div>
           )}
 
-          {section === "models" && (
-            <div className="settings-pane">
-              <h3 className="settings-h">{t(lang, "settingsModels")}</h3>
-              <p className="settings-sub">
-                {"Pick the default model per provider."}
-              </p>
-              {providers.filter((p) => p.state === "connected").length === 0 && (
-                <div className="settings-empty">{t(lang, "noConnectedProviders")}</div>
-              )}
-              {providers.map((p) => (
-                <div key={p.id} className="model-section">
-                  <div className="model-section-h">
-                    <div className={"provider-mark " + p.id} style={{ width: 26, height: 26, fontSize: 11 }}>
-                      {p.abbr}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div className="model-section-name">{p.label}</div>
-                      <div className="model-section-sub">
-                        {p.state === "connected"
-                          ? <>{t(lang, "activeProvider")}: <span style={{ color: "var(--accent)" }}>{p.activeModel}</span></>
-                          : ("Connect to pick a model")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="model-grid">
-                    {p.models.map((m) => (
-                      <button
-                        key={m.id}
-                        className={"model-card" + (p.activeModel === m.id ? " active" : "") + (p.state !== "connected" ? " disabled" : "")}
-                        disabled={p.state !== "connected"}
-                        onClick={() => onSwitchModel(p.id, m.id)}
-                      >
-                        <div className="model-card-h">
-                          <div className="model-card-name">{m.label}</div>
-                          <div className={"model-card-tier " + m.tier}>{t(lang, m.tier)}</div>
-                        </div>
-                        <div className="model-card-meta">
-                          <span>{t(lang, "contextWindow")}: <b>{m.ctx}</b></span>
-                          <span>/{t(lang, "responseSpeed")}: <b>{m.speed}</b></span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {section === "appearance" && (
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsAppearance")}</h3>
@@ -3085,23 +3499,6 @@ function SettingsModal({
 
               <div className="settings-row">
                 <div>
-                  <div className="settings-row-label">{t(lang, "mode")}</div>
-                  <div className="settings-row-hint">
-                    {"Policy bundling context size, model, cross-review"}
-                  </div>
-                </div>
-                <div className="mode-pill" style={{ width: "auto" }}>
-                  {["fast", "balanced", "deep"].map((m) => (
-                    <button
-                      key={m}
-                      className={mode === m ? "active" : ""}
-                      onClick={() => onSetMode(m)}
-                    >{t(lang, m)}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="settings-row">
-                <div>
                   <div className="settings-row-label">{t(lang, "parallelLimit")}</div>
                   <div className="settings-row-hint">{t(lang, "parallelLimitHint")}</div>
                 </div>
@@ -3129,7 +3526,7 @@ function SettingsModal({
               <h3 className="settings-h">{t(lang, "settingsAbout")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7 }}>
                 <div><b style={{ color: "var(--text)" }}>gtum</b> /prototype build</div>
-                <div>{"Local desktop workspace ??projects + multi-terminal + multi-agent"}</div>
+                <div>{"Local desktop workspace: projects + multi-terminal + multi-agent"}</div>
                 <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>Tauri /Rust /React /xterm.js</div>
               </div>
             </div>
@@ -3354,8 +3751,7 @@ function AutoApprovalLog({ lang, log }) {
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "accent": "#5DF18A",
-  "lang": "en",
-  "modeDefault": "balanced"
+  "lang": "en"
 }/*EDITMODE-END*/;
 
 const ACCENT_OPTIONS = ["#5DF18A", "#9D6BFF", "#FF7849", "#5BAEFF", "#F25DAB"];
@@ -3433,7 +3829,7 @@ function App() {
   const [history, setHistory] = React.useState(COMMAND_HISTORY_INIT);
   const [messages, setMessages] = React.useState(CHAT_INIT(lang));
   const [isTyping, setIsTyping] = React.useState(false);
-  const [mode, setMode] = React.useState(t_.modeDefault);
+  const [agentActivity, setAgentActivity] = React.useState([]);
   const [approval, setApproval] = React.useState(null);
   const [oauth, setOauth] = React.useState(null);
   const [executing, setExecuting] = React.useState(null);
@@ -3499,13 +3895,14 @@ function App() {
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [activeProviderId, setActiveProviderId] = React.useState("codex");
+  const [providerCapabilities, setProviderCapabilities] = React.useState({});
+  const [selectedProviderModels, setSelectedProviderModels] = React.useState({});
+  const [selectedProviderAttachments, setSelectedProviderAttachments] = React.useState({});
   const [parallelLimit, setParallelLimit] = React.useState(3);
   const [approvalPolicy, setApprovalPolicy] = React.useState(APPROVAL_POLICY_INIT);
   const [autoApprovalLog, setAutoApprovalLog] = React.useState([]);
   const [toast, setToast] = React.useState(null);
   const [streamResponses, setStreamResponses] = React.useState(true);
-  const activeModelId = providers.find((p) => p.id === activeProviderId)?.activeModel
-    || providers.find((p) => p.state === "connected")?.activeModel;
 
   React.useEffect(() => {
     workspaceRef.current = workspace;
@@ -3518,11 +3915,6 @@ function App() {
     }
   }, []);
 
-  const onSwitchModel = (providerId, modelId) => {
-    setActiveProviderId(providerId);
-    setProviders((prev) => prev.map((p) =>
-      p.id === providerId ? { ...p, activeModel: modelId } : p));
-  };
   const applyProviderConnection = React.useCallback((connection) => {
     setProviders((prev) => mergeRuntimeProviderConnections(prev, [connection]));
     if (connection.status === "connected") setActiveProviderId(connection.provider);
@@ -3552,6 +3944,7 @@ function App() {
   React.useEffect(() => {
     setMessages(CHAT_INIT(lang));
     setTasks(TASKS_INIT(lang));
+    setAgentActivity([]);
   }, [lang]);
   React.useEffect(() => {
     document.documentElement.style.setProperty("--accent", accent);
@@ -3580,6 +3973,36 @@ function App() {
       cancelled = true;
     };
   }, [markProviderError]);
+  React.useEffect(() => {
+    if (!agentSuggestionRuntimeService.hasRuntime()) return undefined;
+
+    let cancelled = false;
+    agentSuggestionRuntimeService.readProviderCapabilities(activeProviderId)
+      .then((capabilities) => {
+        if (cancelled) return;
+        setProviderCapabilities((prev) => ({
+          ...prev,
+          [capabilities.provider]: capabilities,
+        }));
+        setSelectedProviderModels((prev) => {
+          if (Object.prototype.hasOwnProperty.call(prev, capabilities.provider)) return prev;
+
+          return {
+            ...prev,
+            [capabilities.provider]: capabilities.currentModel?.modelId || null,
+          };
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError(activeProviderId, message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProviderId, markProviderError]);
   React.useEffect(() => {
     if (!terminalRuntimeService.hasRuntime()) return undefined;
 
@@ -3647,18 +4070,6 @@ function App() {
     }]);
   }, [lang]);
 
-  const handleSetMode = React.useCallback((nextMode, options = {}) => {
-    setMode(nextMode);
-    setTweak("modeDefault", nextMode);
-
-    if (options.persist === false || !workspaceRuntimeService.hasRuntime()) return;
-
-    workspaceRuntimeService.setExecutionMode(nextMode).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      pushProjectMessage(`Could not persist execution mode: ${message}`);
-    });
-  }, [lang, pushProjectMessage, setTweak]);
-
   React.useEffect(() => {
     if (!workspaceRuntimeService.hasRuntime()) return undefined;
 
@@ -3669,10 +4080,6 @@ function App() {
         if (cancelled || !runtimeSnapshot) return;
 
         const snapshot = runtimeSnapshot.snapshot;
-        if (snapshot.executionMode) {
-          handleSetMode(snapshot.executionMode, { persist: false });
-        }
-
         if (!snapshot.lastOpenedProjectPath) return;
 
         const restoredProject = await readRuntimeProjectOverview(snapshot.lastOpenedProjectPath);
@@ -3688,7 +4095,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [handleSetMode, lang, pushProjectMessage]);
+  }, [lang, pushProjectMessage]);
 
   const handleOpenProject = async () => {
     setProjectBusy(true);
@@ -3745,60 +4152,223 @@ function App() {
   };
 
   const requestRuntimeAgentSuggestions = React.useCallback(async (text, messageId, active) => {
+    const turnId = messageId + "-agent-turn";
+    const startedAtMs = Date.now();
+    const attachments = selectedProviderAttachments[activeProviderId] || [];
+    const selectedModelId = selectedProviderModels[activeProviderId] || null;
+    const runningSteps = makeCodexProgressSteps({
+      project: activeProject,
+      activeTab: active,
+      providerId: activeProviderId,
+      model: selectedModelId,
+      attachments,
+    });
+    const completedSteps = [
+      ...runningSteps,
+      {
+        id: "finalizing",
+        label: "Preparing answer for the agent panel",
+        detail: "Formatting the runtime response",
+      },
+    ];
+    setIsTyping(false);
+    setAgentActivity([]);
+    setMessages((prev) => [...prev, {
+      id: turnId,
+      role: "assistant",
+      roleLabel: "Codex",
+      at: nowHm(),
+      progress: {
+        status: "running",
+        steps: runningSteps.slice(0, 1),
+        startedAtMs,
+      },
+    }]);
+    setSelectedProviderAttachments((prev) => ({
+      ...prev,
+      [activeProviderId]: [],
+    }));
+    const revealRunningSteps = (steps) => {
+      setMessages((prev) => prev.map((message) => message.id === turnId && message.progress?.status === "running"
+        ? {
+            ...message,
+            progress: {
+              status: "running",
+              steps,
+              startedAtMs,
+            },
+          }
+        : message));
+    };
+
     try {
-      const suggestions = await agentSuggestionRuntimeService.requestSuggestions({
-        provider: activeProviderId,
-        project: activeProject,
-        activeTab: active,
-        userTask: text,
-        executionMode: mode,
-      });
+      await waitForAgentProgressStage();
+      revealRunningSteps(runningSteps.slice(0, 2));
+
+      const suggestionsResultPromise = Promise.resolve(agentSuggestionRuntimeService.requestSuggestions({
+          provider: activeProviderId,
+          project: activeProject,
+          activeTab: active,
+          userTask: text,
+          model: selectedModelId,
+          attachments,
+        }))
+        .then((suggestions) => ({ suggestions }))
+        .catch((error) => ({ error }));
+
+      await waitForAgentProgressStage();
+      revealRunningSteps(runningSteps);
+
+      const suggestionsResult = await suggestionsResultPromise;
+      if (suggestionsResult.error) {
+        throw suggestionsResult.error;
+      }
+
+      const suggestions = suggestionsResult.suggestions;
       const actionableSuggestions = suggestions.filter((suggestion) => suggestion.commands.length > 0);
       const errorSuggestions = suggestions.filter((suggestion) => suggestion.error && suggestion.commands.length === 0);
+      const replySuggestions = suggestions.filter((suggestion) => !suggestion.error && suggestion.commands.length === 0);
+      const primarySuggestion = actionableSuggestions[0] || null;
+      const primaryReply = replySuggestions[0] || null;
 
-      const runtimeMessages = actionableSuggestions.map((suggestion, index) => ({
-        id: messageId + "-runtime-" + index,
-        role: "assistant",
-        at: nowHm(),
-        suggestion,
+      if (errorSuggestions.length > 0 && !primarySuggestion) {
+        const errorText = errorSuggestions.map((suggestion) => suggestion.error).filter(Boolean).join("\n");
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        setMessages((prev) => prev.map((message) => message.id === turnId
+          ? {
+              ...message,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "failed",
+                steps: completedSteps,
+              },
+              answerMeta,
+              content: `Codex could not produce a safe command: ${errorText}`,
+            }
+          : message));
+        return;
+      }
+
+      if (primaryReply && !primarySuggestion) {
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        const replyText = primaryReply.title || primaryReply.note || "Done.";
+        const decisionEvent = parseNumberedChoiceEvent(replyText);
+        setMessages((prev) => prev.map((message) => message.id === turnId
+          ? {
+              ...message,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "completed",
+                steps: [],
+              },
+              answerMeta,
+              content: decisionEvent?.prompt || replyText,
+              decisionEvent,
+            }
+          : message));
+        return;
+      }
+
+      if (!primarySuggestion) {
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        setMessages((prev) => prev.map((message) => message.id === turnId
+          ? {
+              ...message,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "failed",
+                steps: completedSteps,
+              },
+              answerMeta,
+              content: "Codex did not return an executable suggestion.",
+            }
+          : message));
+        return;
+      }
+
+      const answerMeta = makeAgentAnswerMeta(startedAtMs);
+      setMessages((prev) => prev.map((message) => message.id === turnId
+        ? {
+            ...message,
+            at: answerMeta.answeredAt,
+            progress: {
+              status: "completed",
+              steps: completedSteps,
+            },
+            answerMeta,
+            content: "",
+            suggestion: primarySuggestion,
+          }
+        : message));
+
+      if (actionableSuggestions.length > 1) {
+        setMessages((prev) => [
+          ...prev,
+          ...actionableSuggestions.slice(1).map((suggestion, index) => ({
+            id: messageId + "-runtime-extra-" + index,
+            role: "assistant",
+            roleLabel: "Codex",
+            at: answerMeta.answeredAt,
+            progress: {
+              status: "completed",
+              steps: [],
+            },
+            answerMeta,
+            content: "",
+            suggestion,
+          })),
+        ]);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const answerMeta = makeAgentAnswerMeta(startedAtMs);
+      setMessages((prev) => prev.map((entry) => entry.id === turnId
+        ? {
+            ...entry,
+            at: answerMeta.answeredAt,
+            progress: {
+              status: "failed",
+              steps: completedSteps,
+            },
+            answerMeta,
+            content: `Could not request Codex suggestions: ${message}`,
+          }
+        : entry));
+    } finally {
+      setIsTyping(false);
+      setAgentActivity([]);
+    }
+  }, [activeProject, activeProviderId, lang, selectedProviderAttachments, selectedProviderModels]);
+
+  const handlePickAgentAttachment = React.useCallback(async () => {
+    try {
+      const attachments = await pickAgentAttachments(providerCapabilities[activeProviderId] || null);
+      if (attachments.length === 0) return;
+      setSelectedProviderAttachments((prev) => ({
+        ...prev,
+        [activeProviderId]: [
+          ...(prev[activeProviderId] || []),
+          ...attachments,
+        ],
       }));
-
-      if (errorSuggestions.length > 0 && runtimeMessages.length === 0) {
-        setMessages((prev) => [...prev, ...errorSuggestions.map((suggestion, index) => ({
-          id: messageId + "-runtime-error-" + index,
-          role: "assistant",
-          roleLabel: "Codex",
-          at: nowHm(),
-          content: `Codex could not produce a safe command: ${suggestion.error}`,
-        }))]);
-        return;
-      }
-
-      if (runtimeMessages.length === 0) {
-        setMessages((prev) => [...prev, {
-          id: messageId + "-empty",
-          role: "assistant",
-          roleLabel: "Codex",
-          at: nowHm(),
-          content: "Codex did not return an executable suggestion.",
-        }]);
-        return;
-      }
-
-      setMessages((prev) => [...prev, ...runtimeMessages]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setMessages((prev) => [...prev, {
-        id: messageId + "-error",
+        id: "attach-error-" + Date.now(),
         role: "assistant",
         roleLabel: "Codex",
         at: nowHm(),
-        content: `Could not request Codex suggestions: ${message}`,
+        content: `Could not attach the selected file: ${message}`,
       }]);
-    } finally {
-      setIsTyping(false);
     }
-  }, [activeProject, activeProviderId, lang, mode]);
+  }, [activeProviderId, providerCapabilities]);
+
+  const handleRemoveAgentAttachment = React.useCallback((path) => {
+    setSelectedProviderAttachments((prev) => ({
+      ...prev,
+      [activeProviderId]: (prev[activeProviderId] || []).filter((attachment) => attachment.path !== path),
+    }));
+  }, [activeProviderId]);
 
   const appendProviderUnavailableMessage = React.useCallback((providerId, messageId) => {
     const provider = providers.find((p) => p.id === providerId);
@@ -3811,6 +4381,7 @@ function App() {
       content: `${label} real-provider integration is deferred. The desktop app will not continue with a mock reply; connect Codex first.`,
     }]);
     setIsTyping(false);
+    setAgentActivity([]);
   }, [lang, providers]);
 
   const appendRuntimeProjectRequiredMessage = React.useCallback((messageId) => {
@@ -3822,6 +4393,7 @@ function App() {
       content: "Open a real local folder as a project in the desktop app before running a Codex request.",
     }]);
     setIsTyping(false);
+    setAgentActivity([]);
   }, []);
 
   const appendRuntimeUnavailableMessage = React.useCallback((messageId) => {
@@ -3833,6 +4405,7 @@ function App() {
       content: "Real Codex requests only run in the desktop runtime. Open the desktop app, choose a real local project folder, and connect Codex.",
     }]);
     setIsTyping(false);
+    setAgentActivity([]);
   }, []);
 
   // ???? workspace actions (thin wrappers around the pure store) ????????????????????
@@ -3939,9 +4512,10 @@ function App() {
     const attachedTab = activeTab;
     setMessages((prev) => [...prev, {
       id, role: "user", at: nowHm(), content: text,
-      contextAttached: [attachedTab?.id || ""],
+      contextAttached: attachedTab?.id ? [attachedTab.id] : [],
     }]);
     setIsTyping(true);
+    setAgentActivity(["activityPreparing"]);
 
     if (agentSuggestionRuntimeService.hasRuntime()) {
       if (activeProviderId === "codex") {
@@ -3960,6 +4534,25 @@ function App() {
 
     appendRuntimeUnavailableMessage(id);
   };
+
+  const handleChooseDecisionOption = React.useCallback((messageId, option) => {
+    const sourceMessage = messages.find((message) => message.id === messageId);
+    if (sourceMessage?.decisionEvent?.type !== "choice") return;
+    if (sourceMessage.decisionEvent.selectedOptionId) return;
+
+    setMessages((prev) => prev.map((message) => {
+      if (message.id !== messageId || message.decisionEvent?.type !== "choice") return message;
+      return {
+        ...message,
+        decisionEvent: {
+          ...message.decisionEvent,
+          selectedOptionId: option.id,
+        },
+      };
+    }));
+
+    onSend(`${option.id}. ${option.label}`);
+  }, [messages, onSend]);
 
   // Append output to a specific tab (anywhere in any group)
   const appendToTab = (tabId, lines) => {
@@ -4125,83 +4718,59 @@ function App() {
     }
   };
 
-  // Policy-aware entry point ??Decide whether to open modal or auto-run.
-  const requestApproval = (sugg) => {
-    const cwd = activeTab?.cwd || ".";
-    const decision = policyDecideForSuggestion(approvalPolicy, sugg, cwd);
-    if (decision.action === "auto") {
-      onApprove(sugg, { auto: true });
-      return;
-    }
-    // Open modal with policy reason attached so user knows why it didn't auto-run
-    setApproval({ ...sugg, _policyReason: decision.blocker?.decision?.reason || null,
-                  _policyBlocker: decision.blocker?.decision?.pattern || null });
-  };
+  const recordPermissionDecision = React.useCallback((sugg, decision) => {
+    const at = nowHm();
+    const decisionText = decision === "allow_once"
+      ? t(lang, "permissionAllowedOnce")
+      : decision === "always_allow"
+        ? t(lang, "permissionAlwaysAllowed")
+        : t(lang, "permissionDenied");
 
-  const openRuntimeCodexLogin = async () => {
-    const localId = "t-codex-login-" + Date.now();
-    const title = "Codex Login";
-    setWorkspace((w) => openTab(w, w.activeGroupId, {
-      id: localId,
-      title,
-      shell: "zsh",
-      cwd: ".",
-      status: "running",
-      cmd: CODEX_LOGIN_COMMAND,
-      runtimeBacked: false,
-      terminalSessionId: null,
-      lines: [{ kind: "cmd", text: CODEX_LOGIN_COMMAND }],
-    }));
+    setMessages((prev) => [
+      ...prev.map((message) => message.suggestion?.id === sugg.id
+        ? {
+            ...message,
+            permissionDecision: {
+              status: decision,
+              at,
+            },
+          }
+        : message),
+      {
+        id: "permission-decision-" + Date.now(),
+        role: "assistant",
+        roleLabel: "Codex",
+        at,
+        content: `${decisionText} Suggested command: \`${sugg.commands[0]?.cmd || ""}\``,
+      },
+    ]);
+  }, [lang]);
 
-    try {
-      const runtimeTab = await agentAuthRuntimeService.openCodexLoginTerminal({
-        projectPath: activeProject.path,
-        title,
-        cwd: ".",
-      });
-      if (!runtimeTab) return null;
-
-      setWorkspace((w) => updateTab(w, localId, (tab) => ({
-        ...tab,
-        ...runtimeTab,
-        id: localId,
-        title,
-        cmd: CODEX_LOGIN_COMMAND,
-        lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
-      })));
-      return runtimeTab;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setWorkspace((w) => updateTab(w, localId, (tab) => ({
-        ...tab,
-        status: "failed",
-        lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
-      })));
-      throw error;
-    }
-  };
   const openOAuth = (providerId) => setOauth({ providerId });
   const handleProviderConnect = async (providerId) => {
     if (providerId === "codex" && agentAuthRuntimeService.hasRuntime()) {
       setActiveProviderId("codex");
+      setProviders((prev) => prev.map((provider) => provider.id === "codex"
+        ? { ...provider, state: "pending", lastError: null }
+        : provider));
       try {
-        const loginTab = await openRuntimeCodexLogin();
-        const loginStartError = codexLoginTerminalStartError(loginTab);
-        if (loginStartError) throw new Error(loginStartError);
-
         const connection = await agentAuthRuntimeService.beginLogin("codex", CODEX_REQUIRED_SCOPES);
         applyProviderConnection(connection);
         if (connection.status === "connected") {
+          pushProjectMessage(`${connection.displayName} connected through ${connection.connectionKind === "real" ? "the local CLI session" : "the runtime provider"}.`);
           setSettingsOpen(false);
-        } else {
-          markProviderError("codex", connection.lastError || (
-            "Complete Codex CLI login, then reconnect."
-          ));
+          return;
         }
+
+        const connectionError = connection.lastError || (
+          "Complete Codex CLI login, then reconnect."
+        );
+        markProviderError("codex", connectionError);
+        pushProjectMessage(connectionError);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         markProviderError("codex", message);
-        pushProjectMessage(`Could not start Codex login: ${message}`);
+        pushProjectMessage(`Could not validate Codex session: ${message}`);
       }
       return;
     }
@@ -4233,10 +4802,11 @@ function App() {
     <>
       <div className="gtum-stage" ref={stageRef}>
         <div className={"gtum-scaler" + (maximized ? " is-max" : "")} ref={scalerRef}>
-          <div
-            className={"gtum-window os-" + os + " " + widthClass + (maximized ? " is-max" : "")}
-            ref={windowRef}
-          >
+            <div
+              className={"gtum-window os-" + os + " " + widthClass + (maximized ? " is-max" : "")}
+              ref={windowRef}
+            >
+            <WindowResizeZones windowControls={windowControls} maximized={maximized} />
             <Titlebar
               lang={lang}
               os={os}
@@ -4303,25 +4873,32 @@ function App() {
                   lang={lang}
                   messages={messages}
                   isTyping={isTyping}
+                  agentActivity={agentActivity}
                   activeTab={activeTab || { title: "--", lines: [] }}
                   activePane={activeTab || { lines: [] }}
-                  mode={mode}
-                  setMode={handleSetMode}
                   onSend={onSend}
-                  onOpenApproval={requestApproval}
                   providers={providers}
                   collapseAgent={() => setAgentOpen(false)}
                   activeProviderId={activeProviderId}
-                  activeModelId={activeModelId}
-                  onSwitchModel={onSwitchModel}
+                  onSelectProvider={setActiveProviderId}
                   onOpenSettings={() => setSettingsOpen(true)}
                   project={activeProject}
+                  providerCapabilities={providerCapabilities[activeProviderId] || null}
+                  selectedModelId={selectedProviderModels[activeProviderId] || null}
+                  onSelectModel={(modelId) => setSelectedProviderModels((prev) => ({
+                    ...prev,
+                    [activeProviderId]: modelId,
+                  }))}
+                  attachments={selectedProviderAttachments[activeProviderId] || []}
+                  onPickAttachment={handlePickAgentAttachment}
+                  onRemoveAttachment={handleRemoveAgentAttachment}
+                  onChooseDecisionOption={handleChooseDecisionOption}
+                  onPermissionDecision={recordPermissionDecision}
                 />
               )}
             </div>
             <StatusBar
               lang={lang}
-              mode={mode}
               workspace={workspace}
               project={activeProject}
               icons={Icon}
@@ -4357,7 +4934,6 @@ function App() {
           providers={providers}
           accent={t_.accent}
           accentOptions={ACCENT_OPTIONS}
-          mode={mode}
           parallelLimit={parallelLimit}
           approvalPolicy={approvalPolicy}
           autoApprovalLog={autoApprovalLog}
@@ -4365,9 +4941,7 @@ function App() {
           onClose={() => setSettingsOpen(false)}
           onConnect={handleProviderConnect}
           onDisconnect={onDisconnect}
-          onSwitchModel={onSwitchModel}
           onSetAccent={(v) => setTweak("accent", v)}
-          onSetMode={handleSetMode}
           onSetParallelLimit={setParallelLimit}
           onSetApprovalPolicy={setApprovalPolicy}
           onSetStreamResponses={setStreamResponses}
@@ -4411,25 +4985,18 @@ function App() {
           options={[{ value: "ko", label: "Korean" }, { value: "en", label: "English" }]}
           onChange={(v) => setTweak("lang", v)}
         />
-        <TweakSection label={"Execution"} />
-        <TweakRadio
-          label={"Default mode"}
-          value={mode}
-          options={[
-            { value: "fast", label: "Fast" },
-            { value: "balanced", label: "Bal" },
-            { value: "deep", label: "Deep" },
-          ]}
-          onChange={handleSetMode}
-        />
       </TweaksPanel>
     </>
   );
 }
 
-function nowHm() {
-  const d = new Date();
+function nowHmAt(timestampMs) {
+  const d = new Date(timestampMs);
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+function nowHm() {
+  return nowHmAt(Date.now());
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);

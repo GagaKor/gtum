@@ -2,24 +2,30 @@ use std::{
     env,
     ffi::OsString,
     fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    time::{SystemTime, UNIX_EPOCH},
+    thread,
+    thread::JoinHandle,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::runtime::{auth::AgentProvider, workspace::ExecutionMode};
+use crate::runtime::auth::AgentProvider;
 
 const CODEX_AUTH_PATH_LABEL: &str = "~/.codex/auth.json";
 const CODEX_CONNECTION_PATH: &str = "Codex CLI ChatGPT session";
+const CODEX_EXEC_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestAgentSuggestionsRequest {
     pub provider: AgentProvider,
+    pub model: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<RequestAgentAttachment>,
     pub project_name: String,
     pub project_path: String,
     pub active_tab_id: Option<String>,
@@ -30,7 +36,13 @@ pub struct RequestAgentSuggestionsRequest {
     #[serde(default)]
     pub last_n_log_lines: Vec<String>,
     pub user_task: String,
-    pub execution_mode: ExecutionMode,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestAgentAttachment {
+    pub kind: AgentAttachmentKind,
+    pub path: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,6 +101,42 @@ pub struct AgentProviderDiagnostics {
     pub requirements: Vec<AgentProviderRequirementStatus>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelCapability {
+    pub provider_id: AgentProvider,
+    pub model_id: String,
+    pub label: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentAttachmentKind {
+    Image,
+    File,
+    Directory,
+    ActiveTab,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAttachmentCapability {
+    pub kind: AgentAttachmentKind,
+    pub label: String,
+    pub enabled: bool,
+    pub invocation_flag: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProviderCapabilities {
+    pub provider: AgentProvider,
+    pub supports_model_selection: bool,
+    pub current_model: Option<AgentModelCapability>,
+    pub available_models: Vec<AgentModelCapability>,
+    pub attachments: Vec<AgentAttachmentCapability>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CodexStructuredSuggestion {
@@ -97,6 +145,18 @@ struct CodexStructuredSuggestion {
     preferred_target: AgentExecutionTarget,
     confidence: AgentSuggestionConfidence,
     error: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+struct CodexModelCatalog {
+    models: Vec<CodexModelCatalogEntry>,
+}
+
+#[derive(Default, Deserialize)]
+struct CodexModelCatalogEntry {
+    slug: String,
+    display_name: Option<String>,
+    visibility: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -133,6 +193,68 @@ impl CodexCliStatus {
 
 pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
     diagnostics_from_status(read_codex_cli_status())
+}
+
+pub fn read_codex_capabilities() -> AgentProviderCapabilities {
+    let available_models = if codex_command_available() {
+        read_codex_model_catalog().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let current_model = read_codex_config_model()
+        .and_then(|model_id| model_capability_for_id(AgentProvider::Codex, &available_models, &model_id));
+
+    AgentProviderCapabilities {
+        provider: AgentProvider::Codex,
+        supports_model_selection: codex_command_available(),
+        current_model,
+        available_models,
+        attachments: vec![AgentAttachmentCapability {
+            kind: AgentAttachmentKind::Image,
+            label: "Image".into(),
+            enabled: codex_command_available(),
+            invocation_flag: Some("--image".into()),
+        }],
+    }
+}
+
+pub fn read_claude_capabilities() -> AgentProviderCapabilities {
+    let available_models = read_claude_available_models();
+    let current_model_id = env::var("ANTHROPIC_MODEL")
+        .ok()
+        .and_then(|value| non_empty_trimmed(value.as_str()))
+        .or_else(read_claude_config_model);
+    let current_model = current_model_id
+        .as_deref()
+        .and_then(|model_id| model_capability_for_id(AgentProvider::Claude, &available_models, model_id))
+        .or_else(|| {
+            current_model_id.map(|model_id| AgentModelCapability {
+                provider_id: AgentProvider::Claude,
+                label: model_id.clone(),
+                model_id,
+            })
+        });
+
+    AgentProviderCapabilities {
+        provider: AgentProvider::Claude,
+        supports_model_selection: claude_command_available(),
+        current_model,
+        available_models,
+        attachments: vec![
+            AgentAttachmentCapability {
+                kind: AgentAttachmentKind::File,
+                label: "File".into(),
+                enabled: claude_command_available(),
+                invocation_flag: Some("--file".into()),
+            },
+            AgentAttachmentCapability {
+                kind: AgentAttachmentKind::Directory,
+                label: "Directory".into(),
+                enabled: claude_command_available(),
+                invocation_flag: Some("--add-dir".into()),
+            },
+        ],
+    }
 }
 
 fn diagnostics_from_status(status: CodexCliStatus) -> AgentProviderDiagnostics {
@@ -271,7 +393,14 @@ pub fn request_codex_suggestions(
 
     write_schema_file(&schema_path)?;
 
-    let output = match run_codex_exec(&request.project_path, &schema_path, &output_path, &prompt) {
+    let output = match run_codex_exec(
+        &request.project_path,
+        request.model.as_deref(),
+        &request.attachments,
+        &schema_path,
+        &output_path,
+        &prompt,
+    ) {
         Ok(output) => output,
         Err(error) => {
             let _ = cleanup_temp_files(&schema_path, &output_path);
@@ -335,26 +464,34 @@ fn read_codex_cli_status() -> CodexCliStatus {
 }
 
 fn codex_command_available() -> bool {
-    Command::new(codex_command_name())
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    codex_command_candidates_for_execution()
+        .into_iter()
+        .any(|program| {
+            Command::new(program)
+                .arg("--version")
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false)
+        })
 }
 
 fn codex_login_status_reports_chatgpt() -> bool {
-    Command::new(codex_command_name())
-        .arg("login")
-        .arg("status")
-        .output()
-        .map(|output| {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            output.status.success()
-                && (stdout.contains("Logged in using ChatGPT")
-                    || stderr.contains("Logged in using ChatGPT"))
+    codex_command_candidates_for_execution()
+        .into_iter()
+        .any(|program| {
+            Command::new(program)
+                .arg("login")
+                .arg("status")
+                .output()
+                .map(|output| {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    output.status.success()
+                        && (stdout.contains("Logged in using ChatGPT")
+                            || stderr.contains("Logged in using ChatGPT"))
+                })
+                .unwrap_or(false)
         })
-        .unwrap_or(false)
 }
 
 fn read_auth_file(path: &PathBuf) -> CodexAuthFile {
@@ -362,6 +499,81 @@ fn read_auth_file(path: &PathBuf) -> CodexAuthFile {
         .ok()
         .and_then(|contents| serde_json::from_str::<CodexAuthFile>(&contents).ok())
         .unwrap_or_default()
+}
+
+fn read_codex_model_catalog() -> Result<Vec<AgentModelCapability>, String> {
+    let output = codex_command_candidates_for_execution()
+        .into_iter()
+        .find_map(|program| {
+            Command::new(program)
+                .arg("debug")
+                .arg("models")
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+        })
+        .ok_or_else(|| "failed to read Codex model catalog".to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    parse_codex_model_catalog(&stdout)
+}
+
+fn parse_codex_model_catalog(raw_output: &str) -> Result<Vec<AgentModelCapability>, String> {
+    let catalog = serde_json::from_str::<CodexModelCatalog>(raw_output)
+        .map_err(|error| format!("failed to parse Codex model catalog: {error}"))?;
+
+    Ok(catalog
+        .models
+        .into_iter()
+        .filter(|model| {
+            model
+                .visibility
+                .as_deref()
+                .map(|visibility| visibility == "list")
+                .unwrap_or(true)
+        })
+        .filter_map(|model| {
+            let model_id = non_empty_trimmed(&model.slug)?;
+            let label = model
+                .display_name
+                .as_deref()
+                .and_then(non_empty_trimmed)
+                .unwrap_or_else(|| model_id.clone());
+            Some(AgentModelCapability {
+                provider_id: AgentProvider::Codex,
+                model_id,
+                label,
+            })
+        })
+        .collect())
+}
+
+fn model_capability_for_id(
+    provider: AgentProvider,
+    models: &[AgentModelCapability],
+    model_id: &str,
+) -> Option<AgentModelCapability> {
+    let model_id = non_empty_trimmed(model_id)?;
+    models
+        .iter()
+        .find(|model| model.model_id == model_id)
+        .cloned()
+        .or_else(|| {
+            Some(AgentModelCapability {
+                provider_id: provider,
+                label: model_id.clone(),
+                model_id,
+            })
+        })
+}
+
+fn non_empty_trimmed(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
 fn token_present(value: Option<&str>) -> bool {
@@ -377,6 +589,124 @@ fn codex_auth_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".codex")
         .join("auth.json")
+}
+
+fn codex_config_path() -> PathBuf {
+    if let Ok(codex_home) = env::var("CODEX_HOME") {
+        return PathBuf::from(codex_home).join("config.toml");
+    }
+
+    home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".codex")
+        .join("config.toml")
+}
+
+fn read_codex_config_model() -> Option<String> {
+    fs::read_to_string(codex_config_path())
+        .ok()
+        .and_then(|contents| parse_simple_toml_string_key(&contents, "model"))
+}
+
+fn claude_command_available() -> bool {
+    Command::new(claude_command_name())
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn claude_command_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "claude.cmd"
+    } else {
+        "claude"
+    }
+}
+
+fn read_claude_config_model() -> Option<String> {
+    read_claude_settings_values()
+        .into_iter()
+        .find_map(|settings| string_from_json_key(&settings, "model"))
+}
+
+fn read_claude_available_models() -> Vec<AgentModelCapability> {
+    read_claude_settings_values()
+        .into_iter()
+        .find_map(|settings| {
+            settings.get("availableModels").and_then(|models| match models {
+                serde_json::Value::Array(entries) => Some(
+                    entries
+                        .iter()
+                        .filter_map(|entry| match entry {
+                            serde_json::Value::String(model_id) => non_empty_trimmed(model_id),
+                            serde_json::Value::Object(model) => model
+                                .get("model")
+                                .or_else(|| model.get("id"))
+                                .or_else(|| model.get("modelId"))
+                                .and_then(|value| value.as_str())
+                                .and_then(non_empty_trimmed),
+                            _ => None,
+                        })
+                        .map(|model_id| AgentModelCapability {
+                            provider_id: AgentProvider::Claude,
+                            label: model_id.clone(),
+                            model_id,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+        })
+        .unwrap_or_default()
+}
+
+fn read_claude_settings_values() -> Vec<serde_json::Value> {
+    claude_settings_paths()
+        .into_iter()
+        .filter_map(|path| fs::read_to_string(path).ok())
+        .filter_map(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
+        .collect()
+}
+
+fn claude_settings_paths() -> Vec<PathBuf> {
+    let home = home_dir().unwrap_or_else(|| PathBuf::from("."));
+    vec![
+        home.join(".claude").join("settings.local.json"),
+        home.join(".claude").join("settings.json"),
+    ]
+}
+
+fn string_from_json_key(value: &serde_json::Value, key: &str) -> Option<String> {
+    value.get(key).and_then(|entry| entry.as_str()).and_then(non_empty_trimmed)
+}
+
+fn parse_simple_toml_string_key(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            return None;
+        }
+        let (name, value) = trimmed.split_once('=')?;
+        if name.trim() != key {
+            return None;
+        }
+        parse_quoted_string(value.trim()).or_else(|| non_empty_trimmed(value.trim()))
+    })
+}
+
+fn parse_quoted_string(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.len() < 2 {
+        return None;
+    }
+    let bytes = value.as_bytes();
+    let quote = bytes[0];
+    if (quote != b'"' && quote != b'\'') || bytes[value.len() - 1] != quote {
+        return None;
+    }
+
+    non_empty_trimmed(&value[1..value.len() - 1])
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -405,29 +735,52 @@ fn codex_command_name() -> &'static str {
 
 fn codex_exec_args(
     project_path: &str,
+    model: Option<&str>,
+    attachments: &[RequestAgentAttachment],
     schema_path: &PathBuf,
     output_path: &PathBuf,
 ) -> Vec<OsString> {
-    vec![
+    let mut args: Vec<OsString> = vec![
         "exec".into(),
         "--sandbox".into(),
         "read-only".into(),
         "--skip-git-repo-check".into(),
-        "--output-schema".into(),
+    ];
+    if let Some(model) = model.and_then(non_empty_trimmed) {
+        args.push("--model".into());
+        args.push(model.into());
+    }
+    for path in codex_image_attachment_paths(attachments) {
+        args.push("--image".into());
+        args.push(path.into());
+    }
+    args.extend([
+        OsString::from("--output-schema"),
         schema_path.as_os_str().to_os_string(),
-        "-o".into(),
+        OsString::from("-o"),
         output_path.as_os_str().to_os_string(),
-        "-C".into(),
+        OsString::from("-C"),
         project_path.into(),
-    ]
+    ]);
+    args
+}
+
+fn codex_image_attachment_paths(attachments: &[RequestAgentAttachment]) -> Vec<String> {
+    attachments
+        .iter()
+        .filter(|attachment| attachment.kind == AgentAttachmentKind::Image)
+        .filter_map(|attachment| non_empty_trimmed(&attachment.path))
+        .collect()
 }
 
 fn codex_exec_invocation(
     project_path: &str,
+    model: Option<&str>,
+    attachments: &[RequestAgentAttachment],
     schema_path: &PathBuf,
     output_path: &PathBuf,
 ) -> (OsString, Vec<OsString>) {
-    let args = codex_exec_args(project_path, schema_path, output_path);
+    let args = codex_exec_args(project_path, model, attachments, schema_path, output_path);
 
     if cfg!(target_os = "windows") {
         if let Some((node_program, script_path)) = windows_codex_node_entrypoint() {
@@ -437,7 +790,7 @@ fn codex_exec_invocation(
         }
     }
 
-    (codex_command_name().into(), args)
+    (codex_command_program(), args)
 }
 
 fn windows_codex_node_entrypoint() -> Option<(OsString, PathBuf)> {
@@ -471,31 +824,141 @@ fn windows_codex_node_entrypoint_from_cmd_path(
 }
 
 fn find_executable_in_path(name: &str) -> Option<PathBuf> {
-    env::var_os("PATH").and_then(|path| {
-        env::split_paths(&path)
+    let path = env::var_os("PATH");
+    find_executable_in_path_with_path(name, path.as_ref())
+}
+
+fn find_executable_in_path_with_path(name: &str, path: Option<&OsString>) -> Option<PathBuf> {
+    path.and_then(|path| {
+        env::split_paths(path)
             .map(|entry| entry.join(name))
             .find(|candidate| candidate.is_file())
     })
 }
 
+fn codex_command_program() -> OsString {
+    codex_command_candidates()
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| codex_command_name().into())
+}
+
+fn codex_command_candidates_for_execution() -> Vec<OsString> {
+    let candidates = codex_command_candidates();
+
+    if candidates.is_empty() {
+        vec![codex_command_name().into()]
+    } else {
+        candidates
+    }
+}
+
+fn codex_command_candidates() -> Vec<OsString> {
+    codex_command_candidates_from(env::var_os("PATH"), platform_codex_app_candidates())
+}
+
+fn codex_command_candidates_from(
+    path: Option<OsString>,
+    bundled_candidates: Vec<PathBuf>,
+) -> Vec<OsString> {
+    let mut candidates = Vec::new();
+
+    if let Some(path_candidate) =
+        find_executable_in_path_with_path(codex_command_name(), path.as_ref())
+    {
+        push_unique_candidate(&mut candidates, path_candidate.into_os_string());
+    }
+
+    for candidate in bundled_candidates {
+        if candidate.is_file() {
+            push_unique_candidate(&mut candidates, candidate.into_os_string());
+        }
+    }
+
+    candidates
+}
+
+fn push_unique_candidate(candidates: &mut Vec<OsString>, candidate: OsString) {
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn platform_codex_app_candidates() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut candidates = vec![PathBuf::from(
+            "/Applications/Codex.app/Contents/Resources/codex",
+        )];
+
+        if let Some(home) = home_dir() {
+            candidates.push(
+                home.join("Applications")
+                    .join("Codex.app")
+                    .join("Contents")
+                    .join("Resources")
+                    .join("codex"),
+            );
+        }
+
+        candidates
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Vec::new()
+    }
+}
+
 fn run_codex_exec(
     project_path: &str,
+    model: Option<&str>,
+    attachments: &[RequestAgentAttachment],
     schema_path: &PathBuf,
     output_path: &PathBuf,
     prompt: &str,
 ) -> Result<Output, String> {
-    let (program, args) = codex_exec_invocation(project_path, schema_path, output_path);
-    let mut child = Command::new(program)
-        .args(args)
+    let (program, args) =
+        codex_exec_invocation(project_path, model, attachments, schema_path, output_path);
+    run_command_with_input_and_timeout(program, args, prompt, CODEX_EXEC_TIMEOUT)
+}
+
+fn run_command_with_input_and_timeout(
+    program: OsString,
+    args: Vec<OsString>,
+    input: &str,
+    timeout: Duration,
+) -> Result<Output, String> {
+    let mut child = Command::new(&program)
+        .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("failed to launch Codex CLI: {error}"))?;
 
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("failed to open Codex CLI stdout stream".into());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("failed to open Codex CLI stderr stream".into());
+        }
+    };
+    let stdout_reader = read_child_pipe(stdout, "stdout");
+    let stderr_reader = read_child_pipe(stderr, "stderr");
+
     match child.stdin.take() {
         Some(mut stdin) => {
-            if let Err(error) = stdin.write_all(prompt.as_bytes()) {
+            if let Err(error) = stdin.write_all(input.as_bytes()) {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!("failed to write Codex CLI prompt: {error}"));
@@ -508,9 +971,56 @@ fn run_codex_exec(
         }
     }
 
-    child
-        .wait_with_output()
-        .map_err(|error| format!("failed to wait for Codex CLI: {error}"))
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("failed to wait for Codex CLI: {error}"))?
+        {
+            let stdout = join_child_pipe(stdout_reader, "stdout")?;
+            let stderr = join_child_pipe(stderr_reader, "stderr")?;
+            return Ok(Output {
+                status,
+                stdout,
+                stderr,
+            });
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = join_child_pipe(stdout_reader, "stdout");
+            let _ = join_child_pipe(stderr_reader, "stderr");
+            return Err(format!(
+                "Codex CLI timed out after {} seconds. Try again with a narrower prompt or verify Codex CLI can run from this project.",
+                timeout.as_secs()
+            ));
+        }
+
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn read_child_pipe<T>(mut pipe: T, label: &'static str) -> JoinHandle<Result<Vec<u8>, String>>
+where
+    T: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut output = Vec::new();
+        pipe.read_to_end(&mut output)
+            .map_err(|error| format!("failed to read Codex CLI {label}: {error}"))?;
+        Ok(output)
+    })
+}
+
+fn join_child_pipe(
+    handle: JoinHandle<Result<Vec<u8>, String>>,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    handle
+        .join()
+        .map_err(|_| format!("Codex CLI {label} reader panicked"))?
 }
 
 fn temp_file_path(prefix: &str, extension: &str) -> PathBuf {
@@ -524,11 +1034,14 @@ fn write_schema_file(path: &PathBuf) -> Result<(), String> {
         "properties": {
             "summary": {
                 "type": "string",
-                "description": "One concise summary for the suggestion card."
+                "description": "A concise assistant reply or action summary."
             },
             "command": {
                 "type": "string",
-                "description": "Exactly one terminal command to run next."
+                "description": concat!(
+                    "A terminal command to show as a gtum UI permission-card preview only when user review ",
+                    "or permission is required; it is not executed by Codex CLI. Leave empty for normal replies."
+                )
             },
             "preferredTarget": {
                 "type": "string",
@@ -540,7 +1053,7 @@ fn write_schema_file(path: &PathBuf) -> Result<(), String> {
             },
             "error": {
                 "type": ["string", "null"],
-                "description": "Explain why no safe command is available. Use null when a command is present."
+                "description": "Explain why the request cannot be answered safely. Use null for normal replies and command suggestions."
             }
         },
         "required": ["summary", "command", "preferredTarget", "confidence", "error"]
@@ -577,18 +1090,22 @@ fn normalize_codex_suggestion(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     let normalized_command = structured.command.trim().to_string();
+    let normalized_summary = structured.summary.trim();
 
-    if normalized_error.is_none() && normalized_command.is_empty() {
-        return Err("Codex CLI returned an empty command without an error reason.".into());
+    if normalized_error.is_none()
+        && normalized_command.is_empty()
+        && normalized_summary.is_empty()
+    {
+        return Err("Codex CLI returned an empty response without a command or error reason.".into());
     }
 
     let fallback_summary = if normalized_error.is_some() && normalized_command.is_empty() {
-        "Codex could not suggest a command."
+        "Codex could not complete the request."
+    } else if normalized_command.is_empty() {
+        "Codex response"
     } else {
         "Codex suggestion"
     };
-    let normalized_summary = structured.summary.trim();
-
     Ok(AgentSuggestionResponse {
         id: format!("codex-{}", unix_timestamp_ms()),
         provider,
@@ -639,8 +1156,29 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
             .join("\n")
     };
 
+    let instructions = concat!(
+        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\n",
+        "Read the project metadata, the active file snippet, and recent terminal logs.\n",
+        "Respond naturally to the user's request.\n",
+        "The `command` field is only a gtum UI permission-card preview; it is not executed by Codex CLI.\n",
+        "gtum will show the command in the right Agent panel with Allow once, Always allow, and Deny actions.\n",
+        "Do not request permission from Codex CLI, do not run the command yourself, and do not treat ",
+        "Codex CLI approval or sandbox policy (for example approval_policy=never) as a reason to refuse ",
+        "a harmless UI permission request.\n",
+        "Only set `command` when the next step requires explicit user review, permission, or a terminal ",
+        "command the user should inspect before running.\n",
+        "If the user asks to test or receive a terminal permission request, return a harmless reviewable ",
+        "command such as `echo \"gtum permission request test\"`, set `error` to null, and explain the card ",
+        "in `summary`.\n",
+        "For normal explanations, status checks, planning, or answers that do not require permission, ",
+        "leave `command` empty and put the answer in `summary`.\n",
+        "Do not invent commands just to satisfy the schema.\n",
+        "If the request cannot be answered safely, set `error` and leave `command` empty."
+    );
+
     format!(
-        "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\nRead the project metadata, the active file snippet, and recent terminal logs.\nReturn exactly one safe next shell command.\nPrefer non-destructive commands that help the developer move forward immediately.\nIf you cannot recommend a safe command, set `error` and leave `command` empty.\n\nProject name: {}\nProject path: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nExecution mode: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn one next command that best helps the developer continue from the current state.",
+        "{}\n\nProject name: {}\nProject path: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
+        instructions,
         request.project_name.trim(),
         request.project_path.trim(),
         file_path,
@@ -648,18 +1186,9 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         file_snippet,
         request.active_tab_id.as_deref().unwrap_or("none"),
         request.active_tab_title.as_deref().unwrap_or("none"),
-        execution_mode_label(request.execution_mode),
         request.user_task.trim(),
         log_lines,
     )
-}
-
-fn execution_mode_label(mode: ExecutionMode) -> &'static str {
-    match mode {
-        ExecutionMode::Fast => "fast",
-        ExecutionMode::Balanced => "balanced",
-        ExecutionMode::Deep => "deep",
-    }
 }
 
 fn unix_timestamp_ms() -> u64 {
@@ -733,7 +1262,7 @@ mod tests {
     fn codex_exec_args_do_not_include_prompt_text() {
         let schema_path = PathBuf::from("schema.json");
         let output_path = PathBuf::from("output.json");
-        let args = codex_exec_args("C:\\workspace\\gtum", &schema_path, &output_path)
+        let args = codex_exec_args("C:\\workspace\\gtum", None, &[], &schema_path, &output_path)
             .into_iter()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
@@ -754,6 +1283,148 @@ mod tests {
             ]
         );
         assert!(!args.iter().any(|arg| arg.contains("You are Codex")));
+    }
+
+    #[test]
+    fn codex_exec_args_include_selected_model_when_present() {
+        let schema_path = PathBuf::from("schema.json");
+        let output_path = PathBuf::from("output.json");
+        let args = codex_exec_args(
+            "/workspace/gtum",
+            Some(" gpt-5.5 "),
+            &[],
+            &schema_path,
+            &output_path,
+        )
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+        assert!(args.windows(2).any(|entry| entry == ["--model", "gpt-5.5"]));
+    }
+
+    #[test]
+    fn codex_exec_args_include_image_attachments_when_present() {
+        let schema_path = PathBuf::from("schema.json");
+        let output_path = PathBuf::from("output.json");
+        let attachments = vec![RequestAgentAttachment {
+            kind: AgentAttachmentKind::Image,
+            path: " /tmp/screenshot.png ".into(),
+        }];
+        let args = codex_exec_args(
+            "/workspace/gtum",
+            None,
+            &attachments,
+            &schema_path,
+            &output_path,
+        )
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+        assert!(args
+            .windows(2)
+            .any(|entry| entry == ["--image", "/tmp/screenshot.png"]));
+    }
+
+    #[test]
+    fn prompt_separates_gtum_permission_cards_from_codex_cli_approval_policy() {
+        let prompt = build_prompt(&RequestAgentSuggestionsRequest {
+            provider: AgentProvider::Codex,
+            model: None,
+            attachments: vec![],
+            project_name: "gtum".into(),
+            project_path: "/workspace/gtum".into(),
+            active_tab_id: None,
+            active_tab_title: None,
+            active_file_path: None,
+            active_file_line: None,
+            active_file_snippet: None,
+            last_n_log_lines: vec![],
+            user_task: "나에게 터미널 권한 요청 보내봐".into(),
+        });
+
+        assert!(
+            prompt.contains("The `command` field is only a gtum UI permission-card preview"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("Do not request permission from Codex CLI"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("approval_policy=never"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("echo \"gtum permission request test\""),
+            "{prompt}"
+        );
+    }
+
+    #[test]
+    fn schema_describes_command_as_gtum_permission_card_preview() {
+        let schema_path = temp_file_path("gtum-codex-schema-contract-test", "json");
+
+        write_schema_file(&schema_path).unwrap();
+
+        let schema = fs::read_to_string(&schema_path).unwrap();
+        let _ = fs::remove_file(&schema_path);
+        let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap();
+        let description = parsed
+            .get("properties")
+            .and_then(|properties| properties.get("command"))
+            .and_then(|command| command.get("description"))
+            .and_then(|description| description.as_str())
+            .unwrap_or_default();
+
+        assert!(
+            description.contains("gtum UI permission-card preview"),
+            "{description}"
+        );
+        assert!(
+            description.contains("not executed by Codex CLI"),
+            "{description}"
+        );
+    }
+
+    #[test]
+    fn codex_model_catalog_parses_list_visible_models() {
+        let models = parse_codex_model_catalog(
+            r#"{
+                "models": [
+                    {
+                        "slug": "gpt-5.5",
+                        "display_name": "GPT-5.5",
+                        "visibility": "list"
+                    },
+                    {
+                        "slug": "internal-model",
+                        "display_name": "Internal",
+                        "visibility": "hidden"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].provider_id, AgentProvider::Codex);
+        assert_eq!(models[0].model_id, "gpt-5.5");
+        assert_eq!(models[0].label, "GPT-5.5");
+    }
+
+    #[test]
+    fn simple_toml_parser_reads_root_model_key() {
+        let model = parse_simple_toml_string_key(
+            r#"
+                approval_policy = "never"
+                model = "gpt-5.5"
+            "#,
+            "model",
+        );
+
+        assert_eq!(model.as_deref(), Some("gpt-5.5"));
     }
 
     #[test]
@@ -780,6 +1451,46 @@ mod tests {
     }
 
     #[test]
+    fn codex_command_candidates_include_app_bundle_when_path_is_limited() {
+        let root = temp_file_path("gtum-codex-app-path-test", "dir");
+        let bundled_codex = root
+            .join("Codex.app")
+            .join("Contents")
+            .join("Resources")
+            .join("codex");
+        fs::create_dir_all(bundled_codex.parent().unwrap()).unwrap();
+        fs::write(&bundled_codex, "").unwrap();
+
+        let candidates = codex_command_candidates_from(
+            Some(OsString::from("/usr/bin:/bin:/usr/sbin:/sbin")),
+            vec![bundled_codex.clone()],
+        );
+
+        assert_eq!(candidates, vec![bundled_codex.into_os_string()]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn command_runner_times_out_hanging_child_processes() {
+        let started_at = std::time::Instant::now();
+        let error = run_command_with_input_and_timeout(
+            "sh".into(),
+            vec!["-c".into(), "sleep 5".into()],
+            "",
+            std::time::Duration::from_millis(50),
+        )
+        .unwrap_err();
+
+        assert!(
+            started_at.elapsed() < std::time::Duration::from_secs(2),
+            "hanging child process should be killed promptly"
+        );
+        assert!(error.contains("timed out"), "{error}");
+    }
+
+    #[test]
     fn parser_reports_unstructured_codex_output() {
         let error = match response_from_codex_output("not json", AgentProvider::Codex) {
             Ok(_) => panic!("expected unstructured output to fail"),
@@ -790,7 +1501,29 @@ mod tests {
     }
 
     #[test]
-    fn normalization_rejects_empty_command_without_error() {
+    fn normalization_allows_reply_without_command() {
+        let response = normalize_codex_suggestion(
+            CodexStructuredSuggestion {
+                summary: " I reviewed the current context. No command is needed. ".into(),
+                command: " ".into(),
+                preferred_target: AgentExecutionTarget::NewTab,
+                confidence: AgentSuggestionConfidence::High,
+                error: None,
+            },
+            AgentProvider::Codex,
+        )
+        .unwrap();
+
+        assert_eq!(
+            response.summary,
+            "I reviewed the current context. No command is needed."
+        );
+        assert!(response.command.is_empty());
+        assert_eq!(response.error, None);
+    }
+
+    #[test]
+    fn normalization_rejects_empty_response_without_error() {
         let error = match normalize_codex_suggestion(
             CodexStructuredSuggestion {
                 summary: " ".into(),
@@ -801,13 +1534,13 @@ mod tests {
             },
             AgentProvider::Codex,
         ) {
-            Ok(_) => panic!("expected empty command without error to fail"),
+            Ok(_) => panic!("expected empty response without error to fail"),
             Err(error) => error,
         };
 
         assert_eq!(
             error,
-            "Codex CLI returned an empty command without an error reason."
+            "Codex CLI returned an empty response without a command or error reason."
         );
     }
 
@@ -825,7 +1558,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(response.summary, "Codex could not suggest a command.");
+        assert_eq!(response.summary, "Codex could not complete the request.");
         assert!(response.command.is_empty());
         assert_eq!(
             response.error.as_deref(),

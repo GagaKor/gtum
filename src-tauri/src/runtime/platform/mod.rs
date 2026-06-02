@@ -91,6 +91,54 @@ pub fn run_git(path: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+pub fn terminal_path_env() -> Option<OsString> {
+    terminal_path_env_from(std::env::var_os("PATH"), terminal_tool_dirs())
+}
+
+fn terminal_path_env_from(path: Option<OsString>, extra_dirs: Vec<PathBuf>) -> Option<OsString> {
+    let mut entries = path
+        .as_ref()
+        .map(|value| std::env::split_paths(value).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    for dir in extra_dirs {
+        if dir.is_dir() && !entries.contains(&dir) {
+            entries.push(dir);
+        }
+    }
+
+    if entries.is_empty() {
+        None
+    } else {
+        std::env::join_paths(entries).ok()
+    }
+}
+
+fn terminal_tool_dirs() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut dirs = vec![PathBuf::from(
+            "/Applications/Codex.app/Contents/Resources",
+        )];
+
+        if let Ok(home) = user_home_dir() {
+            dirs.push(
+                home.join("Applications")
+                    .join("Codex.app")
+                    .join("Contents")
+                    .join("Resources"),
+            );
+        }
+
+        dirs
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Vec::new()
+    }
+}
+
 pub fn terminal_shell_candidates(explicit_shell: Option<&str>) -> Vec<TerminalShellCandidate> {
     if let Some(shell) = explicit_shell
         .map(str::trim)
@@ -264,5 +312,32 @@ mod tests {
         let error = expand_home_path("code", || Err("missing home".into())).unwrap_err();
 
         assert_eq!(error, "missing home");
+    }
+
+    #[test]
+    fn terminal_path_env_includes_existing_tool_directory_when_base_path_is_limited() {
+        let root = std::env::temp_dir().join(format!(
+            "gtum-terminal-path-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let tool_dir = root
+            .join("Codex.app")
+            .join("Contents")
+            .join("Resources");
+        std::fs::create_dir_all(&tool_dir).unwrap();
+
+        let path = terminal_path_env_from(
+            Some(OsString::from("/usr/bin:/bin:/usr/sbin:/sbin")),
+            vec![tool_dir.clone()],
+        )
+        .unwrap();
+        let entries = std::env::split_paths(&path).collect::<Vec<_>>();
+
+        assert!(entries.contains(&tool_dir));
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

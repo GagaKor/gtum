@@ -48,7 +48,6 @@ export function renderAppShellContract(): ReactElement {
       />
       <StatusBar
         lang="en"
-        mode="balanced"
         workspace={workspace}
         project={project}
         icons={icons}

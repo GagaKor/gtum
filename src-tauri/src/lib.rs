@@ -13,7 +13,8 @@ use runtime::auth::{
     CompleteAgentLoginRequest,
 };
 use runtime::codex::{
-    AgentProviderDiagnostics, AgentSuggestionResponse, RequestAgentSuggestionsRequest,
+    AgentProviderCapabilities, AgentProviderDiagnostics, AgentSuggestionResponse,
+    RequestAgentSuggestionsRequest,
 };
 use runtime::filesystem::{
     ProjectFileSnapshot, ProjectOverview, ProjectSearchResult, SourceControlDiff,
@@ -29,9 +30,8 @@ use runtime::telegram::{
     TelegramRemoteCommandSnapshot, TelegramReportSnapshot, TelegramRuntimeSnapshot,
 };
 use runtime::workspace::{
-    RememberWorkspaceProjectRequest, SaveWorkspaceSnapshotRequest,
-    SetWorkspaceExecutionModeRequest, WorkspaceRuntimeSnapshot, WorkspaceSnapshot,
-    WorkspaceStateManager,
+    RememberWorkspaceProjectRequest, SaveWorkspaceSnapshotRequest, WorkspaceRuntimeSnapshot,
+    WorkspaceSnapshot, WorkspaceStateManager,
 };
 use std::{
     fs,
@@ -210,14 +210,18 @@ fn complete_agent_login(
 }
 
 #[tauri::command]
-fn request_agent_suggestions(
+async fn request_agent_suggestions(
     auth_state: tauri::State<'_, AgentAuthManager>,
     request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
     let _ = auth_state.require_connected_provider(request.provider)?;
 
     match request.provider {
-        AgentProvider::Codex => runtime::codex::request_codex_suggestions(request),
+        AgentProvider::Codex => tauri::async_runtime::spawn_blocking(move || {
+            runtime::codex::request_codex_suggestions(request)
+        })
+        .await
+        .map_err(|error| format!("failed to join Codex suggestion task: {error}"))?,
         AgentProvider::Claude => {
             Err("Claude real-provider support is deferred for the first daily-use release.".into())
         }
@@ -229,6 +233,14 @@ fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiag
     match provider {
         AgentProvider::Codex => runtime::codex::read_codex_diagnostics(),
         AgentProvider::Claude => runtime::codex::deferred_provider_diagnostics(provider),
+    }
+}
+
+#[tauri::command]
+fn read_agent_provider_capabilities(provider: AgentProvider) -> AgentProviderCapabilities {
+    match provider {
+        AgentProvider::Codex => runtime::codex::read_codex_capabilities(),
+        AgentProvider::Claude => runtime::codex::read_claude_capabilities(),
     }
 }
 
@@ -268,14 +280,6 @@ fn remember_workspace_project(
     request: RememberWorkspaceProjectRequest,
 ) -> Result<WorkspaceSnapshot, String> {
     state.remember_project(request.path)
-}
-
-#[tauri::command]
-fn set_workspace_execution_mode(
-    state: tauri::State<'_, WorkspaceStateManager>,
-    request: SetWorkspaceExecutionModeRequest,
-) -> Result<WorkspaceSnapshot, String> {
-    state.set_execution_mode(request)
 }
 
 #[tauri::command]
@@ -431,12 +435,12 @@ pub fn run() {
             complete_agent_login,
             request_agent_suggestions,
             read_agent_provider_diagnostics,
+            read_agent_provider_capabilities,
             disconnect_agent_provider,
             agent_auth_runtime_snapshot,
             read_workspace_runtime_snapshot,
             save_workspace_runtime_snapshot,
             remember_workspace_project,
-            set_workspace_execution_mode,
             read_telegram_runtime_snapshot,
             begin_telegram_link,
             complete_telegram_link,

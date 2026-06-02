@@ -72,8 +72,8 @@ The default `gtum` UI is a dark desktop developer tool.
   - 코드 surface와 terminal/diff/test/preview pane을 분할 가능한 workbench로 다룬다.
   - 각 pane은 자신의 tab strip을 가진다.
 - `Right agent workspace`
-  - provider, context, thread, composer, pending suggestions가 하나의 작업 흐름으로 이어져야 한다.
-  - 활성 provider/model과 실행 모드를 agent workspace 상단의 compact row로 먼저 읽을 수 있어야 한다.
+  - provider, context, thread, activity log, composer approval, composer가 하나의 작업 흐름으로 이어져야 한다.
+  - 활성 provider와 session/readiness 상태를 agent workspace 상단의 compact row로 먼저 읽을 수 있어야 한다. 모델 선택은 `read_agent_provider_capabilities`가 실제 모델 목록을 제공할 때 composer에서만 노출하고, 실행 모드는 런타임 정책이 없으면 노출하지 않는다.
 - `Status/pill strip`
   - 하단 고정 패널보다 workbench 안의 작은 상태 pill을 우선한다.
 
@@ -91,8 +91,8 @@ The default screen is composed of five areas:
   - Treats code, terminal, diff, test, and preview panes as a split-capable workbench.
   - Each pane owns its own tab strip.
 - `Right agent workspace`
-  - Provider, context, thread, composer, and pending suggestions must read as one work flow.
-  - Active provider/model and execution mode should be readable first through a compact row at the top of the agent workspace.
+  - Provider, context, thread, activity log, composer-level approval, and composer must read as one work flow.
+  - Active provider and session/readiness state should be readable first through a compact row at the top of the agent workspace. Model picking appears in the composer only when `read_agent_provider_capabilities` provides runtime-synced models, and execution modes remain hidden until backed by runtime policy.
 - `Status/pill strip`
   - Prefer small status pills inside the workbench over a permanent bottom panel.
 - `Desktop launch geometry`
@@ -172,9 +172,11 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `dock-resize-handle`
   - 좌우 panel 안쪽 edge에 붙는 4px vertical handle이다. hover와 drag 중에는 `--accent`로만 강조하고, 별도 텍스트 버튼처럼 보이면 안 된다.
 - `agent-model-row`
-  - 오른쪽 agent workspace 첫 줄에서 현재 provider/model과 실행 모드를 조밀하게 보여준다.
-- `suggestion-card`
-  - 명령, 대상, 위험도, 승인 상태를 함께 보여준다.
+  - 오른쪽 agent workspace 첫 줄에서 현재 provider와 session/readiness 상태를 조밀하게 보여준다. 모델 선택은 composer의 runtime-backed capability UI가 담당하고, 실행 모드 선택은 현재 UI 계약에 포함하지 않는다.
+- `agent-log-item`
+  - 실행 제안은 큰 카드가 아니라 요약, 명령 수, 위험도, 결정 상태를 보여주는 가벼운 activity row로 표시한다.
+- `composer-approval`
+  - 현재 검토 중인 제안에만 composer 바로 위에서 명령, 대상, 위험도, 사유, 결정 버튼을 보여준다.
 
 ### English
 
@@ -191,11 +193,13 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `dock-resize-handle`
   - A 4px vertical handle pinned to the inner edge of each side panel. Highlight it with `--accent` on hover and drag; it must not look like a separate text button.
 - `titlebar`
-  - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. These controls must call the native window API, while browser preview keeps safe no-op fallbacks.
+  - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. Titlebar dragging and edge/corner resizing must call the native window API, while browser preview keeps safe no-op fallbacks.
 - `agent-model-row`
-  - Compactly shows the current provider/model and execution mode as the first row of the right agent workspace.
-- `suggestion-card`
-  - Show command, target, risk, and approval state together.
+  - Compactly shows the current provider and session/readiness state as the first row of the right agent workspace. Composer-level model picking is allowed only from runtime-backed provider capabilities, while execution-mode selection is not part of the current UI contract.
+- `agent-turn`
+  - Shows live agent work as one conversational assistant turn. Pending runtime progress appears inside the turn with concrete operation labels instead of generic lifecycle copy, and those labels reveal sequentially rather than all at once. After success the progress clears so the completed turn shows answer-time metadata and reads like normal assistant copy. Numbered reply choices become selectable decision event cards. Command-bearing responses become permission event cards with clear labels, reason copy, command preview, risk, and direct `Allow once`, `Always allow`, and `Deny` actions.
+- `agent-event-card`
+  - Lives inside the conversational agent turn and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Permission cards decide directly in the card; they must not require an intermediate composer-level review panel.
 
 ## 인터랙션 기준 / Interaction Rules
 
@@ -206,14 +210,15 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - 명령 실행은 항상 승인 전 검토와 승인 후 실행 단계를 분리한다.
 - 좁은 화면에서는 side panel을 먼저 접고, 그 다음 agent workspace를 줄인다.
 - 코드 줄은 강제 wrap보다 pane 내부 horizontal scroll을 우선한다.
-- agent workspace의 pending suggestion은 대화와 composer를 밀어내는 큰 고정 카드가 아니라 compact queue/drawer로 다룬다.
+- agent workspace의 pending suggestion은 분리된 큰 카드가 아니라 하나의 대화형 agent turn 안에서 진행 상태와 결과로 다루고, 선택된 검토는 composer 바로 위 approval panel로 연다.
 
 ### English
 
 - Panel collapse, tab switching, provider selection, and line-anchor navigation must respond immediately.
 - Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
+- Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
-- Command execution always separates pre-approval review from post-approval execution.
+- Agent command review and decisions stay in the right agent workspace. The center terminal is user-owned, so agent UI must not execute commands or create terminal tabs.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
-- Pending suggestions in the agent workspace should be a compact queue/drawer, not a large fixed card that pushes away the thread and composer.
+- Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.

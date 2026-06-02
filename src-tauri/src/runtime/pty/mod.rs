@@ -74,6 +74,9 @@ impl TerminalSessionManager {
             if let Some(cwd) = &cwd {
                 command.cwd(cwd);
             }
+            if let Some(path_env) = platform::terminal_path_env() {
+                command.env("PATH", path_env);
+            }
 
             match pty_pair.slave.spawn_command(command) {
                 Ok(child) => {

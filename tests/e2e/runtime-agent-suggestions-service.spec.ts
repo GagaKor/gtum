@@ -43,7 +43,6 @@ test('requests Codex suggestions with the documented agent envelope', async () =
       ],
     },
     userTask: 'rerun the failing tests',
-    executionMode: 'balanced',
   })
 
   expect(invoked).toEqual([
@@ -52,6 +51,8 @@ test('requests Codex suggestions with the documented agent envelope', async () =
       args: {
         request: {
           provider: 'codex',
+          model: null,
+          attachments: [],
           projectName: 'gtum',
           projectPath: '/workspace/gtum',
           activeTabId: 't-tests',
@@ -61,11 +62,11 @@ test('requests Codex suggestions with the documented agent envelope', async () =
           activeFileSnippet: null,
           lastNLogLines: ['pnpm test', 'expected 50 but got 60'],
           userTask: 'rerun the failing tests',
-          executionMode: 'balanced',
         },
       },
     },
   ])
+  expect(invoked[0]?.args?.request).not.toHaveProperty('executionMode')
   expect(suggestions).toEqual([
     {
       id: 'codex-1',
@@ -80,6 +81,105 @@ test('requests Codex suggestions with the documented agent envelope', async () =
       ],
       note: 'Codex confidence: high',
       error: null,
+    },
+  ])
+})
+
+test('reads provider capabilities and forwards the selected model in suggestion requests', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+
+      if (command === 'read_agent_provider_capabilities') {
+        return {
+          provider: 'codex',
+          supportsModelSelection: true,
+          currentModel: {
+            providerId: 'codex',
+            modelId: 'gpt-5.5',
+            label: 'GPT-5.5',
+          },
+          availableModels: [
+            {
+              providerId: 'codex',
+              modelId: 'gpt-5.5',
+              label: 'GPT-5.5',
+            },
+            {
+              providerId: 'codex',
+              modelId: 'gpt-5-codex',
+              label: 'GPT-5 Codex',
+            },
+          ],
+          attachments: [
+            {
+              kind: 'image',
+              label: 'Image',
+              enabled: true,
+              invocationFlag: '--image',
+            },
+          ],
+        }
+      }
+
+      return [runtimeSuggestion]
+    },
+  })
+
+  const capabilities = await service.readProviderCapabilities('codex')
+  await service.requestSuggestions({
+    provider: 'codex',
+    project: {
+      name: 'gtum',
+      path: '/workspace/gtum',
+    },
+    activeTab: null,
+    userTask: 'use the selected model',
+    model: 'gpt-5-codex',
+    attachments: [
+      {
+        kind: 'image',
+        path: '/tmp/screenshot.png',
+        label: 'screenshot.png',
+      },
+    ],
+  })
+
+  expect(capabilities.availableModels.map((model) => model.modelId)).toEqual([
+    'gpt-5.5',
+    'gpt-5-codex',
+  ])
+  expect(invoked).toEqual([
+    {
+      command: 'read_agent_provider_capabilities',
+      args: { provider: 'codex' },
+    },
+    {
+      command: 'request_agent_suggestions',
+      args: {
+        request: {
+          provider: 'codex',
+          model: 'gpt-5-codex',
+          attachments: [
+            {
+              kind: 'image',
+              path: '/tmp/screenshot.png',
+              label: 'screenshot.png',
+            },
+          ],
+          projectName: 'gtum',
+          projectPath: '/workspace/gtum',
+          activeTabId: null,
+          activeTabTitle: null,
+          activeFilePath: null,
+          activeFileLine: null,
+          activeFileSnippet: null,
+          lastNLogLines: [],
+          userTask: 'use the selected model',
+        },
+      },
     },
   ])
 })
@@ -111,7 +211,6 @@ test('attaches selected editor context instead of terminal logs', async () => {
       lines: [],
     },
     userTask: 'wire suggestions',
-    executionMode: 'deep',
   })
 
   expect(invoked[0]).toMatchObject({
@@ -121,7 +220,6 @@ test('attaches selected editor context instead of terminal logs', async () => {
         activeFilePath: 'src/shared/api/runtimeAgentSuggestions.ts',
         activeFileSnippet: 'export const service = true',
         lastNLogLines: [],
-        executionMode: 'deep',
       },
     },
   })
@@ -148,7 +246,6 @@ test('routes current-tab suggestions to a new tab when the active tab is not run
       lines: [{ kind: 'cmd', text: 'pnpm test' }],
     },
     userTask: 'rerun tests',
-    executionMode: 'balanced',
   })
 
   expect(suggestions[0].commands[0].target).toBe('new')
@@ -171,7 +268,6 @@ test('surfaces Codex CLI invocation failures', async () => {
       },
       activeTab: null,
       userTask: 'suggest a next command',
-      executionMode: 'balanced',
     }),
   ).rejects.toThrow('Codex CLI exited with status 1.')
 })
@@ -198,7 +294,6 @@ test('normalizes Codex error-only responses without approval commands', async ()
     },
     activeTab: null,
     userTask: 'delete the project',
-    executionMode: 'balanced',
   })
 
   expect(suggestions).toEqual([
@@ -209,6 +304,42 @@ test('normalizes Codex error-only responses without approval commands', async ()
       commands: [],
       note: 'No safe read-only command is available.',
       error: 'No safe read-only command is available.',
+    },
+  ])
+})
+
+test('normalizes Codex reply-only responses without approval commands', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      {
+        ...runtimeSuggestion,
+        summary: 'I reviewed the current state and no command is needed.',
+        command: '',
+        confidence: 'high',
+        error: null,
+      },
+    ],
+  })
+
+  const suggestions = await service.requestSuggestions({
+    provider: 'codex',
+    project: {
+      name: 'gtum',
+      path: '/workspace/gtum',
+    },
+    activeTab: null,
+    userTask: 'explain the current state',
+  })
+
+  expect(suggestions).toEqual([
+    {
+      id: 'codex-1',
+      provider: 'codex',
+      title: 'I reviewed the current state and no command is needed.',
+      commands: [],
+      note: '',
+      error: null,
     },
   ])
 })
@@ -235,9 +366,8 @@ test('rejects empty Codex responses without an error reason', async () => {
       },
       activeTab: null,
       userTask: 'suggest a next command',
-      executionMode: 'balanced',
     }),
-  ).rejects.toThrow('Codex CLI returned an empty command without an error reason.')
+  ).rejects.toThrow('Codex CLI returned an empty response without a command or error reason.')
 })
 
 test('reads provider diagnostics through the runtime command', async () => {

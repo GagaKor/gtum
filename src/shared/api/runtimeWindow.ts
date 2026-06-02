@@ -2,12 +2,23 @@ import { hasTauriRuntime } from "./runtimeProjects";
 
 export type RuntimeWindowUnlisten = () => void;
 
+export type RuntimeWindowResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
+
 export type RuntimeWindowControls = {
   available: boolean;
   minimize: () => Promise<void>;
   close: () => Promise<void>;
   toggleMaximize: () => Promise<void>;
   startDragging: () => Promise<void>;
+  startResizeDragging: (direction: RuntimeWindowResizeDirection) => Promise<void>;
 };
 
 type RuntimeWindowOverride = Partial<RuntimeWindowControls> & {
@@ -20,6 +31,7 @@ const noopControls: RuntimeWindowControls = {
   close: async () => undefined,
   toggleMaximize: async () => undefined,
   startDragging: async () => undefined,
+  startResizeDragging: async () => undefined,
 };
 
 const overrideControls = (): RuntimeWindowControls | null => {
@@ -35,6 +47,7 @@ const overrideControls = (): RuntimeWindowControls | null => {
     close: candidate.close ?? noopControls.close,
     toggleMaximize: candidate.toggleMaximize ?? noopControls.toggleMaximize,
     startDragging: candidate.startDragging ?? noopControls.startDragging,
+    startResizeDragging: candidate.startResizeDragging ?? noopControls.startResizeDragging,
   };
 };
 
@@ -56,6 +69,7 @@ export const createRuntimeWindowControls = async (): Promise<RuntimeWindowContro
       close: () => appWindow.close(),
       toggleMaximize: () => appWindow.toggleMaximize(),
       startDragging: () => appWindow.startDragging(),
+      startResizeDragging: (direction) => appWindow.startResizeDragging(direction),
     };
   } catch {
     return noopControls;

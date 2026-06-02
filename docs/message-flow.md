@@ -59,12 +59,12 @@ This document exceeds 200 lines. Do not reread every flow by default.
    - whether the `codex` CLI exists
    - whether `~/.codex/auth.json` exists
    - whether a ChatGPT-backed session is available and not stale
-3. When the user clicks `Connect Codex` in settings, the prototype opens a runtime-backed terminal tab and runs `codex login --device-auth`.
-4. If the login terminal is cancelled, failed, or exits before validation can begin, the UI keeps settings open, marks Codex as `error`, and does not call `begin_agent_login`.
-5. After the login terminal starts successfully, the frontend calls `begin_agent_login` with the `Codex` provider and the documented runtime scopes.
-6. The auth manager updates state based on the real path being local `Codex CLI` ChatGPT-session validation rather than callback-only auth.
-7. Successful validation sets the provider to `connected` and closes settings. Failure sets `error` with the exact runtime message in the existing provider row subtext so the user can finish CLI login and reconnect.
-8. Reconnect is an explicit second `Connect Codex` attempt after the CLI login completes. The app reopens the login helper, calls `begin_agent_login` again, and replaces the error row with the connected CLI-session state on success.
+3. CLI discovery first checks `PATH`, then the macOS `Codex.app` bundle locations so installed apps launched with a limited Finder PATH can still validate and run Codex.
+4. When the user clicks `Connect Codex` in settings, the prototype calls `begin_agent_login` with the `Codex` provider and documented runtime scopes. It does not open a terminal tab, run `codex login`, or write into the user-owned center terminal.
+5. The auth manager updates state based on the real path being local `Codex CLI` ChatGPT-session validation rather than callback-only auth.
+6. Successful validation sets the provider to `connected`, appends a concise Agent-panel status message, and closes settings.
+7. Failure sets `error` with the exact runtime message in the existing provider row subtext and appends the same setup guidance to the right Agent conversation. The user can run `codex login` manually outside the Agent decision flow, then reconnect.
+8. Reconnect is an explicit second `Connect Codex` attempt after the CLI login completes. The app calls `begin_agent_login` again and replaces the error row with the connected CLI-session state on success.
 9. `Claude` remains in a deferred/not-yet-daily-use state.
 
 ## Flow 4. Agent Request Envelope
@@ -72,6 +72,8 @@ This document exceeds 200 lines. Do not reread every flow by default.
 The input contract for `request_agent_suggestions` is fixed around these fields:
 
 - `provider`
+- `model` (optional; only set from runtime-backed provider capabilities)
+- `attachments` (optional; local paths selected through runtime-backed attachment capabilities)
 - `projectName`
 - `projectPath`
 - `activeTabId`
@@ -81,9 +83,8 @@ The input contract for `request_agent_suggestions` is fixed around these fields:
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
-- `executionMode`
 
-The active design prototype now calls this runtime command through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts) when the desktop runtime is available, the active provider is `Codex`, and the active project is runtime-backed. Browser preview no longer fabricates agent replies and surfaces a runtime-unavailable message for Codex requests.
+The active design prototype now calls this runtime command through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts) when the desktop runtime is available, the active provider is `Codex`, and the active project is runtime-backed. Browser preview no longer fabricates agent replies and surfaces a runtime-unavailable message for Codex requests. Provider model and attachment metadata comes from `read_agent_provider_capabilities`; the frontend must not show a model picker from hardcoded values.
 
 ## Flow 5. Suggestion Request And Approval Execution
 
@@ -91,34 +92,34 @@ The active design prototype now calls this runtime command through [`src/shared/
 2. The active prototype routes runtime-backed `Codex` requests through [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts). Browser preview must not create canned agent replies; it may only show an explicit desktop-runtime-required message.
 3. In the desktop runtime, `Codex` requests require a runtime-backed project opened through the native project flow. If the active project is still the empty browser fallback, the UI must show an "open a real local folder first" state and must not call `request_agent_suggestions`.
 4. In the desktop runtime, non-`Codex` providers must not silently fall back to canned replies. `Claude` remains deferred until a real provider contract exists, and the UI must show that state explicitly.
-5. The runtime path packs active project metadata, selected file context, recent terminal logs, and the user request into the Flow 4 envelope.
-6. After validating the connection, the `Codex` runtime requests suggestions through `codex exec --sandbox read-only`. On Windows, the runtime sends the prompt over stdin and prefers the Node `codex.js` entrypoint behind `codex.cmd` to avoid batch-file argument escaping failures.
-7. The response is normalized into:
+5. The runtime path packs active project metadata, selected file context, recent terminal logs, the selected runtime-backed model when present, selected attachment paths when present, and the user request into the Flow 4 envelope.
+6. While a runtime-backed `Codex` request is pending, the agent panel creates a persistent assistant conversation turn and reveals live progress inside that turn one stage at a time: reading the current project context first, sending the request to the provider runtime second, and waiting for the provider response third. The UI must not render all pending stages at once on request start. When the request completes successfully, those internal progress rows are cleared from the visible thread, the same turn records `Answered HH:MM / elapsed`, and the turn reads as a normal assistant reply with any reviewable command block underneath it. Failures keep enough progress/error context to explain what stopped.
+7. After validating the connection, the `Codex` runtime runs response generation in a blocking worker task through `codex exec --sandbox read-only`, adding `--model <id>` only when the selected model came from provider capabilities and `--image <path>` for selected Codex image attachments. The prompt asks for a normal assistant reply by default and only asks for a command when user review, permission, or a terminal decision is actually needed. The `command` field is a gtum right-panel permission-card preview, not Codex CLI execution; Codex CLI approval or sandbox settings such as `approval_policy=never` must not block harmless permission-card suggestions. The child process is killed and surfaced as a visible error if it does not finish within 60 seconds. On Windows, the runtime sends the prompt over stdin and prefers the Node `codex.js` entrypoint behind `codex.cmd` to avoid batch-file argument escaping failures.
+8. The response is normalized into:
    - `summary`
-   - `command`
+   - `command` (optional; present only for reviewable actions)
    - `preferredTarget`
    - `confidence`
    - `error`
-8. If the `Codex` runtime exits non-zero, returns unstructured output, or returns an empty command without an error reason, the frontend appends a visible Codex error message and does not create an approval card.
-9. If `Codex` returns an error-only structured response, the frontend renders that as a Codex message with no approval action.
-10. `src/prototype.jsx` owns the approval UI state. No command runs before approval unless the current approval policy auto-runs the command.
-11. Runtime-backed terminal tabs route approved commands through `src/shared/api/runtimeTerminals.ts`, which writes to `execute_terminal_session_command` or starts a new PTY through `create_terminal_session_with_command`.
-12. If a Codex suggestion targets the current tab but that tab is not runtime-backed, the command must be rerouted into a new runtime-backed PTY tab instead of simulating success in place.
-13. Browser preview must keep only deterministic empty fallback state and must not simulate agent execution, provider answers, project files, or terminal success.
-14. Task history records request and approval outcomes.
+9. If the `Codex` runtime exits non-zero, returns unstructured output, or returns an empty response without a command or error reason, the frontend appends a visible Codex error message and does not create an approval card.
+10. If `Codex` returns a reply-only structured response, the frontend renders that as a normal assistant message with no review card. If the reply contains numbered choices, the frontend extracts those choices into a selectable decision event card and sends the selected option back through the same agent request path. If it returns an error-only structured response, the frontend renders that as a Codex message with no approval action.
+11. `src/prototype.jsx` owns the agent decision UI state. Codex responses render as conversational agent turns: pending turns show inline progress, completed reply-only turns show normal assistant copy, numbered-choice replies add a decision event card, and command-bearing turns add a permission event card with a clear command preview plus direct decision buttons.
+12. Command-bearing turns must not rely on a generic assistant sentence or an intermediate `Review command` step. The visible event card labels the permission request, summarizes the reason, keeps the command as preview content, and exposes `Allow once`, `Always allow`, and `Deny` actions directly inside the card. These decisions stay in the right panel and must not execute or write into the center terminal.
+13. The center terminal is user-owned. Agent suggestions may be kept as decisions in the right panel, but the agent UI must not call terminal execution commands, create terminal tabs, or write into the user's terminal.
+14. If a Codex suggestion targets the current tab but that tab is not runtime-backed, it remains a reviewable agent suggestion rather than simulating success or creating a PTY tab.
+15. Browser preview must keep only deterministic empty fallback state and must not simulate agent execution, provider answers, project files, or terminal success.
+16. Task history records request and approval outcomes.
 
 ## Flow 6. Restore And Repeated Use
 
 1. Browser/Vite preview starts from the empty `Open a project` shell and keeps workspace persistence local-only.
 2. Desktop startup calls `read_workspace_runtime_snapshot` through [`src/shared/api/runtimeWorkspace.ts`](../src/shared/api/runtimeWorkspace.ts).
 3. Before provider, workspace, or Telegram stores initialize, the Rust runtime ensures the app-data root is a directory. If an older install left a file at that path, it is backed up beside the app-data root as `.legacy-file-<timestamp>.json`.
-4. If the snapshot includes an execution mode, the frontend applies it locally without writing it back during restore.
-5. If the snapshot includes `lastOpenedProjectPath`, the frontend reopens that path through Flow 1 by calling `read_project_overview`; the stored path is not treated as a complete project object.
-6. Successful runtime-backed project opens call `remember_workspace_project`.
-7. Execution mode changes from the agent panel, settings modal, or tweak controls call `set_workspace_execution_mode`.
-8. The current Rust workspace contract persists recent project paths, last opened project path, execution mode, storage version, and timestamps. Selected file, provider choice, task history, and line anchors remain future contract fields.
-9. Provider connection lists reload from the runtime, but real-provider state must be revalidated so stale connected state does not survive unchecked.
-10. PTY session objects are memory-backed and are not fully restorable after a process restart.
+4. If the snapshot includes `lastOpenedProjectPath`, the frontend reopens that path through Flow 1 by calling `read_project_overview`; the stored path is not treated as a complete project object.
+5. Successful runtime-backed project opens call `remember_workspace_project`.
+6. The current Rust workspace contract persists recent project paths, last opened project path, storage version, and timestamps. Selected file, provider choice, task history, line anchors, and future scheduling policy remain future contract fields.
+7. Provider connection lists reload from the runtime, but real-provider state must be revalidated so stale connected state does not survive unchecked.
+8. PTY session objects are memory-backed and are not fully restorable after a process restart.
 
 ## Linked Test Flows
 
@@ -133,21 +134,25 @@ It covers:
 - injected terminal runtime bridge coverage for new-tab creation and close/terminate routing
 - terminal runtime service contract coverage through [`tests/e2e/runtime-terminal-service.spec.ts`](../tests/e2e/runtime-terminal-service.spec.ts)
 - workspace runtime service contract coverage through [`tests/e2e/workspace-runtime-service.spec.ts`](../tests/e2e/workspace-runtime-service.spec.ts)
-- workspace restore coverage that verifies startup reopens the saved runtime project and applies the saved execution mode
-- workspace persistence coverage that verifies project opens and execution mode changes call the runtime workspace commands
+- workspace restore coverage that verifies startup reopens the saved runtime project
+- workspace persistence coverage that verifies project opens call the runtime workspace command and do not write hidden execution-mode state
 - agent suggestion runtime service contract coverage through [`tests/e2e/runtime-agent-suggestions-service.spec.ts`](../tests/e2e/runtime-agent-suggestions-service.spec.ts)
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
+- fixed-model/fixed-mode regression coverage that verifies the right agent panel, settings modal, statusbar, and Codex request envelope do not expose unsynced model or execution-mode values
+- live Codex activity coverage that verifies pending runtime requests reveal concrete operation progress rows sequentially, then clear those rows after the response while keeping the final assistant turn and answer-time metadata
+- reply-only Codex coverage that verifies normal answers do not create review cards or composer approval panels
+- numbered-choice Codex coverage that verifies reply choices render as selectable event cards and selected options continue through the agent request path
+- command event-card coverage that verifies permission requests render as explicit event cards with direct `Allow once`, `Always allow`, and `Deny` decisions instead of generic command prose or an intermediate review panel
 - Codex runtime failure and error-only response coverage that verifies failed requests do not create approval cards
 - browser-preview runtime-unavailable coverage that verifies no canned Codex/Test/Coder suggestion is created without the desktop runtime
 - runtime-project gating coverage that verifies Codex does not call `request_agent_suggestions` while the active project is still the empty browser fallback
 - deferred desktop-provider coverage that verifies the UI does not answer with canned prototype data
-- PTY reroute coverage that verifies Codex commands targeting non-runtime-backed tabs start a new runtime-backed terminal session
+- agent-only decision coverage that verifies Codex command review and setup guidance stay in the right panel without creating terminal tabs or runtime terminal commands
 - agent auth runtime service contract coverage through [`tests/e2e/runtime-agent-auth-service.spec.ts`](../tests/e2e/runtime-agent-auth-service.spec.ts)
-- injected Codex CLI login launcher coverage in `tests/e2e/design-prototype.spec.ts`
-- Codex login error, cancellation, and reconnect coverage in `tests/e2e/design-prototype.spec.ts`
+- Codex connect setup-guidance and reconnect coverage in `tests/e2e/design-prototype.spec.ts`
 - Codex diagnostic status normalization coverage in Rust unit tests under [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs)
 
-Deleted FSD-era E2E specs must not be referenced as current coverage. Provider login launcher coverage now exists for the new shell, but aging and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
+Deleted FSD-era E2E specs must not be referenced as current coverage. Provider connect coverage now exists for the new shell, but aging and restore behavior still need new-shell coverage beside `design-prototype.spec.ts` or split coverage only after those flows exist again.
 
 ## Documentation Rule
 

@@ -14,6 +14,15 @@ function tauriLaunchWindowSize() {
   return config.app.windows[0]
 }
 
+function tauriDefaultPermissions(): string[] {
+  const configPath = resolve(repoRoot, 'src-tauri/capabilities/default.json')
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    permissions: string[]
+  }
+
+  return config.permissions
+}
+
 test('renders the clean uploaded design prototype shell', async ({ page }) => {
   await page.goto('/')
 
@@ -115,11 +124,195 @@ test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
   await expect(statusbar).toContainText('0 changes')
   await expect(statusbar).toContainText('up 0 / down 0')
   await expect(statusbar).toContainText('0 tabs / 1 groups')
-  await expect(statusbar).toContainText('Mode: Balanced')
   await expect(statusbar).toContainText('Cmd+K')
 
   await titlebar.locator('.pill.icon-only').click()
   await expect(page.locator('.settings-modal')).toBeVisible()
+})
+
+test('does not expose fixed Codex models or fake execution modes', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.locator('.agent')).not.toContainText('GPT-5')
+  await expect(page.locator('.agent')).not.toContainText('Fast')
+  await expect(page.locator('.agent')).not.toContainText('Balanced')
+  await expect(page.locator('.agent')).not.toContainText('Deep')
+  await expect(page.locator('.composer-quick')).toHaveCount(0)
+  await expect(page.locator('.agent')).not.toContainText('Explain current state')
+  await expect(page.locator('.agent')).not.toContainText('Suggest a fix')
+  await expect(page.locator('.agent')).not.toContainText('Rerun tests')
+  await expect(page.locator('.statusbar')).not.toContainText('Mode:')
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  const settings = page.locator('.settings-modal')
+  await expect(settings).toBeVisible()
+  await expect(settings).not.toContainText('Models')
+  await expect(settings).not.toContainText('Pick the default model per provider.')
+  await expect(settings).not.toContainText('Default mode')
+  await expect(settings).not.toContainText('GPT-5')
+  await expect(settings).not.toContainText('Fast')
+  await expect(settings).not.toContainText('Balanced')
+  await expect(settings).not.toContainText('Deep')
+})
+
+test('uses runtime provider capabilities for the composer model picker', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_ATTACHMENT_PICKER__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_AGENT_ATTACHMENT_PICKER__ = {
+      pick: async () => [
+        {
+          kind: 'image',
+          path: '/tmp/screenshot.png',
+          label: 'screenshot.png',
+        },
+      ],
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'read_agent_provider_capabilities') {
+          return {
+            provider: 'codex',
+            supportsModelSelection: true,
+            currentModel: {
+              providerId: 'codex',
+              modelId: 'gpt-5.5',
+              label: 'GPT-5.5',
+            },
+            availableModels: [
+              {
+                providerId: 'codex',
+                modelId: 'gpt-5.5',
+                label: 'GPT-5.5',
+              },
+              {
+                providerId: 'codex',
+                modelId: 'gpt-5-codex',
+                label: 'GPT-5 Codex',
+              },
+            ],
+            attachments: [
+              {
+                kind: 'image',
+                label: 'Image',
+                enabled: true,
+                invocationFlag: '--image',
+              },
+            ],
+          }
+        }
+
+        if (command === 'request_agent_suggestions') {
+          return [
+            {
+              id: 'codex-runtime-model',
+              provider: 'codex',
+              summary: 'Run selected model smoke',
+              command: 'pnpm test:model-picker',
+              preferredTarget: 'new_tab',
+              confidence: 'high',
+              error: null,
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'GPT-5.5',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+
+  await expect(page.locator('.composer-model-chip')).toContainText('GPT-5.5')
+  await expect(page.locator('.composer-tool')).toHaveAttribute('title', /Image/)
+  await page.locator('.composer-tool').click()
+  await expect(page.locator('.composer-attachment-chip')).toContainText('screenshot.png')
+  await page.locator('.composer-model-chip').click()
+  await page.locator('.composer-model-option').filter({ hasText: 'GPT-5 Codex' }).click()
+  await expect(page.locator('.composer-model-chip')).toContainText('GPT-5 Codex')
+
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.agent-turn').last()).toContainText('Run selected model smoke')
+  await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
+
+  const requestCall = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __agentCalls?: Array<{ command: string; args?: { request?: Record<string, unknown> } }>
+        }
+      ).__agentCalls?.find((call) => call.command === 'request_agent_suggestions') ?? null,
+  )
+
+  expect(requestCall?.args?.request?.model).toBe('gpt-5-codex')
+  expect(requestCall?.args?.request?.attachments).toEqual([
+    {
+      kind: 'image',
+      path: '/tmp/screenshot.png',
+      label: 'screenshot.png',
+    },
+  ])
 })
 
 test('preserves prototype interactions without legacy frontend state', async ({ page }) => {
@@ -176,7 +369,7 @@ test('does not create canned agent replies when desktop runtime is unavailable',
   await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
 })
 
-test('restores the last runtime project and execution mode from workspace persistence', async ({ page }) => {
+test('restores the last runtime project from workspace persistence', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __workspaceCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -197,7 +390,6 @@ test('restores the last runtime project and execution mode from workspace persis
           snapshot: {
             recentProjects: ['/workspace/restored'],
             lastOpenedProjectPath: '/workspace/restored',
-            executionMode: 'deep',
             updatedAt: 100,
             storageVersion: 1,
           },
@@ -235,7 +427,6 @@ test('restores the last runtime project and execution mode from workspace persis
   await page.goto('/')
 
   await expect(page.locator('.titlebar')).toContainText('restored-workspace')
-  await expect(page.locator('.statusbar')).toContainText('Mode: Deep')
 
   const calls = await page.evaluate(
     () => {
@@ -264,7 +455,7 @@ test('restores the last runtime project and execution mode from workspace persis
   ])
 })
 
-test('persists runtime project opens and execution mode changes', async ({ page }) => {
+test('persists runtime project opens without writing hidden execution mode', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __workspaceCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -286,7 +477,6 @@ test('persists runtime project opens and execution mode changes', async ({ page 
             snapshot: {
               recentProjects: [],
               lastOpenedProjectPath: null,
-              executionMode: 'balanced',
               updatedAt: 100,
               storageVersion: 1,
             },
@@ -297,7 +487,6 @@ test('persists runtime project opens and execution mode changes', async ({ page 
         return {
           recentProjects: ['/workspace/gtum'],
           lastOpenedProjectPath: '/workspace/gtum',
-          executionMode: command === 'set_workspace_execution_mode' ? 'deep' : 'balanced',
           updatedAt: 140,
           storageVersion: 1,
         }
@@ -332,7 +521,6 @@ test('persists runtime project opens and execution mode changes', async ({ page 
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
-  await page.locator('.agent-model-row .mode-pill button').nth(2).click()
 
   await expect
     .poll(async () =>
@@ -348,7 +536,6 @@ test('persists runtime project opens and execution mode changes', async ({ page 
     .toEqual(
       expect.arrayContaining([
         'remember_workspace_project',
-        'set_workspace_execution_mode',
       ]),
     )
 
@@ -361,18 +548,13 @@ test('persists runtime project opens and execution mode changes', async ({ page 
       ).__workspaceCalls ?? [],
   )
   const rememberCall = calls.find((call) => call.command === 'remember_workspace_project')
-  const modeCall = calls.find((call) => call.command === 'set_workspace_execution_mode')
 
   expect(rememberCall?.args).toEqual({
     request: {
       path: '/workspace/gtum',
     },
   })
-  expect(modeCall?.args).toEqual({
-    request: {
-      executionMode: 'deep',
-    },
-  })
+  expect(calls.map((call) => call.command)).not.toContain('set_workspace_execution_mode')
 })
 
 test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ page }) => {
@@ -573,8 +755,19 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 
-  await expect(page.locator('.sugg').last()).toContainText('Run the failing funnel test')
-  await expect(page.locator('.sugg').last()).toContainText('pnpm test:funnel --reporter=verbose')
+  const agentTurn = page.locator('.agent-turn').last()
+  await expect(agentTurn).not.toContainText('Work completed')
+  await expect(agentTurn.locator('.agent-turn-progress')).toHaveCount(0)
+  await expect(agentTurn).toContainText(/Answered \d\d:\d\d \/ \d+s/)
+  await expect(agentTurn).toContainText('Run the failing funnel test')
+  await expect(agentTurn).toContainText('1 command')
+  await expect(agentTurn).toContainText('Permission request')
+  await expect(agentTurn).toContainText('Allow once')
+  await expect(agentTurn).toContainText('Always allow')
+  await expect(agentTurn).toContainText('Deny')
+  await expect(agentTurn).not.toContainText('Review command')
+  await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
+  await expect(page.locator('.sugg')).toHaveCount(0)
 
   const calls = await page.evaluate(
     () =>
@@ -592,12 +785,138 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
     projectPath: '~/code/aurora-monorepo',
     activeTabId: null,
     activeTabTitle: null,
-    executionMode: 'balanced',
     userTask: 'test prompt',
   })
+  expect(requestCall?.args?.request).not.toHaveProperty('executionMode')
   expect(requestCall?.args?.request?.lastNLogLines ?? []).not.toContain(
     'Error: listen EADDRINUSE: address already in use :::3001',
   )
+})
+
+test('shows live Codex activity while waiting for runtime suggestions', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__: number
+      __resolveCodexRequest?: () => void
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = 700
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'request_agent_suggestions') {
+          await new Promise<void>((resolve) => {
+            bridgeWindow.__resolveCodexRequest = resolve
+          })
+
+          return [
+            {
+              id: 'codex-runtime-1',
+              provider: 'codex',
+              summary: 'Run focused tests',
+              command: 'npm run test:e2e -- --grep agent',
+              preferredTarget: 'new_tab',
+              confidence: 'medium',
+              error: null,
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  await page.getByPlaceholder('Ask Codex').fill('test prompt')
+  await page.locator('.composer-input .send').click()
+
+  const liveTurn = page.locator('.agent-turn').last()
+  const progress = liveTurn.locator('.agent-turn-progress')
+  await expect(liveTurn).toContainText('Working')
+  await expect(progress).toContainText(
+    'Reading aurora-monorepo context',
+  )
+  await expect(progress).not.toContainText('Sending request to Codex CLI runtime')
+  await expect(progress).not.toContainText('Waiting for Codex CLI response')
+
+  await expect(progress).toContainText(
+    'Sending request to Codex CLI runtime',
+  )
+  await expect(progress).not.toContainText('Waiting for Codex CLI response')
+
+  await expect(progress).toContainText(
+    'Waiting for Codex CLI response',
+  )
+  await expect(progress).not.toContainText('Preparing context')
+  await expect(page.locator('.agent-activity')).toHaveCount(0)
+
+  await page.evaluate(() => {
+    ;(window as Window & { __resolveCodexRequest?: () => void }).__resolveCodexRequest?.()
+  })
+
+  await expect(liveTurn).not.toContainText('Work completed')
+  await expect(liveTurn.locator('.agent-turn-progress')).toHaveCount(0)
+  await expect(liveTurn).toContainText(/Answered \d\d:\d\d \/ \d+s/)
+  await expect(liveTurn).toContainText('Run focused tests')
+  await expect(page.locator('.sugg')).toHaveCount(0)
+  await expect(page.locator('.agent-activity')).toHaveCount(0)
 })
 
 test('surfaces Codex runtime failures without canned replies or approval cards', async ({ page }) => {
@@ -782,6 +1101,239 @@ test('renders Codex error-only suggestions as messages without approval', async 
   await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
 })
 
+test('renders Codex reply-only responses without review cards', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'request_agent_suggestions') {
+          return [
+            {
+              id: 'codex-runtime-reply',
+              provider: 'codex',
+              summary: 'I checked the current context. No approval is needed for this answer.',
+              command: '',
+              preferredTarget: 'new_tab',
+              confidence: 'high',
+              error: null,
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  await page.getByPlaceholder('Ask Codex').fill('explain current state')
+  await page.locator('.composer-input .send').click()
+
+  const reply = page.locator('.agent-turn').last()
+  await expect(reply).toContainText('I checked the current context. No approval is needed for this answer.')
+  await expect(reply).toContainText(/Answered \d\d:\d\d \/ \d+s/)
+  await expect(reply).not.toContainText('Review command')
+  await expect(reply).not.toContainText('Needs review')
+  await expect(reply.locator('.agent-turn-result')).toHaveCount(0)
+  await expect(page.locator('.composer-approval')).toHaveCount(0)
+})
+
+test('renders numbered Codex choices as selectable event cards', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        return {
+          metadata: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+          },
+          tree: {
+            name: 'aurora-monorepo',
+            path: '~/code/aurora-monorepo',
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'feature/onboarding-funnel',
+            branchType: 'feature',
+            changedFilesCount: 7,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'request_agent_suggestions') {
+          const request = args?.request as { userTask?: string } | undefined
+
+          if (request?.userTask?.startsWith('2.')) {
+            return [
+              {
+                id: 'codex-choice-followup',
+                provider: 'codex',
+                summary: '선택지 2로 계속 진행하겠습니다.',
+                command: '',
+                preferredTarget: 'new_tab',
+                confidence: 'high',
+                error: null,
+              },
+            ]
+          }
+
+          return [
+            {
+              id: 'codex-choice-reply',
+              provider: 'codex',
+              summary:
+                '테스트 질문입니다. 어떤 방식으로 진행할까요? 1. 간단히 답변만 받기 2. 선택지에 따라 다음 질문 이어가기 3. 실제 작업 계획처럼 분기 테스트하기',
+              command: '',
+              preferredTarget: 'new_tab',
+              confidence: 'high',
+              error: null,
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  await page.getByPlaceholder('Ask Codex').fill('테스트로 나에게 질문 선택지를 줘봐')
+  await page.locator('.composer-input .send').click()
+
+  const turn = page.locator('.agent-turn').last()
+  const choiceCard = page.locator('.agent-event-card.choice').first()
+  await expect(choiceCard).toBeVisible()
+  await expect(choiceCard).toContainText('Decision needed')
+  await expect(choiceCard).toContainText('Choose one option')
+  await expect(choiceCard).toContainText('1')
+  await expect(choiceCard).toContainText('간단히 답변만 받기')
+  await expect(choiceCard).toContainText('2')
+  await expect(choiceCard).toContainText('선택지에 따라 다음 질문 이어가기')
+  await expect(choiceCard).toContainText('3')
+  await expect(choiceCard).toContainText('실제 작업 계획처럼 분기 테스트하기')
+  await expect(turn).not.toContainText('Review command')
+  await expect(page.locator('.composer-approval')).toHaveCount(0)
+
+  await choiceCard.getByRole('button', { name: /2 선택지에 따라 다음 질문 이어가기/ }).click()
+
+  await expect(choiceCard).toContainText('Selected')
+  await expect(page.locator('.msg.user').last()).toContainText('2. 선택지에 따라 다음 질문 이어가기')
+  await expect(page.locator('.agent-turn').last()).toContainText('선택지 2로 계속 진행하겠습니다.')
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __agentCalls?: Array<{ command: string }>
+            }
+          ).__agentCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0,
+      ),
+    )
+    .toBe(2)
+})
+
 test('requires a runtime-backed project before desktop Codex requests', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
@@ -907,8 +1459,7 @@ test('does not use canned agent replies for deferred desktop providers', async (
   })
 
   await page.goto('/')
-  await page.locator('.model-picker-btn').click()
-  await page.locator('.model-picker-item').filter({ hasText: 'Claude Sonnet' }).click()
+  await page.locator('.agent-provider-tab').filter({ hasText: 'Claude' }).click()
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 
@@ -917,7 +1468,7 @@ test('does not use canned agent replies for deferred desktop providers', async (
   await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
 })
 
-test('runs approved Codex commands in a real PTY when the suggested target is not runtime-backed', async ({ page }) => {
+test('keeps Codex command decisions in the agent panel without terminal execution', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1014,6 +1565,7 @@ test('runs approved Codex commands in a real PTY when the suggested target is no
     }
   })
 
+  await page.setViewportSize({ width: 1280, height: 520 })
   await page.goto('/')
   await page.getByText('Open project folder').click()
   await expect
@@ -1031,11 +1583,35 @@ test('runs approved Codex commands in a real PTY when the suggested target is no
 
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
-  await expect(page.locator('.sugg').last()).toContainText('Run the current tab test command')
-
-  await page.locator('.sugg').last().getByRole('button', { name: 'Review' }).click()
-  await expect(page.locator('.modal')).toBeVisible()
-  await page.locator('.modal-foot').getByRole('button', { name: 'Approve' }).click()
+  await expect(page.locator('.ctx-attach')).toHaveCount(0)
+  await expect(page.locator('.agent-turn').last()).toContainText(
+    'Run the current tab test command',
+  )
+  await expect(page.locator('.agent-turn').last()).not.toContainText('I found a command you can review')
+  await expect(page.locator('.agent-turn').last()).toContainText('Needs review')
+  const commandEvent = page.locator('.agent-turn').last().locator('.agent-event-card.command')
+  await expect(commandEvent).toBeVisible()
+  await expect(commandEvent).toContainText('Permission request')
+  await expect(commandEvent).toContainText('Terminal command needs review')
+  await expect(commandEvent).toContainText('Command preview')
+  await expect(commandEvent).toContainText('pnpm test:funnel --reporter=verbose')
+  await expect(commandEvent.getByRole('button', { name: 'Allow once' })).toBeVisible()
+  await expect(commandEvent.getByRole('button', { name: 'Always allow' })).toBeVisible()
+  await expect(commandEvent.getByRole('button', { name: 'Deny' })).toBeVisible()
+  await expect(page.locator('.agent-turn').last()).not.toContainText('Review command')
+  await expect(page.locator('.composer-approval')).toHaveCount(0)
+  await expect
+    .poll(async () =>
+      page.locator('.chat').evaluate((chat) =>
+        Math.ceil(chat.scrollHeight - chat.scrollTop - chat.clientHeight),
+      ),
+    )
+    .toBeLessThanOrEqual(2)
+  await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
+  await expect(page.locator('.sugg')).toHaveCount(0)
+  await expect(page.locator('.composer-provider-chip')).toContainText('Codex')
+  await expect(page.locator('.composer-provider-chip')).not.toContainText('gpt-5')
+  await expect(page.locator('.composer-foot')).not.toContainText('Fast')
 
   await expect
     .poll(async () =>
@@ -1048,7 +1624,13 @@ test('runs approved Codex commands in a real PTY when the suggested target is no
           ).__terminalCalls?.map((call) => call.command) ?? [],
       ),
     )
-    .toContain('create_terminal_session_with_command')
+    .toEqual([])
+
+  await commandEvent.getByRole('button', { name: 'Allow once' }).click()
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Permission allowed once in the agent panel',
+  )
+  await expect(commandEvent).toContainText('Allowed once')
 
   const terminalCalls = await page.evaluate(
     () =>
@@ -1058,16 +1640,11 @@ test('runs approved Codex commands in a real PTY when the suggested target is no
         }
       ).__terminalCalls ?? [],
   )
-  const runCall = terminalCalls.find((call) => call.command === 'create_terminal_session_with_command')
 
-  expect(runCall?.args).toMatchObject({
-    request: {
-      command: 'pnpm test:funnel --reporter=verbose',
-    },
-  })
+  expect(terminalCalls).toEqual([])
 })
 
-test('launches Codex CLI login from settings through the auth runtime bridge', async ({ page }) => {
+test('keeps Codex setup guidance in the agent panel without opening a login terminal', async ({ page }) => {
   await page.addInitScript(() => {
     const codexDisconnected = {
       provider: 'codex',
@@ -1087,13 +1664,12 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
       updatedAt: 100,
       lastError: null,
     }
-    const codexConnected = {
+    const codexError = {
       ...codexDisconnected,
-      status: 'connected',
-      accountLabel: 'Codex ChatGPT Session',
-      connectedAt: 130,
+      status: 'error',
       lastLoginAttemptAt: 125,
-      updatedAt: 140,
+      updatedAt: 130,
+      lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
     }
     const claudeDeferred = {
       provider: 'claude',
@@ -1113,21 +1689,6 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
       updatedAt: 100,
       lastError: 'Claude real-provider support is deferred.',
     }
-    const loginTerminal = {
-      sessionId: 88,
-      name: 'Codex Login',
-      cwd: '/workspace/project',
-      shell: '/bin/zsh',
-      shellArgs: ['-i'],
-      processId: 9088,
-      status: 'running',
-      createdAt: 100,
-      updatedAt: 120,
-      exitCode: null,
-      logLineCount: 1,
-      maxLogEntries: 400,
-      lastEvent: 'session created',
-    }
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
@@ -1140,8 +1701,10 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
         bridgeWindow.__authCalls.push({ command, args })
 
         if (command === 'list_agent_connections') return [claudeDeferred, codexDisconnected]
-        if (command === 'begin_agent_login') return codexConnected
-        if (command === 'create_terminal_session_with_command') return loginTerminal
+        if (command === 'begin_agent_login') return codexError
+        if (command === 'create_terminal_session_with_command') {
+          throw new Error('Codex setup guidance must stay in the agent panel')
+        }
         if (command === 'read_agent_provider_diagnostics') {
           return {
             provider: 'codex',
@@ -1182,12 +1745,17 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
     .toEqual(
       expect.arrayContaining([
         'list_agent_connections',
-        'create_terminal_session_with_command',
         'begin_agent_login',
       ]),
     )
 
-  await expect(page.locator('.group-tabbar.active')).toContainText('Codex Login')
+  await expect(page.locator('.group-tabbar').getByText('Codex Login')).toHaveCount(0)
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+    'Codex CLI session is missing or expired. Run codex login, then reconnect.',
+  )
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Codex CLI session is missing or expired. Run codex login, then reconnect.',
+  )
 
   const calls = await page.evaluate(
     () =>
@@ -1197,17 +1765,97 @@ test('launches Codex CLI login from settings through the auth runtime bridge', a
         }
       ).__authCalls ?? [],
   )
-  const loginLaunch = calls.find((call) => call.command === 'create_terminal_session_with_command')
 
-  expect(loginLaunch?.args).toMatchObject({
-    request: {
-      session: {
-        name: 'Codex Login',
-        cwd: '',
+  expect(calls.map((call) => call.command)).not.toContain('create_terminal_session_with_command')
+})
+
+test('connects an existing Codex session without opening a login terminal', async ({ page }) => {
+  await page.addInitScript(() => {
+    const codexDisconnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const codexConnected = {
+      ...codexDisconnected,
+      status: 'connected',
+      accountLabel: 'Codex ChatGPT Session',
+      connectedAt: 130,
+      lastLoginAttemptAt: 125,
+      updatedAt: 140,
+    }
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+
+        if (command === 'list_agent_connections') return [codexDisconnected]
+        if (command === 'begin_agent_login') return codexConnected
+        if (command === 'create_terminal_session_with_command') {
+          throw new Error('login terminal should not open for an existing session')
+        }
+
+        return codexDisconnected
       },
-      command: 'codex login --device-auth',
-    },
+    }
   })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  await page
+    .locator('.settings-provider')
+    .filter({ hasText: 'Codex' })
+    .getByRole('button', { name: 'Connect' })
+    .click()
+
+  await expect(page.locator('.settings-modal')).toBeHidden()
+  await page.locator('.titlebar .pill.icon-only').click()
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+    'Connected',
+  )
+  await expect(page.locator('.group-tabbar').getByText('Codex Login')).toHaveCount(0)
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __authCalls?: Array<{ command: string }>
+        }
+      ).__authCalls?.map((call) => call.command) ?? [],
+  )
+
+  expect(calls).toContain('begin_agent_login')
+  expect(calls).not.toContain('create_terminal_session_with_command')
+})
+
+test('does not render corrupted placeholder markers in visible settings copy', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+
+  await expect(page.locator('.settings-modal')).toBeVisible()
+  await expect(page.locator('.settings-modal')).not.toContainText('??')
+
+  await page.getByRole('button', { name: 'About' }).click()
+  await expect(page.locator('.settings-modal')).not.toContainText('??')
 })
 
 test('keeps exact Codex login failure visible in settings', async ({ page }) => {
@@ -1237,21 +1885,6 @@ test('keeps exact Codex login failure visible in settings', async ({ page }) => 
       updatedAt: 130,
       lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
     }
-    const loginTerminal = {
-      sessionId: 90,
-      name: 'Codex Login',
-      cwd: '/workspace/project',
-      shell: '/bin/zsh',
-      shellArgs: ['-i'],
-      processId: 9090,
-      status: 'running',
-      createdAt: 100,
-      updatedAt: 120,
-      exitCode: null,
-      logLineCount: 1,
-      maxLogEntries: 400,
-      lastEvent: 'session created',
-    }
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
@@ -1264,7 +1897,9 @@ test('keeps exact Codex login failure visible in settings', async ({ page }) => 
         bridgeWindow.__authCalls.push({ command, args })
 
         if (command === 'list_agent_connections') return [codexDisconnected]
-        if (command === 'create_terminal_session_with_command') return loginTerminal
+        if (command === 'create_terminal_session_with_command') {
+          throw new Error('Codex setup guidance must stay in the agent panel')
+        }
         if (command === 'begin_agent_login') return codexError
 
         return codexDisconnected
@@ -1284,88 +1919,6 @@ test('keeps exact Codex login failure visible in settings', async ({ page }) => 
   await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
     'Codex CLI session is missing or expired. Run codex login, then reconnect.',
   )
-})
-
-test('does not validate Codex when the login terminal is cancelled', async ({ page }) => {
-  await page.addInitScript(() => {
-    const codexDisconnected = {
-      provider: 'codex',
-      displayName: 'Codex',
-      status: 'disconnected',
-      connectionKind: 'real',
-      accountLabel: null,
-      accountEmail: null,
-      requiredScopes: ['project:read', 'terminal:read'],
-      expiresAt: null,
-      callbackUrl: null,
-      authUrl: null,
-      activeLoginId: null,
-      activeLoginState: null,
-      connectedAt: null,
-      lastLoginAttemptAt: null,
-      updatedAt: 100,
-      lastError: null,
-    }
-    const cancelledTerminal = {
-      sessionId: 91,
-      name: 'Codex Login',
-      cwd: '/workspace/project',
-      shell: '/bin/zsh',
-      shellArgs: ['-i'],
-      processId: null,
-      status: 'terminated',
-      createdAt: 100,
-      updatedAt: 120,
-      exitCode: null,
-      logLineCount: 1,
-      maxLogEntries: 400,
-      lastEvent: 'user cancelled login terminal',
-    }
-    const bridgeWindow = window as Window & {
-      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
-      __GTUM_AGENT_AUTH_RUNTIME__: unknown
-    }
-
-    bridgeWindow.__authCalls = []
-    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
-      hasRuntime: () => true,
-      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
-        bridgeWindow.__authCalls.push({ command, args })
-
-        if (command === 'list_agent_connections') return [codexDisconnected]
-        if (command === 'create_terminal_session_with_command') return cancelledTerminal
-        if (command === 'begin_agent_login') {
-          throw new Error('begin_agent_login should not be called after cancellation')
-        }
-
-        return codexDisconnected
-      },
-    }
-  })
-
-  await page.goto('/')
-  await page.locator('.titlebar .pill.icon-only').click()
-  await page
-    .locator('.settings-provider')
-    .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: 'Connect' })
-    .click()
-
-  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    'Codex login was cancelled before the session could be validated.',
-  )
-
-  const calls = await page.evaluate(
-    () =>
-      (
-        window as Window & {
-          __authCalls?: Array<{ command: string }>
-        }
-      ).__authCalls?.map((call) => call.command) ?? [],
-  )
-
-  expect(calls).toContain('create_terminal_session_with_command')
-  expect(calls).not.toContain('begin_agent_login')
 })
 
 test('reconnects Codex after the CLI session is completed', async ({ page }) => {
@@ -1404,21 +1957,6 @@ test('reconnects Codex after the CLI session is completed', async ({ page }) => 
       updatedAt: 155,
       lastError: null,
     }
-    const loginTerminal = {
-      sessionId: 92,
-      name: 'Codex Login',
-      cwd: '/workspace/project',
-      shell: '/bin/zsh',
-      shellArgs: ['-i'],
-      processId: 9092,
-      status: 'running',
-      createdAt: 100,
-      updatedAt: 120,
-      exitCode: null,
-      logLineCount: 1,
-      maxLogEntries: 400,
-      lastEvent: 'session created',
-    }
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
@@ -1433,7 +1971,9 @@ test('reconnects Codex after the CLI session is completed', async ({ page }) => 
         bridgeWindow.__authCalls.push({ command, args })
 
         if (command === 'list_agent_connections') return [codexDisconnected]
-        if (command === 'create_terminal_session_with_command') return loginTerminal
+        if (command === 'create_terminal_session_with_command') {
+          throw new Error('reconnect must not open a Codex login terminal')
+        }
         if (command === 'begin_agent_login') {
           bridgeWindow.__beginAttempts += 1
           return bridgeWindow.__beginAttempts === 1 ? codexError : codexConnected
@@ -1462,6 +2002,17 @@ test('reconnects Codex after the CLI session is completed', async ({ page }) => 
   await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
     'CLI session',
   )
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __authCalls?: Array<{ command: string }>
+        }
+      ).__authCalls?.map((call) => call.command) ?? [],
+  )
+
+  expect(calls).not.toContain('create_terminal_session_with_command')
 })
 
 test('starts browser fallback without bundled project files', async ({ page }) => {
@@ -1543,6 +2094,40 @@ test('routes custom caption buttons to native window controls when available', a
     (window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__,
   )
   expect(events).toEqual(['minimize', 'toggleMaximize', 'toggleMaximize', 'close'])
+})
+
+test('routes frameless window edge resizing to native window controls', async ({ page }) => {
+  await page.addInitScript(() => {
+    const events: string[] = []
+
+    ;(window as Window & {
+      __GTUM_OS__?: string
+      __GTUM_WINDOW_EVENTS__?: string[]
+      __GTUM_WINDOW_CONTROLS__?: unknown
+    }).__GTUM_OS__ = 'windows'
+    ;(window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__ = events
+    ;(window as Window & { __GTUM_WINDOW_CONTROLS__?: unknown }).__GTUM_WINDOW_CONTROLS__ = {
+      available: true,
+      minimize: async () => events.push('minimize'),
+      close: async () => events.push('close'),
+      toggleMaximize: async () => events.push('toggleMaximize'),
+      startDragging: async () => events.push('startDragging'),
+      startResizeDragging: async (direction: string) => events.push(`resize:${direction}`),
+    }
+  })
+  await page.goto('/')
+
+  await page.locator('.window-resize-zone.se').click({ position: { x: 2, y: 2 } })
+  await page.locator('.window-resize-zone.w').click({ position: { x: 2, y: 12 } })
+
+  const events = await page.evaluate(() =>
+    (window as Window & { __GTUM_WINDOW_EVENTS__?: string[] }).__GTUM_WINDOW_EVENTS__,
+  )
+  expect(events).toEqual(['resize:SouthEast', 'resize:West'])
+})
+
+test('allows native frameless resize dragging in the Tauri capability manifest', async () => {
+  expect(tauriDefaultPermissions()).toContain('core:window:allow-start-resize-dragging')
 })
 
 test('does not poll native maximized state from resize events', async ({ page }) => {

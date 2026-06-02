@@ -351,7 +351,7 @@ The frontend should be organized by feature domain.
   - hold feature contracts such as workbench tab layout and approval policy logic.
 - `shared/api`
   - holds backend-facing service seams such as `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file-read commands with browser fallback.
-  - includes `src/shared/api/runtimeWindow.ts`, the browser-safe seam for Tauri native window controls (`minimize`, `close`, `toggleMaximize`, and `startDragging`) used by the custom frameless titlebar.
+  - includes `src/shared/api/runtimeWindow.ts`, the browser-safe seam for Tauri native window controls (`minimize`, `close`, `toggleMaximize`, `startDragging`, and `startResizeDragging`) used by the custom frameless chrome.
   - native maximize state is local UI state only. The frontend must not poll Tauri `isMaximized` or subscribe to resize-driven maximize synchronization because that path can trigger macOS `is_zoomed`/style-mask churn in installed builds.
 - `shared/lib`, `shared/types`
   - hold cross-feature helpers and compatibility types needed while the uploaded design moves from JSX to TSX.
@@ -561,7 +561,6 @@ The Rust runtime is responsible for:
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
-- `executionMode`
 
 `activeFileSnippet`은 선택 파일 전체가 아니라 preview용 excerpt일 수 있으며, terminal 로그와 같이 bounded size를 유지한다.
 line anchor가 있으면 snippet은 anchor 근처 excerpt를 우선 사용한다.
@@ -617,7 +616,6 @@ The initial request envelope for this slice includes:
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
-- `executionMode`
 
 `activeFileSnippet` may be a bounded preview excerpt rather than the full file and should stay size-limited in the same spirit as attached terminal logs.
 When a line anchor exists, the snippet should prefer the anchored region rather than only the top of the file.
@@ -973,8 +971,9 @@ The target path for the first daily-use release is `OAuth/session login` for `Co
 
 #### Current Implementation Notes
 
-- The active frontend auth seam is `src/shared/api/runtimeAgentAuth.ts`; it wraps `list_agent_connections`, `begin_agent_login`, `disconnect_agent_provider`, `agent_auth_runtime_snapshot`, and the `create_terminal_session_with_command` launcher used for Codex login.
-- In the desktop runtime path, clicking `Connect Codex` opens a new terminal tab that runs `codex login --device-auth`, then calls `begin_agent_login` so the Rust auth manager can validate the local ChatGPT-backed Codex CLI session.
+- The active frontend auth seam is `src/shared/api/runtimeAgentAuth.ts`; it wraps `list_agent_connections`, `begin_agent_login`, `disconnect_agent_provider`, and `agent_auth_runtime_snapshot`.
+- In the desktop runtime path, clicking `Connect Codex` calls `begin_agent_login` so the Rust auth manager can validate the local ChatGPT-backed Codex CLI session. It does not open a terminal tab or run `codex login`; setup guidance stays in the right Agent panel and provider row.
+- The Rust Codex runtime resolves the CLI from `PATH` first and then known macOS `Codex.app` bundle locations. PTY shells also receive existing Codex app resource directories in `PATH`, which keeps user-owned terminal sessions and `codex exec` working when the installed app is launched from Finder with a limited environment.
 - The current Codex runtime scope contract is `project:read` and `terminal:read`; missing or expired session state maps to provider `error` and can be retried by reconnecting after the CLI login finishes.
 - Browser preview keeps only explicit no-runtime fallbacks. It does not load a bundled project fixture, fabricate provider answers, or treat simulated browser-only UI as desktop-runtime success.
 
@@ -1114,7 +1113,7 @@ Multi-agent execution should be orchestrated in the application layer.
 - `Conductor`
   - decomposes user requests into task graphs
 - `Task Scheduler`
-  - decides worker count and priority based on execution mode
+  - will eventually decide worker count and priority based on runtime-backed scheduling policies
 - `Agent Worker`
   - execution unit connected to a provider
 - `Context Store`
@@ -1168,55 +1167,15 @@ Parallelism should be increased only when these ownership boundaries stay clear.
 - when UI behavior changes, verify whether the runtime contract or snapshot schema must change too
 - treat display semantics as a shared contract rather than separate frontend and backend interpretations
 
-## 실행 모드 정책 / Execution Mode Policy
+## Deferred Execution Policy
 
-### 한국어
+Execution mode is a future scheduling-policy concept, not a current UI option or runtime request field.
 
-실행 모드는 UI 옵션이 아니라 스케줄링 정책이다.
+Current contract:
 
-#### Fast
-
-- 더 작은 모델 우선
-- 적은 파일과 짧은 로그 사용
-- 제한된 병렬 워커
-- 교차 리뷰 생략 가능
-
-#### Balanced
-
-- 기본 모드
-- 적절한 컨텍스트 범위
-- 제한적인 병렬 작업
-- 경량 검토 포함 가능
-
-#### Deep
-
-- 더 넓은 컨텍스트 사용
-- 더 많은 워커 사용 가능
-- 테스트, 리뷰, 교차 확인 포함
-
-### English
-
-Execution mode is a scheduling policy, not just a UI option.
-
-#### Fast
-
-- prefer smaller models
-- use fewer files and shorter logs
-- limited parallel workers
-- cross-review may be skipped
-
-#### Balanced
-
-- default mode
-- practical context scope
-- limited parallel work
-- lightweight review can be included
-
-#### Deep
-
-- broader context
-- more workers allowed
-- includes testing, review, and cross-checking
+- `Fast`, `Balanced`, and `Deep` are not exposed in the agent panel, settings modal, statusbar, workspace persistence, or `request_agent_suggestions` envelope.
+- Provider model selection is exposed only when `read_agent_provider_capabilities` returns runtime-synced models. Codex models come from the local Codex CLI catalog/config path, and the selected id is forwarded as `codex exec --model <id>` only when the user selects one. Attachment controls follow the same capability contract; Codex image attachments selected through the composer are forwarded as `codex exec --image <path>`.
+- Future execution policies must be backed by explicit runtime policy definitions and provider capability discovery before any UI control is reintroduced.
 
 ## 상태 모델 / State Model
 
@@ -1278,13 +1237,16 @@ Because `gtum` interacts with local files and shell execution, security boundari
 
 #### Principles
 
-- command execution always passes through an approval path
+- command execution is user-owned in the center terminal; agent decisions stay in the right panel and must not trigger terminal execution
 - file edits are allowed only through approval or explicit editing flows
 - login sessions and sensitive data must use secure storage
 - provider responses should be normalized into shared internal formats before being exposed to the UI
 - the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
-- The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_diagnostics` and `request_agent_suggestions`, then normalizes the Codex response into the existing approval-card command shape.
-- `src/prototype.jsx` uses that seam only when the desktop runtime is available, `Codex` is the active provider, and the project is runtime-backed. Browser preview and deferred providers must not keep a canned agent response path; they surface explicit unavailable states instead.
+- The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`, then normalizes the Codex response into either a reply-only assistant turn or a command-bearing turn that requires review.
+- `src/prototype.jsx` uses that seam only when the desktop runtime is available, `Codex` is the active provider, and the project is runtime-backed. Pending requests render concrete operation progress sequentially in the right agent workspace, completed turns record answer-time metadata, numbered replies can become selectable decision event cards, and command-bearing responses become explicit permission event cards with direct `Allow once`, `Always allow`, and `Deny` actions. Browser preview and deferred providers must not keep a canned agent response path; they surface explicit unavailable states instead.
+- The right agent workspace owns Codex conversation, command review, and decision recording. It must not create PTY tabs, execute terminal commands, or write suggested commands into the user's terminal.
+- The Codex `command` response is only a gtum permission-card preview. Provider-side approval or sandbox settings, including `approval_policy=never`, must not be treated as a reason to refuse harmless right-panel permission-card suggestions.
+- Desktop `request_agent_suggestions` runs Codex response generation in a blocking worker task rather than the command handler path. The `codex exec` child process has a 60-second timeout and is killed before returning a visible error if it hangs.
 - Windows `Codex` suggestion requests must avoid passing the full prompt as a `codex.cmd` batch-file argument. The runtime sends the prompt over stdin and, when the npm shim can be resolved, executes `node.exe <codex.js>` directly before falling back to `codex.cmd`.
 
 ## MVP 구현 순서 / MVP Implementation Order
@@ -1312,7 +1274,7 @@ Because `gtum` interacts with local files and shell execution, security boundari
 7. add a shared provider adapter interface
 8. implement read-only Git branch and dirty-state visibility
 9. implement a first multi-agent orchestration layer
-10. apply execution mode policies
+10. define runtime-backed scheduling policies before exposing execution-mode controls
 
 ## 오픈 질문 / Open Questions
 

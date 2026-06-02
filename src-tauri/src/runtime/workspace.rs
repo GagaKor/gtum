@@ -7,26 +7,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionMode {
-    Fast,
-    Balanced,
-    Deep,
-}
-
-impl Default for ExecutionMode {
-    fn default() -> Self {
-        Self::Balanced
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSnapshot {
     pub recent_projects: Vec<String>,
     pub last_opened_project_path: Option<String>,
-    pub execution_mode: ExecutionMode,
     pub updated_at: u64,
     pub storage_version: u32,
 }
@@ -44,19 +29,12 @@ pub struct WorkspaceRuntimeSnapshot {
 pub struct SaveWorkspaceSnapshotRequest {
     pub recent_projects: Vec<String>,
     pub last_opened_project_path: Option<String>,
-    pub execution_mode: Option<ExecutionMode>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RememberWorkspaceProjectRequest {
     pub path: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetWorkspaceExecutionModeRequest {
-    pub execution_mode: ExecutionMode,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,9 +115,6 @@ impl WorkspaceStateManager {
             .last_opened_project_path
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        if let Some(mode) = request.execution_mode {
-            store.snapshot.execution_mode = mode;
-        }
         touch_snapshot(&mut store.snapshot);
         normalize_snapshot(&mut store.snapshot);
         self.persist_locked(&store)?;
@@ -170,18 +145,6 @@ impl WorkspaceStateManager {
         Ok(store.snapshot.clone())
     }
 
-    pub fn set_execution_mode(
-        &self,
-        request: SetWorkspaceExecutionModeRequest,
-    ) -> Result<WorkspaceSnapshot, String> {
-        let mut store = self.store.lock().unwrap();
-        store.snapshot.execution_mode = request.execution_mode;
-        touch_snapshot(&mut store.snapshot);
-        normalize_snapshot(&mut store.snapshot);
-        self.persist_locked(&store)?;
-        Ok(store.snapshot.clone())
-    }
-
     fn persist(&self) -> Result<(), String> {
         let store = self.store.lock().unwrap();
         self.persist_locked(&store)
@@ -206,7 +169,6 @@ fn default_snapshot() -> WorkspaceSnapshot {
     WorkspaceSnapshot {
         recent_projects: Vec::new(),
         last_opened_project_path: None,
-        execution_mode: ExecutionMode::Balanced,
         updated_at: unix_timestamp_ms(),
         storage_version: 1,
     }

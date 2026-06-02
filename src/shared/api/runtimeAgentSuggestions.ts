@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import type {
-  AgentExecutionMode,
+  AgentModelRef,
   AgentProviderId,
   AgentSuggestionCard,
   AgentSuggestionConfidence,
@@ -43,6 +43,29 @@ export type RuntimeAgentProviderDiagnostics = {
   requirements: RuntimeAgentProviderRequirement[]
 }
 
+export type RuntimeAgentAttachmentKind = 'image' | 'file' | 'directory' | 'active_tab'
+
+export type RuntimeAgentAttachmentCapability = {
+  kind: RuntimeAgentAttachmentKind
+  label: string
+  enabled: boolean
+  invocationFlag?: string | null
+}
+
+export type RuntimeAgentAttachmentRef = {
+  kind: RuntimeAgentAttachmentKind
+  path: string
+  label?: string | null
+}
+
+export type RuntimeAgentProviderCapabilities = {
+  provider: AgentProviderId
+  supportsModelSelection: boolean
+  currentModel?: AgentModelRef | null
+  availableModels: AgentModelRef[]
+  attachments: RuntimeAgentAttachmentCapability[]
+}
+
 export type AgentSuggestionProjectInput = Pick<RuntimeProject, 'name' | 'path'>
 
 export type AgentSuggestionTabInput = {
@@ -63,7 +86,8 @@ export type RequestAgentSuggestionsInput = {
   project: AgentSuggestionProjectInput
   activeTab?: AgentSuggestionTabInput | null
   userTask: string
-  executionMode: AgentExecutionMode
+  model?: string | null
+  attachments?: RuntimeAgentAttachmentRef[]
 }
 
 export type AgentSuggestionRuntimeServiceOptions = {
@@ -74,6 +98,7 @@ export type AgentSuggestionRuntimeServiceOptions = {
 export type AgentSuggestionRuntimeService = {
   hasRuntime: () => boolean
   readProviderDiagnostics(provider: AgentProviderId): Promise<RuntimeAgentProviderDiagnostics>
+  readProviderCapabilities(provider: AgentProviderId): Promise<RuntimeAgentProviderCapabilities>
   requestSuggestions(input: RequestAgentSuggestionsInput): Promise<AgentSuggestionCard[]>
 }
 
@@ -128,6 +153,14 @@ export const activeFileSnippetFromTab = (
 
 const requestPayloadFromInput = (input: RequestAgentSuggestionsInput): Record<string, unknown> => ({
   provider: input.provider,
+  model: input.model?.trim() || null,
+  attachments: (input.attachments || [])
+    .map((attachment) => ({
+      kind: attachment.kind,
+      path: attachment.path.trim(),
+      label: attachment.label?.trim() || null,
+    }))
+    .filter((attachment) => attachment.path.length > 0),
   projectName: input.project.name,
   projectPath: input.project.path,
   activeTabId: input.activeTab?.id ?? null,
@@ -137,7 +170,6 @@ const requestPayloadFromInput = (input: RequestAgentSuggestionsInput): Record<st
   activeFileSnippet: activeFileSnippetFromTab(input.activeTab),
   lastNLogLines: recentLogLinesFromTab(input.activeTab),
   userTask: input.userTask,
-  executionMode: input.executionMode,
 })
 
 const riskFromConfidence = (confidence: AgentSuggestionConfidence): 'low' | 'mid' | 'high' => {
@@ -171,19 +203,20 @@ export const suggestionCardFromRuntime = (
 ): AgentSuggestionCard => {
   const command = normalizeText(suggestion.command)
   const error = normalizeText(suggestion.error)
+  const summary = normalizeText(suggestion.summary)
   const confidence = normalizeConfidence(suggestion.confidence)
   const preferredTarget = normalizeTarget(suggestion.preferredTarget)
 
-  if (!command && !error) {
-    throw new Error('Codex CLI returned an empty command without an error reason.')
+  if (!command && !error && !summary) {
+    throw new Error('Codex CLI returned an empty response without a command or error reason.')
   }
 
   return {
     id: normalizeText(suggestion.id) || `codex-${Date.now()}`,
     provider: suggestion.provider,
     title:
-      normalizeText(suggestion.summary) ||
-      (error ? 'Codex suggestion unavailable' : 'Codex suggestion'),
+      summary ||
+      (error ? 'Codex suggestion unavailable' : 'Codex response'),
     commands: command
       ? [
           {
@@ -193,7 +226,7 @@ export const suggestionCardFromRuntime = (
           },
         ]
       : [],
-    note: error || `Codex confidence: ${confidence}`,
+    note: error || (command ? `Codex confidence: ${confidence}` : ''),
     error: error || null,
   }
 }
@@ -209,6 +242,14 @@ const fallbackDiagnostics = (provider: AgentProviderId): RuntimeAgentProviderDia
   requirements: [],
 })
 
+const fallbackCapabilities = (provider: AgentProviderId): RuntimeAgentProviderCapabilities => ({
+  provider,
+  supportsModelSelection: false,
+  currentModel: null,
+  availableModels: [],
+  attachments: [],
+})
+
 export const createAgentSuggestionRuntimeService = (
   options: AgentSuggestionRuntimeServiceOptions = {},
 ): AgentSuggestionRuntimeService => {
@@ -222,6 +263,13 @@ export const createAgentSuggestionRuntimeService = (
       if (!hasRuntime()) return fallbackDiagnostics(provider)
 
       return invokeRuntime<RuntimeAgentProviderDiagnostics>('read_agent_provider_diagnostics', {
+        provider,
+      })
+    },
+    async readProviderCapabilities(provider) {
+      if (!hasRuntime()) return fallbackCapabilities(provider)
+
+      return invokeRuntime<RuntimeAgentProviderCapabilities>('read_agent_provider_capabilities', {
         provider,
       })
     },

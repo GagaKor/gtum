@@ -367,9 +367,8 @@ It is acceptable to start with only `master`, but once implementation begins, in
 설정은 최소한 다음을 다룬다.
 
 - provider 연결과 세션 상태
-- provider별 기본 모델 선택
+- 런타임에서 실제로 동기화된 provider capability와 readiness
 - accent 같은 외관 설정
-- `Fast`, `Balanced`, `Deep` 실행 모드
 - 병렬 worker 수와 응답 스트리밍
 - 위험도별 승인 정책
 - trusted directory와 forbidden pattern
@@ -417,7 +416,7 @@ It should also help users reread the path already taken and expose recurring pro
 The first code-reading delivery should remain read-only.
 Editing, saving, and diff application can follow later, but the MVP path should first prove that users can read code, compare it with live logs, and understand why an approval was suggested.
 
-#### 4. Agent-Assisted Execution
+#### 4. Agent-Assisted Decisions
 
 An agent can suggest actions such as:
 
@@ -426,7 +425,7 @@ An agent can suggest actions such as:
 - inspecting a log file
 - creating a dedicated debugging tab
 
-Execution happens only after user approval.
+The center terminal is user-owned. Agent conversations, command review, and decisions stay in the right agent panel. The agent should not run commands, create terminal tabs, or write into the user's terminal; users can manually run any command they choose.
 
 #### 5. Agent Account Connection
 
@@ -468,13 +467,14 @@ The updated design treats settings as an execution-control surface, not a second
 Settings should cover at least:
 
 - provider connections and session state
-- default model selection per provider
+- runtime-synced provider capabilities and readiness diagnostics
 - appearance settings such as the accent color
-- `Fast`, `Balanced`, and `Deep` execution modes
 - parallel worker count and response streaming
 - approval policy by risk level
 - trusted directories and forbidden patterns
 - auto-approval history and undoable notifications
+
+Default model selection and execution-mode controls are deferred until the runtime can discover provider capabilities and apply explicit scheduling policies. The current Codex path must not display fixed model names or `Fast`/`Balanced`/`Deep` options as if they were synchronized runtime state.
 
 ## 정보 구조 / Information Architecture
 
@@ -487,7 +487,7 @@ Settings should cover at least:
 역할:
 
 - 현재 프로젝트, 브랜치, 활성 탭, split group 수를 상단 titlebar에서 표시
-- 연결된 provider 수와 현재 실행 모드를 상단 또는 하단 상태 영역에서 표시
+- 연결된 provider 수와 provider session/readiness 상태를 상단 또는 하단 상태 영역에서 표시
 - branch, 변경 파일 수, ahead/behind, tab/group 상태를 status bar에서 빠르게 확인
 - 큰 대시보드 카드 대신 editor/terminal/agent가 바로 작업 가능한 상태로 보이게 함
 
@@ -520,7 +520,7 @@ Settings should cover at least:
 
 - 프로젝트와 터미널 상태 관찰
 - 선택된 파일, 현재 탭 출력, 최근 명령을 context summary로 표시
-- provider/model picker와 실행 모드를 한 줄에서 조정
+- provider와 session/readiness 상태를 한 줄에서 확인하고, provider 전환만 현재 UI에서 지원
 - 문제 설명
 - 작업 제안
 - 승인된 명령 실행
@@ -531,7 +531,7 @@ Settings should cover at least:
 
 역할:
 
-- provider 연결, 모델 선택, 외관, 실행 정책, 제품 정보를 한 화면에서 관리
+- provider 연결, 외관, 승인 정책, 제품 정보를 한 화면에서 관리
 - 위험도별 승인 정책을 `always ask`, `auto`, `trusted dirs only`로 구분
 - high-risk 명령은 항상 명시 승인으로 고정
 - forbidden pattern은 정책과 무관하게 차단 또는 재확인
@@ -546,7 +546,7 @@ The app is organized around four primary domains plus a top/bottom status shell.
 Responsibilities:
 
 - show current project, branch, active tab, and split-group count in the titlebar
-- show connected provider count and the current execution mode in the top or bottom status area
+- show connected provider count and provider session/readiness state in the top or bottom status area
 - make branch, changed-file count, ahead/behind state, and tab/group state quickly readable in the status bar
 - avoid a large dashboard-card default; editor, terminal, and agent surfaces should be immediately usable
 
@@ -579,7 +579,7 @@ Responsibilities:
 
 - observe project and terminal state
 - expose selected files, current tab output, and recent commands as a context summary
-- let users adjust provider/model picker and execution mode in one compact row
+- let users inspect provider/session readiness and switch providers in one compact row
 - explain problems
 - suggest actions
 - execute approved commands
@@ -620,7 +620,7 @@ Responsibilities:
 #### 우측 패널
 
 - 에이전트 작업창
-- provider header, model picker, 실행 모드를 먼저 읽는 compact model row
+- provider header와 session/readiness 상태를 먼저 읽는 compact provider row
 - context summary, 요청 thread, quick prompts, composer
 - 현재 pending suggestion과 승인 검토 진입점
 - 워크플로우 문제 요약과 프로젝트 인사이트
@@ -629,14 +629,14 @@ Responsibilities:
 
 - `Connections`, `Models`, `Appearance`, `Execution`, `About` 탭을 가진 settings modal
 - provider별 세션, scope, 만료 상태와 모델 기본값
-- 실행 모드, 병렬 worker 수, 응답 스트리밍 설정
+- 병렬 worker 수, 응답 스트리밍 설정
 - 위험도별 승인 정책, trusted dirs, forbidden patterns
 - 자동 승인 이력과 undo 가능한 toast
 
 #### 하단 패널 또는 드로어
 
 - 기본 구조에서는 고정 하단 패널을 두지 않는다.
-- 단, 1줄 status bar는 branch, 변경 수, tab/group 수, 실행 모드 같은 메타 상태를 표시할 수 있다.
+- 단, 1줄 status bar는 branch, 변경 수, tab/group 수 같은 메타 상태를 표시할 수 있다.
 - 로그, 알림, 명령 기록, 경로 요약은 workbench pane, compact dock, contextual surface로 푼다.
 
 구체적인 UI 토큰, 색상, 반경, 컴포넌트 상태 표현은 `docs/design-system.md`를 기준으로 한다.
@@ -663,23 +663,23 @@ Responsibilities:
 #### Right Panel
 
 - agent workspace
-- provider header plus compact model picker and execution-mode row
+- provider header plus compact provider/session-readiness row
 - context summary, request thread, quick prompts, and composer
 - current pending suggestions and approval-review entry points
 - workflow findings and project insights
 
 #### Settings and Approval Policy
 
-- settings modal with `Connections`, `Models`, `Appearance`, `Execution`, and `About` tabs
-- provider sessions, scopes, expiration state, and default model choices per provider
-- execution mode, parallel worker count, and response streaming settings
+- settings modal with `Connections`, `Appearance`, `Execution`, and `About` tabs
+- provider sessions, scopes, expiration state, and readiness diagnostics
+- parallel worker count and response streaming settings
 - approval policy by risk level, trusted directories, and forbidden patterns
 - auto-approval history and undoable toast notifications
 
 #### Bottom Panel or Drawer
 
 - no permanent bottom panel in the default structure
-- a one-line status bar may show metadata such as branch, change count, tab/group count, and execution mode
+- a one-line status bar may show metadata such as branch, change count, and tab/group count
 - logs, notifications, command history, and path recap should be handled through workbench panes, compact docks, or contextual surfaces
 
 Use `docs/design-system.md` for concrete UI tokens, colors, radius, and component state representation.
@@ -720,9 +720,9 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 4. The user runs commands per tab or reads code.
 5. The agent reads current project, selected-file, active-tab output, and recent-command context.
 6. The agent suggests explanations or next actions.
-7. Low-risk commands allowed by policy may auto-run with an auditable, undoable toast; other commands open an approval modal that shows target, risk, and rollback notes.
-8. The user approves execution in the current tab or a new tab.
-9. The user reviews the approval, failure, and retry path before deciding the next action.
+7. Suggested commands open inline review inside the right agent panel.
+8. The user records the decision in the agent panel, then manually uses the center terminal when they want to run anything.
+9. The user reviews the agent decision, failure, and retry path before deciding the next action.
 
 #### Example Scenario
 
@@ -946,6 +946,8 @@ A shared project context for multi-agent work may include:
 
 ## 실행 모드 / Execution Modes
 
+Current status: deferred. The current app does not expose `Fast`, `Balanced`, or `Deep` controls, does not persist execution mode in workspace state, and does not send execution mode in the Codex request envelope. Reintroduce this area only after provider capability discovery and runtime scheduling policies exist.
+
 ### 한국어
 
 `fast mode`는 단순한 UI 토글이 아니라, 어떤 깊이로 얼마나 넓은 컨텍스트를 읽고 몇 개의 에이전트를 어떤 모델로 돌릴지 정하는 실행 정책이다.
@@ -1115,7 +1117,7 @@ At the product level, the system needs:
 - 에이전트 패널 제공
 - 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽을 수 있음
 - 에이전트가 선택 파일과 최근 명령 맥락을 읽을 수 있음
-- provider/model 선택과 실행 모드를 오른쪽 agent workspace에서 조정
+- provider/session readiness를 오른쪽 agent workspace에서 확인하고 provider를 전환
 - 에이전트가 명령을 제안할 수 있음
 - 승인된 명령을 현재 탭 또는 새 탭에서 실행할 수 있음
 - 위험도 기반 승인 modal과 low-risk auto-run audit/undo 흐름
@@ -1147,10 +1149,10 @@ The first version should focus on the smallest complete experience.
 - provide an agent panel
 - let the agent read project context and current tab output
 - let the agent read selected-file and recent-command context
-- adjust provider/model selection and execution mode in the right agent workspace
+- inspect provider/session readiness and switch providers in the right agent workspace
 - let the agent suggest commands
-- run approved commands in the current tab or a new tab
-- risk-based approval modal plus low-risk auto-run audit/undo flow
+- keep command review and decisions in the right agent workspace
+- keep the center terminal user-owned; the agent must not execute commands or create terminal tabs
 
 #### Out of Scope
 
@@ -1198,7 +1200,7 @@ The first version should focus on the smallest complete experience.
 - 첫 실사용 `Codex` 경로는 `OAuth/session login`을 사용해야 한다.
 - env/API key bridge는 필요하더라도 개발용 임시 경로에 머물러야 한다.
 - 앱은 연결 상태, 권한 범위, 연결 준비 상태와 진단 정보를 사용자에게 표시해야 한다.
-- 앱은 provider별 모델 선택, 실행 모드, 병렬 worker 수를 설정할 수 있어야 한다.
+- 앱은 provider capability discovery와 scheduling policy가 준비되기 전까지 provider별 모델 선택이나 실행 모드를 고정 값으로 보여주지 않아야 한다.
 - 앱은 위험도별 승인 정책, trusted directory, forbidden pattern, 자동 승인 이력을 표시해야 한다.
 - 향후 `SMS`와 `Telegram` 같은 외부 채널을 통해 상태 리포트와 제한된 원격 명령을 지원할 수 있어야 한다.
 
@@ -1241,7 +1243,7 @@ The first version should focus on the smallest complete experience.
 - the first daily-use `Codex` path should use `OAuth/session login`
 - any env/API-key bridge should remain a temporary development path rather than the default user route
 - the app should display connection state, readiness diagnostics, and granted scopes
-- the app should let users configure model selection per provider, execution mode, and parallel worker count
+- the app should not expose fixed model selection or execution-mode choices until provider capability discovery and scheduling policy support exist
 - the app should expose approval policy by risk level, trusted directories, forbidden patterns, and auto-approval history
 - the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 

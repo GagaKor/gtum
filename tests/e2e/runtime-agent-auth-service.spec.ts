@@ -1,14 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 import {
-  CODEX_LOGIN_COMMAND,
-  CODEX_LOGIN_CANCELLED_MESSAGE,
-  codexLoginTerminalStartError,
   createAgentAuthRuntimeService,
   providerViewStateFromConnection,
   type RuntimeAgentConnectionSnapshot,
 } from '../../src/shared/api/runtimeAgentAuth'
-import type { RuntimeTerminalSnapshot } from '../../src/shared/api/runtimeTerminals'
 
 const codexConnected: RuntimeAgentConnectionSnapshot = {
   provider: 'codex',
@@ -27,22 +23,6 @@ const codexConnected: RuntimeAgentConnectionSnapshot = {
   lastLoginAttemptAt: 95,
   updatedAt: 120,
   lastError: null,
-}
-
-const loginTerminalSnapshot: RuntimeTerminalSnapshot = {
-  sessionId: 81,
-  name: 'Codex Login',
-  cwd: '/workspace/gtum',
-  shell: '/bin/zsh',
-  shellArgs: ['-i'],
-  processId: 9001,
-  status: 'running',
-  createdAt: 100,
-  updatedAt: 110,
-  exitCode: null,
-  logLineCount: 1,
-  maxLogEntries: 400,
-  lastEvent: 'session created',
 }
 
 test('lists and validates provider connections through the auth runtime commands', async () => {
@@ -75,46 +55,6 @@ test('lists and validates provider connections through the auth runtime commands
   expect(login.status).toBe('connected')
 })
 
-test('launches Codex CLI login in a runtime-backed terminal session', async () => {
-  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
-  const service = createAgentAuthRuntimeService({
-    hasRuntime: () => true,
-    invokeRuntime: async (command, args) => {
-      invoked.push({ command, args })
-
-      return loginTerminalSnapshot
-    },
-  })
-
-  const tab = await service.openCodexLoginTerminal({
-    projectPath: '/workspace/gtum',
-  })
-
-  expect(invoked).toEqual([
-    {
-      command: 'create_terminal_session_with_command',
-      args: {
-        request: {
-          session: {
-            name: 'Codex Login',
-            cwd: '/workspace/gtum',
-          },
-          command: CODEX_LOGIN_COMMAND,
-        },
-      },
-    },
-  ])
-  expect(tab).toMatchObject({
-    title: 'Codex Login',
-    cwd: '.',
-    shell: 'zsh',
-    cmd: CODEX_LOGIN_COMMAND,
-    terminalSessionId: 81,
-    runtimeBacked: true,
-  })
-  expect(tab?.lines).toEqual([{ kind: 'cmd', text: CODEX_LOGIN_COMMAND }])
-})
-
 test('normalizes runtime connection snapshots for provider UI state', async () => {
   expect(providerViewStateFromConnection(codexConnected)).toMatchObject({
     id: 'codex',
@@ -127,23 +67,4 @@ test('normalizes runtime connection snapshots for provider UI state', async () =
     connectionKind: 'real',
     lastError: null,
   })
-})
-
-test('classifies cancelled Codex login terminals before validating the session', async () => {
-  expect(codexLoginTerminalStartError(null)).toBe('Codex login terminal did not start.')
-  expect(codexLoginTerminalStartError({
-    id: 't-codex-login',
-    type: 'terminal',
-    title: 'Codex Login',
-    shell: 'zsh',
-    cwd: '.',
-    status: 'idle',
-    cmd: CODEX_LOGIN_COMMAND,
-    lines: [],
-    terminalSessionId: 91,
-    runtimeBacked: true,
-    runtimeStatus: 'terminated',
-    lastLogLineCount: 1,
-    runtimeUpdatedAt: 120,
-  })).toBe(CODEX_LOGIN_CANCELLED_MESSAGE)
 })

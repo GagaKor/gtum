@@ -11,7 +11,6 @@ const runtimeSnapshot: RuntimeWorkspaceRuntimeSnapshot = {
   snapshot: {
     recentProjects: ['/workspace/gtum'],
     lastOpenedProjectPath: '/workspace/gtum',
-    executionMode: 'balanced',
     updatedAt: 100,
     storageVersion: 1,
   },
@@ -21,7 +20,6 @@ const runtimeSnapshot: RuntimeWorkspaceRuntimeSnapshot = {
 const savedSnapshot: RuntimeWorkspaceSnapshot = {
   recentProjects: ['/workspace/gtum', '/workspace/other'],
   lastOpenedProjectPath: '/workspace/gtum',
-  executionMode: 'fast',
   updatedAt: 130,
   storageVersion: 1,
 }
@@ -29,16 +27,7 @@ const savedSnapshot: RuntimeWorkspaceSnapshot = {
 const rememberedSnapshot: RuntimeWorkspaceSnapshot = {
   recentProjects: ['/workspace/gtum'],
   lastOpenedProjectPath: '/workspace/gtum',
-  executionMode: 'balanced',
   updatedAt: 140,
-  storageVersion: 1,
-}
-
-const deepModeSnapshot: RuntimeWorkspaceSnapshot = {
-  recentProjects: ['/workspace/gtum'],
-  lastOpenedProjectPath: '/workspace/gtum',
-  executionMode: 'deep',
-  updatedAt: 150,
   storageVersion: 1,
 }
 
@@ -52,7 +41,6 @@ test('reads and writes workspace snapshots through Tauri workspace commands', as
       if (command === 'read_workspace_runtime_snapshot') return runtimeSnapshot
       if (command === 'save_workspace_runtime_snapshot') return savedSnapshot
       if (command === 'remember_workspace_project') return rememberedSnapshot
-      if (command === 'set_workspace_execution_mode') return deepModeSnapshot
 
       throw new Error(`unexpected workspace command: ${command}`)
     },
@@ -62,10 +50,8 @@ test('reads and writes workspace snapshots through Tauri workspace commands', as
   const saved = await service.saveSnapshot({
     recentProjects: ['/workspace/gtum', '/workspace/other'],
     lastOpenedProjectPath: '/workspace/gtum',
-    executionMode: 'fast',
   })
   const remembered = await service.rememberProject('/workspace/gtum')
-  const mode = await service.setExecutionMode('deep')
 
   expect(invoked).toEqual([
     {
@@ -75,13 +61,12 @@ test('reads and writes workspace snapshots through Tauri workspace commands', as
     {
       command: 'save_workspace_runtime_snapshot',
       args: {
-        request: {
-          recentProjects: ['/workspace/gtum', '/workspace/other'],
-          lastOpenedProjectPath: '/workspace/gtum',
-          executionMode: 'fast',
+          request: {
+            recentProjects: ['/workspace/gtum', '/workspace/other'],
+            lastOpenedProjectPath: '/workspace/gtum',
+          },
         },
       },
-    },
     {
       command: 'remember_workspace_project',
       args: {
@@ -90,19 +75,10 @@ test('reads and writes workspace snapshots through Tauri workspace commands', as
         },
       },
     },
-    {
-      command: 'set_workspace_execution_mode',
-      args: {
-        request: {
-          executionMode: 'deep',
-        },
-      },
-    },
   ])
   expect(restored).toEqual(runtimeSnapshot)
   expect(saved).toEqual(savedSnapshot)
   expect(remembered).toEqual(rememberedSnapshot)
-  expect(mode).toEqual(deepModeSnapshot)
 })
 
 test('keeps browser preview workspace persistence local when desktop runtime is unavailable', async () => {
@@ -119,14 +95,11 @@ test('keeps browser preview workspace persistence local when desktop runtime is 
   const saved = await service.saveSnapshot({
     recentProjects: ['/workspace/gtum'],
     lastOpenedProjectPath: '/workspace/gtum',
-    executionMode: 'fast',
   })
   const remembered = await service.rememberProject('/workspace/gtum')
-  const mode = await service.setExecutionMode('deep')
 
   expect(invokedRuntime).toBe(false)
   expect(restored).toBeNull()
   expect(saved).toBeNull()
   expect(remembered).toBeNull()
-  expect(mode).toBeNull()
 })

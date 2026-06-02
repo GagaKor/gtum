@@ -412,7 +412,7 @@ Acceptance Criteria:
 
 #### English
 
-Priority: `P1`
+Priority: `Deferred`
 
 Phase:
 
@@ -706,47 +706,25 @@ Acceptance Criteria:
 - users can inspect recent tasks and their status in the UI
 - at minimum, `pending`, `running`, `completed`, and `failed` are distinguishable
 
-### 12. 실행 모드 초기 적용 / Initial Execution Modes
+### 12. Initial Execution Policies
 
-#### 한국어
-
-우선순위: `P1`
-
-목표:
-
-- `fast`, `balanced`, `deep` 모드를 정책 수준에서 처음 적용한다.
-
-백로그 항목:
-
-- 모드 선택 UI
-- 모드별 context limit 정의
-- 모드별 worker limit 정의
-- 모드별 provider 옵션 연결
-
-완료조건:
-
-- 사용자가 모드를 선택할 수 있다.
-- 최소한 모드에 따라 컨텍스트 범위 또는 워커 수가 달라진다.
-
-#### English
-
-Priority: `P1`
+Priority: `Deferred`
 
 Goal:
 
-- apply `fast`, `balanced`, and `deep` at an initial policy level
+- define execution policies only after provider capability discovery and scheduling contracts are explicit
 
 Backlog:
 
-- mode selector UI
-- per-mode context limits
-- per-mode worker limits
-- per-mode provider option wiring
+- policy definitions
+- per-policy context limits
+- per-policy worker limits
+- provider capability wiring
 
 Acceptance Criteria:
 
-- users can select an execution mode
-- at minimum, context scope or worker count changes by mode
+- no fixed `Fast`, `Balanced`, or `Deep` UI appears before runtime policy support exists
+- at minimum, context scope or worker count changes by policy when the feature is reintroduced
 
 ### 13. 크로스 플랫폼 검증 / Cross-Platform Validation
 
@@ -1179,7 +1157,7 @@ Acceptance Criteria:
 - 좌측 `Projects/Files` accordion과 compact project row 구현
 - editor tab과 terminal tab을 같은 중앙 workbench tab model로 통합
 - tab drag/drop, context menu, 좌우/상하 split group 구현
-- 우측 provider/model picker, execution mode row, context summary, quick prompt, composer 구조 구현
+- 우측 provider state, runtime-backed model picker, context summary, activity log, composer approval, composer 구조 구현
 - `Connections`, `Models`, `Appearance`, `Execution`, `About` 설정 modal 구현
 - 위험도 기반 approval policy, trusted dirs, forbidden patterns, auto-run audit/undo 흐름 구현
 - 요약 카드 중심 레이아웃을 작업 surface 중심 레이아웃으로 축소 또는 대체
@@ -1192,7 +1170,7 @@ Acceptance Criteria:
 - 첫 화면이 새 디자인 시안의 titlebar/statusbar, left accordion, center workbench, right agent workspace 구조를 따른다.
 - editor와 terminal이 같은 workbench tab model 안에서 동작한다.
 - 좌측 panel은 `Projects`와 `Files`를 독립 accordion으로 보여준다.
-- 우측 에이전트 패널이 provider/model, mode, context, thread, composer, approval entry를 자연스럽게 보여준다.
+- 우측 에이전트 패널이 provider/session state, runtime-backed model selection, context, thread, activity, composer, approval entry를 자연스럽게 보여준다.
 - settings modal에서 provider, model, appearance, execution policy를 조정할 수 있다.
 - low-risk auto-run은 audit/undo 흐름을 남기고, high-risk와 forbidden pattern은 명시 승인 또는 차단을 요구한다.
 - Task History, Telegram, Runtime/Debug가 기본 작업 흐름을 방해하지 않는다.
@@ -1213,7 +1191,7 @@ Backlog:
 - implement the left `Projects/Files` accordion and compact project rows
 - unify editor tabs and terminal tabs into the same center workbench tab model
 - implement tab drag/drop, context menus, and horizontal/vertical split groups
-- implement the right provider/model picker, execution-mode row, context summary, quick prompts, and composer
+- implement the right provider state, runtime-backed model picker, context summary, activity log, composer approval, and composer
 - implement the `Connections`, `Models`, `Appearance`, `Execution`, and `About` settings modal
 - implement risk-based approval policy, trusted dirs, forbidden patterns, and auto-run audit/undo flow
 - reduce or replace summary-card-heavy layout with work-surface-first layout
@@ -1226,7 +1204,7 @@ Acceptance Criteria:
 - the first screen follows the new design's titlebar/statusbar, left accordion, center workbench, and right agent workspace structure
 - editor and terminal surfaces run inside the same workbench tab model
 - the left panel exposes `Projects` and `Files` as independent accordion sections
-- the right agent panel presents provider/model, mode, context, thread, composer, and approval entry naturally
+- the right agent panel presents provider/session state, runtime-backed model selection, context, thread, activity, composer, and approval entry naturally
 - settings can configure providers, models, appearance, and execution policy
 - low-risk auto-run leaves audit/undo evidence, while high-risk commands and forbidden patterns require explicit approval or blocking
 - Task History, Telegram, and Runtime/Debug no longer interrupt the default workflow

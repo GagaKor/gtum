@@ -9,7 +9,6 @@ import {
 
 export interface StatusBarProps {
   readonly lang: ShellLanguage
-  readonly mode: string
   readonly workspace: ShellWorkspace
   readonly project: ShellProject
   readonly icons: Pick<ShellIcons, 'dot' | 'branch'>
@@ -18,7 +17,6 @@ export interface StatusBarProps {
 
 export function StatusBar({
   lang,
-  mode,
   workspace,
   project,
   icons,
@@ -65,11 +63,6 @@ export function StatusBar({
         )}
       </span>
       <span className="spacer" />
-      <span className="item">
-        {translate(lang, 'mode')}:{' '}
-        <span style={{ color: 'var(--accent)' }}>{translate(lang, mode)}</span>
-      </span>
-      <span className="sep">/</span>
       <span className="item">
         <span className="kbd">Cmd+K</span> {translate(lang, 'statusBarHint')}
       </span>

@@ -1,7 +1,5 @@
 export type AgentProviderId = 'codex' | 'claude' | 'local' | (string & {})
 
-export type AgentExecutionMode = 'fast' | 'balanced' | 'deep'
-
 export type AgentSuggestionTarget = 'current_tab' | 'new_tab'
 
 export type AgentSuggestionConfidence = 'low' | 'medium' | 'high'

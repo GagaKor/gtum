@@ -5,17 +5,8 @@ import {
   hasTauriRuntime,
   type RuntimeInvoker,
 } from './runtimeProjects'
-import {
-  resolveRuntimeCwd,
-  terminalTabFromRuntime,
-  type RuntimeTerminalSnapshot,
-  type RuntimeTerminalTab,
-} from './runtimeTerminals'
 
-export const CODEX_LOGIN_COMMAND = 'codex login --device-auth'
 export const CODEX_REQUIRED_SCOPES = ['project:read', 'terminal:read'] as const
-export const CODEX_LOGIN_CANCELLED_MESSAGE =
-  'Codex login was cancelled before the session could be validated.'
 
 export type RuntimeAgentConnectionStatus =
   | 'disconnected'
@@ -77,16 +68,6 @@ export type AgentProviderViewState = {
   lastError?: string | null
 }
 
-export type OpenCodexLoginTerminalRequest = {
-  projectPath: string
-  title?: string
-  cwd?: string
-  shell?: string
-  rows?: number
-  cols?: number
-  maxLogEntries?: number
-}
-
 export type AgentAuthRuntimeServiceOptions = {
   hasRuntime?: () => boolean
   invokeRuntime?: RuntimeInvoker
@@ -101,18 +82,6 @@ export type AgentAuthRuntimeService = {
   ): Promise<RuntimeAgentConnectionSnapshot>
   disconnect(provider: AgentProviderId): Promise<RuntimeAgentConnectionSnapshot>
   readRuntimeSnapshot(): Promise<RuntimeAgentAuthSnapshot | null>
-  openCodexLoginTerminal(request: OpenCodexLoginTerminalRequest): Promise<RuntimeTerminalTab | null>
-}
-
-export const codexLoginTerminalStartError = (
-  tab: RuntimeTerminalTab | null,
-): string | null => {
-  if (!tab) return 'Codex login terminal did not start.'
-  if (tab.runtimeStatus === 'terminated') return CODEX_LOGIN_CANCELLED_MESSAGE
-  if (tab.runtimeStatus === 'failed') return 'Codex login terminal failed before validation.'
-  if (tab.runtimeStatus === 'exited') return 'Codex login terminal exited before validation.'
-
-  return null
 }
 
 type RuntimeAgentAuthOverride = {
@@ -157,18 +126,6 @@ export const providerViewStateFromConnection = (
   connectionKind: connection.connectionKind,
   lastError: connection.lastError ?? null,
 })
-
-const createLoginSessionPayload = (
-  request: OpenCodexLoginTerminalRequest,
-): Record<string, unknown> =>
-  omitUndefined({
-    name: request.title || 'Codex Login',
-    cwd: resolveRuntimeCwd(request.projectPath, request.cwd),
-    shell: request.shell,
-    rows: request.rows,
-    cols: request.cols,
-    maxLogEntries: request.maxLogEntries,
-  })
 
 const beginLoginPayload = (
   provider: AgentProviderId,
@@ -250,27 +207,6 @@ export const createAgentAuthRuntimeService = (
       if (!hasRuntime()) return null
 
       return invokeRuntime<RuntimeAgentAuthSnapshot>('agent_auth_runtime_snapshot')
-    },
-    async openCodexLoginTerminal(request) {
-      if (!hasRuntime()) return null
-
-      const title = request.title || 'Codex Login'
-      const snapshot = await invokeRuntime<RuntimeTerminalSnapshot>(
-        'create_terminal_session_with_command',
-        {
-          request: {
-            session: createLoginSessionPayload({ ...request, title }),
-            command: CODEX_LOGIN_COMMAND,
-          },
-        },
-      )
-
-      return {
-        ...terminalTabFromRuntime(snapshot, { ...request, title }, [
-          { kind: 'cmd', text: CODEX_LOGIN_COMMAND },
-        ]),
-        cmd: CODEX_LOGIN_COMMAND,
-      }
     },
   }
 }

@@ -1,18 +1,14 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { AgentExecutionMode } from '../../entities/agent/model/types'
 import {
   hasTauriRuntime,
   type RuntimeAvailability,
   type RuntimeInvoker,
 } from './runtimeProjects'
 
-export type WorkspaceExecutionMode = AgentExecutionMode
-
 export type RuntimeWorkspaceSnapshot = {
   recentProjects: string[]
   lastOpenedProjectPath?: string | null
-  executionMode: WorkspaceExecutionMode
   updatedAt: number
   storageVersion: number
 }
@@ -26,7 +22,6 @@ export type RuntimeWorkspaceRuntimeSnapshot = {
 export type SaveWorkspaceRuntimeSnapshotRequest = {
   recentProjects: string[]
   lastOpenedProjectPath?: string | null
-  executionMode?: WorkspaceExecutionMode
 }
 
 export type WorkspaceRuntimeServiceOptions = {
@@ -42,9 +37,6 @@ export type WorkspaceRuntimeService = {
     request: SaveWorkspaceRuntimeSnapshotRequest,
   ): Promise<RuntimeWorkspaceSnapshot | null>
   rememberProject(path: string): Promise<RuntimeWorkspaceSnapshot | null>
-  setExecutionMode(
-    executionMode: WorkspaceExecutionMode,
-  ): Promise<RuntimeWorkspaceSnapshot | null>
 }
 
 type RuntimeWorkspaceOverride = {
@@ -70,7 +62,6 @@ const saveSnapshotPayload = (
   omitUndefined({
     recentProjects: [...request.recentProjects],
     lastOpenedProjectPath: request.lastOpenedProjectPath,
-    executionMode: request.executionMode,
   })
 
 export const createWorkspaceRuntimeService = (
@@ -102,13 +93,6 @@ export const createWorkspaceRuntimeService = (
 
       return invokeRuntime<RuntimeWorkspaceSnapshot>('remember_workspace_project', {
         request: { path },
-      })
-    },
-    async setExecutionMode(executionMode) {
-      if (!hasRuntime()) return null
-
-      return invokeRuntime<RuntimeWorkspaceSnapshot>('set_workspace_execution_mode', {
-        request: { executionMode },
       })
     },
   }

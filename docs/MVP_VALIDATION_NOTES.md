@@ -30,16 +30,24 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - agent request -> suggestion -> approval flow
 - new design shell render, scaled proportions, and titlebar/statusbar contracts through `tests/e2e/design-prototype.spec.ts`
 - independent left `Projects` and `Files` accordion collapse behavior, settings-modal open, backend-bridge state, and the empty browser fallback with no bundled project files (same spec)
-- custom frameless titlebar coverage in the same spec: OS-specific window chrome, responsive collapse, injected native window-control routing, and titlebar drag-region behavior
+- custom frameless titlebar coverage in the same spec: OS-specific window chrome, responsive collapse, injected native window-control routing, titlebar drag-region behavior, and native edge-resize routing
 - runtime project-service fallback behavior through `tests/e2e/runtime-project-service.spec.ts`
 - terminal runtime service contract behavior through `tests/e2e/runtime-terminal-service.spec.ts`
 - injected terminal runtime bridge coverage in `tests/e2e/design-prototype.spec.ts` for new-tab creation and close/terminate routing
 - agent suggestion runtime service contract behavior through `tests/e2e/runtime-agent-suggestions-service.spec.ts`
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
+- runtime provider capability coverage verifies composer model picking and image attachment selection use `read_agent_provider_capabilities`, then forward the selected model id and attachment paths in `request_agent_suggestions`.
+- live Codex activity coverage in `tests/e2e/design-prototype.spec.ts` verifies pending runtime requests update a persistent conversational agent turn with sequential concrete operation progress, then clear the internal progress rows and show answer-time metadata when that same turn becomes the final suggestion/result.
+- reply-only Codex coverage verifies normal assistant answers do not create review cards or composer approval panels; only command-bearing responses enter the review flow.
+- numbered-choice Codex coverage verifies reply choices render as selectable event cards and selected options continue through the agent request path.
+- command permission event-card coverage verifies command-bearing responses render explicit permission cards with command preview and direct `Allow once`, `Always allow`, and `Deny` decisions instead of generic command prose or an intermediate review panel.
+- agent-only decision coverage verifies command decisions and decision recording stay in the right panel without terminal runtime execution, and that the agent thread auto-scrolls to expose event cards.
+- Rust unit coverage verifies the Codex prompt and output schema describe command suggestions as gtum permission-card previews, so provider-side `approval_policy=never` does not block harmless right-panel permission requests.
 - Codex suggestion failure coverage now verifies CLI invocation failures, error-only structured responses, empty-command responses, and browser-preview runtime-unavailable requests do not create approval cards or canned replies.
+- Rust unit coverage verifies hanging Codex CLI child processes are killed and returned as timeout errors instead of blocking indefinitely.
 - Rust unit coverage now guards app-data startup normalization for missing directories, existing directories, and legacy file-path migration.
 - agent auth runtime service contract behavior through `tests/e2e/runtime-agent-auth-service.spec.ts`
-- injected Codex CLI login launcher coverage in `tests/e2e/design-prototype.spec.ts`
+- injected Codex connect setup-guidance coverage in `tests/e2e/design-prototype.spec.ts`
 - frontend no-mock baseline coverage in `tests/e2e/design-prototype.spec.ts`: browser preview starts at `Open a project`, exposes an empty bridge `projectPath`, contains no `aurora-monorepo`/`OnboardingFunnel.tsx` default data, and shows runtime-required messages instead of canned responses.
 
 Note: the Sprint 17 frontend reset deleted the earlier suites (including `new-design-shell.spec.ts`, the project-workspace regression, the repetition/reload aging spec, and the agent-request-flow spec). The specs listed above are the active E2E coverage; the aging scenario must be re-gathered on the new shell.
@@ -56,7 +64,8 @@ Before using web-preview results as evidence, the current sprint or release pass
 - persist auth, workspace, and telegram state into distinct `app_data_dir` files
 - open a real project folder through the native picker
 - create, read, execute, and close PTY-backed terminal tabs
-- launch `codex login --device-auth`, reconnect Codex, and request a real Codex suggestion
+- validate an existing Codex CLI ChatGPT session through `Connect Codex`, keep setup guidance in the Agent panel when login is missing, reconnect Codex after the user completes CLI login manually, and request a real Codex suggestion
+- resolve Codex CLI from the installed app environment even when the process `PATH` does not include the shell-installed `codex` command
 
 ## 2026-06-01 Windows Installable Smoke
 
@@ -69,7 +78,7 @@ Local Windows installable validation was run from the generated release executab
 - The local Codex CLI prerequisite is now installed from `@openai/codex`, reports `codex-cli 0.135.0`, and `codex login status` reports a ChatGPT login. A direct `codex exec` smoke was not run because it would transmit local repository context to the external Codex service from this validation environment.
 - A Codex-connect smoke exposed a Windows PTY startup problem where `cmd.exe /Q /K` could raise an application-error dialog before fallback. Windows PTY sessions now prefer `powershell.exe -NoLogo` and keep `cmd.exe` only as fallback.
 - A connected Codex request exposed a Windows `codex.cmd` batch-argument failure. The runtime now keeps the prompt out of `.cmd` arguments, writes it to stdin, and prefers the direct Node `codex.js` entrypoint when available.
-- This pass confirms Windows build, launch, and state-root initialization. Native folder picker, PTY command execution, Codex login launcher, and a first real Codex suggestion still need manual installed-app sign-off.
+- This pass confirms Windows build, launch, and state-root initialization. Native folder picker, user-owned PTY command execution, Codex connect validation, and a first real Codex suggestion still need manual installed-app sign-off.
 
 ## 2026-06-01 macOS Installable Smoke
 
@@ -100,7 +109,7 @@ Residual notes:
 - 프로젝트 열기
 - provider 연결
 - active log 캡처
-- `Fast`, `Balanced`, `Deep` 모드 전환
+- provider/session 상태 확인
 - suggestion 요청과 승인 실행
 - 페이지 reload 후 프로젝트와 task history 복원 확인
 
@@ -108,7 +117,7 @@ Residual notes:
 
 ### English
 
-The earlier MVP aging test was a Playwright scenario that repeated: open a project, connect a provider, capture active logs, switch `Fast`/`Balanced`/`Deep` modes, request suggestions and approve execution, then reload and verify project/task-history restore.
+The earlier MVP aging test was a Playwright scenario that repeated: open a project, connect a provider, capture active logs, request suggestions and approve execution, then reload and verify project/task-history restore.
 
 That spec was removed in the Sprint 17 frontend reset and has **not yet been re-created on the new shell**, so there is currently no automated aging evidence for the current UI. Re-establishing this scenario (and confirming reload-restore works against the per-store state files in `app_data_dir`) is required before claiming repeated-use stability. It still does not replace long-duration manual aging validation.
 
