@@ -1,6 +1,6 @@
 use std::{
     env,
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -15,6 +15,9 @@ use serde_json::json;
 
 use crate::runtime::auth::AgentProvider;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 const CODEX_AUTH_PATH_LABEL: &str = "~/.codex/auth.json";
 const CODEX_CONNECTION_PATH: &str = "Codex CLI ChatGPT session";
 const CODEX_EXEC_TIMEOUT: Duration = Duration::from_secs(60);
@@ -24,6 +27,8 @@ const CODEX_EXEC_TIMEOUT: Duration = Duration::from_secs(60);
 pub struct RequestAgentSuggestionsRequest {
     pub provider: AgentProvider,
     pub model: Option<String>,
+    pub reasoning_level: Option<String>,
+    pub fast_mode: Option<bool>,
     #[serde(default)]
     pub attachments: Vec<RequestAgentAttachment>,
     pub project_name: String,
@@ -129,11 +134,22 @@ pub struct AgentAttachmentCapability {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentReasoningLevelCapability {
+    pub level: String,
+    pub label: String,
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentProviderCapabilities {
     pub provider: AgentProvider,
     pub supports_model_selection: bool,
     pub current_model: Option<AgentModelCapability>,
     pub available_models: Vec<AgentModelCapability>,
+    pub reasoning_levels: Vec<AgentReasoningLevelCapability>,
+    pub default_reasoning_level: Option<String>,
+    pub supports_fast_mode: bool,
     pub attachments: Vec<AgentAttachmentCapability>,
 }
 
@@ -152,11 +168,35 @@ struct CodexModelCatalog {
     models: Vec<CodexModelCatalogEntry>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Deserialize, Clone)]
 struct CodexModelCatalogEntry {
     slug: String,
     display_name: Option<String>,
     visibility: Option<String>,
+    default_reasoning_level: Option<String>,
+    #[serde(default)]
+    supported_reasoning_levels: Vec<CodexReasoningLevelCatalogEntry>,
+    #[serde(default)]
+    additional_speed_tiers: Vec<String>,
+    #[serde(default)]
+    service_tiers: Vec<CodexServiceTierCatalogEntry>,
+}
+
+#[derive(Default, Deserialize, Clone)]
+struct CodexReasoningLevelCatalogEntry {
+    effort: Option<String>,
+    level: Option<String>,
+    id: Option<String>,
+    value: Option<String>,
+    name: Option<String>,
+    label: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Default, Deserialize, Clone)]
+struct CodexServiceTierCatalogEntry {
+    id: Option<String>,
+    name: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -196,23 +236,43 @@ pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
 }
 
 pub fn read_codex_capabilities() -> AgentProviderCapabilities {
-    let available_models = if codex_command_available() {
-        read_codex_model_catalog().unwrap_or_default()
+    let binary_available = codex_command_available();
+    let catalog_entries = if binary_available {
+        read_codex_model_catalog_entries().unwrap_or_default()
     } else {
         Vec::new()
     };
-    let current_model = read_codex_config_model()
-        .and_then(|model_id| model_capability_for_id(AgentProvider::Codex, &available_models, &model_id));
+    let available_models = model_capabilities_from_codex_entries(&catalog_entries);
+    let current_model_id = read_codex_config_model();
+    let current_model = current_model_id
+        .as_deref()
+        .and_then(|model_id| model_capability_for_id(AgentProvider::Codex, &available_models, model_id));
+    let effective_model_id = current_model
+        .as_ref()
+        .map(|model| model.model_id.as_str())
+        .or(current_model_id.as_deref())
+        .or_else(|| available_models.first().map(|model| model.model_id.as_str()));
+    let reasoning_levels = codex_reasoning_levels_for_model(&catalog_entries, effective_model_id);
+    let default_reasoning_level = codex_default_reasoning_level_for_model(
+        &catalog_entries,
+        effective_model_id,
+        read_codex_config_reasoning_effort().as_deref(),
+        &reasoning_levels,
+    );
+    let supports_fast_mode = codex_model_supports_fast_mode(&catalog_entries, effective_model_id);
 
     AgentProviderCapabilities {
         provider: AgentProvider::Codex,
-        supports_model_selection: codex_command_available(),
+        supports_model_selection: binary_available,
         current_model,
         available_models,
+        reasoning_levels,
+        default_reasoning_level,
+        supports_fast_mode,
         attachments: vec![AgentAttachmentCapability {
             kind: AgentAttachmentKind::Image,
             label: "Image".into(),
-            enabled: codex_command_available(),
+            enabled: binary_available,
             invocation_flag: Some("--image".into()),
         }],
     }
@@ -240,6 +300,9 @@ pub fn read_claude_capabilities() -> AgentProviderCapabilities {
         supports_model_selection: claude_command_available(),
         current_model,
         available_models,
+        reasoning_levels: Vec::new(),
+        default_reasoning_level: None,
+        supports_fast_mode: false,
         attachments: vec![
             AgentAttachmentCapability {
                 kind: AgentAttachmentKind::File,
@@ -383,9 +446,10 @@ fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
 }
 
 pub fn request_codex_suggestions(
-    request: RequestAgentSuggestionsRequest,
+    mut request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
     let _ = validate_codex_connection()?;
+    sanitize_codex_request_options(&mut request);
 
     let output_path = temp_file_path("gtum-codex-output", "json");
     let schema_path = temp_file_path("gtum-codex-schema", "json");
@@ -396,6 +460,7 @@ pub fn request_codex_suggestions(
     let output = match run_codex_exec(
         &request.project_path,
         request.model.as_deref(),
+        request.reasoning_level.as_deref(),
         &request.attachments,
         &schema_path,
         &output_path,
@@ -437,6 +502,28 @@ pub fn request_codex_suggestions(
     Ok(vec![response?])
 }
 
+fn sanitize_codex_request_options(request: &mut RequestAgentSuggestionsRequest) {
+    let catalog_entries = read_codex_model_catalog_entries().unwrap_or_default();
+    let configured_model = read_codex_config_model();
+    let effective_model_id = request
+        .model
+        .as_deref()
+        .and_then(non_empty_trimmed)
+        .or(configured_model);
+    let reasoning_levels =
+        codex_reasoning_levels_for_model(&catalog_entries, effective_model_id.as_deref());
+
+    request.reasoning_level = request
+        .reasoning_level
+        .as_deref()
+        .and_then(non_empty_trimmed)
+        .filter(|level| reasoning_level_supported(&reasoning_levels, level));
+
+    if !codex_model_supports_fast_mode(&catalog_entries, effective_model_id.as_deref()) {
+        request.fast_mode = Some(false);
+    }
+}
+
 fn read_codex_cli_status() -> CodexCliStatus {
     let binary_available = codex_command_available();
     let auth_path = codex_auth_path();
@@ -467,7 +554,7 @@ fn codex_command_available() -> bool {
     codex_command_candidates_for_execution()
         .into_iter()
         .any(|program| {
-            Command::new(program)
+            command_for_program(program)
                 .arg("--version")
                 .output()
                 .map(|output| output.status.success())
@@ -479,7 +566,7 @@ fn codex_login_status_reports_chatgpt() -> bool {
     codex_command_candidates_for_execution()
         .into_iter()
         .any(|program| {
-            Command::new(program)
+            command_for_program(program)
                 .arg("login")
                 .arg("status")
                 .output()
@@ -501,11 +588,27 @@ fn read_auth_file(path: &PathBuf) -> CodexAuthFile {
         .unwrap_or_default()
 }
 
-fn read_codex_model_catalog() -> Result<Vec<AgentModelCapability>, String> {
+fn command_for_program(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+    hide_windows_console(&mut command);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn hide_windows_console(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_windows_console(_command: &mut Command) {}
+
+fn read_codex_model_catalog_entries() -> Result<Vec<CodexModelCatalogEntry>, String> {
     let output = codex_command_candidates_for_execution()
         .into_iter()
         .find_map(|program| {
-            Command::new(program)
+            command_for_program(program)
                 .arg("debug")
                 .arg("models")
                 .output()
@@ -515,10 +618,16 @@ fn read_codex_model_catalog() -> Result<Vec<AgentModelCapability>, String> {
         .ok_or_else(|| "failed to read Codex model catalog".to_string())?;
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    parse_codex_model_catalog(&stdout)
+    parse_codex_model_catalog_entries(&stdout)
 }
 
+#[cfg(test)]
 fn parse_codex_model_catalog(raw_output: &str) -> Result<Vec<AgentModelCapability>, String> {
+    parse_codex_model_catalog_entries(raw_output)
+        .map(|entries| model_capabilities_from_codex_entries(&entries))
+}
+
+fn parse_codex_model_catalog_entries(raw_output: &str) -> Result<Vec<CodexModelCatalogEntry>, String> {
     let catalog = serde_json::from_str::<CodexModelCatalog>(raw_output)
         .map_err(|error| format!("failed to parse Codex model catalog: {error}"))?;
 
@@ -532,6 +641,14 @@ fn parse_codex_model_catalog(raw_output: &str) -> Result<Vec<AgentModelCapabilit
                 .map(|visibility| visibility == "list")
                 .unwrap_or(true)
         })
+        .collect())
+}
+
+fn model_capabilities_from_codex_entries(
+    entries: &[CodexModelCatalogEntry],
+) -> Vec<AgentModelCapability> {
+    entries
+        .iter()
         .filter_map(|model| {
             let model_id = non_empty_trimmed(&model.slug)?;
             let label = model
@@ -545,7 +662,127 @@ fn parse_codex_model_catalog(raw_output: &str) -> Result<Vec<AgentModelCapabilit
                 label,
             })
         })
-        .collect())
+        .collect()
+}
+
+fn codex_catalog_entry_for_model<'a>(
+    entries: &'a [CodexModelCatalogEntry],
+    model_id: Option<&str>,
+) -> Option<&'a CodexModelCatalogEntry> {
+    let selected_model_id = model_id.and_then(non_empty_trimmed);
+
+    selected_model_id
+        .as_deref()
+        .and_then(|selected| entries.iter().find(|entry| entry.slug == selected))
+        .or_else(|| entries.first())
+}
+
+fn codex_reasoning_levels_for_model(
+    entries: &[CodexModelCatalogEntry],
+    model_id: Option<&str>,
+) -> Vec<AgentReasoningLevelCapability> {
+    codex_catalog_entry_for_model(entries, model_id)
+        .map(|entry| {
+            entry
+                .supported_reasoning_levels
+                .iter()
+                .filter_map(reasoning_level_capability_from_catalog_entry)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn reasoning_level_capability_from_catalog_entry(
+    entry: &CodexReasoningLevelCatalogEntry,
+) -> Option<AgentReasoningLevelCapability> {
+    let level = entry
+        .effort
+        .as_deref()
+        .or(entry.level.as_deref())
+        .or(entry.id.as_deref())
+        .or(entry.value.as_deref())
+        .and_then(non_empty_trimmed)?;
+    let label = entry
+        .label
+        .as_deref()
+        .or(entry.name.as_deref())
+        .and_then(non_empty_trimmed)
+        .unwrap_or_else(|| codex_reasoning_label(&level));
+
+    Some(AgentReasoningLevelCapability {
+        level,
+        label,
+        description: entry.description.as_deref().and_then(non_empty_trimmed),
+    })
+}
+
+fn codex_default_reasoning_level_for_model(
+    entries: &[CodexModelCatalogEntry],
+    model_id: Option<&str>,
+    configured_reasoning_level: Option<&str>,
+    reasoning_levels: &[AgentReasoningLevelCapability],
+) -> Option<String> {
+    configured_reasoning_level
+        .and_then(non_empty_trimmed)
+        .filter(|configured| reasoning_level_supported(reasoning_levels, configured))
+        .or_else(|| {
+            codex_catalog_entry_for_model(entries, model_id)
+                .and_then(|entry| entry.default_reasoning_level.as_deref())
+                .and_then(non_empty_trimmed)
+                .filter(|configured| reasoning_level_supported(reasoning_levels, configured))
+        })
+        .or_else(|| reasoning_levels.first().map(|level| level.level.clone()))
+}
+
+fn reasoning_level_supported(
+    reasoning_levels: &[AgentReasoningLevelCapability],
+    selected_level: &str,
+) -> bool {
+    reasoning_levels
+        .iter()
+        .any(|level| level.level.eq_ignore_ascii_case(selected_level.trim()))
+}
+
+fn codex_model_supports_fast_mode(
+    entries: &[CodexModelCatalogEntry],
+    model_id: Option<&str>,
+) -> bool {
+    codex_catalog_entry_for_model(entries, model_id)
+        .map(|entry| {
+            entry
+                .additional_speed_tiers
+                .iter()
+                .any(|tier| tier.eq_ignore_ascii_case("fast"))
+                || entry.service_tiers.iter().any(|tier| {
+                    tier.id
+                        .as_deref()
+                        .map(|id| id.eq_ignore_ascii_case("fast"))
+                        .unwrap_or(false)
+                        || tier
+                            .name
+                            .as_deref()
+                            .map(|name| name.eq_ignore_ascii_case("fast"))
+                            .unwrap_or(false)
+                })
+        })
+        .unwrap_or(false)
+}
+
+fn codex_reasoning_label(level: &str) -> String {
+    match level.trim().to_ascii_lowercase().as_str() {
+        "low" => "Low".into(),
+        "medium" => "Medium".into(),
+        "high" => "High".into(),
+        "xhigh" | "x_high" | "extra_high" => "XHigh".into(),
+        value if !value.is_empty() => {
+            let mut chars = value.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => "Default".into(),
+            }
+        }
+        _ => "Default".into(),
+    }
 }
 
 fn model_capability_for_id(
@@ -608,8 +845,14 @@ fn read_codex_config_model() -> Option<String> {
         .and_then(|contents| parse_simple_toml_string_key(&contents, "model"))
 }
 
+fn read_codex_config_reasoning_effort() -> Option<String> {
+    fs::read_to_string(codex_config_path())
+        .ok()
+        .and_then(|contents| parse_simple_toml_string_key(&contents, "model_reasoning_effort"))
+}
+
 fn claude_command_available() -> bool {
-    Command::new(claude_command_name())
+    command_for_program(claude_command_name())
         .arg("--version")
         .output()
         .map(|output| output.status.success())
@@ -709,6 +952,11 @@ fn parse_quoted_string(value: &str) -> Option<String> {
     non_empty_trimmed(&value[1..value.len() - 1])
 }
 
+fn toml_string_literal(value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
 fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
@@ -736,6 +984,7 @@ fn codex_command_name() -> &'static str {
 fn codex_exec_args(
     project_path: &str,
     model: Option<&str>,
+    reasoning_level: Option<&str>,
     attachments: &[RequestAgentAttachment],
     schema_path: &PathBuf,
     output_path: &PathBuf,
@@ -749,6 +998,13 @@ fn codex_exec_args(
     if let Some(model) = model.and_then(non_empty_trimmed) {
         args.push("--model".into());
         args.push(model.into());
+    }
+    if let Some(reasoning_level) = reasoning_level.and_then(non_empty_trimmed) {
+        args.push("-c".into());
+        args.push(format!(
+            "model_reasoning_effort={}",
+            toml_string_literal(&reasoning_level)
+        ).into());
     }
     for path in codex_image_attachment_paths(attachments) {
         args.push("--image".into());
@@ -776,11 +1032,19 @@ fn codex_image_attachment_paths(attachments: &[RequestAgentAttachment]) -> Vec<S
 fn codex_exec_invocation(
     project_path: &str,
     model: Option<&str>,
+    reasoning_level: Option<&str>,
     attachments: &[RequestAgentAttachment],
     schema_path: &PathBuf,
     output_path: &PathBuf,
 ) -> (OsString, Vec<OsString>) {
-    let args = codex_exec_args(project_path, model, attachments, schema_path, output_path);
+    let args = codex_exec_args(
+        project_path,
+        model,
+        reasoning_level,
+        attachments,
+        schema_path,
+        output_path,
+    );
 
     if cfg!(target_os = "windows") {
         if let Some((node_program, script_path)) = windows_codex_node_entrypoint() {
@@ -913,13 +1177,20 @@ fn platform_codex_app_candidates() -> Vec<PathBuf> {
 fn run_codex_exec(
     project_path: &str,
     model: Option<&str>,
+    reasoning_level: Option<&str>,
     attachments: &[RequestAgentAttachment],
     schema_path: &PathBuf,
     output_path: &PathBuf,
     prompt: &str,
 ) -> Result<Output, String> {
-    let (program, args) =
-        codex_exec_invocation(project_path, model, attachments, schema_path, output_path);
+    let (program, args) = codex_exec_invocation(
+        project_path,
+        model,
+        reasoning_level,
+        attachments,
+        schema_path,
+        output_path,
+    );
     run_command_with_input_and_timeout(program, args, prompt, CODEX_EXEC_TIMEOUT)
 }
 
@@ -929,7 +1200,8 @@ fn run_command_with_input_and_timeout(
     input: &str,
     timeout: Duration,
 ) -> Result<Output, String> {
-    let mut child = Command::new(&program)
+    let mut command = command_for_program(&program);
+    let mut child = command
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1155,6 +1427,16 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     };
+    let reasoning_level = request
+        .reasoning_level
+        .as_deref()
+        .and_then(non_empty_trimmed)
+        .unwrap_or_else(|| "runtime default".into());
+    let fast_mode = if request.fast_mode.unwrap_or(false) {
+        "enabled"
+    } else {
+        "disabled"
+    };
 
     let instructions = concat!(
         "You are Codex inside gtum, a desktop workspace for terminal-heavy development.\n",
@@ -1177,10 +1459,12 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
     );
 
     format!(
-        "{}\n\nProject name: {}\nProject path: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
+        "{}\n\nProject name: {}\nProject path: {}\nReasoning level: {}\nFast mode: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
         instructions,
         request.project_name.trim(),
         request.project_path.trim(),
+        reasoning_level,
+        fast_mode,
         file_path,
         file_line,
         file_snippet,
@@ -1262,7 +1546,7 @@ mod tests {
     fn codex_exec_args_do_not_include_prompt_text() {
         let schema_path = PathBuf::from("schema.json");
         let output_path = PathBuf::from("output.json");
-        let args = codex_exec_args("C:\\workspace\\gtum", None, &[], &schema_path, &output_path)
+        let args = codex_exec_args("C:\\workspace\\gtum", None, None, &[], &schema_path, &output_path)
             .into_iter()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
@@ -1292,6 +1576,7 @@ mod tests {
         let args = codex_exec_args(
             "/workspace/gtum",
             Some(" gpt-5.5 "),
+            None,
             &[],
             &schema_path,
             &output_path,
@@ -1304,6 +1589,27 @@ mod tests {
     }
 
     #[test]
+    fn codex_exec_args_include_selected_reasoning_effort_when_present() {
+        let schema_path = PathBuf::from("schema.json");
+        let output_path = PathBuf::from("output.json");
+        let args = codex_exec_args(
+            "/workspace/gtum",
+            None,
+            Some(" xhigh "),
+            &[],
+            &schema_path,
+            &output_path,
+        )
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+        assert!(args
+            .windows(2)
+            .any(|entry| entry == ["-c", "model_reasoning_effort=\"xhigh\""]));
+    }
+
+    #[test]
     fn codex_exec_args_include_image_attachments_when_present() {
         let schema_path = PathBuf::from("schema.json");
         let output_path = PathBuf::from("output.json");
@@ -1313,6 +1619,7 @@ mod tests {
         }];
         let args = codex_exec_args(
             "/workspace/gtum",
+            None,
             None,
             &attachments,
             &schema_path,
@@ -1332,6 +1639,8 @@ mod tests {
         let prompt = build_prompt(&RequestAgentSuggestionsRequest {
             provider: AgentProvider::Codex,
             model: None,
+            reasoning_level: Some("xhigh".into()),
+            fast_mode: Some(true),
             attachments: vec![],
             project_name: "gtum".into(),
             project_path: "/workspace/gtum".into(),
@@ -1360,6 +1669,8 @@ mod tests {
             prompt.contains("echo \"gtum permission request test\""),
             "{prompt}"
         );
+        assert!(prompt.contains("Reasoning level: xhigh"), "{prompt}");
+        assert!(prompt.contains("Fast mode: enabled"), "{prompt}");
     }
 
     #[test]
@@ -1412,6 +1723,66 @@ mod tests {
         assert_eq!(models[0].provider_id, AgentProvider::Codex);
         assert_eq!(models[0].model_id, "gpt-5.5");
         assert_eq!(models[0].label, "GPT-5.5");
+    }
+
+    #[test]
+    fn codex_model_catalog_parses_reasoning_and_fast_capabilities() {
+        let entries = parse_codex_model_catalog_entries(
+            r#"{
+                "models": [
+                    {
+                        "slug": "gpt-5.5",
+                        "display_name": "GPT-5.5",
+                        "default_reasoning_level": "medium",
+                        "supported_reasoning_levels": [
+                            {
+                                "effort": "low",
+                                "description": "Fast responses with lighter reasoning"
+                            },
+                            {
+                                "effort": "medium",
+                                "description": "Balances speed and reasoning depth"
+                            },
+                            {
+                                "effort": "high",
+                                "description": "Greater reasoning depth"
+                            },
+                            {
+                                "effort": "xhigh",
+                                "description": "Extra high reasoning depth"
+                            }
+                        ],
+                        "additional_speed_tiers": ["fast"],
+                        "service_tiers": [
+                            {
+                                "id": "priority",
+                                "name": "Fast"
+                            }
+                        ],
+                        "visibility": "list"
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let reasoning_levels = codex_reasoning_levels_for_model(&entries, Some("gpt-5.5"));
+        let default_reasoning_level = codex_default_reasoning_level_for_model(
+            &entries,
+            Some("gpt-5.5"),
+            Some("xhigh"),
+            &reasoning_levels,
+        );
+
+        assert_eq!(
+            reasoning_levels
+                .iter()
+                .map(|level| level.level.as_str())
+                .collect::<Vec<_>>(),
+            vec!["low", "medium", "high", "xhigh"]
+        );
+        assert_eq!(reasoning_levels[3].label, "XHigh");
+        assert_eq!(default_reasoning_level.as_deref(), Some("xhigh"));
+        assert!(codex_model_supports_fast_mode(&entries, Some("gpt-5.5")));
     }
 
     #[test]

@@ -10,6 +10,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "windows")]
+use std::{
+    process::{Child as ProcessChild, Stdio},
+    time::Duration,
+};
+
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 
@@ -159,6 +165,13 @@ impl TerminalSessionManager {
             return Err("terminal command cannot be empty".into());
         }
 
+        #[cfg(target_os = "windows")]
+        {
+            return self.create_process_session_with_command(request, command);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
         let snapshot = self.create_session(request.session)?;
         let session = self.get_session(snapshot.session_id)?;
         let mut session = session.lock().unwrap();
@@ -170,6 +183,92 @@ impl TerminalSessionManager {
         }
 
         Ok(snapshot)
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn create_process_session_with_command(
+        &self,
+        request: CreateTerminalSessionWithCommandRequest,
+        command_line: String,
+    ) -> Result<TerminalSessionSnapshot, String> {
+        let session_id = self.next_id();
+        let cwd = match request.session.cwd {
+            Some(path) => Some(platform::normalize_project_path(&path)?),
+            None => None,
+        };
+        let session_name = request
+            .session
+            .name
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| default_session_name(session_id));
+        let log_limit = request
+            .session
+            .max_log_entries
+            .unwrap_or(DEFAULT_LOG_LIMIT)
+            .clamp(MIN_LOG_LIMIT, MAX_LOG_LIMIT);
+        let runner = platform::terminal_command_runner(&command_line)?;
+
+        let mut command = platform::command_for_program(&runner.program);
+        command
+            .args(&runner.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(cwd) = &cwd {
+            command.current_dir(cwd);
+        }
+        if let Some(path_env) = platform::terminal_path_env() {
+            command.env("PATH", path_env);
+        }
+
+        let mut child = command.spawn().map_err(|error| {
+            format!(
+                "failed to spawn approved command runner {}: {error}",
+                runner.program
+            )
+        })?;
+        let process_id = Some(child.id());
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let child = Arc::new(Mutex::new(child));
+
+        let initial_snapshot = TerminalSessionSnapshot::new(
+            session_id,
+            session_name,
+            cwd,
+            runner.program,
+            runner.args,
+            process_id,
+            log_limit,
+        );
+        let session = Arc::new(Mutex::new(TerminalSession::new(
+            initial_snapshot.clone(),
+            Some(Box::new(ProcessSessionKiller {
+                child: child.clone(),
+            })),
+            None,
+        )));
+
+        {
+            let mut session = session.lock().unwrap();
+            session.push_line(format!("$ {command_line}"));
+        }
+
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id, session.clone());
+
+        if let Some(stdout) = stdout {
+            self.spawn_process_reader(session_id, "stdout", stdout, session.clone())?;
+        }
+        if let Some(stderr) = stderr {
+            self.spawn_process_reader(session_id, "stderr", stderr, session.clone())?;
+        }
+        self.spawn_process_reaper(session_id, session, child)?;
+
+        Ok(initial_snapshot)
     }
 
     fn finish_session_spawn(
@@ -199,8 +298,10 @@ impl TerminalSessionManager {
         );
         let session = Arc::new(Mutex::new(TerminalSession::new(
             initial_snapshot.clone(),
-            child_killer,
-            writer,
+            Some(Box::new(PtySessionKiller {
+                inner: child_killer,
+            })),
+            Some(writer),
         )));
 
         self.sessions
@@ -275,6 +376,81 @@ impl TerminalSessionManager {
                 session.record_exit(exit_result.map_err(|error| error.to_string()));
             })
             .map_err(|error| format!("failed to start terminal reaper thread: {error}"))?;
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn spawn_process_reader<R>(
+        &self,
+        session_id: u64,
+        stream_name: &'static str,
+        mut reader: R,
+        session: Arc<Mutex<TerminalSession>>,
+    ) -> Result<(), String>
+    where
+        R: Read + Send + 'static,
+    {
+        thread::Builder::new()
+            .name(format!("gtum-command-{stream_name}-reader-{session_id}"))
+            .spawn(move || {
+                let mut buffer = [0_u8; 4_096];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(read_size) => {
+                            let chunk = String::from_utf8_lossy(&buffer[..read_size]).into_owned();
+                            let mut session = session.lock().unwrap();
+                            session.push_output(&chunk);
+                        }
+                        Err(error) => {
+                            let mut session = session.lock().unwrap();
+                            session.record_reader_error(format!("{stream_name}: {error}"));
+                            break;
+                        }
+                    }
+                }
+
+                let mut session = session.lock().unwrap();
+                session.flush_pending_output();
+            })
+            .map_err(|error| {
+                format!("failed to start command {stream_name} reader thread: {error}")
+            })?;
+
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    fn spawn_process_reaper(
+        &self,
+        session_id: u64,
+        session: Arc<Mutex<TerminalSession>>,
+        child: Arc<Mutex<ProcessChild>>,
+    ) -> Result<(), String> {
+        thread::Builder::new()
+            .name(format!("gtum-command-reaper-{session_id}"))
+            .spawn(move || loop {
+                let wait_result = {
+                    let mut child = child.lock().unwrap();
+                    child.try_wait()
+                };
+
+                match wait_result {
+                    Ok(Some(status)) => {
+                        let mut session = session.lock().unwrap();
+                        session.record_process_exit(status.code());
+                        break;
+                    }
+                    Ok(None) => thread::sleep(Duration::from_millis(200)),
+                    Err(error) => {
+                        let mut session = session.lock().unwrap();
+                        session.record_process_wait_error(error.to_string());
+                        break;
+                    }
+                }
+            })
+            .map_err(|error| format!("failed to start command reaper thread: {error}"))?;
 
         Ok(())
     }
@@ -380,25 +556,51 @@ pub struct TerminalSessionLogs {
     pub updated_at: u64,
 }
 
+trait SessionKiller: Send {
+    fn kill(&mut self);
+}
+
+struct PtySessionKiller {
+    inner: Box<dyn ChildKiller + Send>,
+}
+
+impl SessionKiller for PtySessionKiller {
+    fn kill(&mut self) {
+        let _ = self.inner.kill();
+    }
+}
+
+#[cfg(target_os = "windows")]
+struct ProcessSessionKiller {
+    child: Arc<Mutex<ProcessChild>>,
+}
+
+#[cfg(target_os = "windows")]
+impl SessionKiller for ProcessSessionKiller {
+    fn kill(&mut self) {
+        let _ = self.child.lock().unwrap().kill();
+    }
+}
+
 struct TerminalSession {
     snapshot: TerminalSessionSnapshot,
     logs: VecDeque<String>,
     pending_output: String,
-    child_killer: Option<Box<dyn ChildKiller + Send>>,
-    writer: Box<dyn Write + Send>,
+    child_killer: Option<Box<dyn SessionKiller + Send>>,
+    writer: Option<Box<dyn Write + Send>>,
 }
 
 impl TerminalSession {
     fn new(
         snapshot: TerminalSessionSnapshot,
-        child_killer: Box<dyn ChildKiller + Send>,
-        writer: Box<dyn Write + Send>,
+        child_killer: Option<Box<dyn SessionKiller + Send>>,
+        writer: Option<Box<dyn Write + Send>>,
     ) -> Self {
         Self {
             snapshot,
             logs: VecDeque::new(),
             pending_output: String::new(),
-            child_killer: Some(child_killer),
+            child_killer,
             writer,
         }
     }
@@ -431,7 +633,7 @@ impl TerminalSession {
         self.touch("termination requested");
 
         if let Some(mut killer) = self.child_killer.take() {
-            let _ = killer.kill();
+            killer.kill();
         }
 
         Ok(())
@@ -443,11 +645,15 @@ impl TerminalSession {
             return Err("terminal command cannot be empty".into());
         }
 
+        let Some(writer) = self.writer.as_mut() else {
+            return Err("terminal session is not interactive".into());
+        };
+
         let submission = platform::terminal_submission_line(trimmed);
-        self.writer
+        writer
             .write_all(submission.as_bytes())
             .map_err(|error| format!("failed to write terminal command: {error}"))?;
-        self.writer
+        writer
             .flush()
             .map_err(|error| format!("failed to flush terminal command: {error}"))?;
         self.touch(format!("command queued: {trimmed}"));
@@ -494,26 +700,33 @@ impl TerminalSession {
         match exit_result {
             Ok(status) => {
                 let exit_code = Some(status.exit_code() as i32);
-                self.snapshot.exit_code = exit_code;
-                if self.snapshot.status == TerminalSessionStatus::Running {
-                    self.snapshot.status = TerminalSessionStatus::Exited;
-                    self.snapshot.last_event = Some("process exited".into());
-                } else if self.snapshot.status == TerminalSessionStatus::Terminated {
-                    self.snapshot.last_event = Some("process terminated".into());
-                }
-                self.touch("process exited");
+                self.record_process_exit(exit_code);
             }
             Err(error) => {
-                if self.snapshot.status == TerminalSessionStatus::Terminated {
-                    self.snapshot.last_event =
-                        Some(format!("process wait ended after termination: {error}"));
-                    self.touch("process wait ended after termination");
-                } else {
-                    self.snapshot.status = TerminalSessionStatus::Failed;
-                    self.snapshot.last_event = Some(format!("process wait failed: {error}"));
-                    self.touch("process wait failed");
-                }
+                self.record_process_wait_error(error);
             }
+        }
+    }
+
+    fn record_process_exit(&mut self, exit_code: Option<i32>) {
+        self.snapshot.exit_code = exit_code;
+        if self.snapshot.status == TerminalSessionStatus::Running {
+            self.snapshot.status = TerminalSessionStatus::Exited;
+            self.snapshot.last_event = Some("process exited".into());
+        } else if self.snapshot.status == TerminalSessionStatus::Terminated {
+            self.snapshot.last_event = Some("process terminated".into());
+        }
+        self.touch("process exited");
+    }
+
+    fn record_process_wait_error(&mut self, error: String) {
+        if self.snapshot.status == TerminalSessionStatus::Terminated {
+            self.snapshot.last_event = Some(format!("process wait ended after termination: {error}"));
+            self.touch("process wait ended after termination");
+        } else {
+            self.snapshot.status = TerminalSessionStatus::Failed;
+            self.snapshot.last_event = Some(format!("process wait failed: {error}"));
+            self.touch("process wait failed");
         }
     }
 
@@ -549,4 +762,65 @@ fn unix_timestamp_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use super::*;
+
+    #[test]
+    fn windows_create_session_with_command_uses_hidden_process_session() {
+        let manager = TerminalSessionManager::new();
+        let snapshot = manager
+            .create_session_with_command(CreateTerminalSessionWithCommandRequest {
+                session: CreateTerminalSessionRequest {
+                    name: Some("probe".into()),
+                    cwd: None,
+                    shell: None,
+                    rows: None,
+                    cols: None,
+                    max_log_entries: Some(200),
+                },
+                command: "whoami".into(),
+            })
+            .unwrap();
+
+        assert!(snapshot.shell.to_ascii_lowercase().ends_with("whoami.exe"));
+        assert!(snapshot.shell_args.is_empty());
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let logs = manager.read_recent_logs(snapshot.session_id, Some(200)).unwrap();
+            let final_snapshot = manager
+                .get_session(snapshot.session_id)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .snapshot();
+
+            if logs
+                .entries
+                .iter()
+                .any(|line| !line.trim().is_empty())
+                && final_snapshot.status == TerminalSessionStatus::Exited
+            {
+                assert_eq!(final_snapshot.exit_code, Some(0));
+                break;
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "command session did not finish in time; status={:?} event={:?} logs={:?}",
+                final_snapshot.status,
+                final_snapshot.last_event,
+                logs.entries
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
 }

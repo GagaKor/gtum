@@ -1,8 +1,11 @@
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     path::{Path, PathBuf},
     process::Command,
 };
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Clone, Debug)]
 pub struct TerminalShellCandidate {
@@ -77,7 +80,7 @@ fn home_dir_from_env(
 }
 
 pub fn run_git(path: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = command_for_program("git")
         .arg("-C")
         .arg(path)
         .args(args)
@@ -90,6 +93,22 @@ pub fn run_git(path: &Path, args: &[&str]) -> Result<String, String> {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
 }
+
+pub fn command_for_program(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+    hide_windows_console(&mut command);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn hide_windows_console(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_windows_console(_command: &mut Command) {}
 
 pub fn terminal_path_env() -> Option<OsString> {
     terminal_path_env_from(std::env::var_os("PATH"), terminal_tool_dirs())
@@ -154,12 +173,8 @@ pub fn terminal_shell_candidates(explicit_shell: Option<&str>) -> Vec<TerminalSh
     {
         return vec![
             TerminalShellCandidate {
-                program: "powershell.exe".into(),
-                args: vec!["-NoLogo".into()],
-            },
-            TerminalShellCandidate {
-                program: "cmd.exe".into(),
-                args: vec!["/Q".into(), "/K".into()],
+                program: windows_comspec(),
+                args: vec!["/D".into(), "/Q".into(), "/K".into()],
             },
         ];
     }
@@ -198,6 +213,179 @@ pub fn terminal_shell_candidates(explicit_shell: Option<&str>) -> Vec<TerminalSh
     }
 }
 
+pub fn terminal_command_runner(command: &str) -> Result<TerminalShellCandidate, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return shell_free_windows_command(command);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(TerminalShellCandidate {
+            program: std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
+            args: vec!["-lc".into(), command.into()],
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn shell_free_windows_command(command: &str) -> Result<TerminalShellCandidate, String> {
+    let mut argv = split_command_line(command)?;
+    if argv.is_empty() {
+        return Err("approved command cannot be empty".into());
+    }
+
+    reject_shell_syntax(command)?;
+    let program = resolve_windows_program(&argv[0])?;
+    reject_windows_shell_program(&program)?;
+    argv.remove(0);
+
+    Ok(TerminalShellCandidate {
+        program,
+        args: argv,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn split_command_line(command: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut chars = command.chars().peekable();
+    let mut quote = None;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' | '\'' => {
+                if quote == Some(ch) {
+                    quote = None;
+                } else if quote.is_none() {
+                    quote = Some(ch);
+                } else {
+                    current.push(ch);
+                }
+            }
+            '\\' if quote == Some('"') && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            ch if ch.is_whitespace() && quote.is_none() => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if let Some(ch) = quote {
+        return Err(format!("unterminated quote in approved command: {ch}"));
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    Ok(args)
+}
+
+#[cfg(target_os = "windows")]
+fn reject_shell_syntax(command: &str) -> Result<(), String> {
+    if command
+        .chars()
+        .any(|ch| matches!(ch, '|' | '&' | '<' | '>' | ';' | '(' | ')'))
+    {
+        return Err(
+            "approved command contains shell syntax; run it manually in a terminal".into(),
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_windows_program(program: &str) -> Result<String, String> {
+    let candidate = PathBuf::from(program);
+    if candidate.components().count() > 1 {
+        return validate_windows_program(candidate);
+    }
+
+    let path_env = terminal_path_env()
+        .or_else(|| std::env::var_os("PATH"))
+        .ok_or_else(|| "PATH is required to resolve approved command executable".to_string())?;
+    let extensions = std::env::var_os("PATHEXT")
+        .map(|value| {
+            value
+                .to_string_lossy()
+                .split(';')
+                .filter(|entry| !entry.trim().is_empty())
+                .map(|entry| entry.trim().to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| vec![".COM".into(), ".EXE".into()]);
+    let has_extension = Path::new(program).extension().is_some();
+
+    for dir in std::env::split_paths(&path_env) {
+        let direct = dir.join(program);
+        if has_extension {
+            if direct.is_file() {
+                return validate_windows_program(direct);
+            }
+            continue;
+        }
+
+        for extension in &extensions {
+            let candidate = dir.join(format!("{program}{extension}"));
+            if candidate.is_file() {
+                return validate_windows_program(candidate);
+            }
+        }
+    }
+
+    Err(format!(
+        "approved command executable was not found without a shell: {program}"
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn validate_windows_program(path: PathBuf) -> Result<String, String> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if matches!(extension.as_str(), "cmd" | "bat" | "ps1") {
+        return Err(format!(
+            "approved command resolves to a shell script shim and was not run: {}",
+            path.display()
+        ));
+    }
+    if !matches!(extension.as_str(), "exe" | "com") {
+        return Err(format!(
+            "approved command must resolve to a .exe or .com without shell: {}",
+            path.display()
+        ));
+    }
+
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(target_os = "windows")]
+fn reject_windows_shell_program(program: &str) -> Result<(), String> {
+    let name = Path::new(program)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+
+    if matches!(name.as_str(), "cmd.exe" | "powershell.exe" | "pwsh.exe") {
+        return Err(format!(
+            "approved command would launch {name}; run it manually in a terminal"
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn terminal_submission_line(command: &str) -> String {
     let sanitized = command.trim_end_matches(['\r', '\n']);
 
@@ -214,6 +402,14 @@ pub fn terminal_submission_line(command: &str) -> String {
 
 pub fn normalize_terminal_command(command: &str) -> String {
     command.trim().to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_comspec() -> String {
+    std::env::var("ComSpec")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "cmd.exe".into())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -268,14 +464,37 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_default_shells_are_powershell_then_cmd() {
+    fn windows_default_shell_uses_cmd_without_autorun() {
         let candidates = terminal_shell_candidates(None);
 
-        assert_eq!(candidates.len(), 2);
-        assert_eq!(candidates[0].program, "powershell.exe");
-        assert_eq!(candidates[0].args, vec!["-NoLogo"]);
-        assert_eq!(candidates[1].program, "cmd.exe");
-        assert_eq!(candidates[1].args, vec!["/Q", "/K"]);
+        assert_eq!(candidates.len(), 1);
+        assert!(
+            candidates[0]
+                .program
+                .to_ascii_lowercase()
+                .ends_with("cmd.exe")
+        );
+        assert_eq!(candidates[0].args, vec!["/D", "/Q", "/K"]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_approved_command_runner_rejects_shell_builtins() {
+        let error = terminal_command_runner("echo ok").unwrap_err();
+
+        assert!(error.contains("not found without a shell"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_approved_command_runner_resolves_exe_without_shell() {
+        let candidate = terminal_command_runner("whoami /user").unwrap();
+
+        assert!(candidate
+            .program
+            .to_ascii_lowercase()
+            .ends_with("whoami.exe"));
+        assert_eq!(candidate.args, vec!["/user"]);
     }
 
     #[cfg(target_os = "windows")]

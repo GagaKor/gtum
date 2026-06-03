@@ -622,7 +622,7 @@ Scope:
 
 - task history and status display
 - basic workspace persistence and restore
-- initial `fast`, `balanced`, `deep` mode support
+- capability-backed model, reasoning, and fast request controls
 - Ubuntu, Windows, and macOS validation
 - documentation of known limitations
 - initial aging-test coverage
@@ -631,7 +631,7 @@ Acceptance Criteria:
 
 - users can inspect recent tasks and status
 - basic workspace state is restored
-- execution modes change context or worker policy
+- runtime-backed agent controls only expose options reported by provider capabilities
 - validation notes or known constraints are documented for all three platforms
 
 Risks:
@@ -643,8 +643,8 @@ Risks:
 Sprint 5 completion update:
 
 - task history and recent activity are now visible in the app
-- the workspace restores the last project path, selected provider, execution mode, and recorded task history
-- `Fast`, `Balanced`, and `Deep` modes are now visible and affect suggestion context handling
+- the workspace restores the last project path, selected provider, agent session state, and recorded task history
+- model, reasoning, and fast controls now come from runtime provider capabilities; unsupported reasoning/fast controls stay hidden
 - Playwright aging coverage now repeats the core flow across reloads
 - MVP validation notes are documented and the MVP can now be treated as complete
 
@@ -1827,7 +1827,7 @@ Current status:
 
 - Sprint 17 is active.
 - The detailed implementation plan is committed in [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md).
-- The first code slice now replaces the old `mission-header` with `Titlebar` and `StatusBar`, exposes `app-titlebar` and `app-statusbar`, and keeps the right `agent-model-row` visible.
+- The first code slice now replaces the old `mission-header` with `Titlebar` and `StatusBar`, exposes `app-titlebar` and `app-statusbar`, and the right Agent Bar now uses a compact model header plus workspace-scoped agent session strip instead of the retired `agent-model-row`.
 - The left project panel now uses independent `Projects` and `Files` accordion sections with `left-projects-section` and `left-files-section` landmarks.
 - The follow-up refit applies the uploaded draft source directly: `gtum-stage`, `gtum-scaler`, `gtum-window`, `body-grid`, `sidebar`, `agent`, and `statusbar` now follow the `/Users/kwon/Downloads/test (1)` JSX/CSS proportions.
 - The old activity rail is removed from the rendered DOM. Panel resize handles are owned by the shell grid instead of the side panels.
@@ -1838,7 +1838,7 @@ Current status:
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
 - The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, browser preview keeps injectable/no-op fallbacks for E2E, and native maximize polling is intentionally disabled to avoid macOS installed-app resize/style-mask churn.
 - The Tauri launch window starts at the uploaded-design baseline (`1320x824`), and the shell now fills the entire viewport after native resize or maximize instead of preserving a fixed canvas with letterboxing.
-- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: user-created terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, and closing runtime-backed tabs terminates the PTY session. Agent command review and decisions stay in the right panel.
+- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: user-created terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, and closing runtime-backed tabs terminates the PTY session. Agent command review and decisions stay in the right panel until approval, then approved commands dispatch through the same terminal runtime.
 - The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `read_agent_provider_capabilities` for runtime-backed model/attachment metadata, then call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and an optional selected model id.
 - Provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, browser preview no longer fabricates agent replies, and Codex command review/decisions stay in the right agent panel instead of creating user terminal tabs.
 - Windows Codex suggestion execution now avoids passing the full prompt through `codex.cmd`; the runtime sends the prompt over stdin and prefers the direct Node `codex.js` entrypoint when available.
@@ -1886,7 +1886,7 @@ Sprint 17 initial backlog:
 - `P0` done: prepare failing E2E coverage for the new shell landmarks
 - `P0` done: implement titlebar/statusbar and left `Projects/Files` accordion
 - `P0` done: refit the shell, left sidebar, right agent panel, and statusbar to the uploaded JSX/CSS source structure
-- `P0` done: keep the right agent provider/readiness row visible and remove fixed execution-mode controls until runtime policy exists
+- `P0` done: replace the right agent provider/readiness row with the standalone Agent Bar baseline: compact selected-model header, per-workspace agent session tabs, composer-level model/reasoning/fast-mode controls, and no detached context summary card
 - `P0` done: delete the previous frontend implementation and replace it with the uploaded design prototype as the only active frontend
 - `P0` done: reconnect the clean prototype to the Tauri filesystem backend for project overview and file reads
 - `P0` done: add the TSX app entry and FSD-style type/service seams without changing the uploaded design DOM

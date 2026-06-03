@@ -425,7 +425,7 @@ An agent can suggest actions such as:
 - inspecting a log file
 - creating a dedicated debugging tab
 
-The center terminal is user-owned. Agent conversations, command review, and decisions stay in the right agent panel. The agent should not run commands, create terminal tabs, or write into the user's terminal; users can manually run any command they choose.
+The center terminal is user-owned until explicit approval. Agent conversations, command review, and decisions stay in the right agent panel. When the user selects `Allow once` or `Always allow`, the app dispatches the approved command through the terminal runtime, either by creating a new runtime-backed tab or by executing in the selected runtime-backed tab.
 
 #### 5. Agent Account Connection
 
@@ -474,7 +474,7 @@ Settings should cover at least:
 - trusted directories and forbidden patterns
 - auto-approval history and undoable notifications
 
-Default model selection and execution-mode controls are deferred until the runtime can discover provider capabilities and apply explicit scheduling policies. The current Codex path must not display fixed model names or `Fast`/`Balanced`/`Deep` options as if they were synchronized runtime state.
+Model, reasoning, attachment, and provider fast-mode request controls are exposed only when the runtime discovers provider capabilities. Fixed `Fast`/`Balanced`/`Deep` execution-policy controls remain deferred until scheduling policies are explicit; the Codex path must not display those fixed modes as if they were synchronized runtime state.
 
 ## 정보 구조 / Information Architecture
 
@@ -946,7 +946,7 @@ A shared project context for multi-agent work may include:
 
 ## 실행 모드 / Execution Modes
 
-Current status: deferred. The current app does not expose `Fast`, `Balanced`, or `Deep` controls, does not persist execution mode in workspace state, and does not send execution mode in the Codex request envelope. Reintroduce this area only after provider capability discovery and runtime scheduling policies exist.
+Current status: deferred for fixed execution policies. The current app does not expose `Fast`, `Balanced`, or `Deep` execution-mode controls, does not persist execution mode in workspace state, and does not send execution mode in the Codex request envelope. It may expose provider-backed reasoning and fast-mode request options only when `read_agent_provider_capabilities` reports real support. Reintroduce fixed execution policies only after provider capability discovery and runtime scheduling policies exist.
 
 ### 한국어
 
@@ -1152,7 +1152,7 @@ The first version should focus on the smallest complete experience.
 - inspect provider/session readiness and switch providers in the right agent workspace
 - let the agent suggest commands
 - keep command review and decisions in the right agent workspace
-- keep the center terminal user-owned; the agent must not execute commands or create terminal tabs
+- keep command execution user-owned until explicit approval; approved agent commands may create or use runtime-backed terminal tabs
 
 #### Out of Scope
 

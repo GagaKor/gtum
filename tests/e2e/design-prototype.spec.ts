@@ -130,13 +130,18 @@ test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
   await expect(page.locator('.settings-modal')).toBeVisible()
 })
 
-test('does not expose fixed Codex models or fake execution modes', async ({ page }) => {
+test('exposes actual agent controls without fixed models or legacy execution modes', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.locator('.agent')).not.toContainText('GPT-5')
-  await expect(page.locator('.agent')).not.toContainText('Fast')
   await expect(page.locator('.agent')).not.toContainText('Balanced')
   await expect(page.locator('.agent')).not.toContainText('Deep')
+  await expect(page.locator('.agent-model-row')).toHaveCount(0)
+  await expect(page.locator('.context-summary')).toHaveCount(0)
+  await expect(page.locator('.agent-session-strip')).toBeVisible()
+  await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
+  await expect(page.locator('.fast-toggle')).toHaveCount(0)
+  await expect(page.locator('.composer-scope-chip')).toHaveCount(0)
   await expect(page.locator('.composer-quick')).toHaveCount(0)
   await expect(page.locator('.agent')).not.toContainText('Explain current state')
   await expect(page.locator('.agent')).not.toContainText('Suggest a fix')
@@ -150,7 +155,6 @@ test('does not expose fixed Codex models or fake execution modes', async ({ page
   await expect(settings).not.toContainText('Pick the default model per provider.')
   await expect(settings).not.toContainText('Default mode')
   await expect(settings).not.toContainText('GPT-5')
-  await expect(settings).not.toContainText('Fast')
   await expect(settings).not.toContainText('Balanced')
   await expect(settings).not.toContainText('Deep')
 })
@@ -227,6 +231,30 @@ test('uses runtime provider capabilities for the composer model picker', async (
                 label: 'GPT-5 Codex',
               },
             ],
+            reasoningLevels: [
+              {
+                level: 'low',
+                label: 'Low',
+                description: 'Fast responses with lighter reasoning',
+              },
+              {
+                level: 'medium',
+                label: 'Medium',
+                description: 'Balances speed and reasoning depth',
+              },
+              {
+                level: 'high',
+                label: 'High',
+                description: 'Greater reasoning depth',
+              },
+              {
+                level: 'xhigh',
+                label: 'XHigh',
+                description: 'Extra high reasoning depth',
+              },
+            ],
+            defaultReasoningLevel: 'xhigh',
+            supportsFastMode: true,
             attachments: [
               {
                 kind: 'image',
@@ -275,6 +303,9 @@ test('uses runtime provider capabilities for the composer model picker', async (
   await page.locator('.composer-model-chip').click()
   await page.locator('.composer-model-option').filter({ hasText: 'GPT-5 Codex' }).click()
   await expect(page.locator('.composer-model-chip')).toContainText('GPT-5 Codex')
+  await expect(page.locator('.composer-reasoning-chip')).toContainText('XHigh')
+  await page.locator('.fast-toggle').click()
+  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-pressed', 'true')
 
   await page.getByText('Open project folder').click()
   await expect
@@ -306,6 +337,8 @@ test('uses runtime provider capabilities for the composer model picker', async (
   )
 
   expect(requestCall?.args?.request?.model).toBe('gpt-5-codex')
+  expect(requestCall?.args?.request?.reasoningLevel).toBe('xhigh')
+  expect(requestCall?.args?.request?.fastMode).toBe(true)
   expect(requestCall?.args?.request?.attachments).toEqual([
     {
       kind: 'image',
@@ -1471,7 +1504,7 @@ test('does not use canned agent replies for deferred desktop providers', async (
   await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
 })
 
-test('keeps Codex command decisions in the agent panel without terminal execution', async ({ page }) => {
+test('executes approved Codex command decisions through the terminal runtime', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1619,8 +1652,11 @@ test('keeps Codex command decisions in the agent panel without terminal executio
   await expect(page.locator('.sugg')).toHaveCount(0)
   await expect(page.locator('.composer-provider-chip')).toContainText('Codex')
   await expect(page.locator('.composer-provider-chip')).not.toContainText('gpt-5')
-  await expect(page.locator('.composer-foot')).not.toContainText('Fast')
-  await expect(page.locator('.composer-scope-chip')).toContainText('Project scope')
+  await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
+  await expect(page.locator('.fast-toggle')).toHaveCount(0)
+  await expect(page.locator('.composer-scope-chip')).toHaveCount(0)
+  await expect(page.locator('.agent-model-row')).toHaveCount(0)
+  await expect(page.locator('.context-summary')).toHaveCount(0)
   await expect(page.locator('.composer-foot .ctx-tag')).toHaveCount(0)
 
   await expect
@@ -1637,22 +1673,37 @@ test('keeps Codex command decisions in the agent panel without terminal executio
     .toEqual([])
 
   await permissionPanel.getByRole('button', { name: 'Allow once' }).click()
-  await expect(page.locator('.msg.assistant').last()).toContainText(
-    'Permission allowed once in the agent panel',
-  )
   await expect(page.locator('.composer-approval')).toHaveCount(0)
   await expect(activityRow).toContainText('Allowed once')
-
-  const terminalCalls = await page.evaluate(
-    () =>
-      (
-        window as Window & {
-          __terminalCalls?: Array<{ command: string; args?: Record<string, unknown> }>
-        }
-      ).__terminalCalls ?? [],
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Finished processing 1 command request',
   )
 
-  expect(terminalCalls).toEqual([])
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __terminalCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+            }
+          ).__terminalCalls ?? [],
+      ),
+    )
+    .toEqual([
+      {
+        command: 'create_terminal_session_with_command',
+        args: {
+          request: {
+            session: {
+              name: 'fix-1',
+              cwd: '~/code/aurora-monorepo',
+            },
+            command: 'pnpm test:funnel --reporter=verbose',
+          },
+        },
+      },
+    ])
 })
 
 test('keeps Codex setup guidance in the agent panel without opening a login terminal', async ({ page }) => {

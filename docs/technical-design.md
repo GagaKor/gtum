@@ -694,8 +694,8 @@ The terminal should be treated as a long-lived session object, not just a text v
 - Windows needs a dedicated shell strategy that abstracts `powershell`, `pwsh`, and `cmd`
 - detect default shells per OS and allow users to override them in settings
 - The active frontend terminal seam is `src/shared/api/runtimeTerminals.ts`; it wraps `create_terminal_session`, `create_terminal_session_with_command`, `read_terminal_session_logs`, `execute_terminal_session_command`, and `close_terminal_session`.
-- `src/prototype.jsx` now uses that seam for new terminal tabs, runtime log polling, tab close termination, and approved command writes when a tab has a live runtime session.
-- Browser preview remains deterministic through the same service fallback, while real PTY ownership stays in `src-tauri/src/runtime/pty/mod.rs`.
+- `src/prototype.jsx` now uses that seam for user-created terminal tabs, runtime log polling, tab close termination, approved command-output sessions, and approved command writes when the selected target is an existing interactive runtime session.
+- Browser preview remains deterministic through the same service fallback, while interactive PTY ownership and Windows command-output sessions stay in `src-tauri/src/runtime/pty/mod.rs`.
 
 ## 크로스 플랫폼 전략 / Cross-Platform Strategy
 
@@ -747,7 +747,7 @@ The structural support scope still covers all three platforms, but the first dai
 - home-directory expansion for runtime paths must accept `HOME`, `USERPROFILE`, and `HOMEDRIVE` plus `HOMEPATH`, because installed Windows app launches may not provide `HOME`
 - runtime behavior should branch inside the Rust `platform` module with `cfg(target_os = "...")` rather than scattering OS checks through feature modules
 - build-time bundle differences should live in Tauri platform config files such as `tauri.windows.conf.json` and `tauri.macos.conf.json`; release artifacts should be produced on native OS runners instead of relying on cross-compilation for Windows/macOS
-- Windows PTY sessions should prefer `powershell.exe` and keep `cmd.exe` only as a fallback, because installed WebView/ConPTY launches can surface `cmd.exe` application-error dialogs before the fallback path is reached
+- Windows user-created PTY sessions default to `cmd.exe /D /Q /K` through `ComSpec` when available. Windows-approved agent commands must not use that PTY shell path: they run as hidden shell-free process sessions, resolve only direct `.exe` or `.com` programs, capture stdout/stderr into runtime logs, and reject `cmd.exe`, `powershell.exe`, `.cmd`, `.bat`, shell syntax, and shell builtins into the app log. This prevents `0xc0000142` application-error dialogs from shell startup before the app can recover.
 
 ## Git 워크플로우 설계 / Git Workflow Design
 
@@ -1175,6 +1175,8 @@ Current contract:
 
 - `Fast`, `Balanced`, and `Deep` are not exposed in the agent panel, settings modal, statusbar, workspace persistence, or `request_agent_suggestions` envelope.
 - Provider model selection is exposed only when `read_agent_provider_capabilities` returns runtime-synced models. Codex models come from the local Codex CLI catalog/config path, and the selected id is forwarded as `codex exec --model <id>` only when the user selects one. Attachment controls follow the same capability contract; Codex image attachments selected through the composer are forwarded as `codex exec --image <path>`.
+- Provider reasoning controls are capability-backed request options, not fixed frontend modes. `read_agent_provider_capabilities` returns `reasoningLevels`, `defaultReasoningLevel`, and `supportsFastMode`; the composer renders the reasoning chip only when supported levels exist and renders fast mode only when `supportsFastMode` is true.
+- Codex reasoning levels come from the local Codex model catalog/config path. When the user selects one of those supported values, the runtime forwards it through `codex exec -c model_reasoning_effort="<level>"`. Fast mode remains capability-gated in the UI and request envelope, but the runtime must not invent an unchecked Codex CLI config override for it.
 - Future execution policies must be backed by explicit runtime policy definitions and provider capability discovery before any UI control is reintroduced.
 
 ## 상태 모델 / State Model
@@ -1237,17 +1239,17 @@ Because `gtum` interacts with local files and shell execution, security boundari
 
 #### Principles
 
-- command execution is user-owned in the center terminal; agent decisions stay in the right panel and must not trigger terminal execution
+- command execution is user-owned until explicit approval; agent decisions stay in the right panel, and approved commands are dispatched through the terminal runtime without launching an interactive shell on Windows
 - file edits are allowed only through approval or explicit editing flows
 - login sessions and sensitive data must use secure storage
 - provider responses should be normalized into shared internal formats before being exposed to the UI
 - the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
 - The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`, then normalizes the Codex response into either a reply-only assistant turn or a command-bearing turn that requires review.
 - `src/prototype.jsx` uses that seam only when the desktop runtime is available, `Codex` is the active provider, and the project is runtime-backed. Pending requests render concrete operation progress sequentially in the right agent workspace, completed turns record answer-time metadata, numbered replies can become selectable decision event cards, and command-bearing responses become explicit permission event cards with direct `Allow once`, `Always allow`, and `Deny` actions. Browser preview and deferred providers must not keep a canned agent response path; they surface explicit unavailable states instead.
-- The right agent workspace owns Codex conversation, command review, and decision recording. It must not create PTY tabs, execute terminal commands, or write suggested commands into the user's terminal.
-- The Codex `command` response is only a gtum permission-card preview. Provider-side approval or sandbox settings, including `approval_policy=never`, must not be treated as a reason to refuse harmless right-panel permission-card suggestions.
+- The right agent workspace owns Codex conversation, command review, and decision recording. `Deny` keeps the refusal in the agent panel. `Allow once` and `Always allow` execute through the terminal runtime. On Windows, new approved-command targets become hidden shell-free command-output sessions; existing interactive runtime tabs may still receive explicit command writes.
+- The Codex `command` response is a gtum permission-card preview until the user approves it. Provider-side approval or sandbox settings, including `approval_policy=never`, must not be treated as a reason to refuse harmless permission-card suggestions.
 - Desktop `request_agent_suggestions` runs Codex response generation in a blocking worker task rather than the command handler path. The `codex exec` child process has a 60-second timeout and is killed before returning a visible error if it hangs.
-- Windows `Codex` suggestion requests must avoid passing the full prompt as a `codex.cmd` batch-file argument. The runtime sends the prompt over stdin and, when the npm shim can be resolved, executes `node.exe <codex.js>` directly before falling back to `codex.cmd`.
+- Windows `Codex` suggestion requests must avoid passing the full prompt as a `codex.cmd` batch-file argument. The runtime sends the prompt over stdin and, when the npm shim can be resolved, executes `node.exe <codex.js>` directly before falling back to `codex.cmd`. Windows runtime subprocesses must be launched with no console window so Codex probes, model catalog reads, `codex exec`, and Git metadata reads do not flash terminal windows over the desktop UI.
 
 ## MVP 구현 순서 / MVP Implementation Order
 
