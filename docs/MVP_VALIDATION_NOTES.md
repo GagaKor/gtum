@@ -37,6 +37,7 @@ This document captures the validation notes needed to judge `gtum` MVP completio
 - agent suggestion runtime service contract behavior through `tests/e2e/runtime-agent-suggestions-service.spec.ts`
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
 - runtime provider capability coverage verifies composer model picking and image attachment selection use `read_agent_provider_capabilities`, then forward the selected model id and attachment paths in `request_agent_suggestions`.
+- Agent Bar coverage verifies the left `Projects` workspace tree mirrors agent sessions, can create and switch workspaces, the composer stop button cancels a running request in the UI, and `@`, `#`, and `/` open inline reference suggestions.
 - live Codex activity coverage in `tests/e2e/design-prototype.spec.ts` verifies pending runtime requests update a persistent conversational agent turn with sequential concrete operation progress, then clear the internal progress rows and show answer-time metadata when that same turn becomes the final suggestion/result.
 - reply-only Codex coverage verifies normal assistant answers do not create review cards or composer approval panels; only command-bearing responses enter the review flow.
 - numbered-choice Codex coverage verifies reply choices render as selectable event cards and selected options continue through the agent request path.

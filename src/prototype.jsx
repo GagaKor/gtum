@@ -787,6 +787,11 @@ const Icon = {
       <path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   ),
+  stop: (props) => (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" {...props}>
+      <rect x="4" y="4" width="6" height="6" rx="1.2" fill="currentColor" />
+    </svg>
+  ),
   send: (props) => (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" {...props}>
       <path d="M2 7 L12 7 M8 3 L12 7 L8 11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -1742,7 +1747,164 @@ function ProjectItem({ project, active, lang, onSelect }) {
   );
 }
 
-function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject }) {
+const WORKSPACE_CODENAME_STEMS = [
+  "ridge",
+  "harbor",
+  "orbit",
+  "signal",
+  "vector",
+  "summit",
+];
+
+function workspaceCodename(index) {
+  const stem = WORKSPACE_CODENAME_STEMS[(Math.max(1, index) - 1) % WORKSPACE_CODENAME_STEMS.length];
+  const cycle = Math.floor((Math.max(1, index) - 1) / WORKSPACE_CODENAME_STEMS.length);
+  return cycle > 0 ? `${stem}-${cycle + 1}` : stem;
+}
+
+function agentSessionStatusView(session) {
+  const messages = session?.messages || [];
+  const hasRunning = messages.some((message) => message.progress?.status === "running");
+  if (hasRunning) {
+    return {
+      id: "working",
+      label: "Working",
+      note: "Provider request in progress",
+    };
+  }
+
+  const hasPendingPermission = messages.some((message) =>
+    message.suggestion?.commands?.length > 0 && !message.permissionDecision);
+  if (hasPendingPermission) {
+    return {
+      id: "review",
+      label: "Review needed",
+      note: "Command approval is waiting",
+    };
+  }
+
+  const hasFinishedWork = messages.some((message) =>
+    message.answerMeta || message.permissionDecision || message.completed);
+  if (hasFinishedWork) {
+    return {
+      id: "done",
+      label: "Done",
+      note: "Latest request finished",
+    };
+  }
+
+  return {
+    id: "waiting",
+    label: "Waiting",
+    note: "Ready for a request",
+  };
+}
+
+function ProjectWorkspaceGroup({
+  project,
+  agentWorkspace,
+  activeAgentSessionId,
+  activeProvider,
+  onSelectAgentSession,
+  onNewAgentSession,
+  onCloseAgentSession,
+}) {
+  const sessions = agentWorkspace?.sessions || [];
+  const provider = activeProvider || PROVIDERS_INIT[0];
+
+  return (
+    <div className="project-group open">
+      <div className="pg-header active">
+        <span className="pg-chev"><Icon.chevronDown /></span>
+        <span className="project-mark active">{(project.name || "?")[0].toUpperCase()}</span>
+        <span className="project-info">
+          <span className="project-name">
+            <span className="nm">{project.name}</span>
+            <span className="project-tag">current</span>
+          </span>
+          <span className="project-meta">
+            <Icon.branch />
+            <span className="project-branch">{project.branch}</span>
+          </span>
+        </span>
+        <span className="pg-count">{sessions.length}</span>
+        <button
+          className="project-workspace-new"
+          type="button"
+          title="New workspace"
+          onClick={onNewAgentSession}
+        >
+          <Icon.plus />
+        </button>
+      </div>
+
+      <div className="pg-body">
+        {sessions.map((session) => {
+          const status = agentSessionStatusView(session);
+          const active = session.id === activeAgentSessionId;
+
+          return (
+            <button
+              className={`ws-item ws-${status.id}${active ? " active" : ""}`}
+              key={session.id}
+              type="button"
+              onClick={() => onSelectAgentSession(session.id)}
+            >
+              <span className={`ws-state-rail ${status.id}`} />
+              <span className={"ws-mark provider-mark " + provider.id}>{provider.abbr}</span>
+              <span className="ws-info">
+                <span className="ws-top">
+                  <span className="ws-name">{session.title}</span>
+                  <span className={`ws-status ${status.id}`}>
+                    <span className="ws-dot" />
+                    {status.label}
+                  </span>
+                </span>
+                <span className="ws-meta">
+                  <span className="ws-branch">{project.branch}</span>
+                  {project.changedFiles > 0 && (
+                    <>
+                      <span className="ws-sep">/</span>
+                      <span className="ws-changed">{project.changedFiles} changes</span>
+                    </>
+                  )}
+                </span>
+                <span className="ws-note">{status.note}</span>
+              </span>
+              {sessions.length > 1 && (
+                <span
+                  className="ws-remove"
+                  role="button"
+                  tabIndex={0}
+                  title={`Delete ${session.title}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onCloseAgentSession(session.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onCloseAgentSession(session.id);
+                  }}
+                >
+                  <Icon.x />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({
+  lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject,
+  agentWorkspace, activeAgentSessionId, activeProvider,
+  onSelectAgentSession, onNewAgentSession, onCloseAgentSession,
+}) {
   const [selectedFile, setSelectedFile] = React.useState(null);
   const [projectsOpen, setProjectsOpen] = React.useState(true);
   const [filesOpen, setFilesOpen] = React.useState(true);
@@ -1776,11 +1938,14 @@ function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, o
         >
           <div className="project-list">
             {activeProject.runtimeBacked && (
-              <ProjectItem
+              <ProjectWorkspaceGroup
                 project={activeProject}
-                active
-                lang={lang}
-                onSelect={() => {}}
+                agentWorkspace={agentWorkspace}
+                activeAgentSessionId={activeAgentSessionId}
+                activeProvider={activeProvider}
+                onSelectAgentSession={onSelectAgentSession}
+                onNewAgentSession={onNewAgentSession}
+                onCloseAgentSession={onCloseAgentSession}
               />
             )}
             {RECENT_PROJECTS.map((p) => (
@@ -2428,7 +2593,7 @@ function agentWorkspaceTitle(project) {
 function makeAgentSession(project, lang, index) {
   return {
     id: uid("agent"),
-    title: `Agent ${index}`,
+    title: workspaceCodename(index),
     workspaceKey: agentWorkspaceKey(project),
     workspaceTitle: agentWorkspaceTitle(project),
     createdAt: nowHm(),
@@ -3064,10 +3229,44 @@ function WindowResizeZones({ windowControls, maximized }) {
   );
 }
 
+const COMPOSER_REFERENCE_GROUPS = {
+  "@": {
+    title: "Files and folders",
+    items: [
+      { label: "@ src/", detail: "Reference a project file or folder" },
+      { label: "@ active file", detail: "Attach the current editor context" },
+    ],
+  },
+  "#": {
+    title: "PRs and issues",
+    items: [
+      { label: "# Pull request", detail: "Reference a GitHub PR by number" },
+      { label: "# Issue", detail: "Reference an issue when GitHub is connected" },
+    ],
+  },
+  "/": {
+    title: "Slash commands",
+    items: [
+      { label: "/review", detail: "Ask the provider to review the current project" },
+      { label: "/test", detail: "Ask for a focused test command suggestion" },
+    ],
+  },
+};
+
+function composerReferenceGroup(value) {
+  const text = String(value || "");
+  const token = text.split(/\s/).at(-1) || "";
+  const trigger = token[0];
+  if (!trigger || !COMPOSER_REFERENCE_GROUPS[trigger]) return null;
+  if (token.length > 24) return null;
+  return COMPOSER_REFERENCE_GROUPS[trigger];
+}
+
 function Composer({
   lang, activeProvider, providerCapabilities, selectedModelId, onSelectModel,
   reasoningLevel, fastMode, onCycleReasoningLevel, onToggleFastMode,
   attachments, onPickAttachment, onRemoveAttachment, onSend,
+  busy = false, onStop,
 }) {
   const [val, setVal] = React.useState("");
   const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
@@ -3093,7 +3292,13 @@ function Composer({
     : "";
   const showReasoningControl = reasoningLevels.length > 0 && Boolean(normalizedReasoningLevel);
   const showFastMode = Boolean(providerCapabilities?.supportsFastMode);
+  const referenceGroup = composerReferenceGroup(val);
   const submit = () => {
+    if (busy) {
+      onStop?.();
+      return;
+    }
+
     const v = val.trim();
     if (!v) return;
     onSend(v);
@@ -3139,6 +3344,26 @@ function Composer({
                   <Icon.x />
                 </button>
               </span>
+            ))}
+          </div>
+        )}
+        {referenceGroup && (
+          <div className="composer-reference-menu">
+            <div className="composer-reference-title">{referenceGroup.title}</div>
+            {referenceGroup.items.map((item) => (
+              <button
+                className="composer-reference-option"
+                key={item.label}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => setVal((current) => {
+                  const prefix = current.replace(/(\S*)$/, "");
+                  return `${prefix}${item.label} `;
+                })}
+              >
+                <span>{item.label}</span>
+                <small>{item.detail}</small>
+              </button>
             ))}
           </div>
         )}
@@ -3229,8 +3454,13 @@ function Composer({
               <span>Fast mode</span>
             </button>
           )}
-          <button className="send" onClick={submit} disabled={!val.trim()}>
-            <Icon.send />
+          <button
+            className={"send" + (busy ? " stopping" : "")}
+            onClick={submit}
+            disabled={!busy && !val.trim()}
+            title={busy ? "Stop response" : "Send"}
+          >
+            {busy ? <Icon.stop /> : <Icon.send />}
           </button>
         </div>
       </div>
@@ -3247,9 +3477,10 @@ function AgentPanel({
   agentWorkspace, activeAgentSessionId, onSelectAgentSession,
   onNewAgentSession, onCloseAgentSession,
   attachments, onPickAttachment, onRemoveAttachment,
-  onChooseDecisionOption, onPermissionDecision,
+  onChooseDecisionOption, onPermissionDecision, onStopAgentRequest,
 }) {
   const chatRef = React.useRef(null);
+  const agentBusy = isTyping || messages.some((message) => message.progress?.status === "running");
   const pendingPermissionMessage = [...messages]
     .reverse()
     .find((message) => message.suggestion?.commands?.length > 0 && !message.permissionDecision);
@@ -3332,6 +3563,8 @@ function AgentPanel({
         onPickAttachment={onPickAttachment}
         onRemoveAttachment={onRemoveAttachment}
         onSend={onSend}
+        busy={agentBusy}
+        onStop={onStopAgentRequest}
       />
     </aside>
   );
@@ -4048,6 +4281,7 @@ function App() {
   const [agentSessionStore, setAgentSessionStore] = React.useState(() =>
     ensureAgentWorkspace({}, PROJECT, lang)
   );
+  const agentRequestGenerationRef = React.useRef(0);
   const [isTyping, setIsTyping] = React.useState(false);
   const [agentActivity, setAgentActivity] = React.useState([]);
   const [approval, setApproval] = React.useState(null);
@@ -4239,6 +4473,31 @@ function App() {
       };
     });
   }, [activeProject, lang]);
+
+  const stopAgentRequest = React.useCallback(() => {
+    agentRequestGenerationRef.current += 1;
+    const stoppedAtMs = Date.now();
+    setIsTyping(false);
+    setAgentActivity([]);
+    setMessages((prev) => prev.map((message) => {
+      if (message.progress?.status !== "running") return message;
+      const startedAtMs = message.progress.startedAtMs || stoppedAtMs;
+
+      return {
+        ...message,
+        at: nowHmAt(stoppedAtMs),
+        progress: {
+          status: "failed",
+          steps: message.progress.steps || [],
+        },
+        answerMeta: {
+          answeredAt: nowHmAt(stoppedAtMs),
+          elapsedMs: stoppedAtMs - startedAtMs,
+        },
+        content: "Stopped by user.",
+      };
+    }));
+  }, [setMessages]);
 
   const cycleAgentReasoningLevel = React.useCallback(() => {
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
@@ -4506,6 +4765,9 @@ function App() {
 
   const requestRuntimeAgentSuggestions = React.useCallback(async (text, messageId, active) => {
     const turnId = messageId + "-agent-turn";
+    const requestGeneration = agentRequestGenerationRef.current + 1;
+    agentRequestGenerationRef.current = requestGeneration;
+    const isCurrentRequest = () => agentRequestGenerationRef.current === requestGeneration;
     const startedAtMs = Date.now();
     const attachments = selectedProviderAttachments[activeProviderId] || [];
     const selectedModelId = selectedProviderModels[activeProviderId] || null;
@@ -4549,6 +4811,7 @@ function App() {
       [activeProviderId]: [],
     }));
     const revealRunningSteps = (steps) => {
+      if (!isCurrentRequest()) return;
       setMessages((prev) => prev.map((message) => message.id === turnId && message.progress?.status === "running"
         ? {
             ...message,
@@ -4563,6 +4826,7 @@ function App() {
 
     try {
       await waitForAgentProgressStage();
+      if (!isCurrentRequest()) return;
       revealRunningSteps(runningSteps.slice(0, 2));
 
       const suggestionsResultPromise = Promise.resolve(agentSuggestionRuntimeService.requestSuggestions({
@@ -4579,9 +4843,11 @@ function App() {
         .catch((error) => ({ error }));
 
       await waitForAgentProgressStage();
+      if (!isCurrentRequest()) return;
       revealRunningSteps(runningSteps);
 
       const suggestionsResult = await suggestionsResultPromise;
+      if (!isCurrentRequest()) return;
       if (suggestionsResult.error) {
         throw suggestionsResult.error;
       }
@@ -4682,6 +4948,7 @@ function App() {
         ]);
       }
     } catch (error) {
+      if (!isCurrentRequest()) return;
       const message = error instanceof Error ? error.message : String(error);
       const answerMeta = makeAgentAnswerMeta(startedAtMs);
       setMessages((prev) => prev.map((entry) => entry.id === turnId
@@ -4697,8 +4964,10 @@ function App() {
           }
         : entry));
     } finally {
-      setIsTyping(false);
-      setAgentActivity([]);
+      if (isCurrentRequest()) {
+        setIsTyping(false);
+        setAgentActivity([]);
+      }
     }
   }, [
     activeProject,
@@ -5214,6 +5483,12 @@ function App() {
                   collapseSidebar={() => setSidebarOpen(false)}
                   onOpenProject={handleOpenProject}
                   onOpenFile={handleOpenFile}
+                  agentWorkspace={activeAgentWorkspace}
+                  activeAgentSessionId={activeAgentSessionId}
+                  activeProvider={providers.find((p) => p.id === activeProviderId) || providers[0]}
+                  onSelectAgentSession={selectAgentSession}
+                  onNewAgentSession={newAgentSession}
+                  onCloseAgentSession={closeAgentSession}
                 />
               )}
               {sidebarOpen && (
@@ -5273,6 +5548,7 @@ function App() {
                   onRemoveAttachment={handleRemoveAgentAttachment}
                   onChooseDecisionOption={handleChooseDecisionOption}
                   onPermissionDecision={recordPermissionDecision}
+                  onStopAgentRequest={stopAgentRequest}
                 />
               )}
             </div>
