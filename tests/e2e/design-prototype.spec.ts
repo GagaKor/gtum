@@ -297,16 +297,6 @@ test('uses runtime provider capabilities for the composer model picker', async (
   await page.goto('/')
 
   await expect(page.locator('.composer-model-chip')).toContainText('GPT-5.5')
-  await expect(page.locator('.composer-tool')).toHaveAttribute('title', /Image/)
-  await page.locator('.composer-tool').click()
-  await expect(page.locator('.composer-attachment-chip')).toContainText('screenshot.png')
-  await page.locator('.composer-model-chip').click()
-  await page.locator('.composer-model-option').filter({ hasText: 'GPT-5 Codex' }).click()
-  await expect(page.locator('.composer-model-chip')).toContainText('GPT-5 Codex')
-  await expect(page.locator('.composer-reasoning-chip')).toContainText('XHigh')
-  await page.locator('.fast-toggle').click()
-  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-pressed', 'true')
-
   await page.getByText('Open project folder').click()
   await expect
     .poll(async () =>
@@ -320,6 +310,16 @@ test('uses runtime provider capabilities for the composer model picker', async (
       ),
     )
     .toBe(true)
+
+  await expect(page.locator('.composer-tool')).toHaveAttribute('title', /Image/)
+  await page.locator('.composer-tool').click()
+  await expect(page.locator('.composer-attachment-chip')).toContainText('screenshot.png')
+  await page.locator('.composer-model-chip').click()
+  await page.locator('.composer-model-option').filter({ hasText: 'GPT-5 Codex' }).click()
+  await expect(page.locator('.composer-model-chip')).toContainText('GPT-5 Codex')
+  await expect(page.locator('.composer-reasoning-chip')).toContainText('XHigh')
+  await page.locator('.fast-toggle').click()
+  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-pressed', 'true')
 
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
@@ -1495,7 +1495,7 @@ test('does not use canned agent replies for deferred desktop providers', async (
   })
 
   await page.goto('/')
-  await page.locator('.agent-provider-tab').filter({ hasText: 'Claude' }).click()
+  await expect(page.locator('.composer-provider-chip')).toContainText('Claude')
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 

@@ -82,10 +82,10 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/widgets/app-shell/ui/Titlebar.tsx` and `src/widgets/app-shell/ui/StatusBar.tsx` are the first extracted TSX/FSD app-shell components. They preserve the uploaded design class names and visible shell contract.
    - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
    - `src/shared/api/runtimeWorkspace.ts` is the typed frontend seam for workspace restore and repeated-use persistence. The prototype reads the runtime workspace snapshot on desktop startup, reopens the last project through `runtimeProjects.ts`, and persists successful runtime-backed project opens.
-   - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for PTY-backed terminal sessions. The prototype uses it for new terminal tabs, log polling, tab close termination, and approved command writes when a tab is runtime-backed.
+   - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for terminal runtime sessions. The prototype uses it for user-created PTY tabs, log polling, tab close termination, approved command writes when an existing tab is runtime-backed, and approved-command output sessions when the agent creates a new runtime target.
    - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for provider connection snapshots, disconnects, and `begin_agent_login` validation. It does not own terminal creation; setup guidance stays in the Agent panel.
    - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics, provider capabilities, and `request_agent_suggestions`. The prototype uses it for runtime-backed model/attachment metadata and Codex suggestion requests; when Tauri is unavailable, browser preview shows a runtime-unavailable state instead of canned agent replies.
-   - Desktop runtime provider flows must not silently fall back to prototype data. Non-`Codex` providers surface an explicit deferred state, and Codex command-bearing responses remain reviewable in the Agent panel without creating PTY tabs.
+   - Desktop runtime provider flows must not silently fall back to prototype data. Non-`Codex` providers surface an explicit deferred state. Codex command-bearing responses remain reviewable in the Agent panel until explicit approval; `Allow once` and `Always allow` then dispatch through the terminal runtime.
    - The fixed uploaded-design shell is `1320x824`; `src-tauri/tauri.conf.json` uses the same default launch size so the frameless desktop window opens without shell letterboxing.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
@@ -183,6 +183,7 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - enforces project-root containment and the current binary/large-file fallback rules
 - [`src-tauri/src/runtime/pty/mod.rs`](../src-tauri/src/runtime/pty/mod.rs)
   - owns PTY session creation, recent log reads, command injection, reader/reaper threads, and bounded log buffers
+  - also owns Windows approved-command output sessions created through `create_terminal_session_with_command`; those sessions run direct shell-free `.exe`/`.com` processes, capture stdout/stderr into runtime logs, and reject shell syntax or batch shims instead of launching an interactive shell
 - [`src-tauri/src/runtime/auth/mod.rs`](../src-tauri/src/runtime/auth/mod.rs)
   - manages provider connection state and persistence
   - the current real daily-use baseline is `Codex`, while `Claude` remains deferred
@@ -274,7 +275,7 @@ Restore is split into two layers:
 ### English
 
 - the main product surface is a peer structure of `terminal + code surface + agent approval`
-- the runtime does not execute arbitrary commands before user approval
+- the runtime does not execute arbitrary commands before user approval; after explicit approval, agent commands dispatch through the terminal runtime rather than through provider-side execution
 - the real `Codex` path must pass `Codex CLI` and ChatGPT-session validation
 - `Windows` is the first daily-use validation baseline, and path/shell differences should be absorbed in the `platform` layer
 - a `WORKLOG` is only a temporary in-sprint trace, not a source of truth; once the sprint closes, structural changes should be absorbed into this doc or into [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), and [`technical-design.md`](./technical-design.md), and then the `WORKLOG` should be deleted

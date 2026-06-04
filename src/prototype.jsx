@@ -4308,7 +4308,13 @@ function App() {
         if (cancelled) return;
         setProviders((prev) => mergeRuntimeProviderConnections(prev, connections));
         const codex = connections.find((connection) => connection.provider === "codex");
-        if (codex?.status === "connected") setActiveProviderId("codex");
+        if (codex?.status === "connected") {
+          setActiveProviderId("codex");
+          return;
+        }
+
+        const connectedProvider = connections.find((connection) => connection.status === "connected");
+        if (connectedProvider?.provider) setActiveProviderId(connectedProvider.provider);
       })
       .catch((error) => {
         if (cancelled) return;
