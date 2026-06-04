@@ -348,6 +348,167 @@ test('uses runtime provider capabilities for the composer model picker', async (
   ])
 })
 
+test('shows project workspaces in the sidebar and switches agent sessions from the tree', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: {
+          name: 'aurora-monorepo',
+          path: '~/code/aurora-monorepo',
+        },
+        tree: {
+          name: 'aurora-monorepo',
+          path: '~/code/aurora-monorepo',
+          kind: 'directory',
+          children: [],
+        },
+        git: {
+          isRepository: true,
+          branch: 'feature/onboarding-funnel',
+          branchType: 'feature',
+          changedFilesCount: 7,
+        },
+      }),
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  const projectGroup = page.locator('.project-group').filter({ hasText: 'aurora-monorepo' })
+  await expect(projectGroup).toBeVisible()
+  await expect(projectGroup.locator('.ws-item')).toHaveCount(1)
+  await expect(projectGroup.locator('.ws-item.active')).toContainText('feature/onboarding-funnel')
+  await expect(projectGroup.locator('.ws-item.active')).toContainText('Waiting')
+
+  await projectGroup.locator('.project-workspace-new').click()
+  await expect(projectGroup.locator('.ws-item')).toHaveCount(2)
+  await projectGroup.locator('.ws-item').nth(1).click()
+  await expect(projectGroup.locator('.ws-item').nth(1)).toHaveClass(/active/)
+  await expect(page.locator('.agent-session-tab.active')).toContainText(/ridge|harbor|orbit|signal/)
+})
+
+test('lets users stop a running agent request from the composer', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: {
+          name: 'aurora-monorepo',
+          path: '~/code/aurora-monorepo',
+        },
+        tree: {
+          name: 'aurora-monorepo',
+          path: '~/code/aurora-monorepo',
+          kind: 'directory',
+          children: [],
+        },
+        git: {
+          isRepository: true,
+          branch: 'feature/onboarding-funnel',
+          branchType: 'feature',
+          changedFilesCount: 7,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        if (command === 'request_agent_suggestions') {
+          await new Promise((resolve) => window.setTimeout(resolve, 5000))
+          return [
+            {
+              id: 'late-suggestion',
+              provider: 'codex',
+              summary: 'This should not appear after stop',
+              command: 'pnpm test:late',
+              preferredTarget: 'new_tab',
+              confidence: 'high',
+              error: null,
+            },
+          ]
+        }
+
+        return {
+          provider: 'codex',
+          setupState: 'ready',
+          connectionPath: 'Codex CLI ChatGPT session',
+          summary: 'Codex is ready',
+          guidance: 'Ready',
+          baseUrl: null,
+          model: 'Codex CLI default',
+          requirements: [],
+        }
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { runtimeBacked: boolean }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.runtimeBacked ?? false,
+      ),
+    )
+    .toBe(true)
+
+  await page.getByPlaceholder('Ask Codex').fill('long running request')
+  await page.locator('.composer-input .send').click()
+  await expect(page.locator('.composer-input .send')).toHaveClass(/stopping/)
+  await expect(page.locator('.composer-input .send')).toHaveAttribute('title', /Stop/)
+
+  await page.locator('.composer-input .send').click()
+  await expect(page.locator('.composer-input .send')).not.toHaveClass(/stopping/)
+  await expect(page.locator('.agent-turn').last()).toContainText('Stopped by user')
+  await expect(page.locator('.composer-approval')).toHaveCount(0)
+})
+
+test('opens inline reference suggestions for file, PR, and slash-command triggers', async ({ page }) => {
+  await page.goto('/')
+
+  const composer = page.getByPlaceholder('Ask Codex')
+
+  await composer.fill('@')
+  await expect(page.locator('.composer-reference-menu')).toContainText('Files and folders')
+  await expect(page.locator('.composer-reference-menu')).toContainText('@ src/')
+
+  await composer.fill('#')
+  await expect(page.locator('.composer-reference-menu')).toContainText('PRs and issues')
+  await expect(page.locator('.composer-reference-menu')).toContainText('# Pull request')
+
+  await composer.fill('/')
+  await expect(page.locator('.composer-reference-menu')).toContainText('Slash commands')
+  await expect(page.locator('.composer-reference-menu')).toContainText('/review')
+})
+
 test('preserves prototype interactions without legacy frontend state', async ({ page }) => {
   await page.goto('/')
 
