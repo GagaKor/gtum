@@ -52,6 +52,8 @@ test('requests Codex suggestions with the documented agent envelope', async () =
         request: {
           provider: 'codex',
           model: null,
+          reasoningLevel: null,
+          fastMode: false,
           attachments: [],
           projectName: 'gtum',
           projectPath: '/workspace/gtum',
@@ -113,6 +115,30 @@ test('reads provider capabilities and forwards the selected model in suggestion 
               label: 'GPT-5 Codex',
             },
           ],
+          reasoningLevels: [
+            {
+              level: 'low',
+              label: 'Low',
+              description: 'Fast responses with lighter reasoning',
+            },
+            {
+              level: 'medium',
+              label: 'Medium',
+              description: 'Balances speed and reasoning depth',
+            },
+            {
+              level: 'high',
+              label: 'High',
+              description: 'Greater reasoning depth',
+            },
+            {
+              level: 'xhigh',
+              label: 'XHigh',
+              description: 'Extra high reasoning depth',
+            },
+          ],
+          defaultReasoningLevel: 'xhigh',
+          supportsFastMode: true,
           attachments: [
             {
               kind: 'image',
@@ -138,6 +164,8 @@ test('reads provider capabilities and forwards the selected model in suggestion 
     activeTab: null,
     userTask: 'use the selected model',
     model: 'gpt-5-codex',
+    reasoningLevel: 'medium',
+    fastMode: true,
     attachments: [
       {
         kind: 'image',
@@ -151,6 +179,14 @@ test('reads provider capabilities and forwards the selected model in suggestion 
     'gpt-5.5',
     'gpt-5-codex',
   ])
+  expect(capabilities.reasoningLevels.map((level) => level.level)).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ])
+  expect(capabilities.defaultReasoningLevel).toBe('xhigh')
+  expect(capabilities.supportsFastMode).toBe(true)
   expect(invoked).toEqual([
     {
       command: 'read_agent_provider_capabilities',
@@ -162,6 +198,8 @@ test('reads provider capabilities and forwards the selected model in suggestion 
         request: {
           provider: 'codex',
           model: 'gpt-5-codex',
+          reasoningLevel: 'medium',
+          fastMode: true,
           attachments: [
             {
               kind: 'image',

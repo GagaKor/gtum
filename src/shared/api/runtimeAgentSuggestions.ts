@@ -58,11 +58,22 @@ export type RuntimeAgentAttachmentRef = {
   label?: string | null
 }
 
+export type RuntimeAgentReasoningLevel = string
+
+export type RuntimeAgentReasoningLevelCapability = {
+  level: RuntimeAgentReasoningLevel
+  label: string
+  description?: string | null
+}
+
 export type RuntimeAgentProviderCapabilities = {
   provider: AgentProviderId
   supportsModelSelection: boolean
   currentModel?: AgentModelRef | null
   availableModels: AgentModelRef[]
+  reasoningLevels: RuntimeAgentReasoningLevelCapability[]
+  defaultReasoningLevel?: RuntimeAgentReasoningLevel | null
+  supportsFastMode: boolean
   attachments: RuntimeAgentAttachmentCapability[]
 }
 
@@ -87,6 +98,8 @@ export type RequestAgentSuggestionsInput = {
   activeTab?: AgentSuggestionTabInput | null
   userTask: string
   model?: string | null
+  reasoningLevel?: RuntimeAgentReasoningLevel | null
+  fastMode?: boolean | null
   attachments?: RuntimeAgentAttachmentRef[]
 }
 
@@ -154,6 +167,8 @@ export const activeFileSnippetFromTab = (
 const requestPayloadFromInput = (input: RequestAgentSuggestionsInput): Record<string, unknown> => ({
   provider: input.provider,
   model: input.model?.trim() || null,
+  reasoningLevel: input.reasoningLevel || null,
+  fastMode: input.fastMode ?? false,
   attachments: (input.attachments || [])
     .map((attachment) => ({
       kind: attachment.kind,
@@ -247,6 +262,9 @@ const fallbackCapabilities = (provider: AgentProviderId): RuntimeAgentProviderCa
   supportsModelSelection: false,
   currentModel: null,
   availableModels: [],
+  reasoningLevels: [],
+  defaultReasoningLevel: null,
+  supportsFastMode: false,
   attachments: [],
 })
 

@@ -632,8 +632,8 @@ const STR = {
     allowedOnce: "Allowed once",
     alwaysAllowed: "Always allowed",
     denied: "Denied",
-    permissionAllowedOnce: "Permission allowed once in the agent panel. I will not run terminal commands.",
-    permissionAlwaysAllowed: "Always-allow recorded in the agent panel for this request. I will not run terminal commands.",
+    permissionAllowedOnce: "Permission allowed once. Running the approved command.",
+    permissionAlwaysAllowed: "Always-allow recorded. Running the approved command.",
     permissionDenied: "Permission denied in the agent panel. I will not run terminal commands.",
     executionSuggestion: "Execution suggestion",
     projectScope: "Project scope",
@@ -689,8 +689,8 @@ const STR = {
     activityFinalizing: "Preparing response",
     toastAutoRan: "Auto-ran",
     keepInAgent: "Keep in agent",
-    terminalRunHint: "Terminal is user-owned. I will not run this command; keep the decision here and use your terminal manually if needed.",
-    decisionKept: "Decision kept in the agent panel. I will not run terminal commands.",
+    terminalRunHint: "Approved commands run through the selected terminal target after explicit user approval.",
+    decisionKept: "Decision kept in the agent panel.",
     trustedDirs: "Trusted directories",
     trustedDirsHint: "Auto-approve only applies inside these paths",
     typeMessage: "Ask Codex",
@@ -2355,65 +2355,199 @@ function providerSessionLabel(provider) {
   return "Connect provider";
 }
 
-function ProviderSessionRow({ providers, activeProviderId, onSelectProvider }) {
-  const activeProvider = providers.find((p) => p.id === activeProviderId) || providers[0];
+function formatReasoningLevelLabel(level) {
+  const normalized = String(level || "").trim();
+  if (!normalized) return "Default";
+  const lower = normalized.toLowerCase();
+  if (lower === "xhigh" || lower === "x_high" || lower === "extra_high") return "XHigh";
+  if (lower === "low") return "Low";
+  if (lower === "medium") return "Medium";
+  if (lower === "high") return "High";
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function providerReasoningLevels(providerCapabilities) {
+  return (providerCapabilities?.reasoningLevels || [])
+    .filter((level) => String(level?.level || "").trim().length > 0);
+}
+
+function reasoningLevelCapability(providerCapabilities, selectedLevel) {
+  const normalized = String(selectedLevel || "").trim();
+  if (!normalized) return null;
+
+  return providerReasoningLevels(providerCapabilities)
+    .find((level) => level.level === normalized) || null;
+}
+
+function reasoningLevelLabel(providerCapabilities, selectedLevel) {
+  return reasoningLevelCapability(providerCapabilities, selectedLevel)?.label
+    || formatReasoningLevelLabel(selectedLevel);
+}
+
+function normalizeReasoningLevel(providerCapabilities, selectedLevel) {
+  const levels = providerReasoningLevels(providerCapabilities);
+  if (levels.length === 0) return null;
+
+  const selected = String(selectedLevel || "").trim();
+  if (selected && levels.some((level) => level.level === selected)) return selected;
+
+  const preferred = String(providerCapabilities?.defaultReasoningLevel || "").trim();
+  if (preferred && levels.some((level) => level.level === preferred)) return preferred;
+
+  return levels[0].level;
+}
+
+function nextReasoningLevel(providerCapabilities, selectedLevel) {
+  const levels = providerReasoningLevels(providerCapabilities);
+  if (levels.length === 0) return null;
+
+  const current = normalizeReasoningLevel(providerCapabilities, selectedLevel);
+  const currentIndex = levels.findIndex((level) => level.level === current);
+  return levels[(currentIndex + 1) % levels.length]?.level || levels[0].level;
+}
+
+function selectedAgentModel(providerCapabilities, selectedModelId, activeProvider) {
+  const availableModels = providerCapabilities?.availableModels || [];
+  return availableModels.find((model) => model.modelId === selectedModelId)
+    || providerCapabilities?.currentModel
+    || {
+      modelId: null,
+      label: activeProvider ? `${activeProvider.label} default` : "Default model",
+    };
+}
+
+function agentWorkspaceKey(project) {
+  return project?.runtimeBacked && project.path ? project.path : "no-project";
+}
+
+function agentWorkspaceTitle(project) {
+  return project?.runtimeBacked && project.name ? project.name : "No workspace";
+}
+
+function makeAgentSession(project, lang, index) {
+  return {
+    id: uid("agent"),
+    title: `Agent ${index}`,
+    workspaceKey: agentWorkspaceKey(project),
+    workspaceTitle: agentWorkspaceTitle(project),
+    createdAt: nowHm(),
+    updatedAt: nowHm(),
+    messages: CHAT_INIT(lang),
+    reasoningLevel: null,
+    fastMode: false,
+  };
+}
+
+function ensureAgentWorkspace(store, project, lang) {
+  const key = agentWorkspaceKey(project);
+  if (store[key]?.sessions?.length) return store;
+
+  const session = makeAgentSession(project, lang, 1);
+  return {
+    ...store,
+    [key]: {
+      workspaceKey: key,
+      workspaceTitle: agentWorkspaceTitle(project),
+      activeSessionId: session.id,
+      sessions: [session],
+    },
+  };
+}
+
+function AgentHeader({
+  lang,
+  activeProvider, providerCapabilities, selectedModelId,
+  agentWorkspace, activeAgentSession,
+  onOpenSettings, collapseAgent,
+}) {
+  const model = selectedAgentModel(providerCapabilities, selectedModelId, activeProvider);
+  const workspaceLabel = agentWorkspace?.workspaceTitle || "No workspace";
+  const sessionLabel = activeAgentSession?.title || "Agent 1";
 
   return (
-    <div className="agent-model-row">
-      <div className="agent-provider-tabs" aria-label="Agent providers">
-        {providers.map((provider) => (
-          <button
-            key={provider.id}
-            className={
-              "agent-provider-tab" +
-              (provider.id === activeProviderId ? " active" : "") +
-              (provider.state === "connected" ? " connected" : "")
-            }
-            onClick={() => onSelectProvider(provider.id)}
-          >
-            <span className={"provider-mark " + provider.id}>
-              {provider.abbr}
-            </span>
-            <span>{provider.label}</span>
-          </button>
-        ))}
+    <div className="agent-header">
+      <div className={"provider-mark " + activeProvider.id}>
+        {activeProvider.abbr}
       </div>
-      <span className={"agent-runtime-state " + activeProvider.state}>
-        {providerSessionLabel(activeProvider)}
-      </span>
+      <div className="agent-model-main">
+        <div className="agent-model-name">
+          <span>{model.label}</span>
+          <Icon.chevronDown />
+        </div>
+        <div className="agent-model-sub">
+          <span>{activeProvider.label}</span>
+          <span>{providerSessionLabel(activeProvider)}</span>
+          <span>{workspaceLabel} / {sessionLabel}</span>
+        </div>
+      </div>
+      <button
+        className="rail-toggle"
+        onClick={onOpenSettings}
+        title={t(lang, "settingsTitle")}
+      >
+        <Icon.gear />
+      </button>
+      <button
+        className="rail-toggle"
+        onClick={collapseAgent}
+        title={t(lang, "collapseAgent")}
+      >
+        <Icon.panelRight />
+      </button>
     </div>
   );
 }
 
-function ContextSummary({ lang, activeTab, activePane, project }) {
-  const activeProject = project || PROJECT;
-  const hasActiveTab = Boolean(activeTab?.id);
-  const contextFiles = activeTab?.type === "editor"
-    ? activeTab.displayPath || activeTab.path
-    : hasActiveTab
-      ? ("Current terminal output")
-      : ("No file selected");
-  const tabLabel = hasActiveTab ? activeTab.title : ("No tab open");
-  const lineCount = activePane?.lines?.length || 0;
-  const branchLabel = activeProject.runtimeBacked
-    ? activeProject.branch
-    : ("Open a project first");
+function AgentSessionTabs({
+  agentWorkspace, activeSessionId,
+  onSelectSession, onNewSession, onCloseSession,
+}) {
+  const sessions = agentWorkspace?.sessions || [];
 
   return (
-    <div className="context-summary">
-      <div className="h">{t(lang, "aboutContext")}</div>
-      <div className="row">
-        <span className="k">{t(lang, "contextFiles")}:</span>
-        <span className="v">{contextFiles}</span>
+    <div className="agent-session-strip" aria-label="Agent sessions">
+      <div className="agent-session-tabs">
+        {sessions.map((session) => (
+          <button
+            className={"agent-session-tab" + (session.id === activeSessionId ? " active" : "")}
+            key={session.id}
+            type="button"
+            onClick={() => onSelectSession(session.id)}
+          >
+            <span>{session.title}</span>
+            <small>{session.messages.length}</small>
+            {sessions.length > 1 && (
+              <span
+                className="agent-session-close"
+                role="button"
+                tabIndex={0}
+                title={`Close ${session.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCloseSession(session.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onCloseSession(session.id);
+                }}
+              >
+                <Icon.x />
+              </span>
+            )}
+          </button>
+        ))}
       </div>
-      <div className="row">
-        <span className="k">{t(lang, "contextTab")}:</span>
-        <span className="v">[{tabLabel}] {lineCount} lines</span>
-      </div>
-      <div className="row">
-        <span className="k">{t(lang, "branch")}:</span>
-        <span className="v">{branchLabel}</span>
-      </div>
+      <button
+        className="agent-session-new"
+        type="button"
+        title="New agent session"
+        onClick={onNewSession}
+      >
+        <Icon.plus />
+      </button>
     </div>
   );
 }
@@ -2526,12 +2660,15 @@ function waitForAgentProgressStage() {
   });
 }
 
-function makeCodexProgressSteps({ project, activeTab, providerId, model, attachments }) {
+function makeCodexProgressSteps({
+  project, activeTab, providerId, model, attachments, reasoningLabel, fastMode,
+}) {
   const runtimeLabel = providerRuntimeLabel(providerId);
   const projectName = project?.name || "project";
   const tabTitle = activeTab?.title || "no active tab";
   const modelLabel = model || "runtime default model";
   const attachmentCount = attachments?.length || 0;
+  const displayedReasoningLabel = reasoningLabel || "runtime default";
 
   return [
     {
@@ -2542,7 +2679,7 @@ function makeCodexProgressSteps({ project, activeTab, providerId, model, attachm
     {
       id: "request",
       label: `Sending request to ${runtimeLabel} runtime`,
-      detail: `Model: ${modelLabel} / attachments: ${attachmentCount}`,
+      detail: `Model: ${modelLabel} / reasoning: ${displayedReasoningLabel} / fast: ${fastMode ? "on" : "off"} / attachments: ${attachmentCount}`,
     },
     {
       id: "waiting",
@@ -2625,6 +2762,11 @@ function AgentCommandActivity({ lang, suggestion, risk, permissionDecision }) {
 
 function ComposerPermissionRequest({ lang, suggestion, risk, onPermissionDecision }) {
   if (!suggestion?.commands?.length) return null;
+  const choose = (event, decision) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onPermissionDecision(suggestion, decision);
+  };
 
   return (
     <div className="composer-approval" data-risk={risk}>
@@ -2657,13 +2799,25 @@ function ComposerPermissionRequest({ lang, suggestion, risk, onPermissionDecisio
         </div>
       )}
       <div className="composer-approval-actions">
-        <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "denied")}>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          onClick={(event) => choose(event, "denied")}
+        >
           {t(lang, "permissionDeny")}
         </button>
-        <button className="btn btn-ghost" onClick={() => onPermissionDecision(suggestion, "always_allow")}>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          onClick={(event) => choose(event, "always_allow")}
+        >
           {t(lang, "alwaysAllow")}
         </button>
-        <button className="btn btn-primary" onClick={() => onPermissionDecision(suggestion, "allow_once")}>
+        <button
+          className="btn btn-primary"
+          type="button"
+          onClick={(event) => choose(event, "allow_once")}
+        >
           <Icon.shield /> {t(lang, "allowOnce")}
         </button>
       </div>
@@ -2912,13 +3066,14 @@ function WindowResizeZones({ windowControls, maximized }) {
 
 function Composer({
   lang, activeProvider, providerCapabilities, selectedModelId, onSelectModel,
+  reasoningLevel, fastMode, onCycleReasoningLevel, onToggleFastMode,
   attachments, onPickAttachment, onRemoveAttachment, onSend,
 }) {
   const [val, setVal] = React.useState("");
   const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
   const ref = React.useRef(null);
   const providerChipLabel = activeProvider
-    ? `${activeProvider.label} ${activeProvider.state === "connected" ? "CLI session" : "provider"}`
+    ? `${activeProvider.label} ${providerSessionLabel(activeProvider)}`
     : "No provider";
   const availableModels = providerCapabilities?.availableModels || [];
   const selectedModel = availableModels.find((model) => model.modelId === selectedModelId)
@@ -2930,6 +3085,14 @@ function Composer({
     ? `Attach ${enabledAttachments.map((attachment) => attachment.label).join(", ")}`
     : t(lang, "attach");
   const canAttach = enabledAttachments.length > 0;
+  const reasoningLevels = providerReasoningLevels(providerCapabilities);
+  const normalizedReasoningLevel = normalizeReasoningLevel(providerCapabilities, reasoningLevel);
+  const selectedReasoningIndex = reasoningLevels.findIndex((level) => level.level === normalizedReasoningLevel);
+  const reasoningLabel = normalizedReasoningLevel
+    ? reasoningLevelLabel(providerCapabilities, normalizedReasoningLevel)
+    : "";
+  const showReasoningControl = reasoningLevels.length > 0 && Boolean(normalizedReasoningLevel);
+  const showFastMode = Boolean(providerCapabilities?.supportsFastMode);
   const submit = () => {
     const v = val.trim();
     if (!v) return;
@@ -2952,14 +3115,17 @@ function Composer({
   return (
     <div className="composer">
       <div className="composer-input">
-        <textarea
-          ref={ref}
-          value={val}
-          onChange={onInput}
-          onKeyDown={onKey}
-          placeholder={t(lang, "typeMessage")}
-          rows={1}
-        />
+        <div className="composer-top">
+          <textarea
+            ref={ref}
+            value={val}
+            onChange={onInput}
+            onKeyDown={onKey}
+            placeholder={t(lang, "typeMessage")}
+            rows={1}
+          />
+          <span className="composer-hint">⌘L</span>
+        </div>
         {attachments.length > 0 && (
           <div className="composer-attachments" aria-label="Attached context">
             {attachments.map((attachment) => (
@@ -3019,22 +3185,50 @@ function Composer({
               )}
             </div>
           )}
-          <button
-            className="composer-provider-chip"
-            title={providerSessionLabel(activeProvider)}
-            type="button"
-          >
-            {activeProvider && (
-              <span className={"provider-mark " + activeProvider.id}>
-                {activeProvider.abbr}
+          {!showModelPicker && (
+            <button
+              className="composer-provider-chip"
+              title={providerSessionLabel(activeProvider)}
+              type="button"
+            >
+              {activeProvider && (
+                <span className={"provider-mark " + activeProvider.id}>
+                  {activeProvider.abbr}
+                </span>
+              )}
+              <span>{providerChipLabel}</span>
+            </button>
+          )}
+          {showReasoningControl && (
+            <button
+              className="composer-reasoning-chip"
+              title="Reasoning level"
+              type="button"
+              onClick={onCycleReasoningLevel}
+            >
+              <span className="reasoning-bars" aria-hidden="true">
+                {reasoningLevels.map((level, index) => (
+                  <i
+                    className={index <= selectedReasoningIndex ? "active" : ""}
+                    key={level.level}
+                  />
+                ))}
               </span>
-            )}
-            <span>{providerChipLabel}</span>
-          </button>
-          <span className="composer-scope-chip">
-            <span className="clip" />
-            {t(lang, "projectScope")}
-          </span>
+              <span>{reasoningLabel}</span>
+            </button>
+          )}
+          {showFastMode && (
+            <button
+              className={"fast-toggle" + (fastMode ? " active" : "")}
+              aria-pressed={fastMode}
+              title="Fast mode"
+              type="button"
+              onClick={onToggleFastMode}
+            >
+              <span className="fast-toggle-dot" />
+              <span>Fast mode</span>
+            </button>
+          )}
           <button className="send" onClick={submit} disabled={!val.trim()}>
             <Icon.send />
           </button>
@@ -3045,10 +3239,13 @@ function Composer({
 }
 
 function AgentPanel({
-  lang, messages, isTyping, agentActivity = [], activeTab, activePane,
+  lang, messages, isTyping, agentActivity = [],
   onSend, providers, collapseAgent,
-  activeProviderId, onSelectProvider, onOpenSettings, project,
+  activeProviderId, onOpenSettings, project,
   providerCapabilities, selectedModelId, onSelectModel,
+  reasoningLevel, fastMode, onCycleReasoningLevel, onToggleFastMode,
+  agentWorkspace, activeAgentSessionId, onSelectAgentSession,
+  onNewAgentSession, onCloseAgentSession,
   attachments, onPickAttachment, onRemoveAttachment,
   onChooseDecisionOption, onPermissionDecision,
 }) {
@@ -3075,47 +3272,30 @@ function AgentPanel({
   }, [messages, isTyping, agentActivity, pendingPermissionMessage?.id]);
 
   const active = providers.find((p) => p.id === activeProviderId) || providers.find((p) => p.state === "connected") || providers[0];
+  const activeAgentSession = agentWorkspace?.sessions?.find((session) => session.id === activeAgentSessionId)
+    || agentWorkspace?.sessions?.[0]
+    || null;
 
   return (
     <aside className="agent">
-      <div className="agent-header">
-        <div className={"provider-mark " + active.id} style={{ width: 32, height: 32, fontSize: 12 }}>
-          {active.abbr}
-        </div>
-        <div className="who">
-          <div className="nm">
-            {t(lang, "agentChat")}
-            <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-              /{active.label}
-            </span>
-          </div>
-          <div className="sub">
-            {active.label + " runtime / " + providerSessionLabel(active)}
-          </div>
-        </div>
-        <button
-          className="rail-toggle"
-          onClick={onOpenSettings}
-          title={t(lang, "settingsTitle")}
-        >
-          <Icon.gear />
-        </button>
-        <button
-          className="rail-toggle"
-          onClick={collapseAgent}
-          title={t(lang, "collapseAgent")}
-        >
-          <Icon.panelRight />
-        </button>
-      </div>
-
-      <ProviderSessionRow
-        providers={providers}
-        activeProviderId={activeProviderId}
-        onSelectProvider={onSelectProvider}
+      <AgentHeader
+        lang={lang}
+        activeProvider={active}
+        providerCapabilities={providerCapabilities}
+        selectedModelId={selectedModelId}
+        agentWorkspace={agentWorkspace}
+        activeAgentSession={activeAgentSession}
+        onOpenSettings={onOpenSettings}
+        collapseAgent={collapseAgent}
       />
 
-      <ContextSummary lang={lang} activeTab={activeTab} activePane={activePane} project={project} />
+      <AgentSessionTabs
+        agentWorkspace={agentWorkspace}
+        activeSessionId={activeAgentSessionId}
+        onSelectSession={onSelectAgentSession}
+        onNewSession={onNewAgentSession}
+        onCloseSession={onCloseAgentSession}
+      />
 
       <div className="chat" ref={chatRef}>
         {messages.map((m) => (
@@ -3144,6 +3324,10 @@ function AgentPanel({
         providerCapabilities={providerCapabilities}
         selectedModelId={selectedModelId}
         onSelectModel={onSelectModel}
+        reasoningLevel={reasoningLevel}
+        fastMode={fastMode}
+        onCycleReasoningLevel={onCycleReasoningLevel}
+        onToggleFastMode={onToggleFastMode}
         attachments={attachments}
         onPickAttachment={onPickAttachment}
         onRemoveAttachment={onRemoveAttachment}
@@ -3861,7 +4045,9 @@ function App() {
   const [providers, setProviders] = React.useState(PROVIDERS_INIT);
   const [tasks, setTasks] = React.useState(TASKS_INIT(lang));
   const [history, setHistory] = React.useState(COMMAND_HISTORY_INIT);
-  const [messages, setMessages] = React.useState(CHAT_INIT(lang));
+  const [agentSessionStore, setAgentSessionStore] = React.useState(() =>
+    ensureAgentWorkspace({}, PROJECT, lang)
+  );
   const [isTyping, setIsTyping] = React.useState(false);
   const [agentActivity, setAgentActivity] = React.useState([]);
   const [approval, setApproval] = React.useState(null);
@@ -3937,10 +4123,138 @@ function App() {
   const [autoApprovalLog, setAutoApprovalLog] = React.useState([]);
   const [toast, setToast] = React.useState(null);
   const [streamResponses, setStreamResponses] = React.useState(true);
+  const activeAgentWorkspaceKey = agentWorkspaceKey(activeProject);
+  const activeAgentWorkspace = agentSessionStore[activeAgentWorkspaceKey] || null;
+  const activeAgentSession = activeAgentWorkspace?.sessions?.find(
+    (session) => session.id === activeAgentWorkspace.activeSessionId,
+  ) || activeAgentWorkspace?.sessions?.[0] || null;
+  const activeAgentSessionId = activeAgentSession?.id || null;
+  const messages = activeAgentSession?.messages || [];
+  const activeProviderCapabilities = providerCapabilities[activeProviderId] || null;
+  const agentReasoningLevel = normalizeReasoningLevel(
+    activeProviderCapabilities,
+    activeAgentSession?.reasoningLevel,
+  );
+  const agentFastMode = Boolean(activeAgentSession?.fastMode && activeProviderCapabilities?.supportsFastMode);
 
   React.useEffect(() => {
     workspaceRef.current = workspace;
   }, [workspace]);
+
+  React.useEffect(() => {
+    setAgentSessionStore((prev) => ensureAgentWorkspace(prev, activeProject, lang));
+  }, [activeProject.name, activeProject.path, activeProject.runtimeBacked, lang]);
+
+  const updateAgentSession = React.useCallback((project, sessionId, updater) => {
+    setAgentSessionStore((prev) => {
+      const ensured = ensureAgentWorkspace(prev, project, lang);
+      const key = agentWorkspaceKey(project);
+      const workspaceEntry = ensured[key];
+      const targetSessionId = sessionId
+        || workspaceEntry.activeSessionId
+        || workspaceEntry.sessions[0]?.id;
+      if (!targetSessionId) return ensured;
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          activeSessionId: targetSessionId,
+          sessions: workspaceEntry.sessions.map((session) =>
+            session.id === targetSessionId
+              ? {
+                ...updater(session),
+                updatedAt: nowHm(),
+              }
+              : session
+          ),
+        },
+      };
+    });
+  }, [lang]);
+
+  const setMessages = React.useCallback((updater) => {
+    const targetProject = activeProject;
+    const targetSessionId = activeAgentSessionId;
+    updateAgentSession(targetProject, targetSessionId, (session) => ({
+      ...session,
+      messages: typeof updater === "function" ? updater(session.messages) : updater,
+    }));
+  }, [activeAgentSessionId, activeProject, updateAgentSession]);
+
+  const selectAgentSession = React.useCallback((sessionId) => {
+    setAgentSessionStore((prev) => {
+      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const key = agentWorkspaceKey(activeProject);
+      const workspaceEntry = ensured[key];
+      if (!workspaceEntry.sessions.some((session) => session.id === sessionId)) return ensured;
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          activeSessionId: sessionId,
+        },
+      };
+    });
+  }, [activeProject, lang]);
+
+  const newAgentSession = React.useCallback(() => {
+    setAgentSessionStore((prev) => {
+      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const key = agentWorkspaceKey(activeProject);
+      const workspaceEntry = ensured[key];
+      const session = makeAgentSession(activeProject, lang, workspaceEntry.sessions.length + 1);
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          activeSessionId: session.id,
+          sessions: [...workspaceEntry.sessions, session],
+        },
+      };
+    });
+  }, [activeProject, lang]);
+
+  const closeAgentSession = React.useCallback((sessionId) => {
+    setAgentSessionStore((prev) => {
+      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const key = agentWorkspaceKey(activeProject);
+      const workspaceEntry = ensured[key];
+      if (workspaceEntry.sessions.length <= 1) return ensured;
+
+      const sessions = workspaceEntry.sessions.filter((session) => session.id !== sessionId);
+      const nextActiveSessionId = workspaceEntry.activeSessionId === sessionId
+        ? sessions[0]?.id
+        : workspaceEntry.activeSessionId;
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          activeSessionId: nextActiveSessionId,
+          sessions,
+        },
+      };
+    });
+  }, [activeProject, lang]);
+
+  const cycleAgentReasoningLevel = React.useCallback(() => {
+    updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+      ...session,
+      reasoningLevel: nextReasoningLevel(activeProviderCapabilities, session.reasoningLevel),
+    }));
+  }, [activeAgentSessionId, activeProject, activeProviderCapabilities, updateAgentSession]);
+
+  const toggleAgentFastMode = React.useCallback(() => {
+    if (!activeProviderCapabilities?.supportsFastMode) return;
+
+    updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+      ...session,
+      fastMode: !session.fastMode,
+    }));
+  }, [activeAgentSessionId, activeProject, activeProviderCapabilities, updateAgentSession]);
 
   const closeRuntimeTabs = React.useCallback((tabs) => {
     for (const tab of tabs) {
@@ -3976,7 +4290,6 @@ function App() {
   };
 
   React.useEffect(() => {
-    setMessages(CHAT_INIT(lang));
     setTasks(TASKS_INIT(lang));
     setAgentActivity([]);
   }, [lang]);
@@ -3995,7 +4308,13 @@ function App() {
         if (cancelled) return;
         setProviders((prev) => mergeRuntimeProviderConnections(prev, connections));
         const codex = connections.find((connection) => connection.provider === "codex");
-        if (codex?.status === "connected") setActiveProviderId("codex");
+        if (codex?.status === "connected") {
+          setActiveProviderId("codex");
+          return;
+        }
+
+        const connectedProvider = connections.find((connection) => connection.status === "connected");
+        if (connectedProvider?.provider) setActiveProviderId(connectedProvider.provider);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -4190,12 +4509,19 @@ function App() {
     const startedAtMs = Date.now();
     const attachments = selectedProviderAttachments[activeProviderId] || [];
     const selectedModelId = selectedProviderModels[activeProviderId] || null;
+    const reasoningLevel = agentReasoningLevel;
+    const fastMode = agentFastMode;
+    const reasoningLabel = reasoningLevel
+      ? reasoningLevelLabel(activeProviderCapabilities, reasoningLevel)
+      : "runtime default";
     const runningSteps = makeCodexProgressSteps({
       project: activeProject,
       activeTab: active,
       providerId: activeProviderId,
       model: selectedModelId,
       attachments,
+      reasoningLabel,
+      fastMode,
     });
     const completedSteps = [
       ...runningSteps,
@@ -4246,6 +4572,8 @@ function App() {
           userTask: text,
           model: selectedModelId,
           attachments,
+          reasoningLevel,
+          fastMode,
         }))
         .then((suggestions) => ({ suggestions }))
         .catch((error) => ({ error }));
@@ -4372,7 +4700,16 @@ function App() {
       setIsTyping(false);
       setAgentActivity([]);
     }
-  }, [activeProject, activeProviderId, lang, selectedProviderAttachments, selectedProviderModels]);
+  }, [
+    activeProject,
+    activeProviderId,
+    activeProviderCapabilities,
+    agentFastMode,
+    agentReasoningLevel,
+    lang,
+    selectedProviderAttachments,
+    selectedProviderModels,
+  ]);
 
   const handlePickAgentAttachment = React.useCallback(async () => {
     try {
@@ -4752,33 +5089,35 @@ function App() {
     }
   };
 
-  const recordPermissionDecision = React.useCallback((sugg, decision) => {
+  const recordPermissionDecision = React.useCallback(async (sugg, decision) => {
     const at = nowHm();
-    const decisionText = decision === "allow_once"
-      ? t(lang, "permissionAllowedOnce")
-      : decision === "always_allow"
-        ? t(lang, "permissionAlwaysAllowed")
-        : t(lang, "permissionDenied");
+    const markDecision = (message) => message.suggestion?.id === sugg.id
+      ? {
+          ...message,
+          permissionDecision: {
+            status: decision,
+            at,
+          },
+        }
+      : message;
 
-    setMessages((prev) => [
-      ...prev.map((message) => message.suggestion?.id === sugg.id
-        ? {
-            ...message,
-            permissionDecision: {
-              status: decision,
-              at,
-            },
-          }
-        : message),
-      {
-        id: "permission-decision-" + Date.now(),
-        role: "assistant",
-        roleLabel: "Codex",
-        at,
-        content: `${decisionText} Suggested command: \`${sugg.commands[0]?.cmd || ""}\``,
-      },
-    ]);
-  }, [lang]);
+    if (decision === "denied") {
+      setMessages((prev) => [
+        ...prev.map(markDecision),
+        {
+          id: "permission-decision-" + Date.now(),
+          role: "assistant",
+          roleLabel: "Codex",
+          at,
+          content: `${t(lang, "permissionDenied")} Suggested command: \`${sugg.commands[0]?.cmd || ""}\``,
+        },
+      ]);
+      return;
+    }
+
+    setMessages((prev) => prev.map(markDecision));
+    await onApprove(sugg);
+  }, [lang, onApprove]);
 
   const openOAuth = (providerId) => setOauth({ providerId });
   const handleProviderConnect = async (providerId) => {
@@ -4908,21 +5247,27 @@ function App() {
                   messages={messages}
                   isTyping={isTyping}
                   agentActivity={agentActivity}
-                  activeTab={activeTab || { title: "--", lines: [] }}
-                  activePane={activeTab || { lines: [] }}
                   onSend={onSend}
                   providers={providers}
                   collapseAgent={() => setAgentOpen(false)}
                   activeProviderId={activeProviderId}
-                  onSelectProvider={setActiveProviderId}
                   onOpenSettings={() => setSettingsOpen(true)}
                   project={activeProject}
-                  providerCapabilities={providerCapabilities[activeProviderId] || null}
+                  providerCapabilities={activeProviderCapabilities}
                   selectedModelId={selectedProviderModels[activeProviderId] || null}
                   onSelectModel={(modelId) => setSelectedProviderModels((prev) => ({
                     ...prev,
                     [activeProviderId]: modelId,
                   }))}
+                  reasoningLevel={agentReasoningLevel}
+                  fastMode={agentFastMode}
+                  onCycleReasoningLevel={cycleAgentReasoningLevel}
+                  onToggleFastMode={toggleAgentFastMode}
+                  agentWorkspace={activeAgentWorkspace}
+                  activeAgentSessionId={activeAgentSessionId}
+                  onSelectAgentSession={selectAgentSession}
+                  onNewAgentSession={newAgentSession}
+                  onCloseAgentSession={closeAgentSession}
                   attachments={selectedProviderAttachments[activeProviderId] || []}
                   onPickAttachment={handlePickAgentAttachment}
                   onRemoveAttachment={handleRemoveAgentAttachment}

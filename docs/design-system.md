@@ -91,8 +91,9 @@ The default screen is composed of five areas:
   - Treats code, terminal, diff, test, and preview panes as a split-capable workbench.
   - Each pane owns its own tab strip.
 - `Right agent workspace`
-  - Provider, context, thread, activity log, composer-level approval, and composer must read as one work flow.
-  - Active provider and session/readiness state should be readable first through a compact row at the top of the agent workspace. Model picking appears in the composer only when `read_agent_provider_capabilities` provides runtime-synced models, and execution modes remain hidden until backed by runtime policy.
+  - Selected model, provider readiness, per-workspace agent sessions, thread, composer-level approval, and composer must read as one work flow.
+  - The top of the agent workspace uses a compact model header plus workspace-scoped agent session tabs. The previous standalone provider row and context summary card are retired.
+  - Composer controls expose attachment, runtime-backed model picking, capability-backed reasoning level, capability-backed fast mode, and send. Project scope is implicit through the active workspace and agent session, not a separate chip.
 - `Status/pill strip`
   - Prefer small status pills inside the workbench over a permanent bottom panel.
 - `Desktop launch geometry`
@@ -171,8 +172,8 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - 동일한 카드 반복처럼 보이지 않게 role별 밀도와 내부 구성을 다르게 한다.
 - `dock-resize-handle`
   - 좌우 panel 안쪽 edge에 붙는 4px vertical handle이다. hover와 drag 중에는 `--accent`로만 강조하고, 별도 텍스트 버튼처럼 보이면 안 된다.
-- `agent-model-row`
-  - 오른쪽 agent workspace 첫 줄에서 현재 provider와 session/readiness 상태를 조밀하게 보여준다. 모델 선택은 composer의 runtime-backed capability UI가 담당하고, 실행 모드 선택은 현재 UI 계약에 포함하지 않는다.
+- `agent-header`, `agent-session-strip`
+  - Current Agent Bar baseline: selected model and provider readiness live in the compact header; workspace-scoped agent sessions live in the session strip. Do not restore the retired `agent-model-row`.
 - `agent-log-item`
   - 실행 제안은 큰 카드가 아니라 요약, 명령 수, 위험도, 결정 상태를 보여주는 가벼운 activity row로 표시한다.
 - `composer-approval`
@@ -194,14 +195,18 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - A 4px vertical handle pinned to the inner edge of each side panel. Highlight it with `--accent` on hover and drag; it must not look like a separate text button.
 - `titlebar`
   - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. Titlebar dragging and edge/corner resizing must call the native window API, while browser preview keeps safe no-op fallbacks.
-- `agent-model-row`
-  - Compactly shows the current provider and session/readiness state as the first row of the right agent workspace. Composer-level model picking is allowed only from runtime-backed provider capabilities, while execution-mode selection is not part of the current UI contract.
+- `agent-header`
+  - Compactly shows the selected runtime model, provider readiness, active workspace, and active agent session. It must not include a generic `Agent / provider` title or a detached provider tab row.
+- `agent-session-strip`
+  - Manages agent conversation tabs per workspace. Switching projects switches the active agent workspace session set, so agent history and mode state do not bleed across projects.
+- `composer-reasoning-chip`, `fast-toggle`
+  - Live in the composer toolbar beside attachment/model controls only when `read_agent_provider_capabilities` reports supported values. Reasoning levels are not frontend constants; they are provider/model-supported `level` values with labels and are forwarded through the runtime suggestion envelope as `reasoningLevel`. `fastMode` is forwarded only when the provider capability reports `supportsFastMode`.
 - `agent-turn`
   - Shows live agent work as one conversational assistant turn. Pending runtime progress appears inside the turn with concrete operation labels instead of generic lifecycle copy, and those labels reveal sequentially rather than all at once. After success the progress clears so the completed turn shows answer-time metadata and reads like normal assistant copy. Numbered reply choices become selectable decision event cards. Command-bearing responses stay lightweight inside the turn as execution-suggestion rows with command count, risk, and decision state.
 - `agent-event-card`
   - Lives inside the conversational agent turn for reply decisions such as numbered choices and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Command permission decisions do not live here; they open as a composer-level approval panel directly above the composer.
 - `composer-approval`
-  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision and must not execute or write into the center terminal.
+  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision; `Deny` records the refusal, while `Allow once` and `Always allow` forward the approved command to the terminal runtime target. Windows command-output sessions must not launch an interactive shell.
 
 ## 인터랙션 기준 / Interaction Rules
 
@@ -220,7 +225,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
 - Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
-- Agent command review and decisions stay in the right agent workspace. The center terminal is user-owned, so agent UI must not execute commands or create terminal tabs.
+- Agent command review and decisions stay in the right agent workspace. The center terminal remains user-owned; approved command decisions use the terminal runtime, but Windows new-target approvals render command-output sessions instead of launching interactive PTY shells.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
 - Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.
