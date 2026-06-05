@@ -86,6 +86,7 @@ The default screen is composed of five areas:
 - `Left rail + side panel`
   - Switches `Project`, `Explorer`, `Source Control`, `Outline`, and `Settings` through an icon-only rail.
   - Side-panel rows default to compact height and single-line ellipsis.
+  - The `Projects` section renders the active project as an expandable workspace group. Its child workspace rows mirror the right-panel agent sessions, show provider mark, branch, changed-file count, and status, and allow switching or creating isolated agent workspaces without leaving the project tree.
   - The side panel must be horizontally resizable with a 4px dock resize handle, collapsing back to the rail below the threshold.
 - `Center workbench`
   - Treats code, terminal, diff, test, and preview panes as a split-capable workbench.
@@ -199,8 +200,12 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - Compactly shows the selected runtime model, provider readiness, active workspace, and active agent session. It must not include a generic `Agent / provider` title or a detached provider tab row.
 - `agent-session-strip`
   - Manages agent conversation tabs per workspace. Switching projects switches the active agent workspace session set, so agent history and mode state do not bleed across projects.
+- `project-group`, `ws-item`
+  - Mirror the active project's agent workspace sessions in the left `Projects` tree. A workspace row must expose provider identity, branch context, changed-file count, and one of `Waiting`, `Working`, `Review needed`, or `Done` so parallel agent work is visible before the right panel is opened.
 - `composer-reasoning-chip`, `fast-toggle`
   - Live in the composer toolbar beside attachment/model controls only when `read_agent_provider_capabilities` reports supported values. Reasoning levels are not frontend constants; they are provider/model-supported `level` values with labels and are forwarded through the runtime suggestion envelope as `reasoningLevel`. `fastMode` is forwarded only when the provider capability reports `supportsFastMode`.
+- `composer-reference-menu`
+  - Opens inline from the composer for `@`, `#`, and `/` triggers. `+` remains the attachment control for provider-supported images/files, while textual references start from the input itself.
 - `agent-turn`
   - Shows live agent work as one conversational assistant turn. Pending runtime progress appears inside the turn with concrete operation labels instead of generic lifecycle copy, and those labels reveal sequentially rather than all at once. After success the progress clears so the completed turn shows answer-time metadata and reads like normal assistant copy. Numbered reply choices become selectable decision event cards. Command-bearing responses stay lightweight inside the turn as execution-suggestion rows with command count, risk, and decision state.
 - `agent-event-card`
