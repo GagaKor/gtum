@@ -1449,6 +1449,10 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         "a harmless UI permission request.\n",
         "Only set `command` when the next step requires explicit user review, permission, or a terminal ",
         "command the user should inspect before running.\n",
+        "If the user asks for an Agent panel event card, choice card, options, or numbered choices, ",
+        "leave `command` empty and put the choices in `summary` as plain numbered lines such as ",
+        "`1. Option 1`, `2. Option 2`, and `3. Option 3`. Do not use terminal commands, shell ",
+        "`read`, `printf`, or `echo` to collect those choices.\n",
         "If the user asks to test or receive a terminal permission request, return a harmless reviewable ",
         "command such as `echo \"gtum permission request test\"`, set `error` to null, and explain the card ",
         "in `summary`.\n",
@@ -1671,6 +1675,39 @@ mod tests {
         );
         assert!(prompt.contains("Reasoning level: xhigh"), "{prompt}");
         assert!(prompt.contains("Fast mode: enabled"), "{prompt}");
+    }
+
+    #[test]
+    fn prompt_routes_event_card_choice_requests_to_reply_only_choices() {
+        let prompt = build_prompt(&RequestAgentSuggestionsRequest {
+            provider: AgentProvider::Codex,
+            model: None,
+            reasoning_level: None,
+            fast_mode: None,
+            attachments: vec![],
+            project_name: "gtum".into(),
+            project_path: "/workspace/gtum".into(),
+            active_tab_id: None,
+            active_tab_title: None,
+            active_file_path: None,
+            active_file_line: None,
+            active_file_snippet: None,
+            last_n_log_lines: vec![],
+            user_task: "이벤트 카드로 1,2,3 선택지를 보여줘".into(),
+        });
+
+        assert!(
+            prompt.contains("event card, choice card, options, or numbered choices"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("leave `command` empty"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("1. Option 1"),
+            "{prompt}"
+        );
     }
 
     #[test]
