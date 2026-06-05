@@ -425,7 +425,7 @@ An agent can suggest actions such as:
 - inspecting a log file
 - creating a dedicated debugging tab
 
-The center terminal is user-owned until explicit approval. Agent conversations, command review, and decisions stay in the right agent panel. When the user selects `Allow once` or `Always allow`, the app dispatches the approved command through the terminal runtime, either by creating a new runtime-backed tab or by executing in the selected runtime-backed tab.
+The center terminal is user-owned. Agent conversations, command review, and decisions stay in the right agent panel. When the user selects `Allow once` or `Always allow`, the app records the decision in the Agent panel and must not create a terminal tab, write into an existing terminal, or dispatch the command through the terminal runtime.
 
 #### 5. Agent Account Connection
 
@@ -582,7 +582,7 @@ Responsibilities:
 - let users inspect provider/session readiness and switch providers in one compact row
 - explain problems
 - suggest actions
-- execute approved commands
+- record approved command decisions without terminal execution
 - track task progress
 - summarize which paths failed and which improvements are worth trying next
 
@@ -591,10 +591,10 @@ Responsibilities:
 Responsibilities:
 
 - manage provider connections, model choices, appearance, execution policy, and product information in one settings surface
-- split approval behavior into `always ask`, `auto`, and `trusted dirs only` by risk level
+- keep approval behavior in `always ask` mode for agent-suggested commands
 - keep high-risk commands pinned to explicit approval
 - block or reconfirm forbidden patterns regardless of the active policy
-- record auto-run low-risk commands in an audit trail with undoable toast notifications
+- record approval decisions in the Agent panel without terminal execution side effects
 
 ## 권장 UI 구조 / Recommended UI Structure
 
@@ -797,7 +797,7 @@ Agents should have clear scope and permissions.
 - `Planner`
   - proposes next-step ordering
 - `Operator`
-  - executes approved commands
+  - records approved command decisions and keeps terminal execution user-owned
 - `Reviewer`
   - reviews changes and risks
 
@@ -816,10 +816,10 @@ In the MVP, command execution and file edits should both require user approval.
 The updated design baseline sets the following approval-policy defaults:
 
 - distinguish `low-risk`, `mid-risk`, and `high-risk`
-- `low-risk` commands may be auto-approved depending on settings, but they must leave an audit trail and undoable notification
-- `mid-risk` behavior is controlled by policy across `always ask`, `auto`, and `trusted dirs only`, with a cautious default
+- `low-risk` commands must still be reviewed in the Agent panel and must not auto-run
+- `mid-risk` behavior remains explicit review only, with no automatic terminal execution
 - `high-risk` always requires explicit approval
-- auto-execution outside trusted directories is blocked or reconfirmed by default
+- terminal execution remains user-owned and is never triggered by an Agent-panel approval decision
 - forbidden patterns are always blocked or reconfirmed regardless of risk level
 
 ## 멀티 에이전트 오케스트레이션 / Multi-Agent Orchestration
@@ -1119,8 +1119,8 @@ At the product level, the system needs:
 - 에이전트가 선택 파일과 최근 명령 맥락을 읽을 수 있음
 - provider/session readiness를 오른쪽 agent workspace에서 확인하고 provider를 전환
 - 에이전트가 명령을 제안할 수 있음
-- 승인된 명령을 현재 탭 또는 새 탭에서 실행할 수 있음
-- 위험도 기반 승인 modal과 low-risk auto-run audit/undo 흐름
+- Agent-panel approval records decisions without terminal execution
+- Explicit review remains required for agent-suggested commands
 
 #### 제외 범위
 

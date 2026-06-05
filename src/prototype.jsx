@@ -632,8 +632,8 @@ const STR = {
     allowedOnce: "Allowed once",
     alwaysAllowed: "Always allowed",
     denied: "Denied",
-    permissionAllowedOnce: "Permission allowed once. Running the approved command.",
-    permissionAlwaysAllowed: "Always-allow recorded. Running the approved command.",
+    permissionAllowedOnce: "Permission allowed once. Decision kept in the agent panel.",
+    permissionAlwaysAllowed: "Always-allow recorded. Decision kept in the agent panel.",
     permissionDenied: "Permission denied in the agent panel. I will not run terminal commands.",
     executionSuggestion: "Execution suggestion",
     projectScope: "Project scope",
@@ -689,7 +689,7 @@ const STR = {
     activityFinalizing: "Preparing response",
     toastAutoRan: "Auto-ran",
     keepInAgent: "Keep in agent",
-    terminalRunHint: "Approved commands run through the selected terminal target after explicit user approval.",
+    terminalRunHint: "Approval records the decision in the Agent panel; terminal execution remains user-owned.",
     decisionKept: "Decision kept in the agent panel.",
     trustedDirs: "Trusted directories",
     trustedDirsHint: "Auto-approve only applies inside these paths",
@@ -1089,21 +1089,21 @@ function tokenizeLine(line) {
 //
 // Preset semantics:
 //   cautious ??every command always asks; no shortcuts.
-//   default  ??low-risk auto-runs anywhere; mid/high always ask.
-//   bold     ??low+mid auto-run inside trusted dirs; high always asks.
+//   default  ??every command asks; no automatic terminal execution.
+//   bold     ??every command asks; no automatic terminal execution.
 //
 // Forbidden patterns are checked first and always force "always-ask",
 // even if the policy would auto-approve. High-risk is hard-coded to
 // always-ask ??you cannot disable it.
 const APPROVAL_PRESETS = {
   cautious: { lowRisk: "always-ask", midRisk: "always-ask" },
-  default:  { lowRisk: "auto",       midRisk: "always-ask" },
-  bold:     { lowRisk: "auto",       midRisk: "auto-trusted" },
+  default:  { lowRisk: "always-ask", midRisk: "always-ask" },
+  bold:     { lowRisk: "always-ask", midRisk: "always-ask" },
 };
 
 const APPROVAL_POLICY_INIT = {
   preset: "default",
-  lowRisk: "auto",
+  lowRisk: "always-ask",
   midRisk: "always-ask",
   // highRisk is always "always-ask" ??not stored, just enforced.
   trustedDirs: [],
@@ -1136,7 +1136,8 @@ function policyDecideForCommand(policy, cmd, risk, cwd) {
   return { action: "ask", reason: "policy" };
 }
 
-// Whole-suggestion decision ??auto-runs only if EVERY command auto-runs.
+// Whole-suggestion decision. The active Codex flow records approvals in the
+// Agent panel instead of executing commands through this legacy policy path.
 // One blocker means we open the modal with the full list.
 function policyDecideForSuggestion(policy, suggestion, cwd) {
   const decisions = suggestion.commands.map(
@@ -5313,7 +5314,7 @@ function App() {
       if (!handledByRuntime) {
         appendToTab(targetTabId, [{
           kind: "log",
-          text: "desktop runtime is required to execute approved commands.",
+          text: "Agent-panel approval records the decision only; run reviewed commands manually in a user-owned terminal.",
           color: "err",
         }]);
         setTabStatus(targetTabId, "failed", c.cmd);
@@ -5384,9 +5385,18 @@ function App() {
       return;
     }
 
-    setMessages((prev) => prev.map(markDecision));
-    await onApprove(sugg);
-  }, [lang, onApprove]);
+    setApproval(null);
+    setMessages((prev) => [
+      ...prev.map(markDecision),
+      {
+        id: "permission-decision-" + Date.now(),
+        role: "assistant",
+        roleLabel: "Codex",
+        at,
+        content: t(lang, "decisionKept"),
+      },
+    ]);
+  }, [lang, setMessages]);
 
   const openOAuth = (providerId) => setOauth({ providerId });
   const handleProviderConnect = async (providerId) => {

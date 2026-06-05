@@ -1665,7 +1665,7 @@ test('does not use canned agent replies for deferred desktop providers', async (
   await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
 })
 
-test('executes approved Codex command decisions through the terminal runtime', async ({ page }) => {
+test('keeps approved Codex command decisions in the agent panel without terminal execution', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1837,7 +1837,10 @@ test('executes approved Codex command decisions through the terminal runtime', a
   await expect(page.locator('.composer-approval')).toHaveCount(0)
   await expect(activityRow).toContainText('Allowed once')
   await expect(page.locator('.msg.assistant').last()).toContainText(
-    'Finished processing 1 command request',
+    'Decision kept in the agent panel.',
+  )
+  await expect(page.locator('.msg.assistant').last()).not.toContainText(
+    'Finished processing',
   )
 
   await expect
@@ -1851,20 +1854,7 @@ test('executes approved Codex command decisions through the terminal runtime', a
           ).__terminalCalls ?? [],
       ),
     )
-    .toEqual([
-      {
-        command: 'create_terminal_session_with_command',
-        args: {
-          request: {
-            session: {
-              name: 'fix-1',
-              cwd: '~/code/aurora-monorepo',
-            },
-            command: 'pnpm test:funnel --reporter=verbose',
-          },
-        },
-      },
-    ])
+    .toEqual([])
 })
 
 test('keeps Codex setup guidance in the agent panel without opening a login terminal', async ({ page }) => {

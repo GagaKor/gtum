@@ -661,8 +661,8 @@ Backlog:
 Acceptance Criteria:
 
 - agent-suggested commands never auto-run by default
-- users can choose current tab or new tab as the target
-- execution results are tied to terminal output and task history
+- users can review current-tab or new-tab target intent in the Agent panel
+- approval decisions are tied to Agent-panel history, not automatic terminal output
 
 ### 11. 작업 이력과 기본 상태 / Task History and Basic Status
 
@@ -1159,7 +1159,7 @@ Acceptance Criteria:
 - tab drag/drop, context menu, 좌우/상하 split group 구현
 - 우측 provider state, runtime-backed model picker, context summary, activity log, composer approval, composer 구조 구현
 - `Connections`, `Models`, `Appearance`, `Execution`, `About` 설정 modal 구현
-- 위험도 기반 approval policy, trusted dirs, forbidden patterns, auto-run audit/undo 흐름 구현
+- Agent-panel approval policy, forbidden-pattern warnings, and decision history without terminal auto-run
 - 요약 카드 중심 레이아웃을 작업 surface 중심 레이아웃으로 축소 또는 대체
 - Task History, Telegram, Runtime/Debug를 기본 2선 영역으로 재배치
 - backend snapshot, status field, action availability와 frontend UI 동작을 같은 display contract로 정렬
@@ -1172,7 +1172,7 @@ Acceptance Criteria:
 - 좌측 panel은 `Projects`와 `Files`를 독립 accordion으로 보여준다.
 - 우측 에이전트 패널이 provider/session state, runtime-backed model selection, context, thread, activity, composer, approval entry를 자연스럽게 보여준다.
 - settings modal에서 provider, model, appearance, execution policy를 조정할 수 있다.
-- low-risk auto-run은 audit/undo 흐름을 남기고, high-risk와 forbidden pattern은 명시 승인 또는 차단을 요구한다.
+- Low-risk suggestions still require Agent-panel review, while high-risk commands and forbidden patterns require explicit approval or blocking.
 - Task History, Telegram, Runtime/Debug가 기본 작업 흐름을 방해하지 않는다.
 - backend 상태와 frontend 버튼/뱃지/패널 동작이 서로 모순되지 않는다.
 - 관련 UI E2E가 새 구조 기준으로 갱신된다.
@@ -1193,7 +1193,7 @@ Backlog:
 - implement tab drag/drop, context menus, and horizontal/vertical split groups
 - implement the right provider state, runtime-backed model picker, context summary, activity log, composer approval, and composer
 - implement the `Connections`, `Models`, `Appearance`, `Execution`, and `About` settings modal
-- implement risk-based approval policy, trusted dirs, forbidden patterns, and auto-run audit/undo flow
+- implement explicit Agent-panel approval policy, forbidden-pattern warnings, and decision history without terminal auto-run
 - reduce or replace summary-card-heavy layout with work-surface-first layout
 - move Task History, Telegram, and Runtime/Debug into clearly secondary areas by default
 - align backend snapshots, status fields, and action availability with the frontend display contract
@@ -1206,7 +1206,7 @@ Acceptance Criteria:
 - the left panel exposes `Projects` and `Files` as independent accordion sections
 - the right agent panel presents provider/session state, runtime-backed model selection, context, thread, activity, composer, and approval entry naturally
 - settings can configure providers, models, appearance, and execution policy
-- low-risk auto-run leaves audit/undo evidence, while high-risk commands and forbidden patterns require explicit approval or blocking
+- low-risk suggestions still require Agent-panel review, while high-risk commands and forbidden patterns require explicit approval or blocking
 - Task History, Telegram, and Runtime/Debug no longer interrupt the default workflow
 - backend state and frontend button, badge, and panel behavior do not contradict each other
 - related UI E2E coverage is updated for the new structure

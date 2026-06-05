@@ -1453,9 +1453,9 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         "leave `command` empty and put the choices in `summary` as plain numbered lines such as ",
         "`1. Option 1`, `2. Option 2`, and `3. Option 3`. Do not use terminal commands, shell ",
         "`read`, `printf`, or `echo` to collect those choices.\n",
-        "If the user asks to test or receive a terminal permission request, return a harmless reviewable ",
-        "command such as `echo \"gtum permission request test\"`, set `error` to null, and explain the card ",
-        "in `summary`.\n",
+        "Permission-test requests for Terminal, iTerm, or app access must stay reply-only: leave `command` ",
+        "empty and put the decision in `summary` as numbered Agent-panel choices such as ",
+        "`1. Allow the request in the Agent panel` and `2. Deny the request`.\n",
         "For normal explanations, status checks, planning, or answers that do not require permission, ",
         "leave `command` empty and put the answer in `summary`.\n",
         "Do not invent commands just to satisfy the schema.\n",
@@ -1639,7 +1639,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_separates_gtum_permission_cards_from_codex_cli_approval_policy() {
+    fn prompt_keeps_terminal_permission_tests_reply_only() {
         let prompt = build_prompt(&RequestAgentSuggestionsRequest {
             provider: AgentProvider::Codex,
             model: None,
@@ -1670,7 +1670,11 @@ mod tests {
             "{prompt}"
         );
         assert!(
-            prompt.contains("echo \"gtum permission request test\""),
+            prompt.contains("Permission-test requests for Terminal, iTerm, or app access must stay reply-only"),
+            "{prompt}"
+        );
+        assert!(
+            prompt.contains("1. Allow the request in the Agent panel"),
             "{prompt}"
         );
         assert!(prompt.contains("Reasoning level: xhigh"), "{prompt}");
