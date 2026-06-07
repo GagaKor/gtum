@@ -211,7 +211,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `agent-event-card`
   - Lives inside the conversational agent turn for reply decisions such as numbered choices and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Command permission decisions do not live here; they open as a composer-level approval panel directly above the composer.
 - `composer-approval`
-  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision; `Deny` records the refusal, while `Allow once` and `Always allow` forward the approved command to the terminal runtime target. Windows command-output sessions must not launch an interactive shell.
+  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision; every decision is recorded in the Agent panel and must not open a terminal tab, write into an existing terminal, or forward the command to the terminal runtime target.
 
 ## 인터랙션 기준 / Interaction Rules
 
@@ -230,7 +230,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
 - Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
-- Agent command review and decisions stay in the right agent workspace. The center terminal remains user-owned; approved command decisions use the terminal runtime, but Windows new-target approvals render command-output sessions instead of launching interactive PTY shells.
+- Agent command review and decisions stay in the right agent workspace. The center terminal remains user-owned; approved command decisions are recorded in the Agent panel and are not a terminal execution surface.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
 - Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.
