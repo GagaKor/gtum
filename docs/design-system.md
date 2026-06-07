@@ -154,6 +154,9 @@ Implementation tokens now live as CSS variables in `src/styles.css` after the fr
 | `--warn` | `#ffb85c` | Waiting, warning, dirty |
 | `--err` | `#ff6a6a` | Error, failed, high risk |
 | `--info` | `#6eb3ff` | Informational state |
+| `--scrollbar-thumb` | `var(--surface-3)` | Themed scrollbar thumb for side panels, editor panes, terminal panes, and settings surfaces |
+| `--scrollbar-thumb-hover` | `var(--border-strong)` | Themed scrollbar hover state |
+| `--scrollbar-track` | `transparent` | Themed scrollbar track; app panels must not expose the native Windows default scrollbar |
 
 Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, and `--radius-xl: 18px`. Avoid oversized radii inside the workbench; reserve `999px` for chips and pills only.
 
@@ -211,7 +214,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `agent-event-card`
   - Lives inside the conversational agent turn for reply decisions such as numbered choices and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Command permission decisions do not live here; they open as a composer-level approval panel directly above the composer.
 - `composer-approval`
-  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision; every decision is recorded in the Agent panel and must not open a terminal tab, write into an existing terminal, or forward the command to the terminal runtime target.
+  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision; every decision is recorded in the Agent panel. `Deny` records refusal, while `Allow once` and `Always allow` record approval in the agent workspace. Approval must not create, focus, write to, or otherwise mutate a user-visible center terminal tab or pane, and must not forward the command to the terminal runtime target.
 
 ## 인터랙션 기준 / Interaction Rules
 
@@ -230,7 +233,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
 - Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
-- Agent command review and decisions stay in the right agent workspace. The center terminal remains user-owned; approved command decisions are recorded in the Agent panel and are not a terminal execution surface.
+- Agent command review and decisions stay in the right agent workspace. The center terminal remains exclusively user-owned. Agent requests and approvals must never create, select, rename, split, focus, write into, close, or otherwise mutate a user-visible center terminal tab or pane. If an isolated agent-owned execution surface does not exist, the approval state must remain in the right panel as unavailable/manual-run guidance.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
 - Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.

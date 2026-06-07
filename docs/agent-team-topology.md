@@ -382,6 +382,17 @@ If two roles appear to need the same file at the same time, the `Orchestrator` s
 
 ## Handoff 규칙 / Handoff Rules
 
+## Agent / User Terminal Boundary
+
+Every role must treat this as a hard handoff and acceptance rule:
+
+- The center workbench terminal belongs to the user, not to the agent workspace.
+- Agent requests, permission cards, and approved agent work must never create, select, rename, split, focus, write into, close, or otherwise mutate user-visible center terminal tabs or panes.
+- `Frontend` must keep approval UI and execution state in the right agent workspace unless a separate agent-owned background surface is explicitly designed.
+- `Backend` must not expose or reuse terminal commands for agent approval when those commands create or mutate center terminal tabs.
+- `QA` and `Tester` must reject any implementation whose native app flow opens or changes a center terminal tab as a side effect of agent approval.
+- Browser or service-level tests are secondary evidence only; acceptance for this boundary requires installed/native app observation whenever the change can affect desktop runtime behavior.
+
 ### 한국어
 
 - `Planner -> Designer`

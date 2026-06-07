@@ -244,14 +244,18 @@ pub fn read_codex_capabilities() -> AgentProviderCapabilities {
     };
     let available_models = model_capabilities_from_codex_entries(&catalog_entries);
     let current_model_id = read_codex_config_model();
-    let current_model = current_model_id
-        .as_deref()
-        .and_then(|model_id| model_capability_for_id(AgentProvider::Codex, &available_models, model_id));
+    let current_model = current_model_id.as_deref().and_then(|model_id| {
+        model_capability_for_id(AgentProvider::Codex, &available_models, model_id)
+    });
     let effective_model_id = current_model
         .as_ref()
         .map(|model| model.model_id.as_str())
         .or(current_model_id.as_deref())
-        .or_else(|| available_models.first().map(|model| model.model_id.as_str()));
+        .or_else(|| {
+            available_models
+                .first()
+                .map(|model| model.model_id.as_str())
+        });
     let reasoning_levels = codex_reasoning_levels_for_model(&catalog_entries, effective_model_id);
     let default_reasoning_level = codex_default_reasoning_level_for_model(
         &catalog_entries,
@@ -286,7 +290,9 @@ pub fn read_claude_capabilities() -> AgentProviderCapabilities {
         .or_else(read_claude_config_model);
     let current_model = current_model_id
         .as_deref()
-        .and_then(|model_id| model_capability_for_id(AgentProvider::Claude, &available_models, model_id))
+        .and_then(|model_id| {
+            model_capability_for_id(AgentProvider::Claude, &available_models, model_id)
+        })
         .or_else(|| {
             current_model_id.map(|model_id| AgentModelCapability {
                 provider_id: AgentProvider::Claude,
@@ -627,7 +633,9 @@ fn parse_codex_model_catalog(raw_output: &str) -> Result<Vec<AgentModelCapabilit
         .map(|entries| model_capabilities_from_codex_entries(&entries))
 }
 
-fn parse_codex_model_catalog_entries(raw_output: &str) -> Result<Vec<CodexModelCatalogEntry>, String> {
+fn parse_codex_model_catalog_entries(
+    raw_output: &str,
+) -> Result<Vec<CodexModelCatalogEntry>, String> {
     let catalog = serde_json::from_str::<CodexModelCatalog>(raw_output)
         .map_err(|error| format!("failed to parse Codex model catalog: {error}"))?;
 
@@ -877,29 +885,31 @@ fn read_claude_available_models() -> Vec<AgentModelCapability> {
     read_claude_settings_values()
         .into_iter()
         .find_map(|settings| {
-            settings.get("availableModels").and_then(|models| match models {
-                serde_json::Value::Array(entries) => Some(
-                    entries
-                        .iter()
-                        .filter_map(|entry| match entry {
-                            serde_json::Value::String(model_id) => non_empty_trimmed(model_id),
-                            serde_json::Value::Object(model) => model
-                                .get("model")
-                                .or_else(|| model.get("id"))
-                                .or_else(|| model.get("modelId"))
-                                .and_then(|value| value.as_str())
-                                .and_then(non_empty_trimmed),
-                            _ => None,
-                        })
-                        .map(|model_id| AgentModelCapability {
-                            provider_id: AgentProvider::Claude,
-                            label: model_id.clone(),
-                            model_id,
-                        })
-                        .collect::<Vec<_>>(),
-                ),
-                _ => None,
-            })
+            settings
+                .get("availableModels")
+                .and_then(|models| match models {
+                    serde_json::Value::Array(entries) => Some(
+                        entries
+                            .iter()
+                            .filter_map(|entry| match entry {
+                                serde_json::Value::String(model_id) => non_empty_trimmed(model_id),
+                                serde_json::Value::Object(model) => model
+                                    .get("model")
+                                    .or_else(|| model.get("id"))
+                                    .or_else(|| model.get("modelId"))
+                                    .and_then(|value| value.as_str())
+                                    .and_then(non_empty_trimmed),
+                                _ => None,
+                            })
+                            .map(|model_id| AgentModelCapability {
+                                provider_id: AgentProvider::Claude,
+                                label: model_id.clone(),
+                                model_id,
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                    _ => None,
+                })
         })
         .unwrap_or_default()
 }
@@ -921,7 +931,10 @@ fn claude_settings_paths() -> Vec<PathBuf> {
 }
 
 fn string_from_json_key(value: &serde_json::Value, key: &str) -> Option<String> {
-    value.get(key).and_then(|entry| entry.as_str()).and_then(non_empty_trimmed)
+    value
+        .get(key)
+        .and_then(|entry| entry.as_str())
+        .and_then(non_empty_trimmed)
 }
 
 fn parse_simple_toml_string_key(contents: &str, key: &str) -> Option<String> {
@@ -1001,10 +1014,13 @@ fn codex_exec_args(
     }
     if let Some(reasoning_level) = reasoning_level.and_then(non_empty_trimmed) {
         args.push("-c".into());
-        args.push(format!(
-            "model_reasoning_effort={}",
-            toml_string_literal(&reasoning_level)
-        ).into());
+        args.push(
+            format!(
+                "model_reasoning_effort={}",
+                toml_string_literal(&reasoning_level)
+            )
+            .into(),
+        );
     }
     for path in codex_image_attachment_paths(attachments) {
         args.push("--image".into());
@@ -1364,11 +1380,29 @@ fn normalize_codex_suggestion(
     let normalized_command = structured.command.trim().to_string();
     let normalized_summary = structured.summary.trim();
 
-    if normalized_error.is_none()
-        && normalized_command.is_empty()
-        && normalized_summary.is_empty()
+    if normalized_error.is_none() && normalized_command.is_empty() && normalized_summary.is_empty()
     {
-        return Err("Codex CLI returned an empty response without a command or error reason.".into());
+        return Err(
+            "Codex CLI returned an empty response without a command or error reason.".into(),
+        );
+    }
+
+    if normalized_error.is_none() && !normalized_command.is_empty() {
+        if let Some(error) = windows_command_preview_error(&normalized_command) {
+            return Ok(AgentSuggestionResponse {
+                id: format!("codex-{}", unix_timestamp_ms()),
+                provider,
+                summary: if normalized_summary.is_empty() {
+                    "Codex suggested a command gtum cannot run on Windows.".into()
+                } else {
+                    normalized_summary.into()
+                },
+                command: String::new(),
+                preferred_target: structured.preferred_target,
+                confidence: structured.confidence,
+                error: Some(error),
+            });
+        }
     }
 
     let fallback_summary = if normalized_error.is_some() && normalized_command.is_empty() {
@@ -1391,6 +1425,25 @@ fn normalize_codex_suggestion(
         confidence: structured.confidence,
         error: normalized_error,
     })
+}
+
+fn windows_command_preview_error(command: &str) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::runtime::platform::terminal_command_runner(command)
+            .err()
+            .map(|error| {
+                format!(
+                    "Codex suggested a command gtum cannot run on Windows without an interactive shell: {error}"
+                )
+            })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = command;
+        None
+    }
 }
 
 fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
@@ -1461,10 +1514,12 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         "Do not invent commands just to satisfy the schema.\n",
         "If the request cannot be answered safely, set `error` and leave `command` empty."
     );
+    let platform_command_guidance = platform_command_runner_guidance();
 
     format!(
-        "{}\n\nProject name: {}\nProject path: {}\nReasoning level: {}\nFast mode: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
+        "{}\n{}\n\nProject name: {}\nProject path: {}\nReasoning level: {}\nFast mode: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
         instructions,
+        platform_command_guidance,
         request.project_name.trim(),
         request.project_path.trim(),
         reasoning_level,
@@ -1477,6 +1532,18 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         request.user_task.trim(),
         log_lines,
     )
+}
+
+fn platform_command_runner_guidance() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "Platform command runner note: this Windows app runs approved new-tab commands without cmd.exe or PowerShell. Never return cmd.exe, powershell.exe, pwsh.exe, shell builtins such as echo, .cmd/.bat/.ps1 shims, pipes, redirects, or shell syntax. Use a direct .exe or .com program with plain arguments; for a harmless permission test use `whoami`."
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        "Platform command runner note: for a harmless permission test on this platform, `echo \"gtum permission request test\"` is acceptable."
+    }
 }
 
 fn unix_timestamp_ms() -> u64 {
@@ -1550,10 +1617,17 @@ mod tests {
     fn codex_exec_args_do_not_include_prompt_text() {
         let schema_path = PathBuf::from("schema.json");
         let output_path = PathBuf::from("output.json");
-        let args = codex_exec_args("C:\\workspace\\gtum", None, None, &[], &schema_path, &output_path)
-            .into_iter()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
+        let args = codex_exec_args(
+            "C:\\workspace\\gtum",
+            None,
+            None,
+            &[],
+            &schema_path,
+            &output_path,
+        )
+        .into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
 
         assert_eq!(
             args,
@@ -1665,10 +1739,7 @@ mod tests {
             prompt.contains("Do not request permission from Codex CLI"),
             "{prompt}"
         );
-        assert!(
-            prompt.contains("approval_policy=never"),
-            "{prompt}"
-        );
+        assert!(prompt.contains("approval_policy=never"), "{prompt}");
         assert!(
             prompt.contains("Permission-test requests for Terminal, iTerm, or app access must stay reply-only"),
             "{prompt}"
@@ -1677,6 +1748,25 @@ mod tests {
             prompt.contains("1. Allow the request in the Agent panel"),
             "{prompt}"
         );
+
+        #[cfg(target_os = "windows")]
+        {
+            assert!(prompt.contains("without cmd.exe or PowerShell"), "{prompt}");
+            assert!(prompt.contains("Never return cmd.exe"), "{prompt}");
+            assert!(prompt.contains("whoami"), "{prompt}");
+            assert!(
+                !prompt.contains("echo \"gtum permission request test\""),
+                "{prompt}"
+            );
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert!(
+                prompt.contains("echo \"gtum permission request test\""),
+                "{prompt}"
+            );
+        }
         assert!(prompt.contains("Reasoning level: xhigh"), "{prompt}");
         assert!(prompt.contains("Fast mode: enabled"), "{prompt}");
     }
@@ -1976,6 +2066,30 @@ mod tests {
             response.error.as_deref(),
             Some("No safe command is available.")
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn normalization_converts_windows_shell_commands_to_error_only_suggestions() {
+        let response = normalize_codex_suggestion(
+            CodexStructuredSuggestion {
+                summary: "Send a permission request".into(),
+                command: "powershell.exe -NoProfile -Command Write-Output hi".into(),
+                preferred_target: AgentExecutionTarget::NewTab,
+                confidence: AgentSuggestionConfidence::High,
+                error: None,
+            },
+            AgentProvider::Codex,
+        )
+        .unwrap();
+
+        assert!(response.command.is_empty());
+        assert_eq!(response.summary, "Send a permission request");
+        assert!(response
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("would launch powershell.exe"));
     }
 
     #[test]
