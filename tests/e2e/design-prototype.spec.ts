@@ -1669,14 +1669,17 @@ test('keeps approved Codex command decisions in the agent panel without terminal
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
       __GTUM_AGENT_RUNTIME__: unknown
       __GTUM_PROJECT_RUNTIME__: unknown
       __GTUM_TERMINAL_RUNTIME__: unknown
     }
 
     bridgeWindow.__agentCalls = []
+    bridgeWindow.__agentJobCalls = []
     bridgeWindow.__projectCalls = []
     bridgeWindow.__terminalCalls = []
     bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
@@ -1720,6 +1723,29 @@ test('keeps approved Codex command decisions in the agent panel without terminal
             error: null,
           },
         ]
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentJobCalls.push({ command, args })
+
+        return {
+          jobId: 77,
+          name: 'agent-codex-runtime-current-tab-1',
+          command: 'pnpm test:funnel --reporter=verbose',
+          cwd: '~/code/aurora-monorepo',
+          runner: 'pnpm',
+          runnerArgs: ['test:funnel', '--reporter=verbose'],
+          processId: 7700,
+          status: 'running',
+          createdAt: 100,
+          updatedAt: 120,
+          exitCode: null,
+          logLineCount: 1,
+          maxLogEntries: 400,
+          lastEvent: 'agent job created',
+        }
       },
     }
     bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
@@ -1839,6 +1865,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
   await expect(page.locator('.msg.assistant').last()).toContainText(
     'Decision kept in the agent panel.',
   )
+  await expect(page.locator('.msg.assistant').last()).toContainText('agent job #77')
   await expect(page.locator('.msg.assistant').last()).not.toContainText(
     'Finished processing',
   )
@@ -1855,6 +1882,29 @@ test('keeps approved Codex command decisions in the agent panel without terminal
       ),
     )
     .toEqual([])
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __agentJobCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+            }
+          ).__agentJobCalls ?? [],
+      ),
+    )
+    .toEqual([
+      {
+        command: 'create_agent_job',
+        args: {
+          request: {
+            projectPath: '~/code/aurora-monorepo',
+            command: 'pnpm test:funnel --reporter=verbose',
+            name: 'agent-codex-runtime-current-tab-1',
+          },
+        },
+      },
+    ])
 })
 
 test('keeps Codex setup guidance in the agent panel without opening a login terminal', async ({ page }) => {

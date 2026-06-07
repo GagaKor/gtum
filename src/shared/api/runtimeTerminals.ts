@@ -153,7 +153,11 @@ export const terminalStatusFromRuntime = (
 }
 
 export const terminalLinesFromRuntime = (entries: readonly string[]): TerminalLine[] =>
-  entries.map((entry) => ({ kind: 'log', text: entry }))
+  entries.map((entry) => {
+    if (entry.startsWith('$ ')) return { kind: 'cmd', text: entry.slice(2) }
+
+    return { kind: 'log', text: entry }
+  })
 
 export const terminalTabFromRuntime = (
   snapshot: RuntimeTerminalSnapshot,

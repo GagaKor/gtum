@@ -1,16 +1,18 @@
 use std::{
+    collections::HashSet,
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::runtime::platform;
 
 const DEFAULT_TREE_DEPTH: usize = 3;
 const MAX_TREE_DEPTH: usize = 6;
 const MAX_FILE_BYTES: usize = 128 * 1024;
+const MAX_WRITE_FILE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SEARCH_FILE_BYTES: usize = 128 * 1024;
 const MAX_SEARCH_RESULTS: usize = 24;
 const MAX_MATCHES_PER_FILE: usize = 6;
@@ -70,7 +72,38 @@ pub struct ProjectFileSnapshot {
     pub truncated: bool,
     pub size_bytes: usize,
     pub line_count: usize,
+    pub content_hash: String,
     pub content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteProjectFileRequest {
+    pub project_path: String,
+    pub file_path: String,
+    pub content: String,
+    pub expected_content_hash: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyProjectPatchRequest {
+    pub project_path: String,
+    pub edits: Vec<ProjectFilePatchEdit>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFilePatchEdit {
+    pub file_path: String,
+    pub content: String,
+    pub expected_content_hash: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyProjectPatchResult {
+    pub applied_files: Vec<ProjectFileSnapshot>,
 }
 
 #[derive(Clone, Serialize)]
@@ -155,86 +188,66 @@ pub fn read_project_overview(
     })
 }
 
-pub fn read_project_file(project_path: String, file_path: String) -> Result<ProjectFileSnapshot, String> {
-    let normalized_root = platform::normalize_project_path(&project_path)?;
-    let canonical_root = fs::canonicalize(&normalized_root).map_err(|error| {
-        format!(
-            "failed to resolve project root {}: {error}",
-            normalized_root.display()
-        )
-    })?;
-
-    if !canonical_root.is_dir() {
-        return Err(format!(
-            "project path is not a directory: {}",
-            canonical_root.display()
-        ));
-    }
-
-    let requested_path = PathBuf::from(file_path.trim());
-    let candidate_path = if requested_path.is_absolute() {
-        requested_path
-    } else {
-        canonical_root.join(requested_path)
-    };
-    let canonical_file = fs::canonicalize(&candidate_path)
-        .map_err(|error| format!("failed to resolve file {}: {error}", candidate_path.display()))?;
-
-    if !canonical_file.starts_with(&canonical_root) {
-        return Err("requested file is outside the active project root".into());
-    }
-
-    let metadata = fs::metadata(&canonical_file)
-        .map_err(|error| format!("failed to inspect {}: {error}", canonical_file.display()))?;
-
-    if !metadata.is_file() {
-        return Err(format!(
-            "requested path is not a file: {}",
-            canonical_file.display()
-        ));
-    }
-
-    let size_bytes = metadata.len().min(usize::MAX as u64) as usize;
-    let file = File::open(&canonical_file)
-        .map_err(|error| format!("failed to open {}: {error}", canonical_file.display()))?;
-    let mut bytes = Vec::with_capacity(size_bytes.min(MAX_FILE_BYTES));
-    file.take(MAX_FILE_BYTES as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("failed to read {}: {error}", canonical_file.display()))?;
-
-    let truncated = size_bytes > bytes.len();
-    let is_text = !looks_like_binary(&bytes);
-    let content = if is_text {
-        String::from_utf8_lossy(&bytes).into_owned()
-    } else {
-        String::new()
-    };
-    let line_count = if is_text {
-        content.lines().count().max(usize::from(!content.is_empty()))
-    } else {
-        0
-    };
-    let display_path = canonical_file
-        .strip_prefix(&canonical_root)
-        .ok()
-        .and_then(|value| value.to_str())
-        .map(|value| value.replace('\\', "/"))
-        .unwrap_or_else(|| canonical_file.to_string_lossy().into_owned());
-
-    Ok(ProjectFileSnapshot {
-        project_path: canonical_root.to_string_lossy().into_owned(),
-        file_path: canonical_file.to_string_lossy().into_owned(),
-        display_path,
-        exists: true,
-        is_text,
-        truncated,
-        size_bytes,
-        line_count,
-        content,
-    })
+pub fn read_project_file(
+    project_path: String,
+    file_path: String,
+) -> Result<ProjectFileSnapshot, String> {
+    let canonical_root = canonical_project_root(&project_path)?;
+    let canonical_file = resolve_project_file_path(&canonical_root, &file_path, true)?;
+    read_project_file_snapshot(&canonical_root, &canonical_file)
 }
 
-pub fn search_project_text(project_path: String, query: String) -> Result<Vec<ProjectSearchResult>, String> {
+pub fn write_project_file(request: WriteProjectFileRequest) -> Result<ProjectFileSnapshot, String> {
+    let canonical_root = canonical_project_root(&request.project_path)?;
+    write_project_file_content(
+        &canonical_root,
+        &request.file_path,
+        request.content,
+        request.expected_content_hash.as_deref(),
+    )
+}
+
+pub fn apply_project_patch(
+    request: ApplyProjectPatchRequest,
+) -> Result<ApplyProjectPatchResult, String> {
+    let canonical_root = canonical_project_root(&request.project_path)?;
+    if request.edits.is_empty() {
+        return Err("patch must include at least one file edit".into());
+    }
+
+    let mut seen_files = HashSet::new();
+    let mut planned_edits = Vec::new();
+    for edit in request.edits {
+        let canonical_file = resolve_project_file_path(&canonical_root, &edit.file_path, false)?;
+        if !seen_files.insert(canonical_file.clone()) {
+            return Err(format!(
+                "patch contains duplicate file edit: {}",
+                canonical_file.display()
+            ));
+        }
+        validate_project_file_write(
+            &canonical_file,
+            &edit.content,
+            edit.expected_content_hash.as_deref(),
+        )?;
+        planned_edits.push((canonical_file, edit.content));
+    }
+
+    let mut applied_files = Vec::new();
+    for (canonical_file, content) in planned_edits {
+        fs::write(&canonical_file, content.as_bytes())
+            .map_err(|error| format!("failed to write {}: {error}", canonical_file.display()))?;
+        let snapshot = read_project_file_snapshot(&canonical_root, &canonical_file)?;
+        applied_files.push(snapshot);
+    }
+
+    Ok(ApplyProjectPatchResult { applied_files })
+}
+
+pub fn search_project_text(
+    project_path: String,
+    query: String,
+) -> Result<Vec<ProjectSearchResult>, String> {
     let trimmed_query = query.trim();
     if trimmed_query.is_empty() {
         return Ok(Vec::new());
@@ -423,8 +436,8 @@ fn collect_search_results(
         return Ok(());
     }
 
-    let bytes = fs::read(path)
-        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
 
     if looks_like_binary(&bytes) {
         return Ok(());
@@ -604,6 +617,169 @@ fn canonical_project_root(path: &str) -> Result<PathBuf, String> {
     Ok(canonical_root)
 }
 
+fn resolve_project_file_path(
+    project_root: &Path,
+    file_path: &str,
+    must_exist: bool,
+) -> Result<PathBuf, String> {
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() {
+        return Err("file path cannot be empty".into());
+    }
+
+    let requested_path = PathBuf::from(trimmed);
+    let candidate_path = if requested_path.is_absolute() {
+        requested_path
+    } else {
+        project_root.join(requested_path)
+    };
+
+    if must_exist || candidate_path.exists() {
+        let canonical_file = fs::canonicalize(&candidate_path).map_err(|error| {
+            format!(
+                "failed to resolve file {}: {error}",
+                candidate_path.display()
+            )
+        })?;
+        if !canonical_file.starts_with(project_root) {
+            return Err("requested file is outside the active project root".into());
+        }
+        return Ok(canonical_file);
+    }
+
+    let parent = candidate_path
+        .parent()
+        .ok_or_else(|| "file path must include a parent directory".to_string())?;
+    let canonical_parent = fs::canonicalize(parent).map_err(|error| {
+        format!(
+            "failed to resolve parent directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    if !canonical_parent.starts_with(project_root) {
+        return Err("requested file is outside the active project root".into());
+    }
+
+    let file_name = candidate_path
+        .file_name()
+        .ok_or_else(|| "file path must include a file name".to_string())?;
+    Ok(canonical_parent.join(file_name))
+}
+
+fn read_project_file_snapshot(
+    canonical_root: &Path,
+    canonical_file: &Path,
+) -> Result<ProjectFileSnapshot, String> {
+    let metadata = fs::metadata(canonical_file)
+        .map_err(|error| format!("failed to inspect {}: {error}", canonical_file.display()))?;
+
+    if !metadata.is_file() {
+        return Err(format!(
+            "requested path is not a file: {}",
+            canonical_file.display()
+        ));
+    }
+
+    let size_bytes = metadata.len().min(usize::MAX as u64) as usize;
+    let file = File::open(canonical_file)
+        .map_err(|error| format!("failed to open {}: {error}", canonical_file.display()))?;
+    let mut bytes = Vec::with_capacity(size_bytes.min(MAX_FILE_BYTES));
+    file.take(MAX_FILE_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read {}: {error}", canonical_file.display()))?;
+
+    let truncated = size_bytes > bytes.len();
+    let is_text = !looks_like_binary(&bytes);
+    let content = if is_text {
+        String::from_utf8_lossy(&bytes).into_owned()
+    } else {
+        String::new()
+    };
+    let line_count = if is_text {
+        content
+            .lines()
+            .count()
+            .max(usize::from(!content.is_empty()))
+    } else {
+        0
+    };
+    let display_path = canonical_file
+        .strip_prefix(canonical_root)
+        .ok()
+        .and_then(|value| value.to_str())
+        .map(|value| value.replace('\\', "/"))
+        .unwrap_or_else(|| canonical_file.to_string_lossy().into_owned());
+
+    Ok(ProjectFileSnapshot {
+        project_path: canonical_root.to_string_lossy().into_owned(),
+        file_path: canonical_file.to_string_lossy().into_owned(),
+        display_path,
+        exists: true,
+        is_text,
+        truncated,
+        size_bytes,
+        line_count,
+        content_hash: content_hash_hex(&bytes),
+        content,
+    })
+}
+
+fn write_project_file_content(
+    canonical_root: &Path,
+    file_path: &str,
+    content: String,
+    expected_content_hash: Option<&str>,
+) -> Result<ProjectFileSnapshot, String> {
+    let canonical_file = resolve_project_file_path(canonical_root, file_path, false)?;
+    validate_project_file_write(&canonical_file, &content, expected_content_hash)?;
+
+    fs::write(&canonical_file, content.as_bytes())
+        .map_err(|error| format!("failed to write {}: {error}", canonical_file.display()))?;
+    read_project_file_snapshot(canonical_root, &canonical_file)
+}
+
+fn validate_project_file_write(
+    canonical_file: &Path,
+    content: &str,
+    expected_content_hash: Option<&str>,
+) -> Result<(), String> {
+    if content.len() > MAX_WRITE_FILE_BYTES {
+        return Err(format!(
+            "file content exceeds the write limit of {} bytes",
+            MAX_WRITE_FILE_BYTES
+        ));
+    }
+
+    if let Some(expected_hash) = expected_content_hash.filter(|value| !value.trim().is_empty()) {
+        if canonical_file.exists() {
+            let current_bytes = fs::read(&canonical_file).map_err(|error| {
+                format!(
+                    "failed to read {} before writing: {error}",
+                    canonical_file.display()
+                )
+            })?;
+            if looks_like_binary(&current_bytes) {
+                return Err("cannot overwrite binary files through the text editor".into());
+            }
+            let current_hash = content_hash_hex(&current_bytes);
+            if current_hash != expected_hash {
+                return Err("file changed on disk; reload before saving".into());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn content_hash_hex(bytes: &[u8]) -> String {
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
 fn ensure_git_repository(path: &Path) -> Result<(), String> {
     if build_source_control_overview(path).is_repository {
         Ok(())
@@ -628,7 +804,9 @@ fn resolve_git_relative_path(project_root: &Path, file_path: &str) -> Result<Str
         requested_path
     };
 
-    Ok(normalize_display_path(relative_path.to_string_lossy().as_ref()))
+    Ok(normalize_display_path(
+        relative_path.to_string_lossy().as_ref(),
+    ))
 }
 
 fn parse_git_branch_line(line: &str) -> (Option<String>, usize, usize) {
@@ -686,7 +864,10 @@ fn status_code_label(code: char) -> Option<String> {
 }
 
 fn status_summary(staged_code: char, unstaged_code: char) -> String {
-    match (status_code_label(staged_code), status_code_label(unstaged_code)) {
+    match (
+        status_code_label(staged_code),
+        status_code_label(unstaged_code),
+    ) {
         (Some(staged), Some(unstaged)) => format!("staged {staged}, working tree {unstaged}"),
         (Some(staged), None) => format!("staged {staged}"),
         (None, Some(unstaged)) => format!("working tree {unstaged}"),
@@ -719,4 +900,106 @@ fn display_name(path: &Path) -> String {
 
 fn looks_like_binary(bytes: &[u8]) -> bool {
     bytes.iter().any(|value| *value == 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+
+    fn temp_project_dir(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("gtum-filesystem-{label}-{nonce}"))
+    }
+
+    #[test]
+    fn apply_project_patch_writes_multiple_files_with_hash_guards() {
+        let root = temp_project_dir("apply");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src").join("one.txt"), "one\n").unwrap();
+        fs::write(root.join("two.txt"), "two\n").unwrap();
+        let project_path = root.to_string_lossy().into_owned();
+        let first = read_project_file(project_path.clone(), "src/one.txt".into()).unwrap();
+        let second = read_project_file(project_path.clone(), "two.txt".into()).unwrap();
+
+        let result = apply_project_patch(ApplyProjectPatchRequest {
+            project_path: project_path.clone(),
+            edits: vec![
+                ProjectFilePatchEdit {
+                    file_path: "src/one.txt".into(),
+                    content: "updated one\n".into(),
+                    expected_content_hash: Some(first.content_hash),
+                },
+                ProjectFilePatchEdit {
+                    file_path: "two.txt".into(),
+                    content: "updated two\n".into(),
+                    expected_content_hash: Some(second.content_hash),
+                },
+            ],
+        })
+        .unwrap();
+
+        assert_eq!(result.applied_files.len(), 2);
+        assert_eq!(
+            fs::read_to_string(root.join("src").join("one.txt")).unwrap(),
+            "updated one\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("two.txt")).unwrap(),
+            "updated two\n"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn apply_project_patch_rejects_stale_hash_without_partial_writes() {
+        let root = temp_project_dir("stale");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src").join("one.txt"), "one\n").unwrap();
+        fs::write(root.join("two.txt"), "two\n").unwrap();
+        let project_path = root.to_string_lossy().into_owned();
+        let first = read_project_file(project_path.clone(), "src/one.txt".into()).unwrap();
+        let second = read_project_file(project_path.clone(), "two.txt".into()).unwrap();
+        fs::write(root.join("two.txt"), "changed elsewhere\n").unwrap();
+
+        let error = match apply_project_patch(ApplyProjectPatchRequest {
+            project_path,
+            edits: vec![
+                ProjectFilePatchEdit {
+                    file_path: "src/one.txt".into(),
+                    content: "updated one\n".into(),
+                    expected_content_hash: Some(first.content_hash),
+                },
+                ProjectFilePatchEdit {
+                    file_path: "two.txt".into(),
+                    content: "updated two\n".into(),
+                    expected_content_hash: Some(second.content_hash),
+                },
+            ],
+        }) {
+            Ok(_) => panic!("expected stale patch hash to fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error, "file changed on disk; reload before saving");
+        assert_eq!(
+            fs::read_to_string(root.join("src").join("one.txt")).unwrap(),
+            "one\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("two.txt")).unwrap(),
+            "changed elsewhere\n"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
 }

@@ -173,6 +173,14 @@ pub fn terminal_shell_candidates(explicit_shell: Option<&str>) -> Vec<TerminalSh
     {
         return vec![
             TerminalShellCandidate {
+                program: "powershell.exe".into(),
+                args: vec!["-NoLogo".into(), "-NoProfile".into(), "-NoExit".into()],
+            },
+            TerminalShellCandidate {
+                program: "pwsh.exe".into(),
+                args: vec!["-NoLogo".into(), "-NoProfile".into(), "-NoExit".into()],
+            },
+            TerminalShellCandidate {
                 program: windows_comspec(),
                 args: vec!["/D".into(), "/Q".into(), "/K".into()],
             },
@@ -464,17 +472,19 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_default_shell_uses_cmd_without_autorun() {
+    fn windows_default_shell_prefers_powershell_then_cmd_fallback() {
         let candidates = terminal_shell_candidates(None);
 
-        assert_eq!(candidates.len(), 1);
         assert!(
             candidates[0]
                 .program
                 .to_ascii_lowercase()
-                .ends_with("cmd.exe")
+                .ends_with("powershell.exe")
         );
-        assert_eq!(candidates[0].args, vec!["/D", "/Q", "/K"]);
+        assert_eq!(candidates[0].args, vec!["-NoLogo", "-NoProfile", "-NoExit"]);
+        assert!(candidates.iter().any(|candidate| {
+            candidate.program.to_ascii_lowercase().ends_with("cmd.exe")
+        }));
     }
 
     #[cfg(target_os = "windows")]

@@ -193,6 +193,10 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - Must read as a low compact tab, not a large CTA.
 - `code-window`, `terminal-window`, `diff-window`
   - Use dark `--bg-deep` surfaces, monospace text, and line-level state colors.
+- `editor-textarea`
+  - Center editor panes use a real editable text buffer with a gutter and compact status-bar `Save` action. Truncated or binary previews are not saveable from the editor surface.
+- `terminal-input-form`
+  - Center terminal panes expose a compact monospace input row for user-owned PTY commands. This input belongs to the center terminal only; Agent approval controls must not type into it.
 - `agent-card`, `side-section`
   - Avoid repeated generic card treatment; vary density and structure by role.
 - `dock-resize-handle`

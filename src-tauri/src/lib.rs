@@ -1,4 +1,5 @@
 mod runtime {
+    pub mod agent_jobs;
     pub mod auth;
     pub mod codex;
     pub mod filesystem;
@@ -8,6 +9,7 @@ mod runtime {
     pub mod workspace;
 }
 
+use runtime::agent_jobs::{AgentJobLogs, AgentJobManager, AgentJobSnapshot, CreateAgentJobRequest};
 use runtime::auth::{
     AgentAuthManager, AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProvider,
     CompleteAgentLoginRequest,
@@ -17,8 +19,8 @@ use runtime::codex::{
     RequestAgentSuggestionsRequest,
 };
 use runtime::filesystem::{
-    ProjectFileSnapshot, ProjectOverview, ProjectSearchResult, SourceControlDiff,
-    SourceControlOverview,
+    ApplyProjectPatchRequest, ApplyProjectPatchResult, ProjectFileSnapshot, ProjectOverview,
+    ProjectSearchResult, SourceControlDiff, SourceControlOverview, WriteProjectFileRequest,
 };
 use runtime::pty::{
     CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
@@ -74,6 +76,18 @@ fn read_project_file(
     file_path: String,
 ) -> Result<ProjectFileSnapshot, String> {
     runtime::filesystem::read_project_file(project_path, file_path)
+}
+
+#[tauri::command]
+fn write_project_file(request: WriteProjectFileRequest) -> Result<ProjectFileSnapshot, String> {
+    runtime::filesystem::write_project_file(request)
+}
+
+#[tauri::command]
+fn apply_project_patch(
+    request: ApplyProjectPatchRequest,
+) -> Result<ApplyProjectPatchResult, String> {
+    runtime::filesystem::apply_project_patch(request)
 }
 
 #[tauri::command]
@@ -183,6 +197,31 @@ fn create_terminal_session_with_command(
     request: CreateTerminalSessionWithCommandRequest,
 ) -> Result<TerminalSessionSnapshot, String> {
     state.create_session_with_command(request)
+}
+
+#[tauri::command]
+fn create_agent_job(
+    state: tauri::State<'_, AgentJobManager>,
+    request: CreateAgentJobRequest,
+) -> Result<AgentJobSnapshot, String> {
+    state.create_job(request)
+}
+
+#[tauri::command]
+fn read_agent_job_logs(
+    state: tauri::State<'_, AgentJobManager>,
+    job_id: u64,
+    limit: Option<usize>,
+) -> Result<AgentJobLogs, String> {
+    state.read_logs(job_id, limit)
+}
+
+#[tauri::command]
+fn cancel_agent_job(
+    state: tauri::State<'_, AgentJobManager>,
+    job_id: u64,
+) -> Result<AgentJobSnapshot, String> {
+    state.cancel_job(job_id)
 }
 
 #[tauri::command]
@@ -408,6 +447,7 @@ fn unix_timestamp_ms() -> u128 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(AgentJobManager::new())
         .manage(AgentAuthManager::new())
         .manage(TerminalSessionManager::new())
         .manage(TelegramBridgeManager::new())
@@ -416,6 +456,8 @@ pub fn run() {
             get_runtime_info,
             read_project_overview,
             read_project_file,
+            write_project_file,
+            apply_project_patch,
             search_project_text,
             read_source_control_overview,
             read_source_control_diff,
@@ -430,6 +472,9 @@ pub fn run() {
             read_terminal_session_logs,
             execute_terminal_session_command,
             create_terminal_session_with_command,
+            create_agent_job,
+            read_agent_job_logs,
+            cancel_agent_job,
             list_agent_connections,
             begin_agent_login,
             complete_agent_login,

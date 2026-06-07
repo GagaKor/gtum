@@ -1,3 +1,6 @@
+#[cfg(not(target_os = "windows"))]
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
@@ -11,17 +14,13 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
-use std::{
-    process::{Child as ProcessChild, Stdio},
-    time::Duration,
-};
-
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
-use serde::{Deserialize, Serialize};
+use std::process::{Child as ProcessChild, Stdio};
 
 use crate::runtime::platform;
 
+#[cfg(not(target_os = "windows"))]
 const DEFAULT_ROWS: u16 = 24;
+#[cfg(not(target_os = "windows"))]
 const DEFAULT_COLS: u16 = 80;
 const DEFAULT_LOG_LIMIT: usize = 400;
 const MIN_LOG_LIMIT: usize = 50;
@@ -45,6 +44,13 @@ impl TerminalSessionManager {
         &self,
         request: CreateTerminalSessionRequest,
     ) -> Result<TerminalSessionSnapshot, String> {
+        #[cfg(target_os = "windows")]
+        {
+            return self.create_piped_shell_session(request);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
         let session_id = self.next_id();
         let shell_candidates = platform::terminal_shell_candidates(request.shell.as_deref());
         let cwd = match request.cwd {
@@ -104,6 +110,7 @@ impl TerminalSessionManager {
         }
 
         Err(last_error.unwrap_or_else(|| "unable to spawn a terminal shell".into()))
+        }
     }
 
     pub fn list_sessions(&self) -> Vec<TerminalSessionSnapshot> {
@@ -151,6 +158,14 @@ impl TerminalSessionManager {
         command: String,
     ) -> Result<TerminalSessionSnapshot, String> {
         let session = self.get_session(session_id)?;
+        {
+            let mut session = session.lock().unwrap();
+            if session.is_interactive() {
+                session.execute_command(command)?;
+                return Ok(session.snapshot());
+            }
+        }
+
         let mut session = session.lock().unwrap();
         session.execute_command(command)?;
         Ok(session.snapshot())
@@ -165,13 +180,6 @@ impl TerminalSessionManager {
             return Err("terminal command cannot be empty".into());
         }
 
-        #[cfg(target_os = "windows")]
-        {
-            return self.create_process_session_with_command(request, command);
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
         let snapshot = self.create_session(request.session)?;
         let session = self.get_session(snapshot.session_id)?;
         let mut session = session.lock().unwrap();
@@ -183,94 +191,95 @@ impl TerminalSessionManager {
         }
 
         Ok(snapshot)
-        }
     }
 
     #[cfg(target_os = "windows")]
-    fn create_process_session_with_command(
+    fn create_piped_shell_session(
         &self,
-        request: CreateTerminalSessionWithCommandRequest,
-        command_line: String,
+        request: CreateTerminalSessionRequest,
     ) -> Result<TerminalSessionSnapshot, String> {
         let session_id = self.next_id();
-        let cwd = match request.session.cwd {
+        let shell_candidates = platform::terminal_shell_candidates(request.shell.as_deref());
+        let cwd = match request.cwd {
             Some(path) => Some(platform::normalize_project_path(&path)?),
             None => None,
         };
         let session_name = request
-            .session
             .name
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| default_session_name(session_id));
         let log_limit = request
-            .session
             .max_log_entries
             .unwrap_or(DEFAULT_LOG_LIMIT)
             .clamp(MIN_LOG_LIMIT, MAX_LOG_LIMIT);
-        let runner = platform::terminal_command_runner(&command_line)?;
 
-        let mut command = platform::command_for_program(&runner.program);
-        command
-            .args(&runner.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        if let Some(cwd) = &cwd {
-            command.current_dir(cwd);
+        let mut last_error = None;
+        for candidate in shell_candidates {
+            let mut command = platform::command_for_program(&candidate.program);
+            command
+                .args(&candidate.args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            if let Some(cwd) = &cwd {
+                command.current_dir(cwd);
+            }
+            if let Some(path_env) = platform::terminal_path_env() {
+                command.env("PATH", path_env);
+            }
+
+            match command.spawn() {
+                Ok(mut child) => {
+                    let process_id = Some(child.id());
+                    let writer = child
+                        .stdin
+                        .take()
+                        .ok_or_else(|| "failed to create terminal writer".to_string())?;
+                    let stdout = child.stdout.take();
+                    let stderr = child.stderr.take();
+                    let child = Arc::new(Mutex::new(child));
+                    let initial_snapshot = TerminalSessionSnapshot::new(
+                        session_id,
+                        session_name,
+                        cwd,
+                        candidate.program,
+                        candidate.args,
+                        process_id,
+                        log_limit,
+                    );
+                    let session = Arc::new(Mutex::new(TerminalSession::new(
+                        initial_snapshot.clone(),
+                        Some(Box::new(ProcessSessionKiller {
+                            child: child.clone(),
+                        })),
+                        Some(Box::new(writer)),
+                    )));
+
+                    self.sessions
+                        .lock()
+                        .unwrap()
+                        .insert(session_id, session.clone());
+
+                    if let Some(stdout) = stdout {
+                        self.spawn_process_reader(session_id, "stdout", stdout, session.clone())?;
+                    }
+                    if let Some(stderr) = stderr {
+                        self.spawn_process_reader(session_id, "stderr", stderr, session.clone())?;
+                    }
+                    self.spawn_process_reaper(session_id, session, child)?;
+
+                    return Ok(initial_snapshot);
+                }
+                Err(error) => {
+                    last_error = Some(format!("failed to spawn {}: {error}", candidate.program));
+                }
+            }
         }
-        if let Some(path_env) = platform::terminal_path_env() {
-            command.env("PATH", path_env);
-        }
 
-        let mut child = command.spawn().map_err(|error| {
-            format!(
-                "failed to spawn approved command runner {}: {error}",
-                runner.program
-            )
-        })?;
-        let process_id = Some(child.id());
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        let child = Arc::new(Mutex::new(child));
-
-        let initial_snapshot = TerminalSessionSnapshot::new(
-            session_id,
-            session_name,
-            cwd,
-            runner.program,
-            runner.args,
-            process_id,
-            log_limit,
-        );
-        let session = Arc::new(Mutex::new(TerminalSession::new(
-            initial_snapshot.clone(),
-            Some(Box::new(ProcessSessionKiller {
-                child: child.clone(),
-            })),
-            None,
-        )));
-
-        {
-            let mut session = session.lock().unwrap();
-            session.push_line(format!("$ {command_line}"));
-        }
-
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id, session.clone());
-
-        if let Some(stdout) = stdout {
-            self.spawn_process_reader(session_id, "stdout", stdout, session.clone())?;
-        }
-        if let Some(stderr) = stderr {
-            self.spawn_process_reader(session_id, "stderr", stderr, session.clone())?;
-        }
-        self.spawn_process_reaper(session_id, session, child)?;
-
-        Ok(initial_snapshot)
+        Err(last_error.unwrap_or_else(|| "unable to spawn a terminal shell".into()))
     }
 
+    #[cfg(not(target_os = "windows"))]
     fn finish_session_spawn(
         &self,
         session_id: u64,
@@ -324,6 +333,7 @@ impl TerminalSessionManager {
         Ok(initial_snapshot)
     }
 
+    #[cfg(not(target_os = "windows"))]
     fn spawn_reader(
         &self,
         session_id: u64,
@@ -362,6 +372,7 @@ impl TerminalSessionManager {
         Ok(())
     }
 
+    #[cfg(not(target_os = "windows"))]
     fn spawn_reaper(
         &self,
         session_id: u64,
@@ -392,7 +403,7 @@ impl TerminalSessionManager {
         R: Read + Send + 'static,
     {
         thread::Builder::new()
-            .name(format!("gtum-command-{stream_name}-reader-{session_id}"))
+            .name(format!("gtum-terminal-{stream_name}-reader-{session_id}"))
             .spawn(move || {
                 let mut buffer = [0_u8; 4_096];
                 loop {
@@ -415,7 +426,7 @@ impl TerminalSessionManager {
                 session.flush_pending_output();
             })
             .map_err(|error| {
-                format!("failed to start command {stream_name} reader thread: {error}")
+                format!("failed to start terminal {stream_name} reader thread: {error}")
             })?;
 
         Ok(())
@@ -429,7 +440,7 @@ impl TerminalSessionManager {
         child: Arc<Mutex<ProcessChild>>,
     ) -> Result<(), String> {
         thread::Builder::new()
-            .name(format!("gtum-command-reaper-{session_id}"))
+            .name(format!("gtum-terminal-process-reaper-{session_id}"))
             .spawn(move || loop {
                 let wait_result = {
                     let mut child = child.lock().unwrap();
@@ -442,7 +453,7 @@ impl TerminalSessionManager {
                         session.record_process_exit(status.code());
                         break;
                     }
-                    Ok(None) => thread::sleep(Duration::from_millis(200)),
+                    Ok(None) => thread::sleep(std::time::Duration::from_millis(100)),
                     Err(error) => {
                         let mut session = session.lock().unwrap();
                         session.record_process_wait_error(error.to_string());
@@ -450,7 +461,7 @@ impl TerminalSessionManager {
                     }
                 }
             })
-            .map_err(|error| format!("failed to start command reaper thread: {error}"))?;
+            .map_err(|error| format!("failed to start terminal process reaper thread: {error}"))?;
 
         Ok(())
     }
@@ -475,7 +486,9 @@ pub struct CreateTerminalSessionRequest {
     pub name: Option<String>,
     pub cwd: Option<String>,
     pub shell: Option<String>,
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub rows: Option<u16>,
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub cols: Option<u16>,
     pub max_log_entries: Option<usize>,
 }
@@ -560,10 +573,12 @@ trait SessionKiller: Send {
     fn kill(&mut self);
 }
 
+#[cfg(not(target_os = "windows"))]
 struct PtySessionKiller {
     inner: Box<dyn ChildKiller + Send>,
 }
 
+#[cfg(not(target_os = "windows"))]
 impl SessionKiller for PtySessionKiller {
     fn kill(&mut self) {
         let _ = self.inner.kill();
@@ -609,6 +624,10 @@ impl TerminalSession {
         self.snapshot.clone()
     }
 
+    fn is_interactive(&self) -> bool {
+        self.writer.is_some()
+    }
+
     fn rename(&mut self, name: String) -> Result<(), String> {
         let trimmed = name.trim();
         if trimmed.is_empty() {
@@ -643,6 +662,10 @@ impl TerminalSession {
         let trimmed = command.trim();
         if trimmed.is_empty() {
             return Err("terminal command cannot be empty".into());
+        }
+
+        if is_clear_terminal_command(trimmed) {
+            self.clear_logs();
         }
 
         let Some(writer) = self.writer.as_mut() else {
@@ -691,11 +714,19 @@ impl TerminalSession {
         self.touch("terminal output received");
     }
 
+    fn clear_logs(&mut self) {
+        self.logs.clear();
+        self.pending_output.clear();
+        self.snapshot.log_line_count = 0;
+        self.touch("terminal cleared");
+    }
+
     fn record_reader_error(&mut self, message: String) {
         self.snapshot.last_event = Some(format!("reader error: {message}"));
         self.touch("reader error");
     }
 
+    #[cfg(not(target_os = "windows"))]
     fn record_exit(&mut self, exit_result: Result<portable_pty::ExitStatus, String>) {
         match exit_result {
             Ok(status) => {
@@ -764,17 +795,88 @@ fn unix_timestamp_ms() -> u64 {
         .unwrap_or_default()
 }
 
+fn is_clear_terminal_command(command: &str) -> bool {
+    matches!(command.trim().to_ascii_lowercase().as_str(), "clear" | "cls")
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use std::{
+        fs,
         thread,
         time::{Duration, Instant},
     };
 
     use super::*;
 
+    fn wait_for_log(
+        manager: &TerminalSessionManager,
+        session_id: u64,
+        needle: &str,
+    ) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let logs = manager.read_recent_logs(session_id, Some(200)).unwrap();
+            if logs.entries.iter().any(|line| line.contains(needle)) {
+                return logs.entries;
+            }
+
+            assert!(
+                Instant::now() < deadline,
+                "terminal logs did not contain {needle:?}; status={:?} exit={:?} event={:?} shell={:?} args={:?} logs={:?}",
+                {
+                    let snapshot = manager
+                        .get_session(session_id)
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .snapshot();
+                    snapshot.status
+                },
+                {
+                    let snapshot = manager
+                        .get_session(session_id)
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .snapshot();
+                    snapshot.exit_code
+                },
+                {
+                    let snapshot = manager
+                        .get_session(session_id)
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .snapshot();
+                    snapshot.last_event
+                },
+                {
+                    let snapshot = manager
+                    .get_session(session_id)
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .snapshot();
+                    snapshot.shell
+                },
+                {
+                    let snapshot = manager
+                        .get_session(session_id)
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .snapshot();
+                    snapshot.shell_args
+                },
+                logs.entries
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     #[test]
-    fn windows_create_session_with_command_uses_hidden_process_session() {
+    fn windows_create_session_with_command_uses_interactive_shell_pty() {
         let manager = TerminalSessionManager::new();
         let snapshot = manager
             .create_session_with_command(CreateTerminalSessionWithCommandRequest {
@@ -790,37 +892,70 @@ mod tests {
             })
             .unwrap();
 
-        assert!(snapshot.shell.to_ascii_lowercase().ends_with("whoami.exe"));
-        assert!(snapshot.shell_args.is_empty());
+        assert!(snapshot.shell.to_ascii_lowercase().contains("powershell"));
+        assert_eq!(snapshot.status, TerminalSessionStatus::Running);
+        wait_for_log(&manager, snapshot.session_id, "\\");
+    }
 
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            let logs = manager.read_recent_logs(snapshot.session_id, Some(200)).unwrap();
-            let final_snapshot = manager
-                .get_session(snapshot.session_id)
+    #[test]
+    fn windows_user_terminal_session_uses_interactive_shell_builtins() {
+        let root = std::env::temp_dir().join(format!(
+            "gtum-pty-shell-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .lock()
-                .unwrap()
-                .snapshot();
+                .as_millis()
+        ));
+        let child = root.join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(root.join("root-marker.txt"), "root").unwrap();
+        fs::write(child.join("child-marker.txt"), "child").unwrap();
 
-            if logs
-                .entries
-                .iter()
-                .any(|line| !line.trim().is_empty())
-                && final_snapshot.status == TerminalSessionStatus::Exited
-            {
-                assert_eq!(final_snapshot.exit_code, Some(0));
-                break;
-            }
+        let manager = TerminalSessionManager::new();
+        let snapshot = manager
+            .create_session(CreateTerminalSessionRequest {
+                name: Some("user".into()),
+                cwd: Some(root.to_string_lossy().into_owned()),
+                shell: None,
+                rows: None,
+                cols: None,
+                max_log_entries: Some(200),
+            })
+            .unwrap();
 
-            assert!(
-                Instant::now() < deadline,
-                "command session did not finish in time; status={:?} event={:?} logs={:?}",
-                final_snapshot.status,
-                final_snapshot.last_event,
-                logs.entries
-            );
-            thread::sleep(Duration::from_millis(100));
-        }
+        assert!(snapshot.shell.to_ascii_lowercase().contains("powershell"));
+
+        manager
+            .execute_command(snapshot.session_id, "dir".into())
+            .unwrap();
+        wait_for_log(&manager, snapshot.session_id, "root-marker.txt");
+
+        manager
+            .execute_command(snapshot.session_id, "cd child".into())
+            .unwrap();
+        manager
+            .execute_command(snapshot.session_id, "Write-Output (Get-Location).Path".into())
+            .unwrap();
+        wait_for_log(&manager, snapshot.session_id, child.to_string_lossy().as_ref());
+
+        manager
+            .execute_command(snapshot.session_id, "ls".into())
+            .unwrap();
+        wait_for_log(&manager, snapshot.session_id, "child-marker.txt");
+
+        manager
+            .execute_command(snapshot.session_id, "clear".into())
+            .unwrap();
+        manager
+            .execute_command(snapshot.session_id, "Write-Output GTUM_AFTER_CLEAR".into())
+            .unwrap();
+        let logs = wait_for_log(&manager, snapshot.session_id, "GTUM_AFTER_CLEAR");
+        assert!(
+            !logs.iter().any(|line| line.contains("root-marker.txt")),
+            "clear should remove older terminal logs; logs={logs:?}"
+        );
+
+        let _ = manager.close_session(snapshot.session_id);
+        let _ = fs::remove_dir_all(root);
     }
 }

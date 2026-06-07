@@ -82,7 +82,8 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/widgets/app-shell/ui/Titlebar.tsx` and `src/widgets/app-shell/ui/StatusBar.tsx` are the first extracted TSX/FSD app-shell components. They preserve the uploaded design class names and visible shell contract.
    - `src/prototype.jsx` owns the native folder picker behavior, then routes project overview and file reads through `src/shared/api/runtimeProjects.ts`.
    - `src/shared/api/runtimeWorkspace.ts` is the typed frontend seam for workspace restore and repeated-use persistence. The prototype reads the runtime workspace snapshot on desktop startup, reopens the last project through `runtimeProjects.ts`, and persists successful runtime-backed project opens.
-   - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for user-owned terminal runtime sessions. The prototype uses it for user-created PTY tabs, log polling, and tab close termination. Agent approval decisions must not call this seam to create command tabs or write reviewed commands into existing terminals.
+   - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for user-owned terminal runtime sessions. The prototype uses it for user-created PTY tabs, user-submitted terminal input, log polling, and tab close termination. Agent approval decisions must not call this seam to create command tabs or write reviewed commands into existing terminals.
+   - `src/shared/api/runtimeAgentJobs.ts` is the typed frontend seam for agent-owned background execution. Approved agent commands use this job surface and stream/log through the Agent panel/task history path instead of mutating the center terminal.
    - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for provider connection snapshots, disconnects, and `begin_agent_login` validation. It does not own terminal creation; setup guidance stays in the Agent panel.
    - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics, provider capabilities, and `request_agent_suggestions`. The prototype uses it for runtime-backed model/attachment metadata and Codex suggestion requests; when Tauri is unavailable, browser preview shows a runtime-unavailable state instead of canned agent replies.
    - Desktop runtime provider flows must not silently fall back to prototype data. Non-`Codex` providers surface an explicit deferred state. Codex command-bearing responses remain reviewable in the Agent panel until explicit approval; `Allow once` and `Always allow` record the decision in the Agent panel without terminal execution.
@@ -183,7 +184,11 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - enforces project-root containment and the current binary/large-file fallback rules
 - [`src-tauri/src/runtime/pty/mod.rs`](../src-tauri/src/runtime/pty/mod.rs)
   - owns PTY session creation, recent log reads, command injection, reader/reaper threads, and bounded log buffers
-  - also owns Windows approved-command output sessions created through `create_terminal_session_with_command`; those sessions run direct shell-free `.exe`/`.com` processes, capture stdout/stderr into runtime logs, and reject shell syntax or batch shims instead of launching an interactive shell
+  - on Windows, user-created center terminal sessions use a hidden persistent PowerShell-first shell process with stdin/stdout pipes, so user-submitted commands such as `dir`, `cd`, `ls`, and `clear` keep shell state without opening an external console window
+  - keeps `create_terminal_session_with_command` as a terminal-owned command-output helper, but Agent-panel approval must not route through it because center terminal surfaces are user-owned
+- `src-tauri/src/runtime/agent_jobs.rs`
+  - owns agent-approved background process jobs, hidden subprocess spawning, stdout/stderr capture, cancellation, and bounded job logs
+  - uses shell-free Windows command resolution for direct `.exe`/`.com` execution and rejects shell syntax or batch shims without opening center terminal tabs
 - [`src-tauri/src/runtime/auth/mod.rs`](../src-tauri/src/runtime/auth/mod.rs)
   - manages provider connection state and persistence
   - the current real daily-use baseline is `Codex`, while `Claude` remains deferred
@@ -213,6 +218,13 @@ The current commands group into these domains:
   - `close_terminal_session`
   - `read_terminal_session_logs`
   - `execute_terminal_session_command`
+- agent jobs
+  - `create_agent_job`
+  - `read_agent_job_logs`
+  - `cancel_agent_job`
+- file edits
+  - `write_project_file`
+  - `apply_project_patch`
 - provider/auth
   - `list_agent_connections`
   - `begin_agent_login`

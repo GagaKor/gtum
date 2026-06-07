@@ -3052,6 +3052,26 @@ body.resizing-h-left, body.resizing-h-right {
 .group-status .badge.failed  { color: var(--err); border-color: color-mix(in oklab, var(--err) 40%, var(--border)); }
 .group-status .badge.passing { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 30%, var(--border)); }
 .group-status .badge.idle    { color: var(--text-dim); }
+.group-status-action {
+  appearance: none;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  font: inherit;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.group-status-action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.group-status-action:disabled {
+  opacity: .45;
+  cursor: default;
+}
 
 .tab-body {
   flex: 1;
@@ -3066,6 +3086,60 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .tab-body::-webkit-scrollbar { width: 10px; height: 10px; }
 .tab-body::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; border: 3px solid var(--bg); }
+
+.terminal-surface {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.terminal-input-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-deep);
+  font-family: var(--font-mono);
+}
+.terminal-input-prompt {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.terminal-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.terminal-input::placeholder { color: var(--text-faint); }
+.terminal-input:disabled { color: var(--text-faint); cursor: not-allowed; }
+.terminal-input-send {
+  appearance: none;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  padding: 0 9px;
+}
+.terminal-input-send:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.terminal-input-send:disabled {
+  opacity: .45;
+  cursor: default;
+}
 
 /* ── Code editor view ─────────────────────────────────────────── */
 .editor-body {
@@ -3082,6 +3156,26 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .editor-body::-webkit-scrollbar { width: 10px; height: 10px; }
 .editor-body::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; border: 3px solid var(--bg); }
+.editor-textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+  padding: 12px 18px 60px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: inherit;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.editor-textarea:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
 .editor-gutter {
   flex-shrink: 0;
   padding: 12px 10px 12px 14px;

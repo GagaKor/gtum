@@ -98,7 +98,7 @@ test('executes commands and converts recent PTY logs into terminal lines', async
   expect(snapshot.lastEvent).toBe('session created')
   expect(logs.lines).toEqual([
     { kind: 'log', text: 'ready' },
-    { kind: 'log', text: '$ echo ok' },
+    { kind: 'cmd', text: 'echo ok' },
   ])
 })
 

@@ -15,6 +15,7 @@ import {
   providerViewStateFromConnection,
 } from './shared/api/runtimeAgentAuth'
 import { createAgentSuggestionRuntimeService } from './shared/api/runtimeAgentSuggestions'
+import { createAgentJobRuntimeService } from './shared/api/runtimeAgentJobs'
 import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
 import { createWorkspaceRuntimeService } from './shared/api/runtimeWorkspace'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
@@ -931,6 +932,7 @@ function tabFromFile(path, name) {
     displayPath: path,
     lang: c?.lang || "txt",
     content: c?.text || "// (no content for this file in the prototype)",
+    contentHash: null,
     isText: true,
     truncated: false,
     dirty: !!c?.dirty,
@@ -945,6 +947,7 @@ const projectRuntimeService = createProjectRuntimeService({
 });
 const agentAuthRuntimeService = createAgentAuthRuntimeService();
 const agentSuggestionRuntimeService = createAgentSuggestionRuntimeService();
+const agentJobRuntimeService = createAgentJobRuntimeService();
 const terminalRuntimeService = createTerminalRuntimeService();
 const workspaceRuntimeService = createWorkspaceRuntimeService();
 
@@ -1034,6 +1037,10 @@ async function readRuntimeProjectOverview(path) {
 
 async function readRuntimeProjectFile(project, filePath, fallbackName) {
   return projectRuntimeService.readProjectFile(project, filePath, fallbackName);
+}
+
+async function saveRuntimeProjectFile(project, fileTab) {
+  return projectRuntimeService.saveProjectFile(project, fileTab);
 }
 
 // Walk file tree to find the full path of a given node.
@@ -2010,7 +2017,7 @@ const DROP_EDGE_RATIO = 0.18; // top/right/bottom/left ~ 18% wide each
 const MIN_PANE_PCT = 8;       // minimum % of a child after resizing
 
 // ???? Code editor view ????????????????????????????????????????????????????????????????????????????????????????????????????????
-function CodeEditor({ tab }) {
+function CodeEditor({ tab, onChangeFile }) {
   const lines = (tab.content || "").split("\n");
   return (
     <div className="editor-body">
@@ -2019,44 +2026,69 @@ function CodeEditor({ tab }) {
           <div key={i} className="editor-ln">{i + 1}</div>
         ))}
       </div>
-      <div className="editor-code">
-        {lines.map((line, i) => (
-          <div key={i} className="editor-line">
-            {tokenizeLine(line).map((tok, j) => (
-              <span key={j} className={"tk-" + tok.k}>{tok.t}</span>
-            ))}
-          </div>
-        ))}
-      </div>
+      <textarea
+        className="editor-textarea"
+        value={tab.content || ""}
+        spellCheck={false}
+        disabled={tab.isText === false}
+        onChange={(event) => onChangeFile?.(tab.id, event.target.value)}
+      />
     </div>
   );
 }
 
 // ???? Tab body ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
-function TabBody({ tab }) {
+function TabBody({ tab, onChangeFile, onSubmitTerminalInput }) {
   if (!tab) return null;
-  if (tab.type === "editor") return <CodeEditor tab={tab} />;
-  return <TerminalBody tab={tab} />;
+  if (tab.type === "editor") return <CodeEditor tab={tab} onChangeFile={onChangeFile} />;
+  return <TerminalBody tab={tab} onSubmitInput={onSubmitTerminalInput} />;
 }
 
-function TerminalBody({ tab }) {
+function TerminalBody({ tab, onSubmitInput }) {
   const bodyRef = React.useRef(null);
+  const [draft, setDraft] = React.useState("");
+  const canSubmit = Boolean(tab.runtimeBacked && tab.terminalSessionId != null && tab.runtimeStatus !== "unavailable");
   React.useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [tab?.id, tab?.lines?.length]);
+
+  const submit = (event) => {
+    event.preventDefault();
+    const command = draft.trim();
+    if (!command) return;
+    setDraft("");
+    onSubmitInput?.(tab.id, command);
+  };
+
   return (
-    <div className="tab-body" ref={bodyRef}>
-      {tab.lines.map((ln, i) => (
-        <div key={i} className={"term-line " + (ln.kind === "cmd" ? "cmd" : (ln.color || ""))}>
-          {ln.text}
-        </div>
-      ))}
-      {tab.status === "running" && <div className="term-line"><span className="term-cursor" /></div>}
-      {tab.status === "idle" && (
-        <div className="term-line">
-          <span style={{ color: "var(--accent)" }}>$</span> <span className="term-cursor" />
-        </div>
-      )}
+    <div className="terminal-surface">
+      <div className="tab-body" ref={bodyRef}>
+        {tab.lines.map((ln, i) => (
+          <div key={i} className={"term-line " + (ln.kind === "cmd" ? "cmd" : (ln.color || ""))}>
+            {ln.text}
+          </div>
+        ))}
+        {tab.status === "running" && <div className="term-line"><span className="term-cursor" /></div>}
+        {tab.status === "idle" && (
+          <div className="term-line">
+            <span style={{ color: "var(--accent)" }}>$</span> <span className="term-cursor" />
+          </div>
+        )}
+      </div>
+      <form className="terminal-input-form" onSubmit={submit}>
+        <span className="terminal-input-prompt">$</span>
+        <input
+          className="terminal-input"
+          value={draft}
+          disabled={!canSubmit}
+          spellCheck={false}
+          placeholder={canSubmit ? "Type a command for this terminal" : "Open a runtime-backed terminal"}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button className="terminal-input-send" type="submit" disabled={!canSubmit || !draft.trim()}>
+          Run
+        </button>
+      </form>
     </div>
   );
 }
@@ -2220,6 +2252,7 @@ function Group({
   onSetActiveTab, onCloseTab, onNewTab,
   onReorderTab, onDropTabFromAnother, onDropTabOnEdge,
   onTabContextMenu, onFocusGroup,
+  onChangeFile, onSaveFile, onSubmitTerminalInput,
   dragRef, onTabDragStart, onTabDragEnd,
 }) {
   const contentRef = React.useRef(null);
@@ -2314,9 +2347,21 @@ function Group({
                 {activeTab.dirty && <span className="dirty-dot" />}
                 <span className="sep">/</span>
                 <span className="cmd">{activeTab.lang}</span>
+                <button
+                  className="group-status-action"
+                  type="button"
+                  disabled={!activeTab.dirty || activeTab.isText === false || activeTab.truncated}
+                  onClick={() => onSaveFile?.(activeTab)}
+                >
+                  Save
+                </button>
               </div>
             )}
-            <TabBody tab={activeTab} />
+            <TabBody
+              tab={activeTab}
+              onChangeFile={onChangeFile}
+              onSubmitTerminalInput={onSubmitTerminalInput}
+            />
           </>
         ) : (
           <EmptyGroup lang={lang} onNewTab={() => onNewTab(group.id)} />
@@ -2470,6 +2515,9 @@ function Workspace({
     onDropTabFromAnother: (src, toGroupId, idx) => actions.moveTab(src.tabId, src.groupId, toGroupId, idx),
     onDropTabOnEdge: (src, targetGroupId, position) => actions.dropTabOnEdge(src.tabId, src.groupId, targetGroupId, position),
     onFocusGroup: actions.setActiveGroup,
+    onChangeFile: actions.changeFile,
+    onSaveFile: actions.saveFile,
+    onSubmitTerminalInput: actions.submitTerminalInput,
     onTabContextMenu,
     onResizeSizes: (sizes) => { /* sizes persisted via local state for now */ },
   };
@@ -5140,10 +5188,123 @@ function App() {
           ...tab,
           status: "failed",
           lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
-        })));
+          })));
       });
     },
-  }), [closeRuntimeTabs, lang, activeProject.path, activeProject.branch, activeProject.runtimeBacked]);
+    changeFile: (tabId, content) => {
+      setWorkspace((w) => updateTab(w, tabId, (tab) => ({
+        ...tab,
+        content,
+        dirty: true,
+      })));
+    },
+    saveFile: async (fileTab) => {
+      const current = findTab(workspaceRef.current, fileTab.id)?.tab || fileTab;
+      if (current.type !== "editor") return;
+      if (current.truncated) {
+        pushProjectMessage("Reload the full file before saving; truncated previews cannot be written.");
+        return;
+      }
+
+      try {
+        const saved = await saveRuntimeProjectFile(activeProject, current);
+        setWorkspace((w) => updateTab(w, current.id, (tab) => {
+          if (tab.content !== current.content) {
+            return {
+              ...tab,
+              contentHash: saved.contentHash,
+              dirty: true,
+            };
+          }
+
+          return {
+            ...tab,
+            ...saved,
+            id: tab.id,
+            dirty: false,
+          };
+        }));
+        setHistory((prev) => [...prev, {
+          at: nowHm(),
+          tab: "editor",
+          cmd: `save ${saved.displayPath || saved.path}`,
+          ok: true,
+        }]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pushProjectMessage(`Could not save the file: ${message}`);
+      }
+    },
+    submitTerminalInput: async (tabId, command) => {
+      const text = String(command || "").trim();
+      if (!text) return;
+
+      const found = findTab(workspaceRef.current, tabId);
+      const tab = found?.tab;
+      if (!tab?.runtimeBacked || tab.terminalSessionId == null) {
+        setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
+          ...currentTab,
+          status: "failed",
+          lines: [
+            ...currentTab.lines,
+            { kind: "cmd", text },
+            {
+              kind: "log",
+              text: "Open a runtime-backed terminal before sending input.",
+              color: "err",
+            },
+          ],
+        })));
+        return;
+      }
+
+      setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
+        ...currentTab,
+        status: "running",
+        cmd: text,
+        lines: [...currentTab.lines, { kind: "cmd", text }],
+      })));
+
+      try {
+        const snapshot = await terminalRuntimeService.executeCommand(tab.terminalSessionId, text);
+        let logs = null;
+        try {
+          logs = await terminalRuntimeService.readLogs(tab.terminalSessionId, 400);
+        } catch {
+          logs = null;
+        }
+        setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
+          ...currentTab,
+          status: logs?.status || currentTab.status,
+          runtimeStatus: logs?.runtimeStatus || snapshot.status,
+          runtimeUpdatedAt: logs?.updatedAt || snapshot.updatedAt,
+          lastLogLineCount: logs?.logLineCount ?? snapshot.logLineCount,
+          lines: logs?.lines?.length ? logs.lines : currentTab.lines,
+        })));
+        setHistory((prev) => [...prev, {
+          at: nowHm(),
+          tab: tab.title || "terminal",
+          cmd: text,
+          ok: true,
+        }]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
+          ...currentTab,
+          status: "failed",
+          lines: [...currentTab.lines, { kind: "log", text: message, color: "err" }],
+        })));
+      }
+    },
+  }), [
+    closeRuntimeTabs,
+    lang,
+    activeProject,
+    activeProject.path,
+    activeProject.branch,
+    activeProject.runtimeBacked,
+    pushProjectMessage,
+  ]);
 
   // ???? Send / approve flow uses workspace lookups ????????????????????????????????????????????????
   const activeTab = activeTabOf(workspace);
@@ -5386,6 +5547,42 @@ function App() {
     }
 
     setApproval(null);
+    const jobResults = [];
+    for (let index = 0; index < sugg.commands.length; index += 1) {
+      const command = sugg.commands[index];
+      try {
+        const job = await agentJobRuntimeService.createProjectJob(
+          activeProject,
+          command.cmd,
+          `agent-${sugg.id || "command"}-${index + 1}`,
+        );
+        jobResults.push({ command: command.cmd, job, ok: job.status !== "failed" });
+        setHistory((prev) => [...prev, {
+          at,
+          tab: "agent",
+          cmd: command.cmd,
+          ok: job.status !== "failed",
+        }]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        jobResults.push({ command: command.cmd, error: message, ok: false });
+        setHistory((prev) => [...prev, {
+          at,
+          tab: "agent",
+          cmd: command.cmd,
+          ok: false,
+        }]);
+      }
+    }
+
+    const jobSummary = jobResults.map((result) => {
+      if (result.job?.jobId != null && result.job.jobId >= 0) {
+        return `\`${result.command}\` -> agent job #${result.job.jobId}`;
+      }
+      if (result.error) return `\`${result.command}\` -> ${result.error}`;
+      return `\`${result.command}\` -> ${result.job?.lastEvent || "agent job unavailable"}`;
+    }).join("\n");
+
     setMessages((prev) => [
       ...prev.map(markDecision),
       {
@@ -5393,10 +5590,10 @@ function App() {
         role: "assistant",
         roleLabel: "Codex",
         at,
-        content: t(lang, "decisionKept"),
+        content: `${t(lang, "decisionKept")}\n${jobSummary}`,
       },
     ]);
-  }, [lang, setMessages]);
+  }, [activeProject, lang, setMessages]);
 
   const openOAuth = (providerId) => setOauth({ providerId });
   const handleProviderConnect = async (providerId) => {

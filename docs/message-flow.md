@@ -47,10 +47,11 @@ This document exceeds 200 lines. Do not reread every flow by default.
 2. Browser/Vite preview does not expose bundled files. The file tree remains empty until a runtime-backed project is opened.
 3. The current legacy prototype and future extracted TSX components route file reads through [`src/shared/api/runtimeProjects.ts`](../src/shared/api/runtimeProjects.ts).
 4. If the active project is runtime-backed, `runtimeProjects.ts` calls `invoke("read_project_file", { projectPath, filePath })`.
-5. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) rejects paths outside the active project root and returns a `ProjectFileSnapshot`.
-6. `runtimeProjects.ts` maps the snapshot into the editor tab shape, using `displayPath`, text content, language extension, and bounded binary/truncated fallbacks. Browser preview may use injected test readers, but the product shell does not ship curated file content.
+5. [`src-tauri/src/runtime/filesystem/mod.rs`](../src-tauri/src/runtime/filesystem/mod.rs) rejects paths outside the active project root and returns a `ProjectFileSnapshot` with a stable `contentHash`.
+6. `runtimeProjects.ts` maps the snapshot into the editor tab shape, using `displayPath`, text content, content hash, language extension, and bounded binary/truncated fallbacks. Browser preview may use injected test readers, but the product shell does not ship curated file content.
 7. The opened file is inserted into the current workbench group through the existing prototype `openFile` store action.
-8. Line anchors and terminal-log file references are still deferred until terminal/session integration is reintroduced.
+8. User edits stay in the center workbench buffer until the user presses `Save`. Save calls `write_project_file` with the last read `contentHash`; if the file changed on disk, the runtime rejects the write and the UI keeps the tab dirty for reload/manual resolution. Truncated previews cannot be saved.
+9. Line anchors and terminal-log file references are still deferred until terminal/session integration is reintroduced.
 
 ## Flow 3. Provider Diagnostics And Codex Connect
 
@@ -109,11 +110,12 @@ The active design prototype now calls this runtime command through [`src/shared/
 11. `src/prototype.jsx` owns the agent decision UI state. Codex responses render as conversational agent turns: pending turns show inline progress, completed reply-only turns show normal assistant copy, numbered-choice replies add a decision event card, and command-bearing turns add a compact execution-suggestion row that shows the command count, risk, and decision state.
 12. Command-bearing turns must not rely on a generic assistant sentence or an intermediate `Review command` step. The detailed permission request appears only when a decision is pending, directly above the composer, with the command preview, risk, reason, and direct `Allow once`, `Always allow`, and `Deny` actions. `Deny` records the refusal in the right panel. `Allow once` and `Always allow` may mark the decision as approved, but approval is not permission to mutate the center workbench terminal surface.
 13. Agent-tab requests, permission cards, and approved agent work must never create, select, rename, split, focus, write into, close, or otherwise mutate any user-visible center terminal tab or pane. The center terminal is exclusively user-owned before, during, and after approval. Implementations must not route agent approval through `create_terminal_session`, `create_terminal_session_with_command`, `execute_terminal_session_command`, or any future equivalent if the result appears in the center terminal/workbench.
-14. If approved agent work needs execution, it must use an isolated agent-owned background job surface or hidden runtime record that is visible only in the right agent workspace and task history. If that isolated execution contract does not exist for the platform or command, the app must show an explicit unavailable/manual-run state instead of opening or touching a center terminal tab.
+14. If approved agent work needs execution, it must use `create_agent_job` through the isolated agent-owned background job surface that is visible only in the right agent workspace and task history. If that isolated execution contract does not exist for the platform or command, the app must show an explicit unavailable/manual-run state instead of opening or touching a center terminal tab.
 15. Windows-approved agent commands must not launch `cmd.exe`, `powershell.exe`, `pwsh.exe`, batch shims, shell syntax, or a long-lived PTY shell. Such commands are rejected into the agent/worklog state for manual terminal execution by the user. This rejection must not open a center terminal tab.
 16. If a Codex suggestion targets the current tab but that tab is not a dedicated agent-owned execution surface, the app must keep the suggestion in the right panel and show the unavailable/manual-run state rather than silently simulating success or creating a terminal tab.
 17. Browser preview must keep only deterministic empty fallback state and must not simulate agent execution, provider answers, project files, or terminal success.
-18. Task history records request and approval outcomes.
+18. Agent patch application uses `apply_project_patch`, which applies explicit file-content edits under the project root with per-file content-hash guards. The runtime preflights every edit for path, size, duplicate target, binary overwrite, and expected-hash validity before writing any file so a stale edit cannot partially apply a multi-file patch. It must not type into the center editor, and the center editor refreshes through the normal file snapshot path after application.
+19. Task history records request, approval, file-save, patch, and agent-job outcomes.
 
 ## Flow 6. Restore And Repeated Use
 

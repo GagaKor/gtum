@@ -65,8 +65,18 @@ Before using web-preview results as evidence, the current sprint or release pass
 - persist auth, workspace, and telegram state into distinct `app_data_dir` files
 - open a real project folder through the native picker
 - create, read, execute, and close PTY-backed terminal tabs
+- type user-owned commands into the center terminal and verify `whoami`, `dir`, `cd`, `ls`, and `clear` reach the real runtime terminal session
+- open, edit, and save real project files through `write_project_file` with content-hash conflict protection
+- run approved agent commands through agent-owned background jobs without creating or mutating center terminal tabs
 - validate an existing Codex CLI ChatGPT session through `Connect Codex`, keep setup guidance in the Agent panel when login is missing, reconnect Codex after the user completes CLI login manually, and request a real Codex suggestion
 - resolve Codex CLI from the installed app environment even when the process `PATH` does not include the shell-installed `codex` command
+
+## 2026-06-07 Workbench Runtime Slice
+
+- Center terminal tabs now expose a user-owned input form that submits commands into the runtime-backed terminal session. On Windows this uses a hidden persistent shell process, preferring PowerShell, so user commands such as `dir`, `cd`, `ls`, and `clear` work without opening an external console window. `clear` and `cls` also clear the runtime terminal log buffer so the app surface behaves like a terminal, not only a command transcript.
+- Center editor tabs now use real editable buffers and save through `write_project_file`; saves include the last `contentHash` and are rejected if the file changed on disk.
+- Agent patch application is represented by `apply_project_patch`, a project-root-checked file-content edit contract with per-file content-hash guards and all-edit preflight before any write.
+- Approved agent commands now use `create_agent_job` through `src/shared/api/runtimeAgentJobs.ts`, not `create_terminal_session_with_command` or `execute_terminal_session_command`; center terminal tabs remain untouched by approval.
 
 ## 2026-06-01 Windows Installable Smoke
 

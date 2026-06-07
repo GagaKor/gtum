@@ -34,6 +34,7 @@ export type RuntimeProjectFileSnapshot = {
   filePath: string;
   displayPath?: string | null;
   content?: string | null;
+  contentHash?: string | null;
   isText?: boolean;
   truncated?: boolean;
 };
@@ -70,6 +71,7 @@ export type ProjectFileSnapshot = {
   displayPath: string;
   lang: string;
   content: string;
+  contentHash: string | null;
   isText: boolean;
   truncated: boolean;
   dirty: boolean;
@@ -122,6 +124,14 @@ export type ProjectRuntimeService = {
     filePath: string,
     fallbackName?: string,
   ): Promise<ProjectFileSnapshot>;
+  saveProjectFile(
+    project: Pick<RuntimeProject, "path" | "runtimeBacked"> | null | undefined,
+    file: Pick<ProjectFileSnapshot, "path" | "content" | "contentHash">,
+  ): Promise<ProjectFileSnapshot>;
+  applyProjectPatch(
+    project: Pick<RuntimeProject, "path" | "runtimeBacked"> | null | undefined,
+    edits: Array<Pick<ProjectFileSnapshot, "path" | "content" | "contentHash">>,
+  ): Promise<ProjectFileSnapshot[]>;
 };
 
 const FALLBACK_PROJECT: RuntimeProject = {
@@ -217,6 +227,7 @@ export const fileSnapshotFromFallback = (
     displayPath,
     lang: extensionOf(displayPath),
     content: `// ${displayPath}\n// Desktop runtime is not connected. Open a real project folder in the installed app to read file contents.`,
+    contentHash: null,
     isText: true,
     truncated: false,
     dirty: false,
@@ -250,6 +261,7 @@ export const fileSnapshotFromRuntime = (
     displayPath,
     lang: extensionOf(displayPath),
     content: content + truncatedNote,
+    contentHash: snapshot.contentHash || null,
     isText,
     truncated: Boolean(snapshot.truncated),
     dirty: false,
@@ -310,6 +322,43 @@ export const createProjectRuntimeService = (
       });
 
       return fileSnapshotFromRuntime(snapshot, fallbackName);
+    },
+    async saveProjectFile(project, file): Promise<ProjectFileSnapshot> {
+      if (!project?.runtimeBacked || !hasRuntime()) {
+        throw new Error("Saving files is available in the installed desktop app after opening a real project.");
+      }
+
+      const snapshot = await invokeRuntime<RuntimeProjectFileSnapshot>("write_project_file", {
+        request: {
+          projectPath: project.path,
+          filePath: file.path,
+          content: file.content,
+          expectedContentHash: file.contentHash || undefined,
+        },
+      });
+
+      return fileSnapshotFromRuntime(snapshot);
+    },
+    async applyProjectPatch(project, edits): Promise<ProjectFileSnapshot[]> {
+      if (!project?.runtimeBacked || !hasRuntime()) {
+        throw new Error("Applying patches is available in the installed desktop app after opening a real project.");
+      }
+
+      const result = await invokeRuntime<{ appliedFiles: RuntimeProjectFileSnapshot[] }>(
+        "apply_project_patch",
+        {
+          request: {
+            projectPath: project.path,
+            edits: edits.map((edit) => ({
+              filePath: edit.path,
+              content: edit.content,
+              expectedContentHash: edit.contentHash || undefined,
+            })),
+          },
+        },
+      );
+
+      return result.appliedFiles.map((snapshot) => fileSnapshotFromRuntime(snapshot));
     },
   };
 };
