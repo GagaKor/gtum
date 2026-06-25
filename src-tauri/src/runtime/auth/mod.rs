@@ -527,3 +527,61 @@ fn unix_timestamp_ms() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static UNIQUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let counter = UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "gtum-auth-{label}-{}-{}-{}",
+            std::process::id(),
+            unix_timestamp_ms(),
+            counter
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn remove_dir(path: &Path) {
+        let _ = fs::remove_dir_all(path);
+    }
+
+    fn claude_connection(manager: &AgentAuthManager) -> AgentConnectionSnapshot {
+        manager
+            .runtime_snapshot()
+            .connections
+            .into_iter()
+            .find(|connection| connection.provider == AgentProvider::Claude)
+            .expect("claude connection should exist")
+    }
+
+    #[test]
+    fn persists_and_reloads_connection_state_round_trip() {
+        let dir = unique_temp_dir("round-trip");
+        let storage_path = dir.join("agent-auth.json");
+
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+
+        // begin_login for the deferred Claude provider is environment-independent:
+        // it deterministically lands the connection in an Error state and persists.
+        let begun = manager.begin_login(AgentProvider::Claude, None);
+        assert_eq!(begun.status, AgentConnectionStatus::Error);
+
+        let reloaded = AgentAuthManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        let restored = claude_connection(&reloaded);
+
+        assert_eq!(restored.status, AgentConnectionStatus::Error);
+        assert_eq!(restored.last_error, begun.last_error);
+        assert_eq!(restored.last_login_attempt_at, begun.last_login_attempt_at);
+
+        remove_dir(&dir);
+    }
+}

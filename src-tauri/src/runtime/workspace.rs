@@ -213,3 +213,96 @@ fn unix_timestamp_ms() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static UNIQUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let counter = UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "gtum-workspace-{label}-{}-{}-{}",
+            std::process::id(),
+            unix_timestamp_ms(),
+            counter
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn remove_dir(path: &Path) {
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn persists_and_reloads_remembered_project_round_trip() {
+        let dir = unique_temp_dir("round-trip");
+        let storage_path = dir.join("workspace-state.json");
+
+        let manager = WorkspaceStateManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        manager
+            .remember_project("/tmp/project-alpha".into())
+            .unwrap();
+        manager
+            .remember_project("/tmp/project-beta".into())
+            .unwrap();
+
+        // A fresh manager pointed at the same file must restore the prior state.
+        let reloaded = WorkspaceStateManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        let snapshot = reloaded.runtime_snapshot().snapshot;
+
+        assert_eq!(
+            snapshot.recent_projects,
+            vec![
+                "/tmp/project-beta".to_string(),
+                "/tmp/project-alpha".to_string()
+            ]
+        );
+        assert_eq!(
+            snapshot.last_opened_project_path,
+            Some("/tmp/project-beta".to_string())
+        );
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn persists_and_reloads_saved_snapshot_round_trip() {
+        let dir = unique_temp_dir("save-snapshot");
+        let storage_path = dir.join("workspace-state.json");
+
+        let manager = WorkspaceStateManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        manager
+            .save_snapshot(SaveWorkspaceSnapshotRequest {
+                recent_projects: vec![
+                    "/tmp/one".into(),
+                    "/tmp/two".into(),
+                    "/tmp/one".into(),
+                ],
+                last_opened_project_path: Some("/tmp/two".into()),
+            })
+            .unwrap();
+
+        let reloaded = WorkspaceStateManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        let snapshot = reloaded.runtime_snapshot().snapshot;
+
+        assert_eq!(
+            snapshot.recent_projects,
+            vec!["/tmp/one".to_string(), "/tmp/two".to_string()]
+        );
+        assert_eq!(
+            snapshot.last_opened_project_path,
+            Some("/tmp/two".to_string())
+        );
+
+        remove_dir(&dir);
+    }
+}

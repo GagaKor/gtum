@@ -418,3 +418,114 @@ fn unix_timestamp_ms() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::auth::AgentAuthManager;
+    use crate::runtime::workspace::WorkspaceStateManager;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static UNIQUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let counter = UNIQUE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "gtum-telegram-{label}-{}-{}-{}",
+            std::process::id(),
+            unix_timestamp_ms(),
+            counter
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn remove_dir(path: &Path) {
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn persists_and_reloads_link_and_report_round_trip() {
+        let dir = unique_temp_dir("round-trip");
+        let storage_path = dir.join("telegram-state.json");
+
+        let manager = TelegramBridgeManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        manager.begin_link().unwrap();
+        manager
+            .complete_link(CompleteTelegramLinkRequest {
+                authorization_code: None,
+                chat_label: Some("@gtum_team".into()),
+                fail_reason: None,
+            })
+            .unwrap();
+        manager
+            .create_report(CreateTelegramReportRequest {
+                title: "Nightly build".into(),
+                body: "All green.".into(),
+            })
+            .unwrap();
+        let queued = manager
+            .queue_remote_command(QueueTelegramRemoteCommandRequest {
+                source_label: Some("@gtum_team".into()),
+                summary: "Rerun tests".into(),
+                command: "/rerun-tests".into(),
+                suggested_target: Some(TelegramRemoteCommandTarget::NewTab),
+            })
+            .unwrap();
+
+        let reloaded = TelegramBridgeManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        let snapshot = reloaded.runtime_snapshot();
+
+        assert_eq!(snapshot.bridge.status, TelegramLinkStatus::Connected);
+        assert_eq!(snapshot.bridge.chat_label.as_deref(), Some("@gtum_team"));
+        assert_eq!(snapshot.reports.len(), 1);
+        assert_eq!(snapshot.reports[0].title, "Nightly build");
+        assert_eq!(snapshot.remote_commands.len(), 1);
+        assert_eq!(snapshot.remote_commands[0].command_id, queued.command_id);
+        assert_eq!(
+            snapshot.remote_commands[0].suggested_target,
+            TelegramRemoteCommandTarget::NewTab
+        );
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn three_managers_sharing_a_directory_use_distinct_files() {
+        let dir = unique_temp_dir("distinct-files");
+        let auth_path = dir.join("agent-auth.json");
+        let workspace_path = dir.join("workspace-state.json");
+        let telegram_path = dir.join("telegram-state.json");
+
+        let auth = AgentAuthManager::new();
+        auth.initialize_storage(auth_path.clone()).unwrap();
+        let workspace = WorkspaceStateManager::new();
+        workspace
+            .initialize_storage(workspace_path.clone())
+            .unwrap();
+        let telegram = TelegramBridgeManager::new();
+        telegram.initialize_storage(telegram_path.clone()).unwrap();
+
+        // Each manager must back itself with a distinct on-disk file so that one
+        // manager's writes never clobber another's.
+        assert_ne!(auth_path, workspace_path);
+        assert_ne!(auth_path, telegram_path);
+        assert_ne!(workspace_path, telegram_path);
+        assert!(auth_path.is_file());
+        assert!(workspace_path.is_file());
+        assert!(telegram_path.is_file());
+
+        let paths = [
+            auth.runtime_snapshot().storage_path,
+            workspace.runtime_snapshot().storage_path,
+            telegram.runtime_snapshot().storage_path,
+        ];
+        let unique: std::collections::HashSet<_> = paths.iter().cloned().collect();
+        assert_eq!(unique.len(), 3, "expected three distinct storage paths");
+
+        remove_dir(&dir);
+    }
+}
