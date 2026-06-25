@@ -16,6 +16,12 @@ playwright-report
 test-results
 *.local
 
+# Local-only context / signing secrets (never commit)
+.context
+updater-key
+updater-key.pub
+*.key
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

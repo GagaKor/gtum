@@ -447,6 +447,7 @@ fn unix_timestamp_ms() -> u128 {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AgentJobManager::new())
         .manage(AgentAuthManager::new())
         .manage(TerminalSessionManager::new())
