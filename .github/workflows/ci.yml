@@ -11,6 +11,55 @@ on:
       - master
 
 jobs:
+  version-check:
+    name: Version bump check
+    if: github.event_name == 'pull_request' && github.base_ref == 'master'
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify version bump and sync
+        shell: bash
+        run: |
+          tauri_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          pkg_version="$(node -p "require('./package.json').version")"
+
+          if [ -z "$tauri_version" ] || [ "$tauri_version" = "undefined" ]; then
+            echo "Could not read version from src-tauri/tauri.conf.json." >&2
+            exit 1
+          fi
+
+          echo "PR src-tauri/tauri.conf.json version: ${tauri_version}"
+          echo "PR package.json version:            ${pkg_version}"
+
+          # (b) package.json and tauri.conf.json versions must match.
+          if [ "$pkg_version" != "$tauri_version" ]; then
+            echo "Version mismatch: package.json (${pkg_version}) != src-tauri/tauri.conf.json (${tauri_version})." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin master --depth=1
+          base_version="$(git show origin/master:src-tauri/tauri.conf.json | node -p "JSON.parse(require('fs').readFileSync(0)).version")"
+          echo "origin/master version:              ${base_version}"
+
+          # (a) The PR version must be strictly greater than origin/master.
+          if [ "$tauri_version" = "$base_version" ]; then
+            echo "Version not bumped: src-tauri/tauri.conf.json is still ${tauri_version} on origin/master. Bump it before merging into master." >&2
+            exit 1
+          fi
+
+          highest="$(printf '%s\n%s\n' "$base_version" "$tauri_version" | sort -V | tail -n1)"
+          if [ "$highest" != "$tauri_version" ]; then
+            echo "Version regression: ${tauri_version} is not greater than origin/master version ${base_version}." >&2
+            exit 1
+          fi
+
+          echo "Version ${tauri_version} is a valid bump over origin/master ${base_version}."
+
   validate:
     runs-on: ubuntu-22.04
 
