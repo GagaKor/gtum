@@ -59,7 +59,7 @@ jobs:
           - platform: windows-latest
             args: ""
           - platform: macos-latest
-            args: ""
+            args: "--target universal-apple-darwin"
 
     steps:
       - name: Checkout repository
@@ -91,6 +91,13 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      # macOS leg builds a universal binary so a single update channel serves
+      # both Apple Silicon (aarch64) and Intel (x86_64). Both Rust std targets
+      # must be present for `--target universal-apple-darwin` to link.
+      - name: Add macOS universal Rust targets
+        if: matrix.platform == 'macos-latest'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -103,6 +110,11 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing keys. With bundle.createUpdaterArtifacts enabled,
+          # tauri-action signs the bundles and publishes `latest.json` (the
+          # updater manifest) as a release asset automatically.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: gtum v__VERSION__

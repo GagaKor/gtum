@@ -24,9 +24,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/GagaKor/gtum/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGNEYwMkQ5MzMwNDNEOEMKUldTTVBRUXoyUUpQTHlsSEVVYkZIQ0licHp1WS9oaWNpVFh3d2RycGdjZVRaN2g1VUlERjE1RG0K"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
