@@ -218,6 +218,16 @@ fn read_raw_terminal_output(
 }
 
 #[tauri::command]
+fn resize_terminal_session(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    state.resize_session(session_id, rows, cols)
+}
+
+#[tauri::command]
 fn create_agent_job(
     state: tauri::State<'_, AgentJobManager>,
     request: CreateAgentJobRequest,
@@ -492,6 +502,7 @@ pub fn run() {
             create_terminal_session_with_command,
             write_terminal_input,
             read_raw_terminal_output,
+            resize_terminal_session,
             create_agent_job,
             read_agent_job_logs,
             cancel_agent_job,

@@ -2076,8 +2076,12 @@ function XtermTerminal({ sessionId }) {
       try {
         fitAddon.fit();
       } catch {
-        /* container not measurable yet */
+        return; /* container not measurable yet */
       }
+      // Match the PTY size to the xterm viewport so the shell's line editor
+      // (backspace, cursor moves, prompt redraw) uses the correct width and
+      // does not overwrite earlier output.
+      void terminalRuntimeService.resizeSession(sessionId, term.rows, term.cols);
     };
 
     safeFit();

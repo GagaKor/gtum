@@ -108,6 +108,7 @@ export type TerminalRuntimeService = {
   executeCommand(sessionId: number | null, command: string): Promise<RuntimeTerminalSnapshot>
   writeInput(sessionId: number | null, data: string): Promise<void>
   readRawOutput(sessionId: number | null, from: number): Promise<RawTerminalOutput>
+  resizeSession(sessionId: number | null, rows: number, cols: number): Promise<void>
 }
 
 type RuntimeTerminalOverride = {
@@ -338,6 +339,16 @@ export const createTerminalRuntimeService = (
       return invokeRuntime<RawTerminalOutput>('read_raw_terminal_output', {
         sessionId,
         from,
+      })
+    },
+    async resizeSession(sessionId, rows, cols) {
+      if (!hasRuntime() || sessionId == null) return
+      if (!Number.isFinite(rows) || !Number.isFinite(cols) || rows < 1 || cols < 1) return
+
+      await invokeRuntime<void>('resize_terminal_session', {
+        sessionId,
+        rows: Math.floor(rows),
+        cols: Math.floor(cols),
       })
     },
   }

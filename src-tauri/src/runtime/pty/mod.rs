@@ -165,6 +165,12 @@ impl TerminalSessionManager {
         Ok(session.read_raw_output(from))
     }
 
+    pub fn resize_session(&self, session_id: u64, rows: u16, cols: u16) -> Result<(), String> {
+        let session = self.get_session(session_id)?;
+        let session = session.lock().unwrap();
+        session.resize(rows, cols)
+    }
+
     pub fn execute_command(
         &self,
         session_id: u64,
@@ -356,6 +362,11 @@ impl TerminalSessionManager {
         let mut reader = master
             .try_clone_reader()
             .map_err(|error| format!("failed to create terminal reader: {error}"))?;
+
+        // Keep the master alive on the session so the PTY can be resized to the
+        // xterm viewport; without this the shell's line editor uses the wrong
+        // width and edits corrupt earlier output.
+        session.lock().unwrap().set_master(master);
 
         thread::Builder::new()
             .name(format!("gtum-terminal-reader-{session_id}"))
@@ -628,6 +639,9 @@ struct TerminalSession {
     raw_base: usize,
     child_killer: Option<Box<dyn SessionKiller + Send>>,
     writer: Option<Box<dyn Write + Send>>,
+    // Kept so the PTY can be resized to match the xterm viewport. None for the
+    // Windows piped-shell path, where there is no PTY to resize.
+    master: Option<Box<dyn portable_pty::MasterPty + Send>>,
 }
 
 impl TerminalSession {
@@ -644,6 +658,28 @@ impl TerminalSession {
             raw_base: 0,
             child_killer,
             writer,
+            master: None,
+        }
+    }
+
+    fn set_master(&mut self, master: Box<dyn portable_pty::MasterPty + Send>) {
+        self.master = Some(master);
+    }
+
+    fn resize(&self, rows: u16, cols: u16) -> Result<(), String> {
+        let rows = rows.max(1);
+        let cols = cols.max(1);
+        match self.master.as_ref() {
+            Some(master) => master
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|error| format!("failed to resize terminal: {error}")),
+            // Windows piped shell has no PTY; treat resize as a no-op.
+            None => Ok(()),
         }
     }
 
