@@ -25,6 +25,7 @@ const DEFAULT_COLS: u16 = 80;
 const DEFAULT_LOG_LIMIT: usize = 400;
 const MIN_LOG_LIMIT: usize = 50;
 const MAX_LOG_LIMIT: usize = 2_000;
+const RAW_OUTPUT_CAP: usize = 200_000;
 
 #[derive(Default)]
 pub struct TerminalSessionManager {
@@ -150,6 +151,18 @@ impl TerminalSessionManager {
         let session = self.get_session(session_id)?;
         let session = session.lock().unwrap();
         Ok(session.recent_logs(limit.unwrap_or(100)))
+    }
+
+    pub fn write_terminal_input(&self, session_id: u64, data: String) -> Result<(), String> {
+        let session = self.get_session(session_id)?;
+        let mut session = session.lock().unwrap();
+        session.write_input(&data)
+    }
+
+    pub fn read_raw_output(&self, session_id: u64, from: usize) -> Result<RawTerminalOutput, String> {
+        let session = self.get_session(session_id)?;
+        let session = session.lock().unwrap();
+        Ok(session.read_raw_output(from))
     }
 
     pub fn execute_command(
@@ -569,6 +582,16 @@ pub struct TerminalSessionLogs {
     pub updated_at: u64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawTerminalOutput {
+    pub session_id: u64,
+    pub base: usize,
+    pub cursor: usize,
+    pub chunk: String,
+    pub status: TerminalSessionStatus,
+}
+
 trait SessionKiller: Send {
     fn kill(&mut self);
 }
@@ -601,6 +624,8 @@ struct TerminalSession {
     snapshot: TerminalSessionSnapshot,
     logs: VecDeque<String>,
     pending_output: String,
+    raw_output: String,
+    raw_base: usize,
     child_killer: Option<Box<dyn SessionKiller + Send>>,
     writer: Option<Box<dyn Write + Send>>,
 }
@@ -615,6 +640,8 @@ impl TerminalSession {
             snapshot,
             logs: VecDeque::new(),
             pending_output: String::new(),
+            raw_output: String::new(),
+            raw_base: 0,
             child_killer,
             writer,
         }
@@ -684,6 +711,8 @@ impl TerminalSession {
     }
 
     fn push_output(&mut self, chunk: &str) {
+        self.append_raw_output(chunk);
+
         self.pending_output.push_str(chunk);
 
         while let Some(line_end) = self.pending_output.find('\n') {
@@ -696,6 +725,55 @@ impl TerminalSession {
             }
             self.push_line(line);
         }
+    }
+
+    fn append_raw_output(&mut self, chunk: &str) {
+        self.raw_output.push_str(chunk);
+
+        if self.raw_output.len() > RAW_OUTPUT_CAP {
+            let overflow = self.raw_output.len() - RAW_OUTPUT_CAP;
+            // Advance to a char boundary so we never split a UTF-8 sequence.
+            let mut drain_to = overflow;
+            while drain_to < self.raw_output.len() && !self.raw_output.is_char_boundary(drain_to) {
+                drain_to += 1;
+            }
+            self.raw_output.drain(..drain_to);
+            self.raw_base = self.raw_base.saturating_add(drain_to);
+        }
+    }
+
+    fn read_raw_output(&self, from: usize) -> RawTerminalOutput {
+        let cursor = self.raw_base + self.raw_output.len();
+        // Clamp the requested start to what we still retain.
+        let start_abs = from.max(self.raw_base).min(cursor);
+        let mut start_rel = start_abs - self.raw_base;
+        while start_rel < self.raw_output.len() && !self.raw_output.is_char_boundary(start_rel) {
+            start_rel += 1;
+        }
+        let chunk = self.raw_output[start_rel..].to_string();
+
+        RawTerminalOutput {
+            session_id: self.snapshot.session_id,
+            base: self.raw_base,
+            cursor,
+            chunk,
+            status: self.snapshot.status,
+        }
+    }
+
+    fn write_input(&mut self, data: &str) -> Result<(), String> {
+        let Some(writer) = self.writer.as_mut() else {
+            return Err("terminal session is not interactive".into());
+        };
+
+        writer
+            .write_all(data.as_bytes())
+            .map_err(|error| format!("failed to write terminal input: {error}"))?;
+        writer
+            .flush()
+            .map_err(|error| format!("failed to flush terminal input: {error}"))?;
+        self.touch("terminal input written");
+        Ok(())
     }
 
     fn flush_pending_output(&mut self) {

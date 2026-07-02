@@ -819,6 +819,16 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
           }
         }
 
+        if (command === 'read_raw_terminal_output') {
+          return {
+            sessionId: 77,
+            base: 0,
+            cursor: 13,
+            chunk: 'runtime ready',
+            status: 'running',
+          }
+        }
+
         if (command === 'close_terminal_session') {
           return { ...snapshot, status: 'terminated', updatedAt: 130 }
         }
@@ -845,6 +855,26 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
       ),
     )
     .toContain('create_terminal_session')
+
+  // The runtime-backed terminal renders a real xterm terminal, not the old
+  // .term-line list or the standalone command input form.
+  await expect(page.locator('.term-xterm')).toBeVisible()
+  await expect(page.locator('.term-xterm .xterm')).toHaveCount(1)
+  await expect(page.locator('.terminal-input-form')).toHaveCount(0)
+
+  // The xterm effect pumps raw PTY output on an interval.
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __terminalCalls?: Array<{ command: string }>
+            }
+          ).__terminalCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toContain('read_raw_terminal_output')
 
   await page.locator('.group.active .gt.active .x-btn').click()
 

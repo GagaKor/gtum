@@ -1,5 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import {
   createProjectRuntimeService,
@@ -21,6 +23,7 @@ import { createWorkspaceRuntimeService } from './shared/api/runtimeWorkspace'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
 import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
+import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 
 const ReactDOM = { createRoot }
@@ -2038,27 +2041,108 @@ function CodeEditor({ tab, onChangeFile }) {
 }
 
 // ???? Tab body ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
-function TabBody({ tab, onChangeFile, onSubmitTerminalInput }) {
+function TabBody({ tab, onChangeFile }) {
   if (!tab) return null;
   if (tab.type === "editor") return <CodeEditor tab={tab} onChangeFile={onChangeFile} />;
-  return <TerminalBody tab={tab} onSubmitInput={onSubmitTerminalInput} />;
+  return <TerminalBody tab={tab} />;
 }
 
-function TerminalBody({ tab, onSubmitInput }) {
-  const bodyRef = React.useRef(null);
-  const [draft, setDraft] = React.useState("");
-  const canSubmit = Boolean(tab.runtimeBacked && tab.terminalSessionId != null && tab.runtimeStatus !== "unavailable");
-  React.useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [tab?.id, tab?.lines?.length]);
+// Live xterm.js terminal wired to the runtime PTY session. Reads raw output
+// incrementally via readRawOutput and forwards keystrokes via writeInput.
+function XtermTerminal({ sessionId }) {
+  const containerRef = React.useRef(null);
 
-  const submit = (event) => {
-    event.preventDefault();
-    const command = draft.trim();
-    if (!command) return;
-    setDraft("");
-    onSubmitInput?.(tab.id, command);
-  };
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    let disposed = false;
+    let from = 0;
+    let interval = null;
+
+    const term = new Terminal({
+      convertEol: false,
+      cursorBlink: true,
+      fontFamily:
+        '"Geist Mono", "JetBrains Mono", "SF Mono", ui-monospace, monospace',
+      fontSize: 12,
+      theme: { background: "#0a0c10", foreground: "#e6e6e6" },
+    });
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(container);
+
+    const safeFit = () => {
+      try {
+        fitAddon.fit();
+      } catch {
+        /* container not measurable yet */
+      }
+    };
+
+    safeFit();
+    term.focus();
+
+    const dataSub = term.onData((data) => {
+      void terminalRuntimeService.writeInput(sessionId, data);
+    });
+
+    const pump = async () => {
+      try {
+        const output = await terminalRuntimeService.readRawOutput(sessionId, from);
+        if (disposed) return;
+        if (output.chunk) {
+          term.write(output.chunk);
+          from = output.cursor;
+        } else if (typeof output.cursor === "number" && output.cursor < from) {
+          // Buffer reset (session recycled); replay from the new start.
+          from = output.cursor;
+        }
+      } catch {
+        /* transient runtime read failure; retry on next tick */
+      }
+    };
+
+    void pump();
+    interval = window.setInterval(() => {
+      void pump();
+    }, 60);
+
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => safeFit())
+        : null;
+    observer?.observe(container);
+
+    return () => {
+      disposed = true;
+      if (interval != null) window.clearInterval(interval);
+      observer?.disconnect();
+      dataSub.dispose();
+      term.dispose();
+    };
+  }, [sessionId]);
+
+  return <div className="term-xterm" ref={containerRef} />;
+}
+
+function TerminalBody({ tab }) {
+  const bodyRef = React.useRef(null);
+  const runtimeBacked = Boolean(tab.runtimeBacked && tab.terminalSessionId != null);
+
+  React.useEffect(() => {
+    if (!runtimeBacked && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [runtimeBacked, tab?.id, tab?.lines?.length]);
+
+  if (runtimeBacked) {
+    return (
+      <div className="terminal-surface">
+        <XtermTerminal sessionId={tab.terminalSessionId} />
+      </div>
+    );
+  }
 
   return (
     <div className="terminal-surface">
@@ -2068,27 +2152,8 @@ function TerminalBody({ tab, onSubmitInput }) {
             {ln.text}
           </div>
         ))}
-        {tab.status === "running" && <div className="term-line"><span className="term-cursor" /></div>}
-        {tab.status === "idle" && (
-          <div className="term-line">
-            <span style={{ color: "var(--accent)" }}>$</span> <span className="term-cursor" />
-          </div>
-        )}
+        <div className="term-line dim">Open a runtime-backed terminal in the desktop app to type here.</div>
       </div>
-      <form className="terminal-input-form" onSubmit={submit}>
-        <span className="terminal-input-prompt">$</span>
-        <input
-          className="terminal-input"
-          value={draft}
-          disabled={!canSubmit}
-          spellCheck={false}
-          placeholder={canSubmit ? "Type a command for this terminal" : "Open a runtime-backed terminal"}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <button className="terminal-input-send" type="submit" disabled={!canSubmit || !draft.trim()}>
-          Run
-        </button>
-      </form>
     </div>
   );
 }
@@ -2252,7 +2317,7 @@ function Group({
   onSetActiveTab, onCloseTab, onNewTab,
   onReorderTab, onDropTabFromAnother, onDropTabOnEdge,
   onTabContextMenu, onFocusGroup,
-  onChangeFile, onSaveFile, onSubmitTerminalInput,
+  onChangeFile, onSaveFile,
   dragRef, onTabDragStart, onTabDragEnd,
 }) {
   const contentRef = React.useRef(null);
@@ -2360,7 +2425,6 @@ function Group({
             <TabBody
               tab={activeTab}
               onChangeFile={onChangeFile}
-              onSubmitTerminalInput={onSubmitTerminalInput}
             />
           </>
         ) : (
@@ -2517,7 +2581,6 @@ function Workspace({
     onFocusGroup: actions.setActiveGroup,
     onChangeFile: actions.changeFile,
     onSaveFile: actions.saveFile,
-    onSubmitTerminalInput: actions.submitTerminalInput,
     onTabContextMenu,
     onResizeSizes: (sizes) => { /* sizes persisted via local state for now */ },
   };
@@ -5233,67 +5296,6 @@ function App() {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         pushProjectMessage(`Could not save the file: ${message}`);
-      }
-    },
-    submitTerminalInput: async (tabId, command) => {
-      const text = String(command || "").trim();
-      if (!text) return;
-
-      const found = findTab(workspaceRef.current, tabId);
-      const tab = found?.tab;
-      if (!tab?.runtimeBacked || tab.terminalSessionId == null) {
-        setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
-          ...currentTab,
-          status: "failed",
-          lines: [
-            ...currentTab.lines,
-            { kind: "cmd", text },
-            {
-              kind: "log",
-              text: "Open a runtime-backed terminal before sending input.",
-              color: "err",
-            },
-          ],
-        })));
-        return;
-      }
-
-      setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
-        ...currentTab,
-        status: "running",
-        cmd: text,
-        lines: [...currentTab.lines, { kind: "cmd", text }],
-      })));
-
-      try {
-        const snapshot = await terminalRuntimeService.executeCommand(tab.terminalSessionId, text);
-        let logs = null;
-        try {
-          logs = await terminalRuntimeService.readLogs(tab.terminalSessionId, 400);
-        } catch {
-          logs = null;
-        }
-        setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
-          ...currentTab,
-          status: logs?.status || currentTab.status,
-          runtimeStatus: logs?.runtimeStatus || snapshot.status,
-          runtimeUpdatedAt: logs?.updatedAt || snapshot.updatedAt,
-          lastLogLineCount: logs?.logLineCount ?? snapshot.logLineCount,
-          lines: logs?.lines?.length ? logs.lines : currentTab.lines,
-        })));
-        setHistory((prev) => [...prev, {
-          at: nowHm(),
-          tab: tab.title || "terminal",
-          cmd: text,
-          ok: true,
-        }]);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setWorkspace((w) => updateTab(w, tabId, (currentTab) => ({
-          ...currentTab,
-          status: "failed",
-          lines: [...currentTab.lines, { kind: "log", text: message, color: "err" }],
-        })));
       }
     },
   }), [
