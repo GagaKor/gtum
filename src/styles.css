@@ -2913,16 +2913,9 @@ body.resizing-h-left, body.resizing-h-right {
   position: relative;
   overflow: hidden;
 }
-.group.active::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 1.5px solid var(--accent);
-  border-radius: 0;
-  pointer-events: none;
-  z-index: 6;
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 30%, transparent);
-}
+/* Active group no longer draws a green ring around the center editor/terminal
+   pane (removed per user request). Active state is still conveyed by the
+   tab-bar accent below. */
 
 /* Group tabbar — one per group */
 .group-tabbar {
