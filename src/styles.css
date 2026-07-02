@@ -2930,7 +2930,7 @@ body.resizing-h-left, body.resizing-h-right {
   scrollbar-width: none;
 }
 .group-tabbar::-webkit-scrollbar { display: none; }
-.group-tabbar.active { box-shadow: inset 0 2px 0 var(--accent); }
+/* Active group tab bar no longer shows a green top accent line (per user request). */
 
 .gt {
   display: flex;
