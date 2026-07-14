@@ -350,6 +350,30 @@ fn remember_workspace_project(
 }
 
 #[tauri::command]
+fn open_workspace_project(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: RememberWorkspaceProjectRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.open_project(request.path)
+}
+
+#[tauri::command]
+fn activate_workspace_project(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: RememberWorkspaceProjectRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.activate_project(request.path)
+}
+
+#[tauri::command]
+fn close_workspace_project(
+    state: tauri::State<'_, WorkspaceStateManager>,
+    request: RememberWorkspaceProjectRequest,
+) -> Result<WorkspaceSnapshot, String> {
+    state.close_project(request.path)
+}
+
+#[tauri::command]
 fn read_telegram_runtime_snapshot(
     state: tauri::State<'_, TelegramBridgeManager>,
 ) -> TelegramRuntimeSnapshot {
@@ -517,6 +541,9 @@ pub fn run() {
             read_workspace_runtime_snapshot,
             save_workspace_runtime_snapshot,
             remember_workspace_project,
+            open_workspace_project,
+            activate_workspace_project,
+            close_workspace_project,
             read_telegram_runtime_snapshot,
             begin_telegram_link,
             complete_telegram_link,
@@ -562,6 +589,33 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn invoke_workspace_project_command(
+        webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+        command: &str,
+        path: &Path,
+    ) -> WorkspaceSnapshot {
+        tauri::test::get_ipc_response(
+            webview,
+            tauri::webview::InvokeRequest {
+                cmd: command.into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: serde_json::json!({
+                    "request": {
+                        "path": path.to_string_lossy(),
+                    },
+                })
+                .into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .unwrap_or_else(|error| panic!("{command} failed: {error}"))
+        .deserialize::<WorkspaceSnapshot>()
+        .unwrap()
+    }
 
     fn unique_temp_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -642,5 +696,77 @@ mod tests {
 
         remove_test_path(&storage_dir);
         let _ = fs::remove_file(&backups[0]);
+    }
+
+    #[test]
+    fn workspace_project_commands_accept_request_envelopes_and_apply_transitions() {
+        let storage_dir = unique_temp_path("workspace-project-command-ipc");
+        remove_test_path(&storage_dir);
+        let project_a = storage_dir.join("project-a");
+        let project_b = storage_dir.join("project-b");
+        fs::create_dir_all(&project_a).unwrap();
+        fs::create_dir_all(&project_b).unwrap();
+
+        let manager = WorkspaceStateManager::new();
+        manager
+            .initialize_storage(storage_dir.join("workspace-state.json"))
+            .unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(manager)
+            .invoke_handler(tauri::generate_handler![
+                open_workspace_project,
+                activate_workspace_project,
+                close_workspace_project,
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+
+        invoke_workspace_project_command(&webview, "open_workspace_project", &project_a);
+        let opened =
+            invoke_workspace_project_command(&webview, "open_workspace_project", &project_b);
+        assert_eq!(opened.open_project_paths.len(), 2);
+        assert_eq!(
+            opened.active_project_path,
+            Some(
+                project_b
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            )
+        );
+
+        let activated =
+            invoke_workspace_project_command(&webview, "activate_workspace_project", &project_a);
+        assert_eq!(
+            activated.active_project_path,
+            Some(
+                project_a
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            )
+        );
+
+        let closed =
+            invoke_workspace_project_command(&webview, "close_workspace_project", &project_b);
+        assert_eq!(
+            closed.open_project_paths,
+            vec![project_a
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()]
+        );
+        assert_eq!(
+            closed.active_project_path,
+            closed.open_project_paths.first().cloned()
+        );
+
+        remove_test_path(&storage_dir);
     }
 }
