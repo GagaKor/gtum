@@ -150,9 +150,24 @@ test('normalizes legacy v1 read, save, and remember responses into v2 state', as
 
 test('rejects invalid v2 active project membership instead of guessing', async () => {
   const invalidSnapshots = [
-    { ...v2Snapshot, openProjectPaths: [projectA], activeProjectPath: projectB },
-    { ...v2Snapshot, openProjectPaths: [projectA], activeProjectPath: null },
-    { ...v2Snapshot, openProjectPaths: [], activeProjectPath: projectA },
+    {
+      ...v2Snapshot,
+      openProjectPaths: [projectA],
+      activeProjectPath: projectB,
+      lastOpenedProjectPath: projectB,
+    },
+    {
+      ...v2Snapshot,
+      openProjectPaths: [projectA],
+      activeProjectPath: null,
+      lastOpenedProjectPath: null,
+    },
+    {
+      ...v2Snapshot,
+      openProjectPaths: [],
+      activeProjectPath: projectA,
+      lastOpenedProjectPath: projectA,
+    },
   ]
 
   for (const snapshot of invalidSnapshots) {
@@ -168,6 +183,66 @@ test('rejects invalid v2 active project membership instead of guessing', async (
   await expect(service.openProject(projectA)).rejects.toThrow(
     /workspace snapshot.*active project/i,
   )
+})
+
+test('requires an explicit nullable activeProjectPath in v2 payloads', () => {
+  const missingActive = { ...v2Snapshot } as Record<string, unknown>
+  delete missingActive.activeProjectPath
+  const invalidSnapshots = [
+    {
+      ...v2Snapshot,
+      recentProjects: [],
+      openProjectPaths: [],
+      activeProjectPath: undefined,
+      lastOpenedProjectPath: null,
+    },
+    missingActive,
+    { ...v2Snapshot, activeProjectPath: 42 },
+  ]
+
+  for (const snapshot of invalidSnapshots) {
+    expect(() => normalizeRuntimeWorkspaceSnapshot(snapshot)).toThrow(/activeProjectPath/)
+  }
+})
+
+test('requires an explicit matching nullable lastOpenedProjectPath in v2 payloads', () => {
+  const missingAlias = { ...v2Snapshot } as Record<string, unknown>
+  delete missingAlias.lastOpenedProjectPath
+  const invalidSnapshots = [
+    missingAlias,
+    { ...v2Snapshot, lastOpenedProjectPath: undefined },
+    { ...v2Snapshot, lastOpenedProjectPath: 42 },
+    { ...v2Snapshot, lastOpenedProjectPath: projectB },
+  ]
+
+  for (const snapshot of invalidSnapshots) {
+    expect(() => normalizeRuntimeWorkspaceSnapshot(snapshot)).toThrow(
+      /lastOpenedProjectPath/,
+    )
+  }
+})
+
+test('enforces Rust-compatible timestamp and storage-version number domains', () => {
+  for (const updatedAt of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    expect(() => normalizeRuntimeWorkspaceSnapshot({ ...v2Snapshot, updatedAt })).toThrow(
+      /updatedAt/,
+    )
+  }
+
+  for (const storageVersion of [-1, 1.5, 3, 4_294_967_296, Number.NaN]) {
+    expect(() =>
+      normalizeRuntimeWorkspaceSnapshot({ ...v2Snapshot, storageVersion }),
+    ).toThrow(/storageVersion/)
+  }
+
+  expect(
+    normalizeRuntimeWorkspaceSnapshot({
+      recentProjects: [],
+      lastOpenedProjectPath: null,
+      updatedAt: Number.MAX_SAFE_INTEGER,
+      storageVersion: 0,
+    }),
+  ).toMatchObject({ updatedAt: Number.MAX_SAFE_INTEGER, storageVersion: 2 })
 })
 
 test('returns null for every workspace method when desktop runtime is unavailable', async () => {

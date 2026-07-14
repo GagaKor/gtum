@@ -1,11 +1,14 @@
 use std::{
-    fs,
+    fs::{self, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+const WORKSPACE_STORAGE_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,8 +44,8 @@ pub struct SaveWorkspaceSnapshotRequest {
     pub open_project_paths: Vec<String>,
     #[serde(default)]
     pub active_project_path: Option<String>,
-    #[serde(default)]
-    pub last_opened_project_path: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_present_nullable_path")]
+    pub last_opened_project_path: Option<Option<String>>,
     #[serde(default)]
     pub updated_at: Option<u64>,
     #[serde(default)]
@@ -55,6 +58,15 @@ pub struct RememberWorkspaceProjectRequest {
     pub path: String,
 }
 
+fn deserialize_present_nullable_path<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkspaceStore {
@@ -64,6 +76,7 @@ struct WorkspaceStore {
 pub struct WorkspaceStateManager {
     store: Mutex<WorkspaceStore>,
     storage_path: Mutex<Option<PathBuf>>,
+    persistence_lock: Mutex<()>,
 }
 
 impl WorkspaceStateManager {
@@ -73,6 +86,7 @@ impl WorkspaceStateManager {
                 snapshot: default_snapshot(),
             }),
             storage_path: Mutex::new(None),
+            persistence_lock: Mutex::new(()),
         }
     }
 
@@ -81,19 +95,13 @@ impl WorkspaceStateManager {
             fs::create_dir_all(parent)
                 .map_err(|error| format!("failed to prepare workspace state directory: {error}"))?;
         }
+        let _persistence = self.persistence_lock.lock().unwrap();
 
         let (candidate, should_persist) = if storage_path.exists() {
             match fs::read_to_string(&storage_path) {
-                Ok(contents) => match serde_json::from_str::<WorkspaceStore>(&contents) {
-                    Ok(mut loaded_store) => {
-                        let legacy_shape = loaded_store.snapshot.storage_version < 2;
-                        normalize_snapshot(&mut loaded_store.snapshot, legacy_shape)?;
-                        (loaded_store, true)
-                    }
-                    Err(error) => {
-                        log::warn!("failed to parse workspace state: {error}");
-                        (WorkspaceStore::default(), false)
-                    }
+                Ok(contents) => match load_workspace_store(&contents)? {
+                    Some(loaded_store) => (loaded_store, true),
+                    None => (WorkspaceStore::default(), false),
                 },
                 Err(error) => {
                     log::warn!("failed to read workspace state: {error}");
@@ -134,14 +142,29 @@ impl WorkspaceStateManager {
         &self,
         request: SaveWorkspaceSnapshotRequest,
     ) -> Result<WorkspaceSnapshot, String> {
-        let legacy_shape = request.storage_version.unwrap_or(1) < 2;
+        let SaveWorkspaceSnapshotRequest {
+            recent_projects,
+            open_project_paths,
+            active_project_path,
+            last_opened_project_path,
+            updated_at,
+            storage_version,
+        } = request;
+        let storage_version = storage_version.unwrap_or(1);
+        validate_supported_storage_version(storage_version)?;
+        let legacy_shape = storage_version < WORKSPACE_STORAGE_VERSION;
+        let last_opened_project_path = if legacy_shape {
+            last_opened_project_path.flatten()
+        } else {
+            last_opened_project_path.unwrap_or_else(|| active_project_path.clone())
+        };
         let mut replacement = WorkspaceSnapshot {
-            recent_projects: request.recent_projects,
-            open_project_paths: request.open_project_paths,
-            active_project_path: request.active_project_path,
-            last_opened_project_path: request.last_opened_project_path,
-            updated_at: request.updated_at.unwrap_or_else(unix_timestamp_ms),
-            storage_version: request.storage_version.unwrap_or(1),
+            recent_projects,
+            open_project_paths,
+            active_project_path,
+            last_opened_project_path,
+            updated_at: updated_at.unwrap_or_else(unix_timestamp_ms),
+            storage_version,
         };
         normalize_snapshot(&mut replacement, legacy_shape)?;
 
@@ -227,6 +250,7 @@ impl WorkspaceStateManager {
         &self,
         update: impl FnOnce(&mut WorkspaceSnapshot) -> Result<(), String>,
     ) -> Result<WorkspaceSnapshot, String> {
+        let _persistence = self.persistence_lock.lock().unwrap();
         let storage_path = self
             .storage_path
             .lock()
@@ -237,6 +261,8 @@ impl WorkspaceStateManager {
         let mut candidate = published_store.clone();
 
         update(&mut candidate.snapshot)?;
+        candidate.snapshot.last_opened_project_path =
+            candidate.snapshot.active_project_path.clone();
         normalize_snapshot(&mut candidate.snapshot, false)?;
         touch_snapshot(&mut candidate.snapshot);
         persist_store_at_path(&storage_path, &candidate)?;
@@ -262,7 +288,7 @@ fn default_snapshot() -> WorkspaceSnapshot {
         active_project_path: None,
         last_opened_project_path: None,
         updated_at: unix_timestamp_ms(),
-        storage_version: 2,
+        storage_version: WORKSPACE_STORAGE_VERSION,
     }
 }
 
@@ -270,12 +296,183 @@ fn legacy_storage_version() -> u32 {
     1
 }
 
-fn persist_store_at_path(path: &Path, store: &WorkspaceStore) -> Result<(), String> {
-    let serialized = serde_json::to_string_pretty(store)
-        .map_err(|error| format!("failed to serialize workspace state: {error}"))?;
-    fs::write(path, serialized)
-        .map_err(|error| format!("failed to persist workspace state: {error}"))
+fn load_workspace_store(contents: &str) -> Result<Option<WorkspaceStore>, String> {
+    let raw_store = match serde_json::from_str::<serde_json::Value>(contents) {
+        Ok(value) => value,
+        Err(error) => {
+            log::warn!("failed to parse workspace state: {error}");
+            return Ok(None);
+        }
+    };
+    if let Some(storage_version) = raw_store
+        .pointer("/snapshot/storageVersion")
+        .and_then(serde_json::Value::as_u64)
+    {
+        if storage_version > u64::from(WORKSPACE_STORAGE_VERSION) {
+            return Err(format!(
+                "unsupported workspace storage version: {storage_version}"
+            ));
+        }
+    }
+    let mut store = match serde_json::from_value::<WorkspaceStore>(raw_store.clone()) {
+        Ok(store) => store,
+        Err(error) => {
+            log::warn!("failed to parse workspace state: {error}");
+            return Ok(None);
+        }
+    };
+
+    validate_supported_storage_version(store.snapshot.storage_version)?;
+    let legacy_shape = store.snapshot.storage_version < WORKSPACE_STORAGE_VERSION;
+    if !legacy_shape {
+        validate_stored_v2_field_presence(&raw_store)?;
+    }
+    normalize_snapshot(&mut store.snapshot, legacy_shape)?;
+    Ok(Some(store))
 }
+
+fn validate_stored_v2_field_presence(raw_store: &serde_json::Value) -> Result<(), String> {
+    let snapshot = raw_store
+        .get("snapshot")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "workspace v2 store must contain a snapshot object".to_string())?;
+
+    for field in [
+        "openProjectPaths",
+        "activeProjectPath",
+        "lastOpenedProjectPath",
+    ] {
+        if !snapshot.contains_key(field) {
+            return Err(format!("workspace v2 snapshot is missing {field}"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_supported_storage_version(storage_version: u32) -> Result<(), String> {
+    if storage_version > WORKSPACE_STORAGE_VERSION {
+        return Err(format!(
+            "unsupported workspace storage version: {storage_version}"
+        ));
+    }
+    Ok(())
+}
+
+fn persist_store_at_path(path: &Path, store: &WorkspaceStore) -> Result<(), String> {
+    let serialized = serde_json::to_vec_pretty(store)
+        .map_err(|error| format!("failed to serialize workspace state: {error}"))?;
+    write_workspace_atomically(path, &serialized)
+}
+
+fn workspace_temporary_path(path: &Path) -> Result<PathBuf, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("workspace storage path has no parent: {}", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace-state.json");
+    Ok(parent.join(format!(".{file_name}.tmp-{}", std::process::id())))
+}
+
+fn write_workspace_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("workspace storage path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to prepare workspace state directory: {error}"))?;
+    let temporary = workspace_temporary_path(path)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|error| format!("failed to create workspace state temp file: {error}"))?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(&temporary);
+        return Err(format!(
+            "failed to write workspace state temp file: {error}"
+        ));
+    }
+    drop(file);
+
+    if let Err(error) = replace_workspace_file(&temporary, path) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    sync_workspace_parent(parent);
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn replace_workspace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    fs::rename(temporary, destination)
+        .map_err(|error| format!("failed to replace workspace state: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn replace_workspace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    use std::{os::windows::ffi::OsStrExt, ptr};
+
+    #[link(name = "Kernel32")]
+    extern "system" {
+        fn ReplaceFileW(
+            replaced_file_name: *const u16,
+            replacement_file_name: *const u16,
+            backup_file_name: *const u16,
+            replace_flags: u32,
+            exclude: *mut std::ffi::c_void,
+            reserved: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+
+    if !destination.exists() {
+        return fs::rename(temporary, destination)
+            .map_err(|error| format!("failed to install workspace state: {error}"));
+    }
+
+    let destination_wide = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let temporary_wide = temporary
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let replaced = unsafe {
+        ReplaceFileW(
+            destination_wide.as_ptr(),
+            temporary_wide.as_ptr(),
+            ptr::null(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if replaced == 0 {
+        Err(format!(
+            "failed to atomically replace workspace state: {}",
+            std::io::Error::last_os_error()
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn sync_workspace_parent(parent: &Path) {
+    if let Err(error) = fs::File::open(parent).and_then(|directory| directory.sync_all()) {
+        log::warn!(
+            "workspace state was replaced but parent directory sync is unsupported or failed: {error}"
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_workspace_parent(_parent: &Path) {}
 
 fn normalize_project_path(path: &str) -> Option<String> {
     let trimmed = path.trim();
@@ -349,7 +546,50 @@ fn prepend_recent_project(snapshot: &mut WorkspaceSnapshot, path: String) {
     snapshot.recent_projects = sanitize_project_paths(recent_projects, Some(6));
 }
 
+fn validate_v2_snapshot(snapshot: &WorkspaceSnapshot) -> Result<(), String> {
+    let open_project_paths = sanitize_project_paths(snapshot.open_project_paths.clone(), None);
+    let active_project_path = snapshot
+        .active_project_path
+        .as_deref()
+        .and_then(normalize_project_path);
+    let last_opened_project_path = snapshot
+        .last_opened_project_path
+        .as_deref()
+        .and_then(normalize_project_path);
+
+    match (open_project_paths.is_empty(), active_project_path.as_ref()) {
+        (true, None) => {}
+        (true, Some(_)) => return Err("active workspace project must be open".into()),
+        (false, None) => return Err("an open workspace requires an active project".into()),
+        (false, Some(active)) => {
+            if !open_project_paths
+                .iter()
+                .any(|entry| same_project_identity(entry, active))
+            {
+                return Err("active workspace project must be open".into());
+            }
+        }
+    }
+
+    let alias_matches = match (
+        active_project_path.as_deref(),
+        last_opened_project_path.as_deref(),
+    ) {
+        (None, None) => true,
+        (Some(active), Some(last_opened)) => same_project_identity(active, last_opened),
+        _ => false,
+    };
+    if !alias_matches {
+        return Err("last opened workspace project must match active project".into());
+    }
+    Ok(())
+}
+
 fn normalize_snapshot(snapshot: &mut WorkspaceSnapshot, legacy_shape: bool) -> Result<(), String> {
+    validate_supported_storage_version(snapshot.storage_version)?;
+    if !legacy_shape {
+        validate_v2_snapshot(snapshot)?;
+    }
     snapshot.recent_projects =
         sanitize_project_paths(std::mem::take(&mut snapshot.recent_projects), Some(6));
 
@@ -368,31 +608,19 @@ fn normalize_snapshot(snapshot: &mut WorkspaceSnapshot, legacy_shape: bool) -> R
             .as_deref()
             .and_then(normalize_project_path);
 
-        match (
-            snapshot.open_project_paths.is_empty(),
-            snapshot.active_project_path.as_ref(),
-        ) {
-            (true, None) => {}
-            (true, Some(_)) => {
-                return Err("active workspace project must be open".into());
-            }
-            (false, None) => {
-                return Err("an open workspace requires an active project".into());
-            }
-            (false, Some(active)) => {
-                let opened_active = snapshot
-                    .open_project_paths
-                    .iter()
-                    .find(|entry| same_project_identity(entry, active))
-                    .cloned()
-                    .ok_or_else(|| "active workspace project must be open".to_string())?;
-                snapshot.active_project_path = Some(opened_active);
-            }
+        if let Some(active) = snapshot.active_project_path.as_ref() {
+            let opened_active = snapshot
+                .open_project_paths
+                .iter()
+                .find(|entry| same_project_identity(entry, active))
+                .cloned()
+                .ok_or_else(|| "active workspace project must be open".to_string())?;
+            snapshot.active_project_path = Some(opened_active);
         }
     }
 
     snapshot.last_opened_project_path = snapshot.active_project_path.clone();
-    snapshot.storage_version = 2;
+    snapshot.storage_version = WORKSPACE_STORAGE_VERSION;
     if snapshot.updated_at == 0 {
         snapshot.updated_at = unix_timestamp_ms();
     }
@@ -455,6 +683,17 @@ mod tests {
         let manager = WorkspaceStateManager::new();
         manager.initialize_storage(storage_path.clone()).unwrap();
         (manager, dir, storage_path)
+    }
+
+    fn expected_temporary_path(storage_path: &Path) -> PathBuf {
+        let file_name = storage_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("workspace-state.json");
+        storage_path
+            .parent()
+            .unwrap()
+            .join(format!(".{file_name}.tmp-{}", std::process::id()))
     }
 
     fn v2_save_request(
@@ -571,6 +810,177 @@ mod tests {
     }
 
     #[test]
+    fn initialization_rejects_future_storage_without_touching_bytes_or_state() {
+        let dir = unique_temp_dir("future-initialize");
+        for future_version in [3_u64, u64::from(u32::MAX) + 1] {
+            let storage_path = dir.join(format!("workspace-state-{future_version}.json"));
+            let future_bytes = serde_json::to_vec(&serde_json::json!({
+                "snapshot": {
+                    "recentProjects": ["future-history"],
+                    "openProjectPaths": ["future-open"],
+                    "activeProjectPath": "future-open",
+                    "lastOpenedProjectPath": "future-open",
+                    "updatedAt": 100,
+                    "storageVersion": future_version
+                }
+            }))
+            .unwrap();
+            fs::write(&storage_path, &future_bytes).unwrap();
+            let manager = WorkspaceStateManager::new();
+            let before = manager.runtime_snapshot();
+
+            let error = manager
+                .initialize_storage(storage_path.clone())
+                .unwrap_err();
+
+            assert!(error.contains("unsupported workspace storage version"));
+            assert_eq!(fs::read(storage_path).unwrap(), future_bytes);
+            let after = manager.runtime_snapshot();
+            assert_eq!(after.snapshot, before.snapshot);
+            assert_eq!(after.storage_path, before.storage_path);
+        }
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn save_rejects_future_storage_without_touching_bytes_or_state() {
+        let (manager, dir, storage_path) = initialized_manager("future-save");
+        let project = create_project(&dir, "project");
+        manager.open_project(project.clone()).unwrap();
+        let before_snapshot = manager.runtime_snapshot().snapshot;
+        let before_bytes = fs::read(&storage_path).unwrap();
+        let request = serde_json::from_value(serde_json::json!({
+            "recentProjects": [project],
+            "openProjectPaths": [project],
+            "activeProjectPath": project,
+            "lastOpenedProjectPath": project,
+            "updatedAt": 100,
+            "storageVersion": 3
+        }))
+        .unwrap();
+
+        let error = manager.save_snapshot(request).unwrap_err();
+
+        assert!(error.contains("unsupported workspace storage version"));
+        assert_eq!(fs::read(storage_path).unwrap(), before_bytes);
+        assert_eq!(manager.runtime_snapshot().snapshot, before_snapshot);
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn initialization_rejects_mismatched_v2_alias_before_normalizing() {
+        let dir = unique_temp_dir("stored-alias-mismatch");
+        let storage_path = dir.join("workspace-state.json");
+        let project_a = create_project(&dir, "a");
+        let project_b = create_project(&dir, "b");
+        let stored_bytes = serde_json::to_vec(&serde_json::json!({
+            "snapshot": {
+                "recentProjects": [project_a, project_b],
+                "openProjectPaths": [project_a],
+                "activeProjectPath": project_a,
+                "lastOpenedProjectPath": project_b,
+                "updatedAt": 100,
+                "storageVersion": 2
+            }
+        }))
+        .unwrap();
+        fs::write(&storage_path, &stored_bytes).unwrap();
+        let manager = WorkspaceStateManager::new();
+        let before = manager.runtime_snapshot();
+
+        let error = manager
+            .initialize_storage(storage_path.clone())
+            .unwrap_err();
+
+        assert!(error.contains("last opened workspace project must match active project"));
+        assert_eq!(fs::read(storage_path).unwrap(), stored_bytes);
+        let after = manager.runtime_snapshot();
+        assert_eq!(after.snapshot, before.snapshot);
+        assert_eq!(after.storage_path, before.storage_path);
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn initialization_requires_explicit_matching_nullable_v2_alias() {
+        let dir = unique_temp_dir("stored-alias-presence");
+        let project = create_project(&dir, "project");
+
+        for (label, supplied_alias) in [("missing", None), ("null", Some(serde_json::Value::Null))]
+        {
+            let storage_path = dir.join(format!("{label}-workspace-state.json"));
+            let mut snapshot = serde_json::json!({
+                "recentProjects": [project],
+                "openProjectPaths": [project],
+                "activeProjectPath": project,
+                "updatedAt": 100,
+                "storageVersion": 2
+            });
+            if let Some(alias) = supplied_alias {
+                snapshot
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("lastOpenedProjectPath".into(), alias);
+            }
+            let stored_bytes = serde_json::to_vec(&serde_json::json!({
+                "snapshot": snapshot
+            }))
+            .unwrap();
+            fs::write(&storage_path, &stored_bytes).unwrap();
+            let manager = WorkspaceStateManager::new();
+            let before = manager.runtime_snapshot();
+
+            assert!(manager.initialize_storage(storage_path.clone()).is_err());
+            assert_eq!(fs::read(storage_path).unwrap(), stored_bytes);
+            let after = manager.runtime_snapshot();
+            assert_eq!(after.snapshot, before.snapshot);
+            assert_eq!(after.storage_path, before.storage_path);
+        }
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn save_rejects_supplied_alias_mismatch_but_accepts_omission() {
+        let (manager, dir, storage_path) = initialized_manager("save-alias-contract");
+        let project_a = create_project(&dir, "a");
+        let project_b = create_project(&dir, "b");
+        manager.open_project(project_a.clone()).unwrap();
+        let before_snapshot = manager.runtime_snapshot().snapshot;
+        let before_bytes = fs::read(&storage_path).unwrap();
+
+        for supplied_alias in [
+            serde_json::Value::String(project_b),
+            serde_json::Value::Null,
+        ] {
+            let request = serde_json::from_value(serde_json::json!({
+                "recentProjects": [project_a],
+                "openProjectPaths": [project_a],
+                "activeProjectPath": project_a,
+                "lastOpenedProjectPath": supplied_alias,
+                "updatedAt": 100,
+                "storageVersion": 2
+            }))
+            .unwrap();
+            assert!(manager.save_snapshot(request).is_err());
+            assert_eq!(fs::read(&storage_path).unwrap(), before_bytes);
+            assert_eq!(manager.runtime_snapshot().snapshot, before_snapshot);
+        }
+
+        let omitted_alias_request = serde_json::from_value(serde_json::json!({
+            "recentProjects": [project_a],
+            "openProjectPaths": [project_a],
+            "activeProjectPath": project_a,
+            "updatedAt": 100,
+            "storageVersion": 2
+        }))
+        .unwrap();
+        let saved = manager.save_snapshot(omitted_alias_request).unwrap();
+        assert_eq!(saved.active_project_path, Some(project_a.clone()));
+        assert_eq!(saved.last_opened_project_path, Some(project_a));
+        remove_dir(&dir);
+    }
+
+    #[test]
     fn opens_activates_and_closes_projects_with_round_trip_persistence() {
         let (manager, dir, storage_path) = initialized_manager("transitions");
         let project_a = create_project(&dir, "a");
@@ -643,9 +1053,11 @@ mod tests {
         assert!(manager.close_project(unopened).is_err());
         assert_eq!(manager.runtime_snapshot().snapshot, before);
 
-        fs::remove_file(&storage_path).unwrap();
-        fs::create_dir(&storage_path).unwrap();
+        let before_bytes = fs::read(&storage_path).unwrap();
+        let blocked_temporary_path = expected_temporary_path(&storage_path);
+        fs::create_dir(&blocked_temporary_path).unwrap();
         assert!(manager.open_project("unpersisted-project".into()).is_err());
+        assert_eq!(fs::read(&storage_path).unwrap(), before_bytes);
         assert_eq!(manager.runtime_snapshot().snapshot, before);
 
         remove_dir(&dir);
@@ -674,7 +1086,7 @@ mod tests {
                     projects[1].clone(),
                 ],
                 active_project_path: Some(format!(" {} ", projects[1])),
-                last_opened_project_path: Some(projects[0].clone()),
+                last_opened_project_path: Some(Some(projects[1].clone())),
                 updated_at: Some(1),
                 storage_version: Some(2),
             })
@@ -708,7 +1120,7 @@ mod tests {
                 recent_projects: vec![projects[0].clone()],
                 open_project_paths: vec![],
                 active_project_path: None,
-                last_opened_project_path: Some(projects[0].clone()),
+                last_opened_project_path: Some(Some(projects[0].clone())),
                 updated_at: None,
                 storage_version: None,
             })
@@ -725,7 +1137,7 @@ mod tests {
                 recent_projects: vec![projects[0].clone()],
                 open_project_paths: vec![],
                 active_project_path: None,
-                last_opened_project_path: Some(projects[0].clone()),
+                last_opened_project_path: None,
                 updated_at: None,
                 storage_version: Some(2),
             })

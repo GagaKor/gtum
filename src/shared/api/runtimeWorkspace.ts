@@ -12,7 +12,7 @@ export type RuntimeWorkspaceSnapshot = {
   activeProjectPath: string | null
   lastOpenedProjectPath: string | null
   updatedAt: number
-  storageVersion: number
+  storageVersion: 2
 }
 
 export type RuntimeWorkspaceRuntimeSnapshot = {
@@ -27,7 +27,7 @@ export type SaveWorkspaceRuntimeSnapshotRequest = {
   activeProjectPath: string | null
   lastOpenedProjectPath?: string | null
   updatedAt?: number
-  storageVersion?: number
+  storageVersion?: 2
 }
 
 export type WorkspaceRuntimeServiceOptions = {
@@ -69,15 +69,26 @@ const invalidSnapshot = (reason: string): never => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const requiredNumber = (value: unknown, field: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return invalidSnapshot(`${field} must be a finite number`)
+const U32_MAX = 4_294_967_295
+
+const requiredSafeUnsignedInteger = (
+  value: unknown,
+  field: string,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number => {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > maximum
+  ) {
+    return invalidSnapshot(`${field} must be a safe unsigned integer`)
   }
   return value
 }
 
-const normalizePath = (value: unknown, field: string): string | null => {
-  if (value === null || value === undefined) return null
+const normalizeNullablePath = (value: unknown, field: string): string | null => {
+  if (value === null) return null
   if (typeof value !== 'string') return invalidSnapshot(`${field} must be a string or null`)
 
   const normalized = value.trim()
@@ -89,7 +100,7 @@ const normalizePathList = (value: unknown, field: string): string[] => {
 
   const normalized: string[] = []
   for (const entry of value) {
-    const path = normalizePath(entry, field)
+    const path = normalizeNullablePath(entry, field)
     if (!path) return invalidSnapshot(`${field} cannot contain a blank path`)
     if (normalized.includes(path)) {
       return invalidSnapshot(`${field} cannot contain duplicate paths`)
@@ -104,15 +115,19 @@ export const normalizeRuntimeWorkspaceSnapshot = (
 ): RuntimeWorkspaceSnapshot => {
   if (!isRecord(value)) return invalidSnapshot('payload must be an object')
 
-  const storageVersion = requiredNumber(value.storageVersion, 'storageVersion')
+  const storageVersion = requiredSafeUnsignedInteger(
+    value.storageVersion,
+    'storageVersion',
+    U32_MAX,
+  )
   const recentProjects = normalizePathList(value.recentProjects, 'recentProjects')
-  const updatedAt = requiredNumber(value.updatedAt, 'updatedAt')
+  const updatedAt = requiredSafeUnsignedInteger(value.updatedAt, 'updatedAt')
 
   if (storageVersion < 2) {
-    const activeProjectPath = normalizePath(
-      value.lastOpenedProjectPath,
-      'lastOpenedProjectPath',
-    )
+    const activeProjectPath =
+      value.lastOpenedProjectPath === undefined
+        ? null
+        : normalizeNullablePath(value.lastOpenedProjectPath, 'lastOpenedProjectPath')
     return {
       recentProjects,
       openProjectPaths: activeProjectPath ? [activeProjectPath] : [],
@@ -126,12 +141,25 @@ export const normalizeRuntimeWorkspaceSnapshot = (
   if (storageVersion !== 2) {
     return invalidSnapshot(`unsupported storageVersion ${storageVersion}`)
   }
-  if (!Object.hasOwn(value, 'openProjectPaths') || !Object.hasOwn(value, 'activeProjectPath')) {
-    return invalidSnapshot('v2 fields openProjectPaths and activeProjectPath are required')
+  if (!Object.hasOwn(value, 'openProjectPaths')) {
+    return invalidSnapshot('v2 field openProjectPaths is required')
+  }
+  if (!Object.hasOwn(value, 'activeProjectPath')) {
+    return invalidSnapshot('v2 field activeProjectPath is required')
+  }
+  if (!Object.hasOwn(value, 'lastOpenedProjectPath')) {
+    return invalidSnapshot('v2 field lastOpenedProjectPath is required')
   }
 
   const openProjectPaths = normalizePathList(value.openProjectPaths, 'openProjectPaths')
-  const activeProjectPath = normalizePath(value.activeProjectPath, 'activeProjectPath')
+  const activeProjectPath = normalizeNullablePath(value.activeProjectPath, 'activeProjectPath')
+  const lastOpenedProjectPath = normalizeNullablePath(
+    value.lastOpenedProjectPath,
+    'lastOpenedProjectPath',
+  )
+  if (lastOpenedProjectPath !== activeProjectPath) {
+    return invalidSnapshot('lastOpenedProjectPath must match activeProjectPath')
+  }
   if (openProjectPaths.length === 0 && activeProjectPath) {
     return invalidSnapshot('active project cannot exist when no projects are open')
   }
@@ -146,7 +174,7 @@ export const normalizeRuntimeWorkspaceSnapshot = (
     recentProjects,
     openProjectPaths,
     activeProjectPath,
-    lastOpenedProjectPath: activeProjectPath,
+    lastOpenedProjectPath,
     updatedAt,
     storageVersion: 2,
   }
@@ -163,7 +191,7 @@ const normalizeRuntimeSnapshot = (value: unknown): RuntimeWorkspaceRuntimeSnapsh
   return {
     ...(storagePath === undefined ? {} : { storagePath }),
     snapshot: normalizeRuntimeWorkspaceSnapshot(value.snapshot),
-    restoredAt: requiredNumber(value.restoredAt, 'restoredAt'),
+    restoredAt: requiredSafeUnsignedInteger(value.restoredAt, 'restoredAt'),
   }
 }
 
