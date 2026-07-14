@@ -158,20 +158,6 @@ pub fn read_project_overview(
     max_depth: Option<usize>,
 ) -> Result<ProjectOverview, String> {
     let project_path = canonical_project_root(&path)?;
-    let metadata = fs::metadata(&project_path).map_err(|error| {
-        format!(
-            "failed to read metadata for {}: {error}",
-            project_path.display()
-        )
-    })?;
-
-    if !metadata.is_dir() {
-        return Err(format!(
-            "project path is not a directory: {}",
-            project_path.display()
-        ));
-    }
-
     let depth = max_depth.unwrap_or(DEFAULT_TREE_DEPTH).min(MAX_TREE_DEPTH);
     let tree = build_tree(&project_path, depth)?;
     let git = read_git_overview(&project_path);
@@ -942,6 +928,27 @@ mod tests {
         assert_eq!(overview.tree.path, overview.metadata.path);
 
         let _ = fs::remove_file(link);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn read_project_overview_canonicalizes_parent_components() {
+        let root = temp_project_dir("overview-parent");
+        fs::create_dir_all(root.join("child")).unwrap();
+        let path_with_parent = root.join("child").join("..");
+
+        let overview =
+            read_project_overview(path_with_parent.to_string_lossy().into_owned(), None).unwrap();
+
+        assert_eq!(
+            overview.metadata.path,
+            fs::canonicalize(&root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        );
+        assert_eq!(overview.tree.path, overview.metadata.path);
+
         let _ = fs::remove_dir_all(root);
     }
 

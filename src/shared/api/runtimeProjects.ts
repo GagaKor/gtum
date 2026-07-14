@@ -180,27 +180,7 @@ export const extensionOf = (name: string | null | undefined): string => {
   return ext && ext !== name ? ext.toLowerCase() : "txt";
 };
 
-const projectPathIdentity = (value: string): string => {
-  const trimmed = value.trim();
-  const isWindowsUncPath = /^[/\\]{2}[^/\\]/.test(trimmed);
-  let normalized = trimmed.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
-
-  if (isWindowsUncPath) normalized = `/${normalized}`;
-
-  while (
-    normalized.length > 1 &&
-    normalized.endsWith("/") &&
-    !/^[a-z]:\/$/i.test(normalized)
-  ) {
-    normalized = normalized.slice(0, -1);
-  }
-
-  return /^[a-z]:(?:\/|$)/i.test(normalized) || normalized.startsWith("//")
-    ? normalized.toLowerCase()
-    : normalized;
-};
-
-const requiredProjectOwner = (value: unknown, label: string): string => {
+const requiredNonBlankString = (value: unknown, label: string): string => {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${label} is missing.`);
   }
@@ -213,12 +193,41 @@ const assertSameProjectOwner = (
   actual: unknown,
   label: string,
 ): string => {
-  const actualOwner = requiredProjectOwner(actual, label);
-  if (projectPathIdentity(expected) !== projectPathIdentity(actualOwner)) {
+  const actualOwner = requiredNonBlankString(actual, label);
+  if (expected !== actualOwner) {
     throw new Error(`${label} does not match the immutable project owner.`);
   }
 
   return actualOwner;
+};
+
+const assertPatchResponseFiles = (
+  requestedFilePaths: readonly string[],
+  appliedFiles: RuntimeProjectFileSnapshot[],
+): void => {
+  if (appliedFiles.length !== requestedFilePaths.length) {
+    throw new Error("Runtime patch file result count does not match the requested edits.");
+  }
+
+  const expectedFileCounts = new Map<string, number>();
+  for (const path of requestedFilePaths) {
+    expectedFileCounts.set(path, (expectedFileCounts.get(path) || 0) + 1);
+  }
+
+  for (const snapshot of appliedFiles) {
+    const path = requiredNonBlankString(snapshot.filePath, "Runtime patch file path");
+    const remaining = expectedFileCounts.get(path) || 0;
+    if (remaining === 0) {
+      throw new Error("Runtime patch file path does not match the requested edits.");
+    }
+
+    if (remaining === 1) expectedFileCounts.delete(path);
+    else expectedFileCounts.set(path, remaining - 1);
+  }
+
+  if (expectedFileCounts.size > 0) {
+    throw new Error("Runtime patch file paths do not include every requested edit.");
+  }
 };
 
 export const projectTreeNodeFromRuntime = (node: RuntimeProjectTreeNode): ProjectTreeNode => {
@@ -302,7 +311,7 @@ export const fileSnapshotFromRuntime = (
     : "";
 
   return {
-    projectPath: requiredProjectOwner(snapshot.projectPath, "Runtime file project owner"),
+    projectPath: requiredNonBlankString(snapshot.projectPath, "Runtime file project owner"),
     id: "ed-" + String(tabPath).replace(/[^a-z0-9]+/gi, "-"),
     type: "editor",
     title: basenameOfPath(displayPath),
@@ -377,11 +386,11 @@ export const createProjectRuntimeService = (
       return fileSnapshotFromRuntime(snapshot, fallbackName);
     },
     async saveProjectFile(project, file): Promise<ProjectFileSnapshot> {
-      const fileOwner = requiredProjectOwner(file.projectPath, "File project owner");
+      const fileOwner = requiredNonBlankString(file.projectPath, "File project owner");
       if (!project?.runtimeBacked || !hasRuntime()) {
         throw new Error("Saving files is available in the installed desktop app after opening a real project.");
       }
-      const projectOwner = requiredProjectOwner(project.path, "Project owner");
+      const projectOwner = requiredNonBlankString(project.path, "Project owner");
       assertSameProjectOwner(fileOwner, projectOwner, "Selected project owner");
 
       const snapshot = await invokeRuntime<RuntimeProjectFileSnapshot>("write_project_file", {
@@ -400,38 +409,45 @@ export const createProjectRuntimeService = (
       if (edits.length === 0) {
         throw new Error("Patch must include at least one project-owned file edit.");
       }
-      const patchOwner = requiredProjectOwner(edits[0].projectPath, "Patch project owner");
+      const patchOwner = requiredNonBlankString(edits[0].projectPath, "Patch project owner");
       for (const edit of edits) {
         assertSameProjectOwner(patchOwner, edit.projectPath, "Patch edit project owner");
       }
       if (!project?.runtimeBacked || !hasRuntime()) {
         throw new Error("Applying patches is available in the installed desktop app after opening a real project.");
       }
-      const projectOwner = requiredProjectOwner(project.path, "Project owner");
+      const projectOwner = requiredNonBlankString(project.path, "Project owner");
       assertSameProjectOwner(patchOwner, projectOwner, "Selected project owner");
+      const patchEdits = edits.map((edit) => ({
+        filePath: requiredNonBlankString(edit.path, "Patch edit file path"),
+        content: edit.content,
+        expectedContentHash: edit.contentHash || undefined,
+      }));
+      const requestedFilePaths = patchEdits.map((edit) => edit.filePath);
 
       const result = await invokeRuntime<{ appliedFiles: RuntimeProjectFileSnapshot[] }>(
         "apply_project_patch",
         {
           request: {
             projectPath: patchOwner,
-            edits: edits.map((edit) => ({
-              filePath: edit.path,
-              content: edit.content,
-              expectedContentHash: edit.contentHash || undefined,
-            })),
+            edits: patchEdits,
           },
         },
       );
 
-      return result.appliedFiles.map((snapshot) => {
+      if (!Array.isArray(result?.appliedFiles)) {
+        throw new Error("Runtime patch file results are missing.");
+      }
+      for (const snapshot of result.appliedFiles) {
         assertSameProjectOwner(
           patchOwner,
           snapshot.projectPath,
           "Runtime patch project owner",
         );
-        return fileSnapshotFromRuntime(snapshot);
-      });
+      }
+      assertPatchResponseFiles(requestedFilePaths, result.appliedFiles);
+
+      return result.appliedFiles.map((snapshot) => fileSnapshotFromRuntime(snapshot));
     },
   };
 };

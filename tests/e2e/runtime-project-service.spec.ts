@@ -175,7 +175,7 @@ test('saves runtime-backed files with the immutable file owner and content hash 
   const snapshot = await service.saveProjectFile(
     { path: '/fixture', runtimeBacked: true },
     {
-      projectPath: '/fixture/',
+      projectPath: '/fixture',
       path: '/fixture/src/main.tsx',
       content: 'saved content',
       contentHash: 'before-save',
@@ -187,7 +187,7 @@ test('saves runtime-backed files with the immutable file owner and content hash 
       command: 'write_project_file',
       args: {
         request: {
-          projectPath: '/fixture/',
+          projectPath: '/fixture',
           filePath: '/fixture/src/main.tsx',
           content: 'saved content',
           expectedContentHash: 'before-save',
@@ -201,43 +201,56 @@ test('saves runtime-backed files with the immutable file owner and content hash 
   expect(snapshot.dirty).toBe(false)
 })
 
-test('matches Windows project owners across slash and path-case differences', async () => {
-  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+test('rejects POSIX-distinct backslash and slash owner identities before invocation', async () => {
+  let invokeCount = 0
   const service = createProjectRuntimeService({
     fallbackProject,
     hasRuntime: () => true,
-    invokeRuntime: async (command, args) => {
-      invoked.push({ command, args })
-      return {
-        projectPath: 'c:/WORK/REPO',
-        filePath: 'c:/WORK/REPO/main.ts',
+    invokeRuntime: async () => {
+      invokeCount += 1
+      throw new Error('runtime must not be invoked')
+    },
+  })
+
+  await expect(
+    service.saveProjectFile(
+      { path: '/tmp/repo/child', runtimeBacked: true },
+      {
+        projectPath: '/tmp/repo\\child',
+        path: '/tmp/repo\\child/main.ts',
         content: 'saved content',
-        contentHash: 'after-save',
-        isText: true,
-        truncated: false,
-      }
+        contentHash: null,
+      },
+    ),
+  ).rejects.toThrow(/project owner/i)
+
+  expect(invokeCount).toBe(0)
+})
+
+test('rejects formatting differences in Windows-looking canonical owner identities', async () => {
+  let invokeCount = 0
+  const service = createProjectRuntimeService({
+    fallbackProject,
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invokeCount += 1
+      throw new Error('runtime must not be invoked')
     },
   })
 
-  const snapshot = await service.saveProjectFile(
-    { path: 'c:/work/repo', runtimeBacked: true },
-    {
-      projectPath: 'C:\\Work\\Repo\\',
-      path: 'C:\\Work\\Repo\\main.ts',
-      content: 'saved content',
-      contentHash: null,
-    },
-  )
+  await expect(
+    service.saveProjectFile(
+      { path: 'c:/work/repo', runtimeBacked: true },
+      {
+        projectPath: 'C:\\Work\\Repo\\',
+        path: 'C:\\Work\\Repo\\main.ts',
+        content: 'saved content',
+        contentHash: null,
+      },
+    ),
+  ).rejects.toThrow(/project owner/i)
 
-  expect(invoked[0].args).toEqual({
-    request: {
-      projectPath: 'C:\\Work\\Repo\\',
-      filePath: 'C:\\Work\\Repo\\main.ts',
-      content: 'saved content',
-      expectedContentHash: undefined,
-    },
-  })
-  expect(snapshot.projectPath).toBe('c:/WORK/REPO')
+  expect(invokeCount).toBe(0)
 })
 
 test('rejects a mixed-owner patch before runtime invocation', async () => {
@@ -441,3 +454,67 @@ test('rejects a patch response owned by another project', async () => {
     ),
   ).rejects.toThrow(/runtime.*project owner/i)
 })
+
+const runtimePatchSnapshot = (filePath?: string) => ({
+  projectPath: '/projects/A',
+  ...(filePath === undefined ? {} : { filePath }),
+  displayPath: filePath?.split('/').at(-1) ?? 'missing.ts',
+  content: 'patched content',
+  contentHash: 'after-patch',
+  isText: true,
+  truncated: false,
+})
+
+const patchEdit = (path: string) => ({
+  projectPath: '/projects/A',
+  path,
+  content: `patch ${path}`,
+  contentHash: null,
+})
+
+for (const scenario of [
+  {
+    name: 'a result-count mismatch',
+    edits: [patchEdit('/projects/A/one.ts'), patchEdit('/projects/A/two.ts')],
+    appliedFiles: [runtimePatchSnapshot('/projects/A/one.ts')],
+  },
+  {
+    name: 'a missing returned file path',
+    edits: [patchEdit('/projects/A/one.ts')],
+    appliedFiles: [runtimePatchSnapshot()],
+  },
+  {
+    name: 'duplicate returned file paths',
+    edits: [patchEdit('/projects/A/one.ts'), patchEdit('/projects/A/two.ts')],
+    appliedFiles: [
+      runtimePatchSnapshot('/projects/A/one.ts'),
+      runtimePatchSnapshot('/projects/A/one.ts'),
+    ],
+  },
+  {
+    name: 'a wrong returned file path',
+    edits: [patchEdit('/projects/A/one.ts')],
+    appliedFiles: [runtimePatchSnapshot('/projects/A/other.ts')],
+  },
+]) {
+  test(`rejects a patch response with ${scenario.name}`, async () => {
+    let invokeCount = 0
+    const service = createProjectRuntimeService({
+      fallbackProject,
+      hasRuntime: () => true,
+      invokeRuntime: async () => {
+        invokeCount += 1
+        return { appliedFiles: scenario.appliedFiles }
+      },
+    })
+
+    await expect(
+      service.applyProjectPatch(
+        { path: '/projects/A', runtimeBacked: true },
+        scenario.edits,
+      ),
+    ).rejects.toThrow(/runtime patch.*file/i)
+
+    expect(invokeCount).toBe(1)
+  })
+}
