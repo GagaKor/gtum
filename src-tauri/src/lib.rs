@@ -373,6 +373,17 @@ fn close_workspace_project(
     state.close_project(request.path)
 }
 
+macro_rules! generate_handler_with_workspace_commands {
+    ($($other:path),* $(,)?) => {
+        tauri::generate_handler![
+            $($other,)*
+            open_workspace_project,
+            activate_workspace_project,
+            close_workspace_project,
+        ]
+    };
+}
+
 #[tauri::command]
 fn read_telegram_runtime_snapshot(
     state: tauri::State<'_, TelegramBridgeManager>,
@@ -504,7 +515,7 @@ pub fn run() {
         .manage(TerminalSessionManager::new())
         .manage(TelegramBridgeManager::new())
         .manage(WorkspaceStateManager::new())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(generate_handler_with_workspace_commands![
             get_runtime_info,
             read_project_overview,
             read_project_file,
@@ -541,9 +552,6 @@ pub fn run() {
             read_workspace_runtime_snapshot,
             save_workspace_runtime_snapshot,
             remember_workspace_project,
-            open_workspace_project,
-            activate_workspace_project,
-            close_workspace_project,
             read_telegram_runtime_snapshot,
             begin_telegram_link,
             complete_telegram_link,
@@ -633,6 +641,14 @@ mod tests {
         }
     }
 
+    struct TestPathGuard(PathBuf);
+
+    impl Drop for TestPathGuard {
+        fn drop(&mut self) {
+            remove_test_path(&self.0);
+        }
+    }
+
     #[test]
     fn app_storage_dir_is_created_when_missing() {
         let storage_dir = unique_temp_path("missing-storage-dir");
@@ -702,6 +718,7 @@ mod tests {
     fn workspace_project_commands_accept_request_envelopes_and_apply_transitions() {
         let storage_dir = unique_temp_path("workspace-project-command-ipc");
         remove_test_path(&storage_dir);
+        let _storage_guard = TestPathGuard(storage_dir.clone());
         let project_a = storage_dir.join("project-a");
         let project_b = storage_dir.join("project-b");
         fs::create_dir_all(&project_a).unwrap();
@@ -713,11 +730,7 @@ mod tests {
             .unwrap();
         let app = tauri::test::mock_builder()
             .manage(manager)
-            .invoke_handler(tauri::generate_handler![
-                open_workspace_project,
-                activate_workspace_project,
-                close_workspace_project,
-            ])
+            .invoke_handler(generate_handler_with_workspace_commands![])
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
@@ -766,7 +779,5 @@ mod tests {
             closed.active_project_path,
             closed.open_project_paths.first().cloned()
         );
-
-        remove_test_path(&storage_dir);
     }
 }
