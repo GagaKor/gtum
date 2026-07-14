@@ -2,86 +2,175 @@ import { expect, test } from '@playwright/test'
 
 import {
   createWorkspaceRuntimeService,
+  normalizeRuntimeWorkspaceSnapshot,
   type RuntimeWorkspaceRuntimeSnapshot,
   type RuntimeWorkspaceSnapshot,
+  type SaveWorkspaceRuntimeSnapshotRequest,
 } from '../../src/shared/api/runtimeWorkspace'
+
+const projectA = '/workspace/gtum'
+const projectB = '/workspace/other'
+
+const v2Snapshot: RuntimeWorkspaceSnapshot = {
+  recentProjects: [projectA, projectB],
+  openProjectPaths: [projectA, projectB],
+  activeProjectPath: projectA,
+  lastOpenedProjectPath: projectA,
+  updatedAt: 130,
+  storageVersion: 2,
+}
 
 const runtimeSnapshot: RuntimeWorkspaceRuntimeSnapshot = {
   storagePath: '/Users/kwon/Library/Application Support/gtum/workspace-state.json',
-  snapshot: {
-    recentProjects: ['/workspace/gtum'],
-    lastOpenedProjectPath: '/workspace/gtum',
-    updatedAt: 100,
-    storageVersion: 1,
-  },
-  restoredAt: 120,
+  snapshot: v2Snapshot,
+  restoredAt: 140,
 }
 
-const savedSnapshot: RuntimeWorkspaceSnapshot = {
-  recentProjects: ['/workspace/gtum', '/workspace/other'],
-  lastOpenedProjectPath: '/workspace/gtum',
-  updatedAt: 130,
-  storageVersion: 1,
-}
-
-const rememberedSnapshot: RuntimeWorkspaceSnapshot = {
-  recentProjects: ['/workspace/gtum'],
-  lastOpenedProjectPath: '/workspace/gtum',
-  updatedAt: 140,
-  storageVersion: 1,
-}
-
-test('reads and writes workspace snapshots through Tauri workspace commands', async () => {
+test('uses exact v2 workspace command envelopes and omits undefined save keys', async () => {
   const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
   const service = createWorkspaceRuntimeService({
     hasRuntime: () => true,
     invokeRuntime: async (command, args) => {
       invoked.push({ command, args })
-
-      if (command === 'read_workspace_runtime_snapshot') return runtimeSnapshot
-      if (command === 'save_workspace_runtime_snapshot') return savedSnapshot
-      if (command === 'remember_workspace_project') return rememberedSnapshot
-
-      throw new Error(`unexpected workspace command: ${command}`)
+      return command === 'read_workspace_runtime_snapshot'
+        ? runtimeSnapshot
+        : v2Snapshot
     },
+  })
+  const saveRequest: SaveWorkspaceRuntimeSnapshotRequest = {
+    recentProjects: [projectA, projectB],
+    openProjectPaths: [projectA, projectB],
+    activeProjectPath: projectA,
+    lastOpenedProjectPath: undefined,
+    updatedAt: undefined,
+    storageVersion: 2,
+  }
+
+  const restored = await service.readSnapshot()
+  const saved = await service.saveSnapshot(saveRequest)
+  const remembered = await service.rememberProject(projectA)
+  const opened = await service.openProject(projectB)
+  const activated = await service.activateProject(projectA)
+  const closed = await service.closeProject(projectB)
+
+  expect(invoked).toEqual([
+    { command: 'read_workspace_runtime_snapshot', args: undefined },
+    {
+      command: 'save_workspace_runtime_snapshot',
+      args: {
+        request: {
+          recentProjects: [projectA, projectB],
+          openProjectPaths: [projectA, projectB],
+          activeProjectPath: projectA,
+          storageVersion: 2,
+        },
+      },
+    },
+    {
+      command: 'remember_workspace_project',
+      args: { request: { path: projectA } },
+    },
+    {
+      command: 'open_workspace_project',
+      args: { request: { path: projectB } },
+    },
+    {
+      command: 'activate_workspace_project',
+      args: { request: { path: projectA } },
+    },
+    {
+      command: 'close_workspace_project',
+      args: { request: { path: projectB } },
+    },
+  ])
+  expect(restored).toEqual(runtimeSnapshot)
+  expect([saved, remembered, opened, activated, closed]).toEqual([
+    v2Snapshot,
+    v2Snapshot,
+    v2Snapshot,
+    v2Snapshot,
+    v2Snapshot,
+  ])
+})
+
+test('normalizes legacy v1 read, save, and remember responses into v2 state', async () => {
+  const legacySnapshot = {
+    recentProjects: [projectB, projectA],
+    lastOpenedProjectPath: projectA,
+    updatedAt: 90,
+    storageVersion: 1,
+  }
+  const normalizedLegacy: RuntimeWorkspaceSnapshot = {
+    recentProjects: [projectB, projectA],
+    openProjectPaths: [projectA],
+    activeProjectPath: projectA,
+    lastOpenedProjectPath: projectA,
+    updatedAt: 90,
+    storageVersion: 2,
+  }
+  const service = createWorkspaceRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command) =>
+      command === 'read_workspace_runtime_snapshot'
+        ? { storagePath: '/tmp/workspace.json', snapshot: legacySnapshot, restoredAt: 95 }
+        : legacySnapshot,
+  })
+
+  expect(normalizeRuntimeWorkspaceSnapshot(legacySnapshot)).toEqual(normalizedLegacy)
+  expect(
+    normalizeRuntimeWorkspaceSnapshot({
+      ...legacySnapshot,
+      recentProjects: [],
+      lastOpenedProjectPath: null,
+    }),
+  ).toEqual({
+    ...normalizedLegacy,
+    recentProjects: [],
+    openProjectPaths: [],
+    activeProjectPath: null,
+    lastOpenedProjectPath: null,
   })
 
   const restored = await service.readSnapshot()
   const saved = await service.saveSnapshot({
-    recentProjects: ['/workspace/gtum', '/workspace/other'],
-    lastOpenedProjectPath: '/workspace/gtum',
+    recentProjects: [projectA],
+    openProjectPaths: [projectA],
+    activeProjectPath: projectA,
   })
-  const remembered = await service.rememberProject('/workspace/gtum')
+  const remembered = await service.rememberProject(projectA)
 
-  expect(invoked).toEqual([
-    {
-      command: 'read_workspace_runtime_snapshot',
-      args: undefined,
-    },
-    {
-      command: 'save_workspace_runtime_snapshot',
-      args: {
-          request: {
-            recentProjects: ['/workspace/gtum', '/workspace/other'],
-            lastOpenedProjectPath: '/workspace/gtum',
-          },
-        },
-      },
-    {
-      command: 'remember_workspace_project',
-      args: {
-        request: {
-          path: '/workspace/gtum',
-        },
-      },
-    },
-  ])
-  expect(restored).toEqual(runtimeSnapshot)
-  expect(saved).toEqual(savedSnapshot)
-  expect(remembered).toEqual(rememberedSnapshot)
+  expect(restored).toEqual({
+    storagePath: '/tmp/workspace.json',
+    snapshot: normalizedLegacy,
+    restoredAt: 95,
+  })
+  expect(saved).toEqual(normalizedLegacy)
+  expect(remembered).toEqual(normalizedLegacy)
 })
 
-test('keeps browser preview workspace persistence local when desktop runtime is unavailable', async () => {
+test('rejects invalid v2 active project membership instead of guessing', async () => {
+  const invalidSnapshots = [
+    { ...v2Snapshot, openProjectPaths: [projectA], activeProjectPath: projectB },
+    { ...v2Snapshot, openProjectPaths: [projectA], activeProjectPath: null },
+    { ...v2Snapshot, openProjectPaths: [], activeProjectPath: projectA },
+  ]
+
+  for (const snapshot of invalidSnapshots) {
+    expect(() => normalizeRuntimeWorkspaceSnapshot(snapshot)).toThrow(
+      /workspace snapshot.*active project/i,
+    )
+  }
+
+  const service = createWorkspaceRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => invalidSnapshots[0],
+  })
+  await expect(service.openProject(projectA)).rejects.toThrow(
+    /workspace snapshot.*active project/i,
+  )
+})
+
+test('returns null for every workspace method when desktop runtime is unavailable', async () => {
   let invokedRuntime = false
   const service = createWorkspaceRuntimeService({
     hasRuntime: () => false,
@@ -91,15 +180,19 @@ test('keeps browser preview workspace persistence local when desktop runtime is 
     },
   })
 
-  const restored = await service.readSnapshot()
-  const saved = await service.saveSnapshot({
-    recentProjects: ['/workspace/gtum'],
-    lastOpenedProjectPath: '/workspace/gtum',
-  })
-  const remembered = await service.rememberProject('/workspace/gtum')
+  const results = await Promise.all([
+    service.readSnapshot(),
+    service.saveSnapshot({
+      recentProjects: [projectA],
+      openProjectPaths: [projectA],
+      activeProjectPath: projectA,
+    }),
+    service.rememberProject(projectA),
+    service.openProject(projectA),
+    service.activateProject(projectA),
+    service.closeProject(projectA),
+  ])
 
   expect(invokedRuntime).toBe(false)
-  expect(restored).toBeNull()
-  expect(saved).toBeNull()
-  expect(remembered).toBeNull()
+  expect(results).toEqual([null, null, null, null, null, null])
 })
