@@ -9,6 +9,7 @@ import {
 export type RuntimeTerminalStatus = 'running' | 'exited' | 'terminated' | 'failed'
 
 export type RuntimeTerminalSnapshot = {
+  projectPath: string | null
   sessionId: number | null
   name: string
   cwd?: string | null
@@ -25,6 +26,7 @@ export type RuntimeTerminalSnapshot = {
 }
 
 export type RuntimeTerminalLogs = {
+  projectPath: string
   sessionId: number
   status: RuntimeTerminalStatus
   limit: number
@@ -45,6 +47,7 @@ export type TerminalTabStatus = 'running' | 'idle' | 'failed' | 'passing'
 export type RuntimeTerminalTab = {
   id: string
   type?: 'terminal'
+  projectPath: string
   title: string
   shell: string
   cwd: string
@@ -59,6 +62,7 @@ export type RuntimeTerminalTab = {
 }
 
 export type TerminalLogsView = {
+  projectPath: string | null
   sessionId: number | null
   status: TerminalTabStatus
   runtimeStatus: RuntimeTerminalStatus | 'unavailable'
@@ -69,6 +73,7 @@ export type TerminalLogsView = {
 }
 
 export type RawTerminalOutput = {
+  projectPath: string | null
   sessionId: number | null
   base: number
   cursor: number
@@ -90,6 +95,11 @@ export type CreateTerminalTabWithCommandRequest = CreateTerminalTabRequest & {
   command: string
 }
 
+export type TerminalSessionOwner = Readonly<{
+  projectPath: string
+  terminalSessionId: number
+}>
+
 export type TerminalRuntimeServiceOptions = {
   hasRuntime?: () => boolean
   invokeRuntime?: RuntimeInvoker
@@ -101,14 +111,21 @@ export type TerminalRuntimeService = {
   createTerminalTabWithCommand(
     request: CreateTerminalTabWithCommandRequest,
   ): Promise<RuntimeTerminalTab>
-  listSessions(): Promise<RuntimeTerminalSnapshot[]>
-  renameSession(sessionId: number, name: string): Promise<RuntimeTerminalSnapshot>
-  closeSession(sessionId: number | null): Promise<RuntimeTerminalSnapshot>
-  readLogs(sessionId: number | null, limit?: number): Promise<TerminalLogsView>
-  executeCommand(sessionId: number | null, command: string): Promise<RuntimeTerminalSnapshot>
-  writeInput(sessionId: number | null, data: string): Promise<void>
-  readRawOutput(sessionId: number | null, from: number): Promise<RawTerminalOutput>
-  resizeSession(sessionId: number | null, rows: number, cols: number): Promise<void>
+  listSessions(projectPath: string): Promise<RuntimeTerminalSnapshot[]>
+  renameSession(owner: TerminalSessionOwner, name: string): Promise<RuntimeTerminalSnapshot>
+  closeSession(owner: TerminalSessionOwner | null): Promise<RuntimeTerminalSnapshot>
+  readLogs(owner: TerminalSessionOwner | null, limit?: number): Promise<TerminalLogsView>
+  executeCommand(
+    owner: TerminalSessionOwner | null,
+    command: string,
+  ): Promise<RuntimeTerminalSnapshot>
+  writeInput(owner: TerminalSessionOwner | null, data: string): Promise<void>
+  readRawOutput(owner: TerminalSessionOwner | null, from: number): Promise<RawTerminalOutput>
+  resizeSession(
+    owner: TerminalSessionOwner | null,
+    rows: number,
+    cols: number,
+  ): Promise<void>
 }
 
 type RuntimeTerminalOverride = {
@@ -129,6 +146,102 @@ const terminalOverride = (): RuntimeTerminalOverride | null => {
 
 const omitUndefined = (values: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined))
+
+const requiredProjectPath = (value: unknown, field = 'projectPath'): string => {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${field} must be a nonblank string`)
+  }
+
+  return value
+}
+
+const requiredSessionId = (value: unknown, field = 'terminalSessionId'): number => {
+  if (!Number.isSafeInteger(value) || Number(value) < 1) {
+    throw new Error(`${field} must be a positive safe integer`)
+  }
+
+  return Number(value)
+}
+
+const requiredOwner = (owner: TerminalSessionOwner): TerminalSessionOwner => {
+  if (!owner || typeof owner !== 'object') {
+    throw new Error('terminal session owner is required')
+  }
+
+  return {
+    projectPath: requiredProjectPath(owner.projectPath),
+    terminalSessionId: requiredSessionId(owner.terminalSessionId),
+  }
+}
+
+const ownerMismatch = (
+  expectedProjectPath: string,
+  expectedSessionId: number | null,
+  actualProjectPath: unknown,
+  actualSessionId: unknown,
+): Error =>
+  new Error(
+    `terminal session owner mismatch: expected ${JSON.stringify(expectedProjectPath)}:${expectedSessionId ?? '*'}, received ${JSON.stringify(actualProjectPath)}:${String(actualSessionId)}`,
+  )
+
+const validatedRuntimeOwner = (
+  value: unknown,
+  expectedProjectPath: string,
+  expectedSessionId: number | null,
+): { projectPath: string; sessionId: number } => {
+  if (!value || typeof value !== 'object') {
+    throw ownerMismatch(expectedProjectPath, expectedSessionId, undefined, undefined)
+  }
+
+  const candidate = value as { projectPath?: unknown; sessionId?: unknown }
+  let projectPath: string
+  let sessionId: number
+  try {
+    projectPath = requiredProjectPath(candidate.projectPath, 'response.projectPath')
+    sessionId = requiredSessionId(candidate.sessionId, 'response.sessionId')
+  } catch {
+    throw ownerMismatch(
+      expectedProjectPath,
+      expectedSessionId,
+      candidate.projectPath,
+      candidate.sessionId,
+    )
+  }
+
+  if (
+    projectPath !== expectedProjectPath ||
+    (expectedSessionId != null && sessionId !== expectedSessionId)
+  ) {
+    throw ownerMismatch(expectedProjectPath, expectedSessionId, projectPath, sessionId)
+  }
+
+  return { projectPath, sessionId }
+}
+
+const validatedSnapshot = (
+  value: unknown,
+  expectedProjectPath: string,
+  expectedSessionId: number | null,
+): RuntimeTerminalSnapshot => {
+  validatedRuntimeOwner(value, expectedProjectPath, expectedSessionId)
+  return value as RuntimeTerminalSnapshot
+}
+
+const validatedLogs = (
+  value: unknown,
+  owner: TerminalSessionOwner,
+): RuntimeTerminalLogs => {
+  validatedRuntimeOwner(value, owner.projectPath, owner.terminalSessionId)
+  return value as RuntimeTerminalLogs
+}
+
+const validatedRawOutput = (
+  value: unknown,
+  owner: TerminalSessionOwner,
+): RawTerminalOutput => {
+  validatedRuntimeOwner(value, owner.projectPath, owner.terminalSessionId)
+  return value as RawTerminalOutput
+}
 
 const normalizedPath = (value: string | null | undefined): string =>
   String(value || '').replace(/\\/g, '/').replace(/\/+$/, '')
@@ -174,26 +287,33 @@ export const terminalTabFromRuntime = (
   snapshot: RuntimeTerminalSnapshot,
   request: CreateTerminalTabRequest,
   lines: TerminalLine[] = [],
-): RuntimeTerminalTab => ({
-  id: `t-runtime-${snapshot.sessionId ?? 'local'}`,
-  type: 'terminal',
-  title: request.title || snapshot.name || 'terminal',
-  shell: basenameOfPath(snapshot.shell || request.shell || 'shell'),
-  cwd: displayCwdForProject(request.projectPath, snapshot.cwd),
-  status: terminalStatusFromRuntime(snapshot),
-  cmd: null,
-  lines,
-  terminalSessionId: snapshot.sessionId,
-  runtimeBacked: snapshot.sessionId != null,
-  runtimeStatus: snapshot.status,
-  lastLogLineCount: snapshot.logLineCount,
-  runtimeUpdatedAt: snapshot.updatedAt,
-})
+): RuntimeTerminalTab => {
+  const projectPath = requiredProjectPath(snapshot.projectPath, 'snapshot.projectPath')
+
+  return {
+    id: `t-runtime-${snapshot.sessionId ?? 'local'}`,
+    type: 'terminal',
+    projectPath,
+    title: request.title || snapshot.name || 'terminal',
+    shell: basenameOfPath(snapshot.shell || request.shell || 'shell'),
+    cwd: displayCwdForProject(projectPath, snapshot.cwd),
+    status: terminalStatusFromRuntime(snapshot),
+    cmd: null,
+    lines,
+    terminalSessionId: snapshot.sessionId,
+    runtimeBacked: snapshot.sessionId != null,
+    runtimeStatus: snapshot.status,
+    lastLogLineCount: snapshot.logLineCount,
+    runtimeUpdatedAt: snapshot.updatedAt,
+  }
+}
 
 const fallbackSnapshot = (
+  projectPath: string | null,
   status: RuntimeTerminalStatus = 'failed',
   lastEvent = 'desktop runtime is not connected',
 ): RuntimeTerminalSnapshot => ({
+  projectPath,
   sessionId: null,
   name: 'local preview',
   cwd: null,
@@ -210,7 +330,7 @@ const fallbackSnapshot = (
 })
 
 const fallbackTerminalTab = (request: CreateTerminalTabRequest): RuntimeTerminalTab =>
-  terminalTabFromRuntime(fallbackSnapshot(), request, [
+  terminalTabFromRuntime(fallbackSnapshot(request.projectPath), request, [
     {
       kind: 'log',
       text: 'desktop runtime is not connected; terminal preview is local only.',
@@ -218,10 +338,14 @@ const fallbackTerminalTab = (request: CreateTerminalTabRequest): RuntimeTerminal
     },
   ])
 
-const createSessionPayload = (request: CreateTerminalTabRequest): Record<string, unknown> =>
+const createSessionPayload = (
+  request: CreateTerminalTabRequest,
+  projectPath: string,
+): Record<string, unknown> =>
   omitUndefined({
+    projectPath,
     name: request.title,
-    cwd: resolveRuntimeCwd(request.projectPath, request.cwd),
+    cwd: resolveRuntimeCwd(projectPath, request.cwd),
     shell: request.shell,
     rows: request.rows,
     cols: request.cols,
@@ -238,55 +362,82 @@ export const createTerminalRuntimeService = (
   return {
     hasRuntime,
     async createTerminalTab(request) {
-      if (!hasRuntime()) return fallbackTerminalTab(request)
+      const projectPath = requiredProjectPath(request.projectPath)
+      const ownedRequest = { ...request, projectPath }
+      if (!hasRuntime()) return fallbackTerminalTab(ownedRequest)
 
-      const snapshot = await invokeRuntime<RuntimeTerminalSnapshot>('create_terminal_session', {
-        request: createSessionPayload(request),
+      const response = await invokeRuntime<unknown>('create_terminal_session', {
+        request: createSessionPayload(ownedRequest, projectPath),
       })
+      const snapshot = validatedSnapshot(response, projectPath, null)
 
-      return terminalTabFromRuntime(snapshot, request)
+      return terminalTabFromRuntime(snapshot, ownedRequest)
     },
     async createTerminalTabWithCommand(request) {
+      const projectPath = requiredProjectPath(request.projectPath)
+      const ownedRequest = { ...request, projectPath }
       if (!hasRuntime()) {
         return {
-          ...fallbackTerminalTab(request),
+          ...fallbackTerminalTab(ownedRequest),
           cmd: request.command,
         }
       }
 
-      const snapshot = await invokeRuntime<RuntimeTerminalSnapshot>(
+      const response = await invokeRuntime<unknown>(
         'create_terminal_session_with_command',
         {
           request: {
-            session: createSessionPayload(request),
+            session: createSessionPayload(ownedRequest, projectPath),
             command: request.command,
           },
         },
       )
+      const snapshot = validatedSnapshot(response, projectPath, null)
 
       return {
-        ...terminalTabFromRuntime(snapshot, request, [{ kind: 'cmd', text: request.command }]),
+        ...terminalTabFromRuntime(snapshot, ownedRequest, [
+          { kind: 'cmd', text: request.command },
+        ]),
         cmd: request.command,
       }
     },
-    async listSessions() {
+    async listSessions(projectPathValue) {
+      const projectPath = requiredProjectPath(projectPathValue)
       if (!hasRuntime()) return []
 
-      return invokeRuntime<RuntimeTerminalSnapshot[]>('list_terminal_sessions')
-    },
-    async renameSession(sessionId, name) {
-      if (!hasRuntime()) return fallbackSnapshot('failed')
+      const response = await invokeRuntime<unknown>('list_terminal_sessions', { projectPath })
+      if (!Array.isArray(response)) {
+        throw new Error('terminal session list response must be an array')
+      }
 
-      return invokeRuntime<RuntimeTerminalSnapshot>('rename_terminal_session', { sessionId, name })
+      return response.map((snapshot) => validatedSnapshot(snapshot, projectPath, null))
     },
-    async closeSession(sessionId) {
-      if (!hasRuntime() || sessionId == null) return fallbackSnapshot('terminated')
+    async renameSession(ownerValue, name) {
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) return fallbackSnapshot(owner.projectPath, 'failed')
 
-      return invokeRuntime<RuntimeTerminalSnapshot>('close_terminal_session', { sessionId })
+      const response = await invokeRuntime<unknown>('rename_terminal_session', {
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
+        name,
+      })
+      return validatedSnapshot(response, owner.projectPath, owner.terminalSessionId)
     },
-    async readLogs(sessionId, limit = DEFAULT_LOG_LIMIT) {
-      if (!hasRuntime() || sessionId == null) {
+    async closeSession(ownerValue) {
+      if (ownerValue == null) return fallbackSnapshot(null, 'terminated')
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) return fallbackSnapshot(owner.projectPath, 'terminated')
+
+      const response = await invokeRuntime<unknown>('close_terminal_session', {
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
+      })
+      return validatedSnapshot(response, owner.projectPath, owner.terminalSessionId)
+    },
+    async readLogs(ownerValue, limit = DEFAULT_LOG_LIMIT) {
+      if (ownerValue == null) {
         return {
+          projectPath: null,
           sessionId: null,
           status: 'failed',
           runtimeStatus: 'unavailable',
@@ -296,13 +447,29 @@ export const createTerminalRuntimeService = (
           updatedAt: Date.now(),
         }
       }
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) {
+        return {
+          projectPath: owner.projectPath,
+          sessionId: owner.terminalSessionId,
+          status: 'failed',
+          runtimeStatus: 'unavailable',
+          logLineCount: 0,
+          truncated: false,
+          lines: [],
+          updatedAt: Date.now(),
+        }
+      }
 
-      const logs = await invokeRuntime<RuntimeTerminalLogs>('read_terminal_session_logs', {
-        sessionId,
+      const response = await invokeRuntime<unknown>('read_terminal_session_logs', {
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
         limit,
       })
+      const logs = validatedLogs(response, owner)
 
       return {
+        projectPath: logs.projectPath,
         sessionId: logs.sessionId,
         status: terminalStatusFromRuntime({ status: logs.status, exitCode: null }),
         runtimeStatus: logs.status,
@@ -312,22 +479,33 @@ export const createTerminalRuntimeService = (
         updatedAt: logs.updatedAt,
       }
     },
-    async executeCommand(sessionId, command) {
-      if (!hasRuntime() || sessionId == null) return fallbackSnapshot('failed')
+    async executeCommand(ownerValue, command) {
+      if (ownerValue == null) return fallbackSnapshot(null, 'failed')
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) return fallbackSnapshot(owner.projectPath, 'failed')
 
-      return invokeRuntime<RuntimeTerminalSnapshot>('execute_terminal_session_command', {
-        sessionId,
+      const response = await invokeRuntime<unknown>('execute_terminal_session_command', {
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
         command,
       })
+      return validatedSnapshot(response, owner.projectPath, owner.terminalSessionId)
     },
-    async writeInput(sessionId, data) {
-      if (!hasRuntime() || sessionId == null) return
+    async writeInput(ownerValue, data) {
+      if (ownerValue == null) return
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) return
 
-      await invokeRuntime<void>('write_terminal_input', { sessionId, data })
+      await invokeRuntime<void>('write_terminal_input', {
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
+        data,
+      })
     },
-    async readRawOutput(sessionId, from) {
-      if (!hasRuntime() || sessionId == null) {
+    async readRawOutput(ownerValue, from) {
+      if (ownerValue == null) {
         return {
+          projectPath: null,
           sessionId: null,
           base: from,
           cursor: from,
@@ -335,18 +513,34 @@ export const createTerminalRuntimeService = (
           status: 'unavailable',
         }
       }
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) {
+        return {
+          projectPath: owner.projectPath,
+          sessionId: owner.terminalSessionId,
+          base: from,
+          cursor: from,
+          chunk: '',
+          status: 'unavailable',
+        }
+      }
 
-      return invokeRuntime<RawTerminalOutput>('read_raw_terminal_output', {
-        sessionId,
+      const response = await invokeRuntime<unknown>('read_raw_terminal_output', {
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
         from,
       })
+      return validatedRawOutput(response, owner)
     },
-    async resizeSession(sessionId, rows, cols) {
-      if (!hasRuntime() || sessionId == null) return
+    async resizeSession(ownerValue, rows, cols) {
+      if (ownerValue == null) return
+      const owner = requiredOwner(ownerValue)
+      if (!hasRuntime()) return
       if (!Number.isFinite(rows) || !Number.isFinite(cols) || rows < 1 || cols < 1) return
 
       await invokeRuntime<void>('resize_terminal_session', {
-        sessionId,
+        projectPath: owner.projectPath,
+        sessionId: owner.terminalSessionId,
         rows: Math.floor(rows),
         cols: Math.floor(cols),
       })

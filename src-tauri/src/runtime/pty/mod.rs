@@ -3,6 +3,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
+    fs,
     io::{Read, Write},
     path::PathBuf,
     sync::{
@@ -45,99 +46,115 @@ impl TerminalSessionManager {
         &self,
         request: CreateTerminalSessionRequest,
     ) -> Result<TerminalSessionSnapshot, String> {
+        let project_path = canonicalize_project_owner(&request.project_path)?;
+
         #[cfg(target_os = "windows")]
         {
-            return self.create_piped_shell_session(request);
+            return self.create_piped_shell_session(request, project_path);
         }
 
         #[cfg(not(target_os = "windows"))]
         {
-        let session_id = self.next_id();
-        let shell_candidates = platform::terminal_shell_candidates(request.shell.as_deref());
-        let cwd = match request.cwd {
-            Some(path) => Some(platform::normalize_project_path(&path)?),
-            None => None,
-        };
-        let session_name = request
-            .name
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| default_session_name(session_id));
-        let log_limit = request
-            .max_log_entries
-            .unwrap_or(DEFAULT_LOG_LIMIT)
-            .clamp(MIN_LOG_LIMIT, MAX_LOG_LIMIT);
+            let session_id = self.next_id();
+            let shell_candidates = platform::terminal_shell_candidates(request.shell.as_deref());
+            let cwd = match request.cwd {
+                Some(path) => Some(platform::normalize_project_path(&path)?),
+                None => None,
+            };
+            let session_name = request
+                .name
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| default_session_name(session_id));
+            let log_limit = request
+                .max_log_entries
+                .unwrap_or(DEFAULT_LOG_LIMIT)
+                .clamp(MIN_LOG_LIMIT, MAX_LOG_LIMIT);
 
-        let pty_system = native_pty_system();
+            let pty_system = native_pty_system();
 
-        let mut last_error = None;
-        for candidate in shell_candidates {
-            let pty_pair = pty_system
-                .openpty(PtySize {
-                    rows: request.rows.unwrap_or(DEFAULT_ROWS),
-                    cols: request.cols.unwrap_or(DEFAULT_COLS),
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-                .map_err(|error| format!("failed to allocate terminal session: {error}"))?;
+            let mut last_error = None;
+            for candidate in shell_candidates {
+                let pty_pair = pty_system
+                    .openpty(PtySize {
+                        rows: request.rows.unwrap_or(DEFAULT_ROWS),
+                        cols: request.cols.unwrap_or(DEFAULT_COLS),
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    })
+                    .map_err(|error| format!("failed to allocate terminal session: {error}"))?;
 
-            let mut command = CommandBuilder::new(candidate.program.clone());
-            if !candidate.args.is_empty() {
-                command.args(candidate.args.clone());
-            }
-            if let Some(cwd) = &cwd {
-                command.cwd(cwd);
-            }
-            if let Some(path_env) = platform::terminal_path_env() {
-                command.env("PATH", path_env);
-            }
-
-            match pty_pair.slave.spawn_command(command) {
-                Ok(child) => {
-                    return self.finish_session_spawn(
-                        session_id,
-                        session_name,
-                        cwd,
-                        log_limit,
-                        pty_pair.master,
-                        child,
-                        candidate.program,
-                        candidate.args,
-                    );
+                let mut command = CommandBuilder::new(candidate.program.clone());
+                if !candidate.args.is_empty() {
+                    command.args(candidate.args.clone());
                 }
-                Err(error) => {
-                    last_error = Some(format!("failed to spawn {}: {error}", candidate.program));
+                if let Some(cwd) = &cwd {
+                    command.cwd(cwd);
+                }
+                if let Some(path_env) = platform::terminal_path_env() {
+                    command.env("PATH", path_env);
+                }
+
+                match pty_pair.slave.spawn_command(command) {
+                    Ok(child) => {
+                        return self.finish_session_spawn(
+                            session_id,
+                            project_path,
+                            session_name,
+                            cwd,
+                            log_limit,
+                            pty_pair.master,
+                            child,
+                            candidate.program,
+                            candidate.args,
+                        );
+                    }
+                    Err(error) => {
+                        last_error =
+                            Some(format!("failed to spawn {}: {error}", candidate.program));
+                    }
                 }
             }
-        }
 
-        Err(last_error.unwrap_or_else(|| "unable to spawn a terminal shell".into()))
+            Err(last_error.unwrap_or_else(|| "unable to spawn a terminal shell".into()))
         }
     }
 
-    pub fn list_sessions(&self) -> Vec<TerminalSessionSnapshot> {
+    pub fn list_sessions(
+        &self,
+        project_path: &str,
+    ) -> Result<Vec<TerminalSessionSnapshot>, String> {
+        validate_project_owner_value(project_path)?;
         let sessions = self.sessions.lock().unwrap();
         let mut snapshots = sessions
             .values()
-            .map(|session| session.lock().unwrap().snapshot())
+            .filter_map(|session| {
+                let session = session.lock().unwrap();
+                (session.snapshot.project_path == project_path).then(|| session.snapshot())
+            })
             .collect::<Vec<_>>();
 
         snapshots.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
-        snapshots
+        Ok(snapshots)
     }
 
     pub fn rename_session(
         &self,
+        project_path: &str,
         session_id: u64,
         name: String,
     ) -> Result<TerminalSessionSnapshot, String> {
-        let session = self.get_session(session_id)?;
+        let session = self.get_owned_session(project_path, session_id)?;
         let mut session = session.lock().unwrap();
         session.rename(name)?;
         Ok(session.snapshot())
     }
 
-    pub fn close_session(&self, session_id: u64) -> Result<TerminalSessionSnapshot, String> {
-        let session = self.get_session(session_id)?;
+    pub fn close_session(
+        &self,
+        project_path: &str,
+        session_id: u64,
+    ) -> Result<TerminalSessionSnapshot, String> {
+        let session = self.get_owned_session(project_path, session_id)?;
         let mut session = session.lock().unwrap();
         session.close()?;
         Ok(session.snapshot())
@@ -145,38 +162,56 @@ impl TerminalSessionManager {
 
     pub fn read_recent_logs(
         &self,
+        project_path: &str,
         session_id: u64,
         limit: Option<usize>,
     ) -> Result<TerminalSessionLogs, String> {
-        let session = self.get_session(session_id)?;
+        let session = self.get_owned_session(project_path, session_id)?;
         let session = session.lock().unwrap();
         Ok(session.recent_logs(limit.unwrap_or(100)))
     }
 
-    pub fn write_terminal_input(&self, session_id: u64, data: String) -> Result<(), String> {
-        let session = self.get_session(session_id)?;
+    pub fn write_terminal_input(
+        &self,
+        project_path: &str,
+        session_id: u64,
+        data: String,
+    ) -> Result<(), String> {
+        let session = self.get_owned_session(project_path, session_id)?;
         let mut session = session.lock().unwrap();
         session.write_input(&data)
     }
 
-    pub fn read_raw_output(&self, session_id: u64, from: usize) -> Result<RawTerminalOutput, String> {
-        let session = self.get_session(session_id)?;
+    pub fn read_raw_output(
+        &self,
+        project_path: &str,
+        session_id: u64,
+        from: usize,
+    ) -> Result<RawTerminalOutput, String> {
+        let session = self.get_owned_session(project_path, session_id)?;
         let session = session.lock().unwrap();
         Ok(session.read_raw_output(from))
     }
 
-    pub fn resize_session(&self, session_id: u64, rows: u16, cols: u16) -> Result<(), String> {
-        let session = self.get_session(session_id)?;
+    pub fn resize_session(
+        &self,
+        project_path: &str,
+        session_id: u64,
+        rows: u16,
+        cols: u16,
+    ) -> Result<(), String> {
+        let session = self.get_owned_session(project_path, session_id)?;
         let session = session.lock().unwrap();
         session.resize(rows, cols)
     }
 
     pub fn execute_command(
         &self,
+        project_path: &str,
         session_id: u64,
         command: String,
     ) -> Result<TerminalSessionSnapshot, String> {
-        let session = self.get_session(session_id)?;
+        let session = self.get_owned_session(project_path, session_id)?;
         {
             let mut session = session.lock().unwrap();
             if session.is_interactive() {
@@ -216,6 +251,7 @@ impl TerminalSessionManager {
     fn create_piped_shell_session(
         &self,
         request: CreateTerminalSessionRequest,
+        project_path: String,
     ) -> Result<TerminalSessionSnapshot, String> {
         let session_id = self.next_id();
         let shell_candidates = platform::terminal_shell_candidates(request.shell.as_deref());
@@ -259,6 +295,7 @@ impl TerminalSessionManager {
                     let child = Arc::new(Mutex::new(child));
                     let initial_snapshot = TerminalSessionSnapshot::new(
                         session_id,
+                        project_path,
                         session_name,
                         cwd,
                         candidate.program,
@@ -302,6 +339,7 @@ impl TerminalSessionManager {
     fn finish_session_spawn(
         &self,
         session_id: u64,
+        project_path: String,
         name: String,
         cwd: Option<PathBuf>,
         log_limit: usize,
@@ -317,6 +355,7 @@ impl TerminalSessionManager {
             .map_err(|error| format!("failed to create terminal writer: {error}"))?;
         let initial_snapshot = TerminalSessionSnapshot::new(
             session_id,
+            project_path,
             name,
             cwd,
             shell_program,
@@ -502,11 +541,35 @@ impl TerminalSessionManager {
             .cloned()
             .ok_or_else(|| format!("terminal session not found: {session_id}"))
     }
+
+    fn get_owned_session(
+        &self,
+        project_path: &str,
+        session_id: u64,
+    ) -> Result<Arc<Mutex<TerminalSession>>, String> {
+        validate_project_owner_value(project_path)?;
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&session_id)
+            .cloned()
+            .ok_or_else(|| format!("terminal session not found: {session_id}"))?;
+        let actual_owner = session.lock().unwrap().snapshot.project_path.clone();
+        if actual_owner != project_path {
+            return Err(format!(
+                "terminal session owner mismatch: session {session_id} belongs to {actual_owner:?}, not {project_path:?}"
+            ));
+        }
+
+        Ok(session)
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTerminalSessionRequest {
+    pub project_path: String,
     pub name: Option<String>,
     pub cwd: Option<String>,
     pub shell: Option<String>,
@@ -524,9 +587,10 @@ pub struct CreateTerminalSessionWithCommandRequest {
     pub command: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSessionSnapshot {
+    pub project_path: String,
     pub session_id: u64,
     pub name: String,
     pub cwd: Option<String>,
@@ -545,6 +609,7 @@ pub struct TerminalSessionSnapshot {
 impl TerminalSessionSnapshot {
     fn new(
         session_id: u64,
+        project_path: String,
         name: String,
         cwd: Option<PathBuf>,
         shell: String,
@@ -555,6 +620,7 @@ impl TerminalSessionSnapshot {
         let timestamp = unix_timestamp_ms();
 
         Self {
+            project_path,
             session_id,
             name,
             cwd: cwd.map(|path| path.to_string_lossy().into_owned()),
@@ -581,9 +647,10 @@ pub enum TerminalSessionStatus {
     Failed,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSessionLogs {
+    pub project_path: String,
     pub session_id: u64,
     pub status: TerminalSessionStatus,
     pub limit: usize,
@@ -593,9 +660,10 @@ pub struct TerminalSessionLogs {
     pub updated_at: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RawTerminalOutput {
+    pub project_path: String,
     pub session_id: u64,
     pub base: usize,
     pub cursor: usize,
@@ -789,6 +857,7 @@ impl TerminalSession {
         let chunk = self.raw_output[start_rel..].to_string();
 
         RawTerminalOutput {
+            project_path: self.snapshot.project_path.clone(),
             session_id: self.snapshot.session_id,
             base: self.raw_base,
             cursor,
@@ -866,7 +935,8 @@ impl TerminalSession {
 
     fn record_process_wait_error(&mut self, error: String) {
         if self.snapshot.status == TerminalSessionStatus::Terminated {
-            self.snapshot.last_event = Some(format!("process wait ended after termination: {error}"));
+            self.snapshot.last_event =
+                Some(format!("process wait ended after termination: {error}"));
             self.touch("process wait ended after termination");
         } else {
             self.snapshot.status = TerminalSessionStatus::Failed;
@@ -882,6 +952,7 @@ impl TerminalSession {
         let entries = self.logs.iter().skip(start).cloned().collect::<Vec<_>>();
 
         TerminalSessionLogs {
+            project_path: self.snapshot.project_path.clone(),
             session_id: self.snapshot.session_id,
             status: self.snapshot.status,
             limit,
@@ -902,6 +973,33 @@ fn default_session_name(session_id: u64) -> String {
     format!("Session {session_id}")
 }
 
+fn canonicalize_project_owner(project_path: &str) -> Result<String, String> {
+    validate_project_owner_value(project_path)?;
+    let normalized = platform::normalize_project_path(project_path.trim())?;
+    let canonical = fs::canonicalize(&normalized).map_err(|error| {
+        format!(
+            "failed to resolve terminal project path {}: {error}",
+            normalized.display()
+        )
+    })?;
+    if !canonical.is_dir() {
+        return Err(format!(
+            "terminal project path is not a directory: {}",
+            canonical.display()
+        ));
+    }
+
+    Ok(canonical.to_string_lossy().into_owned())
+}
+
+fn validate_project_owner_value(project_path: &str) -> Result<(), String> {
+    if project_path.trim().is_empty() {
+        Err("terminal projectPath cannot be empty".into())
+    } else {
+        Ok(())
+    }
+}
+
 fn unix_timestamp_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -910,14 +1008,19 @@ fn unix_timestamp_ms() -> u64 {
 }
 
 fn is_clear_terminal_command(command: &str) -> bool {
-    matches!(command.trim().to_ascii_lowercase().as_str(), "clear" | "cls")
+    matches!(
+        command.trim().to_ascii_lowercase().as_str(),
+        "clear" | "cls"
+    )
 }
+
+#[cfg(test)]
+mod ownership_tests;
 
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use std::{
-        fs,
-        thread,
+        fs, thread,
         time::{Duration, Instant},
     };
 
@@ -925,12 +1028,15 @@ mod tests {
 
     fn wait_for_log(
         manager: &TerminalSessionManager,
+        project_path: &str,
         session_id: u64,
         needle: &str,
     ) -> Vec<String> {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let logs = manager.read_recent_logs(session_id, Some(200)).unwrap();
+            let logs = manager
+                .read_recent_logs(project_path, session_id, Some(200))
+                .unwrap();
             if logs.entries.iter().any(|line| line.contains(needle)) {
                 return logs.entries;
             }
@@ -992,9 +1098,14 @@ mod tests {
     #[test]
     fn windows_create_session_with_command_uses_interactive_shell_pty() {
         let manager = TerminalSessionManager::new();
+        let project_path = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         let snapshot = manager
             .create_session_with_command(CreateTerminalSessionWithCommandRequest {
                 session: CreateTerminalSessionRequest {
+                    project_path,
                     name: Some("probe".into()),
                     cwd: None,
                     shell: None,
@@ -1008,7 +1119,7 @@ mod tests {
 
         assert!(snapshot.shell.to_ascii_lowercase().contains("powershell"));
         assert_eq!(snapshot.status, TerminalSessionStatus::Running);
-        wait_for_log(&manager, snapshot.session_id, "\\");
+        wait_for_log(&manager, &snapshot.project_path, snapshot.session_id, "\\");
     }
 
     #[test]
@@ -1028,6 +1139,7 @@ mod tests {
         let manager = TerminalSessionManager::new();
         let snapshot = manager
             .create_session(CreateTerminalSessionRequest {
+                project_path: root.to_string_lossy().into_owned(),
                 name: Some("user".into()),
                 cwd: Some(root.to_string_lossy().into_owned()),
                 shell: None,
@@ -1040,36 +1152,68 @@ mod tests {
         assert!(snapshot.shell.to_ascii_lowercase().contains("powershell"));
 
         manager
-            .execute_command(snapshot.session_id, "dir".into())
+            .execute_command(&snapshot.project_path, snapshot.session_id, "dir".into())
             .unwrap();
-        wait_for_log(&manager, snapshot.session_id, "root-marker.txt");
+        wait_for_log(
+            &manager,
+            &snapshot.project_path,
+            snapshot.session_id,
+            "root-marker.txt",
+        );
 
         manager
-            .execute_command(snapshot.session_id, "cd child".into())
+            .execute_command(
+                &snapshot.project_path,
+                snapshot.session_id,
+                "cd child".into(),
+            )
             .unwrap();
         manager
-            .execute_command(snapshot.session_id, "Write-Output (Get-Location).Path".into())
+            .execute_command(
+                &snapshot.project_path,
+                snapshot.session_id,
+                "Write-Output (Get-Location).Path".into(),
+            )
             .unwrap();
-        wait_for_log(&manager, snapshot.session_id, child.to_string_lossy().as_ref());
+        wait_for_log(
+            &manager,
+            &snapshot.project_path,
+            snapshot.session_id,
+            child.to_string_lossy().as_ref(),
+        );
 
         manager
-            .execute_command(snapshot.session_id, "ls".into())
+            .execute_command(&snapshot.project_path, snapshot.session_id, "ls".into())
             .unwrap();
-        wait_for_log(&manager, snapshot.session_id, "child-marker.txt");
+        wait_for_log(
+            &manager,
+            &snapshot.project_path,
+            snapshot.session_id,
+            "child-marker.txt",
+        );
 
         manager
-            .execute_command(snapshot.session_id, "clear".into())
+            .execute_command(&snapshot.project_path, snapshot.session_id, "clear".into())
             .unwrap();
         manager
-            .execute_command(snapshot.session_id, "Write-Output GTUM_AFTER_CLEAR".into())
+            .execute_command(
+                &snapshot.project_path,
+                snapshot.session_id,
+                "Write-Output GTUM_AFTER_CLEAR".into(),
+            )
             .unwrap();
-        let logs = wait_for_log(&manager, snapshot.session_id, "GTUM_AFTER_CLEAR");
+        let logs = wait_for_log(
+            &manager,
+            &snapshot.project_path,
+            snapshot.session_id,
+            "GTUM_AFTER_CLEAR",
+        );
         assert!(
             !logs.iter().any(|line| line.contains("root-marker.txt")),
             "clear should remove older terminal logs; logs={logs:?}"
         );
 
-        let _ = manager.close_session(snapshot.session_id);
+        let _ = manager.close_session(&snapshot.project_path, snapshot.session_id);
         let _ = fs::remove_dir_all(root);
     }
 }

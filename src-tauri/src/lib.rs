@@ -152,43 +152,48 @@ fn create_terminal_session(
 #[tauri::command]
 fn list_terminal_sessions(
     state: tauri::State<'_, TerminalSessionManager>,
-) -> Vec<TerminalSessionSnapshot> {
-    state.list_sessions()
+    project_path: String,
+) -> Result<Vec<TerminalSessionSnapshot>, String> {
+    state.list_sessions(&project_path)
 }
 
 #[tauri::command]
 fn rename_terminal_session(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
     name: String,
 ) -> Result<TerminalSessionSnapshot, String> {
-    state.rename_session(session_id, name)
+    state.rename_session(&project_path, session_id, name)
 }
 
 #[tauri::command]
 fn close_terminal_session(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
 ) -> Result<TerminalSessionSnapshot, String> {
-    state.close_session(session_id)
+    state.close_session(&project_path, session_id)
 }
 
 #[tauri::command]
 fn read_terminal_session_logs(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
     limit: Option<usize>,
 ) -> Result<TerminalSessionLogs, String> {
-    state.read_recent_logs(session_id, limit)
+    state.read_recent_logs(&project_path, session_id, limit)
 }
 
 #[tauri::command]
 fn execute_terminal_session_command(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
     command: String,
 ) -> Result<TerminalSessionSnapshot, String> {
-    state.execute_command(session_id, command)
+    state.execute_command(&project_path, session_id, command)
 }
 
 #[tauri::command]
@@ -202,29 +207,32 @@ fn create_terminal_session_with_command(
 #[tauri::command]
 fn write_terminal_input(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
     data: String,
 ) -> Result<(), String> {
-    state.write_terminal_input(session_id, data)
+    state.write_terminal_input(&project_path, session_id, data)
 }
 
 #[tauri::command]
 fn read_raw_terminal_output(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
     from: usize,
 ) -> Result<RawTerminalOutput, String> {
-    state.read_raw_output(session_id, from)
+    state.read_raw_output(&project_path, session_id, from)
 }
 
 #[tauri::command]
 fn resize_terminal_session(
     state: tauri::State<'_, TerminalSessionManager>,
+    project_path: String,
     session_id: u64,
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
-    state.resize_session(session_id, rows, cols)
+    state.resize_session(&project_path, session_id, rows, cols)
 }
 
 #[tauri::command]
