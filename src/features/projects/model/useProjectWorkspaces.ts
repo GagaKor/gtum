@@ -13,13 +13,19 @@ import {
   activateProjectWorkspace,
   createProjectWorkspaceStore,
   openProjectWorkspace,
+  selectActiveProjectWorkbench,
+  selectProjectWorkbench,
+  setProjectWorkspaceCloseBlockedReason,
   setProjectWorkspaceHydration,
   setProjectWorkspaceMetadata,
+  updateProjectWorkbench as updateStoredProjectWorkbench,
+  type JsonSafeValue,
+  type ProjectWorkbench,
   type ProjectWorkspaceHydration,
   type ProjectWorkspaceStore,
 } from './projectWorkspaceStore'
 
-type Registry = ProjectWorkspaceStore<null>
+type Registry<W extends JsonSafeValue> = ProjectWorkspaceStore<W>
 const defaultWorkspaceRuntimeService = createWorkspaceRuntimeService()
 
 export type ProjectWorkspaceRow = {
@@ -29,9 +35,10 @@ export type ProjectWorkspaceRow = {
   error: string | null
 }
 
-export type UseProjectWorkspacesOptions = {
+export type UseProjectWorkspacesOptions<W extends JsonSafeValue> = {
   fallbackProject: RuntimeProject
   readProjectOverview(path: string): Promise<RuntimeProject>
+  createWorkbench(): ProjectWorkbench<W>
   workspaceService?: WorkspaceRuntimeService
 }
 
@@ -57,21 +64,27 @@ const unavailableProject = (
   runtimeBacked: false,
 })
 
-const reconcileSnapshot = (
-  current: Registry,
+const reconcileSnapshot = <W extends JsonSafeValue>(
+  current: Registry<W>,
   snapshot: RuntimeWorkspaceSnapshot,
-): Registry => {
-  let next = createProjectWorkspaceStore<null>()
+  createWorkbench: () => ProjectWorkbench<W>,
+): Registry<W> => {
+  let next = createProjectWorkspaceStore<W>()
 
   for (const path of snapshot.openProjectPaths) {
     const existing = current.entriesByPath[path]
     next = openProjectWorkspace(next, {
       path,
       project: existing?.project ?? placeholderProject(path),
-      workbench: existing?.workbench ?? null,
+      workbench: existing?.workbench ?? createWorkbench(),
     })
     if (existing) {
       next = setProjectWorkspaceHydration(next, path, existing.hydration)
+      next = setProjectWorkspaceCloseBlockedReason(
+        next,
+        path,
+        existing.closeBlockedReason ?? null,
+      )
     }
   }
 
@@ -84,12 +97,13 @@ const reconcileSnapshot = (
 const hydrationFailure = (message: string): ProjectWorkspaceHydration =>
   /does not exist|not found|no such file|missing/i.test(message) ? 'missing' : 'error'
 
-export function useProjectWorkspaces({
+export function useProjectWorkspaces<W extends JsonSafeValue>({
   fallbackProject,
   readProjectOverview,
+  createWorkbench,
   workspaceService = defaultWorkspaceRuntimeService,
-}: UseProjectWorkspacesOptions) {
-  const [registry, setRegistry] = useState<Registry>(() => createProjectWorkspaceStore<null>())
+}: UseProjectWorkspacesOptions<W>) {
+  const [registry, setRegistry] = useState<Registry<W>>(() => createProjectWorkspaceStore<W>())
   const registryRef = useRef(registry)
   const hydrationGenerationsRef = useRef(new Map<string, number>())
   const transitionGenerationRef = useRef(0)
@@ -98,10 +112,31 @@ export function useProjectWorkspaces({
   const [errorsByPath, setErrorsByPath] = useState<Record<string, string>>({})
   const [restoreError, setRestoreError] = useState<string | null>(null)
 
-  const commitRegistry = useCallback((next: Registry) => {
+  const commitRegistry = useCallback((next: Registry<W>) => {
     registryRef.current = next
     setRegistry(next)
   }, [])
+
+  const getProjectWorkbench = useCallback((path: string | null | undefined) => {
+    if (typeof path !== 'string' || !path.trim()) return null
+    const normalizedPath = path.trim()
+    if (!Object.hasOwn(registryRef.current.entriesByPath, normalizedPath)) return null
+    return selectProjectWorkbench(registryRef.current, normalizedPath) ?? null
+  }, [])
+
+  const getActiveProjectWorkbench = useCallback(() => (
+    selectActiveProjectWorkbench(registryRef.current)
+  ), [])
+
+  const updateProjectWorkbench = useCallback((
+    path: string,
+    update: (current: ProjectWorkbench<W>) => ProjectWorkbench<W>,
+  ): boolean => {
+    if (!registryRef.current.entriesByPath[path]) return false
+    const next = updateStoredProjectWorkbench(registryRef.current, path, update)
+    commitRegistry(next)
+    return true
+  }, [commitRegistry])
 
   const enqueueWorkspaceMutation = useCallback(<T,>(mutation: () => Promise<T>): Promise<T> => {
     const result = workspaceMutationQueueRef.current.then(mutation)
@@ -183,7 +218,11 @@ export function useProjectWorkspaces({
           !runtimeSnapshot ||
           successfulWorkspaceMutationRevisionRef.current !== restoreMutationRevision
         ) return
-        const next = reconcileSnapshot(registryRef.current, runtimeSnapshot.snapshot)
+        const next = reconcileSnapshot(
+          registryRef.current,
+          runtimeSnapshot.snapshot,
+          createWorkbench,
+        )
         commitRegistry(next)
         const activePath = runtimeSnapshot.snapshot.activeProjectPath
         if (activePath) void hydrateProject(activePath)
@@ -199,7 +238,7 @@ export function useProjectWorkspaces({
     return () => {
       cancelled = true
     }
-  }, [commitRegistry, hydrateProject, workspaceService])
+  }, [commitRegistry, createWorkbench, hydrateProject, workspaceService])
 
   const activateProject = useCallback(async (path: string) => {
     if (!registryRef.current.entriesByPath[path]) return
@@ -213,7 +252,7 @@ export function useProjectWorkspaces({
         )
         if (!snapshot) return
         successfulWorkspaceMutationRevisionRef.current += 1
-        commitRegistry(reconcileSnapshot(registryRef.current, snapshot))
+        commitRegistry(reconcileSnapshot(registryRef.current, snapshot, createWorkbench))
         if (snapshot.activeProjectPath) {
           clearProjectErrors(path, snapshot.activeProjectPath)
           void hydrateProject(snapshot.activeProjectPath)
@@ -234,6 +273,7 @@ export function useProjectWorkspaces({
   }, [
     clearProjectErrors,
     commitRegistry,
+    createWorkbench,
     enqueueWorkspaceMutation,
     hydrateProject,
     workspaceService,
@@ -250,7 +290,7 @@ export function useProjectWorkspaces({
         )
         if (!snapshot) return null
         successfulWorkspaceMutationRevisionRef.current += 1
-        commitRegistry(reconcileSnapshot(registryRef.current, snapshot))
+        commitRegistry(reconcileSnapshot(registryRef.current, snapshot, createWorkbench))
         const canonicalPath = snapshot.activeProjectPath
         if (!canonicalPath) return null
         clearProjectErrors(path, canonicalPath)
@@ -269,7 +309,7 @@ export function useProjectWorkspaces({
       let next = openProjectWorkspace(registryRef.current, {
         path: project.path,
         project,
-        workbench: null,
+        workbench: createWorkbench(),
       })
       next = setProjectWorkspaceHydration(next, project.path, 'ready')
       commitRegistry(next)
@@ -284,6 +324,7 @@ export function useProjectWorkspaces({
   }, [
     clearProjectErrors,
     commitRegistry,
+    createWorkbench,
     enqueueWorkspaceMutation,
     hydrateProject,
     readProjectOverview,
@@ -306,11 +347,20 @@ export function useProjectWorkspaces({
       ?? placeholderProject(registry.activePath)
   }, [fallbackProject, registry])
 
+  const activeWorkbench = useMemo(
+    () => selectActiveProjectWorkbench(registry),
+    [registry],
+  )
+
   return {
     registry,
     rows,
     activeProject,
+    activeWorkbench,
     restoreError,
+    getProjectWorkbench,
+    getActiveProjectWorkbench,
+    updateProjectWorkbench,
     activateProject,
     openProject,
   }

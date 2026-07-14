@@ -130,6 +130,22 @@ test('preserves titlebar and statusbar shell contracts', async ({ page }) => {
   await expect(page.locator('.settings-modal')).toBeVisible()
 })
 
+test('closes a no-project fallback terminal without leaving a tab or page error', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  await page.goto('/')
+  await page.locator('.gt-add').first().click()
+
+  const fallbackTab = page.locator('.gt').first()
+  await expect(fallbackTab).toHaveCount(1)
+  await expect(fallbackTab.locator('.lamp')).toHaveClass(/failed/)
+  await fallbackTab.locator('.x-btn').click()
+
+  await expect(page.locator('.gt')).toHaveCount(0)
+  expect(pageErrors).toEqual([])
+})
+
 test('exposes actual agent controls without fixed models or legacy execution modes', async ({ page }) => {
   await page.goto('/')
 
@@ -839,10 +855,8 @@ test('saves through the editor tab owner and ignores a late response for a reuse
   await expect(page.locator('.editor-textarea')).toHaveValue("const owner = 'A'")
   await page.locator('.editor-textarea').fill("const owner = 'A changed'")
 
-  // Change the selected project before saving. The editor tab must retain A as
-  // its immutable runtime owner even though project B is now active.
-  await page.getByText('Open project folder').click()
-  await expect(page.locator('.project-group')).toContainText('project-b')
+  // Start A's save, then switch projects while the owner-scoped response is
+  // still pending.
   await page.getByRole('button', { name: 'Save' }).click()
 
   await expect
@@ -858,9 +872,11 @@ test('saves through the editor tab owner and ignores a late response for a reuse
     )
     .toBe(1)
 
-  // Reuse the deterministic editor id with B's same relative path while A's
-  // save is pending. A's late response must not overwrite B's tab.
-  await page.locator('.group.active .gt.active .x-btn').click()
+  await page.getByText('Open project folder').click()
+  await expect(page.locator('.project-group')).toContainText('project-b')
+
+  // B gets an independent workbench even though its same relative file reuses
+  // the deterministic editor id. A's late response must not overwrite it.
   await page.locator('.tree-row.file').filter({ hasText: 'shared.ts' }).click()
   await expect(page.locator('.editor-textarea')).toHaveValue("const owner = 'B'")
 
@@ -1236,7 +1252,7 @@ test('closes a late runtime session after its provisional tab was closed', async
   await expect(page.locator('.term-xterm')).toContainText('replacement session 88')
 })
 
-test('keeps project A terminal ownership after switching to project B', async ({ page }) => {
+test('keeps project A terminal alive and hidden after switching to project B', async ({ page }) => {
   type TerminalCall = {
     command: string
     args?: Record<string, unknown>
@@ -1376,7 +1392,11 @@ test('keeps project A terminal ownership after switching to project B', async ({
           return terminalSnapshot(projectPath, sessionId, 'terminated')
         }
 
-        return undefined
+        if (command === 'resize_terminal_session' || command === 'write_terminal_input') {
+          return undefined
+        }
+
+        throw new Error(`Unexpected terminal command: ${command}`)
       },
     }
   })
@@ -1402,33 +1422,22 @@ test('keeps project A terminal ownership after switching to project B', async ({
     )
     .toBe(true)
 
-  // A remains the active terminal while only the selected project changes.
+  // B owns an independent visible workbench; switching must unmount A's xterm
+  // without closing its runtime session.
   await page.getByText('Open project folder').click()
   await expect(page.locator('.titlebar')).toContainText('project-b')
-  await expect(page.locator(`.gt[data-tab-id="${projectATabId}"]`)).toHaveClass(/active/)
-  await page.locator('.term-xterm .xterm-helper-textarea').focus()
-  await page.keyboard.type('after-switch')
+  await expect(page.locator(`.gt[data-tab-id="${projectATabId}"]`)).toHaveCount(0)
+  await expect(page.locator('.term-xterm')).toHaveCount(0)
+  const inactiveStartCallCount = (await terminalCalls()).length
   await page.setViewportSize({ width: 1210, height: 720 })
 
-  const projectACommandsAfterSwitch = [
+  const projectACommandsWhileInactive = [
     'resize_terminal_session',
     'write_terminal_input',
     'read_raw_terminal_output',
     'read_terminal_session_logs',
+    'close_terminal_session',
   ]
-  await expect
-    .poll(async () => {
-      const calls = await terminalCalls()
-      return projectACommandsAfterSwitch.filter((command) =>
-        calls.some((call) =>
-          call.afterProjectSwitch &&
-          call.command === command &&
-          call.args?.projectPath === '/workspace/project-a' &&
-          call.args?.sessionId === 77,
-        ),
-      )
-    })
-    .toEqual(projectACommandsAfterSwitch)
 
   // Create and activate a real B-owned terminal without removing A.
   await page.locator('.gt-add').first().click()
@@ -1437,20 +1446,6 @@ test('keeps project A terminal ownership after switching to project B', async ({
   expect(projectBTabId).toBeTruthy()
   expect(projectBTabId).not.toBe(projectATabId)
   await expect(page.locator('.term-xterm')).toContainText('PROJECT B SESSION 88')
-
-  // Close A while B remains selected. The close must still use A's owner.
-  await page.locator(`.gt[data-tab-id="${projectATabId}"] .x-btn`).click()
-  await expect
-    .poll(async () => {
-      const calls = await terminalCalls()
-      return calls.some((call) =>
-          call.afterProjectSwitch &&
-          call.command === 'close_terminal_session' &&
-          call.args?.projectPath === '/workspace/project-a' &&
-          call.args?.sessionId === 77,
-      )
-    })
-    .toBe(true)
 
   // Deliver A's pending failed-log response after B owns the visible terminal.
   await page.evaluate(async () => {
@@ -1466,6 +1461,43 @@ test('keeps project A terminal ownership after switching to project B', async ({
   await expect(page.locator('.term-xterm')).toContainText('PROJECT B SESSION 88')
   await expect(page.locator('.term-xterm')).not.toContainText('A LATE FOREIGN LOG')
 
+  const inactiveCalls = (await terminalCalls()).slice(inactiveStartCallCount)
+  expect(inactiveCalls.filter((call) =>
+    projectACommandsWhileInactive.includes(call.command) &&
+    call.args?.projectPath === '/workspace/project-a' &&
+    call.args?.sessionId === 77
+  )).toEqual([])
+
+  const callsBeforeReturn = await terminalCalls()
+  expect(callsBeforeReturn.filter((call) => call.command === 'close_terminal_session')).toEqual([])
+  expect(callsBeforeReturn.find((call) =>
+    call.command === 'create_terminal_session' &&
+    (call.args?.request as { projectPath?: string } | undefined)?.projectPath === '/workspace/project-a'
+  )?.args).toMatchObject({ request: { projectPath: '/workspace/project-a' } })
+  expect(callsBeforeReturn.find((call) =>
+    call.command === 'create_terminal_session' &&
+    (call.args?.request as { projectPath?: string } | undefined)?.projectPath === '/workspace/project-b'
+  )?.args).toMatchObject({ request: { projectPath: '/workspace/project-b' } })
+
+  // Returning to A remounts the same frontend tab and replays the same backend
+  // session from cursor zero. Only an explicit close may terminate it.
+  await page.locator('[data-project-path="/workspace/project-a"]').click()
+  const restoredProjectATab = page.locator(`.gt[data-tab-id="${projectATabId}"]`)
+  await expect(restoredProjectATab).toHaveClass(/active/)
+  await expect(restoredProjectATab.locator('.lamp')).toHaveClass(/failed/)
+  await expect(page.locator('.term-xterm')).toContainText('PROJECT A SESSION 77')
+  expect((await terminalCalls()).filter((call) =>
+    call.command === 'create_terminal_session' &&
+    (call.args?.request as { projectPath?: string } | undefined)?.projectPath === '/workspace/project-a'
+  )).toHaveLength(1)
+
+  await restoredProjectATab.locator('.x-btn').click()
+  await expect.poll(async () => (await terminalCalls()).filter((call) =>
+    call.command === 'close_terminal_session' &&
+    call.args?.projectPath === '/workspace/project-a' &&
+    call.args?.sessionId === 77
+  ).length).toBe(1)
+
   const calls = await terminalCalls()
   expect(calls.find((call) =>
     call.command === 'create_terminal_session' &&
@@ -1477,7 +1509,7 @@ test('keeps project A terminal ownership after switching to project B', async ({
   )?.args).toMatchObject({ request: { projectPath: '/workspace/project-b' } })
 
   for (const call of calls.filter((entry) =>
-    projectACommandsAfterSwitch.includes(entry.command) ||
+    projectACommandsWhileInactive.includes(entry.command) ||
     entry.command === 'close_terminal_session'
   )) {
     if (call.args?.sessionId !== 77) continue

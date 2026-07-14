@@ -120,6 +120,90 @@ test('updates one workbench by replacement or updater without mutating prior sta
   expect(selectActiveProjectWorkbench(state)).toBe(replacement)
 })
 
+test('updates one workbench without traversing active or foreign project metadata trees', () => {
+  let state = open(
+    open(createProjectWorkspaceStore<Workbench>(), A, workbenchA, project(A, 'Alpha')),
+    B,
+    workbenchB,
+    project(B, 'Beta'),
+  )
+  let activeMetadataReads = 0
+  let foreignMetadataReads = 0
+  const watchedTree = <Tree extends readonly unknown[]>(
+    tree: Tree,
+    onRead: () => void,
+  ): Tree => new Proxy(tree, {
+    get(target, key, receiver) {
+      onRead()
+      return Reflect.get(target, key, receiver)
+    },
+    getOwnPropertyDescriptor(target, key) {
+      onRead()
+      return Reflect.getOwnPropertyDescriptor(target, key)
+    },
+    getPrototypeOf(target) {
+      onRead()
+      return Reflect.getPrototypeOf(target)
+    },
+    ownKeys(target) {
+      onRead()
+      return Reflect.ownKeys(target)
+    },
+  })
+  const activeTree = watchedTree(
+    state.entriesByPath[A].project!.fileTree,
+    () => { activeMetadataReads += 1 },
+  )
+  const foreignTree = watchedTree(
+    state.entriesByPath[B].project!.fileTree,
+    () => { foreignMetadataReads += 1 },
+  )
+  state = {
+    ...state,
+    entriesByPath: {
+      ...state.entriesByPath,
+      [A]: {
+        ...state.entriesByPath[A],
+        project: {
+          ...state.entriesByPath[A].project!,
+          fileTree: activeTree,
+        },
+      },
+      [B]: {
+        ...state.entriesByPath[B],
+        project: {
+          ...state.entriesByPath[B].project!,
+          fileTree: foreignTree,
+        },
+      },
+    },
+  }
+
+  const next = updateProjectWorkbench(state, A, (current) => ({
+    ...current,
+    tabs: [...current.tabs, 'terminal-a'],
+  }))
+
+  expect(activeMetadataReads).toBe(0)
+  expect(foreignMetadataReads).toBe(0)
+  expect(next.entriesByPath[A].workbench.tabs).toEqual(['editor-a', 'terminal-a'])
+  expect(next.entriesByPath[B]).toBe(state.entriesByPath[B])
+  expect(() => updateProjectWorkbench(state, C, (current) => current)).toThrow(/not open/i)
+  expect(() => updateProjectWorkbench(state, A, () => ({
+    selectedFile: null,
+    tabs: [undefined],
+  } as unknown as Workbench))).toThrow(/JSON-safe/i)
+
+  const invalidTarget = {
+    ...state,
+    entriesByPath: {
+      ...state.entriesByPath,
+      [A]: { ...state.entriesByPath[A], hydration: 'stale' },
+    },
+  } as unknown as ProjectWorkspaceStore<Workbench>
+  expect(() => updateProjectWorkbench(invalidTarget, A, (current) => current)).toThrow(/hydration/i)
+})
+
 test('isolates hydration and metadata changes from other projects', () => {
   const metadata = project(A, 'Hydrated Alpha')
   let state = open(open(createProjectWorkspaceStore<Workbench>(), A, workbenchA), B, workbenchB)

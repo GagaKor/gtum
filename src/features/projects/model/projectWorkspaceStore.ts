@@ -213,6 +213,63 @@ export function assertProjectWorkspaceStore(state: unknown): asserts state is Pr
   }
   assertJsonSafe(state, 'Project workspace state')
 }
+
+function assertProjectWorkspaceShell(
+  state: unknown,
+): asserts state is ProjectWorkspaceStore<JsonSafeValue> {
+  // Workbench edits are a hot path. Validate registry membership without
+  // walking unchanged project metadata or another project's workbench.
+  if (!plain(state)) fail('Project workspace state must be a plain object')
+  if (!own(state, 'openOrder') || !Array.isArray(state.openOrder)) {
+    fail('Project workspace openOrder must be an array')
+  }
+  if (!own(state, 'entriesByPath') || !plain(state.entriesByPath)) {
+    fail('Project workspace entriesByPath must be a plain object')
+  }
+  if (!own(state, 'activePath')) fail('Project workspace activePath is missing')
+
+  const openPaths = new Set<string>()
+  for (const rawPath of state.openOrder) {
+    assertStoredPath(rawPath, 'Project workspace open path')
+    if (openPaths.has(rawPath)) fail(`Project workspace contains duplicate path "${rawPath}"`)
+    openPaths.add(rawPath)
+    if (!own(state.entriesByPath, rawPath)) fail(`Open path "${rawPath}" is missing its own entry`)
+  }
+  for (const key of Object.keys(state.entriesByPath)) {
+    if (!openPaths.has(key)) fail(`Project workspace entry "${key}" is orphaned from openOrder`)
+  }
+  if (openPaths.size > 0 && state.activePath === null) {
+    fail('Project workspace active path is required when projects are open')
+  }
+  if (state.activePath !== null) {
+    assertStoredPath(state.activePath, 'Project workspace activePath')
+    if (!openPaths.has(state.activePath)) {
+      fail('Project workspace active path must reference an open project')
+    }
+  }
+}
+
+function assertProjectWorkspaceEntryShell(
+  entry: unknown,
+  path: string,
+): asserts entry is ProjectWorkspaceEntry<JsonSafeValue> {
+  if (!plain(entry)) fail(`Project workspace entry for "${path}" must be a plain object`)
+  if (!own(entry, 'path') || entry.path !== path) {
+    fail(`Project workspace entry path must match its key "${path}"`)
+  }
+  if (!own(entry, 'project')) fail(`Project metadata for "${path}" is missing`)
+  if (!own(entry, 'workbench')) fail(`Project workbench for "${path}" is missing`)
+  if (!own(entry, 'hydration') || !validHydration(entry.hydration)) {
+    fail(`Project workspace hydration is invalid for "${path}"`)
+  }
+  if (
+    own(entry, 'closeBlockedReason') &&
+    entry.closeBlockedReason !== null &&
+    typeof entry.closeBlockedReason !== 'string'
+  ) {
+    fail(`Project workspace close-block reason is invalid for "${path}"`)
+  }
+}
 const validated = <W extends JsonSafeValue>(state: ProjectWorkspaceStore<W>) => {
   assertProjectWorkspaceStore(state)
   return state
@@ -292,14 +349,21 @@ export const updateProjectWorkbench = <W extends JsonSafeValue>(
   path: string,
   update: (current: ProjectWorkbench<W>) => ProjectWorkbench<W>,
 ) => {
-  assertProjectWorkspaceStore(state)
+  assertProjectWorkspaceShell(state)
   const target = selected(state, path)
+  assertProjectWorkspaceEntryShell(target.entry, target.path)
   if (typeof update !== 'function') fail('Project workbench updater must be a function')
   const workbench = update(target.entry.workbench)
   assertJsonSafe(workbench, `Updated project workbench for "${target.path}"`)
   return Object.is(workbench, target.entry.workbench)
     ? state
-    : replaceEntry(state, target.path, { ...target.entry, workbench })
+    : {
+        ...state,
+        entriesByPath: {
+          ...state.entriesByPath,
+          [target.path]: { ...target.entry, workbench },
+        },
+      }
 }
 export const setProjectWorkbench = <W extends JsonSafeValue>(
   state: ProjectWorkspaceStore<W>,

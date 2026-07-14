@@ -757,6 +757,11 @@ const WORKSPACE_INITIAL = {
   },
 };
 
+const createProjectWorkbench = () => ({
+  workspace: WORKSPACE_INITIAL,
+  selectedFile: null,
+});
+
 const PROVIDERS_INIT = [
   {
     id: "codex",
@@ -1403,6 +1408,7 @@ function splitGroup(state, groupId, position, movingTabId = null) {
     const groupLeaf = { type: "group", groupId };
     const newLeaf = { type: "group", groupId: newGroupId };
     return {
+      id: uid("split"),
       type: "split",
       direction,
       sizes: [50, 50],
@@ -1465,6 +1471,7 @@ function dropTabOnEdge(state, srcTabId, srcGroupId, targetGroupId, position) {
     const targetLeaf = { type: "group", groupId: targetGroupId };
     const newLeaf = { type: "group", groupId: newGroupId };
     return {
+      id: uid("split"),
       type: "split",
       direction,
       sizes: [50, 50],
@@ -1648,18 +1655,12 @@ function moveTabToNewGroup(state, srcGroupId, tabId, position) {
   return dropTabOnEdge(state, tabId, srcGroupId, srcGroupId, position);
 }
 
-// Resize a split node's children sizes. We find the split that is the parent
-// of `firstChildId` (so the divider lives between firstChild and its right
-// neighbor) and apply the new ratio.
-function resizeSplit(state, splitPath, sizes) {
-  // splitPath is the array of "L"/"R"/i indices to identify the split.
-  // Simpler approach: we identify the split node by reference walk during
-  // rebuild; the SplitNode component knows the array of sizes and passes them.
-  // For prototype we rebuild every split whose children match the recorded ids.
+// Resize exactly one split using the stable id assigned when it is created.
+// Child-shape matching is unsafe because nested sibling splits can share the
+// same structure and would then be resized together.
+function resizeSplit(state, splitId, sizes) {
   const layoutTree = rebuild(state.layoutTree, (node) => {
-    if (node.type !== "split") return node;
-    if (!node.children.every((c, i) => splitPath[i] && c.type === splitPath[i].type &&
-        (c.type === "group" ? c.groupId === splitPath[i].groupId : true))) return node;
+    if (node.type !== "split" || node.id !== splitId) return node;
     return { ...node, sizes };
   });
   return { ...state, layoutTree };
@@ -1867,10 +1868,10 @@ function ProjectWorkspaceGroup({
 function Sidebar({
   lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject,
   projectRows, activeProjectPath, onSelectProject,
+  selectedFile, onSelectFile,
   agentWorkspace, activeAgentSessionId, activeProvider,
   onSelectAgentSession, onNewAgentSession, onCloseAgentSession,
 }) {
-  const [selectedFile, setSelectedFile] = React.useState(null);
   const [projectsOpen, setProjectsOpen] = React.useState(true);
   const [filesOpen, setFilesOpen] = React.useState(true);
   const activeProject = project || PROJECT;
@@ -1878,7 +1879,7 @@ function Sidebar({
   const handleFileClick = (node) => {
     const path = node.runtimePath || pathOfNode(activeProject.fileTree, node);
     if (path) onOpenFile?.(path, node.name);
-    setSelectedFile(node.runtimePath || node.name);
+    onSelectFile?.(node.runtimePath || node.name);
   };
 
   return (
@@ -2002,7 +2003,7 @@ function XtermTerminal({ owner }) {
 
     let disposed = false;
     let from = 0;
-    let interval = null;
+    let nextPumpTimeout = null;
 
     const term = new Terminal({
       convertEol: false,
@@ -2048,13 +2049,16 @@ function XtermTerminal({ owner }) {
         }
       } catch {
         /* transient runtime read failure; retry on next tick */
+      } finally {
+        if (!disposed) {
+          nextPumpTimeout = window.setTimeout(() => {
+            void pump();
+          }, 60);
+        }
       }
     };
 
     void pump();
-    interval = window.setInterval(() => {
-      void pump();
-    }, 60);
 
     const observer =
       typeof ResizeObserver !== "undefined"
@@ -2064,7 +2068,7 @@ function XtermTerminal({ owner }) {
 
     return () => {
       disposed = true;
-      if (interval != null) window.clearInterval(interval);
+      if (nextPumpTimeout != null) window.clearTimeout(nextPumpTimeout);
       observer?.disconnect();
       dataSub.dispose();
       term.dispose();
@@ -2439,13 +2443,15 @@ function SplitNode({
       next[idx] = Math.max(MIN_PANE_PCT, Math.min(100 - MIN_PANE_PCT, next[idx] + dPct));
       next[idx + 1] = Math.max(MIN_PANE_PCT, Math.min(100 - MIN_PANE_PCT,
         next[idx + 1] - dPct));
+      dragRef.current.nextSizes = next;
       setLocalSizes(next);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      // Keep localSizes ??clearing it would revert to node.sizes (the initial value)
-      // which makes the resize feel like it doesn't stick.
+      const committedSizes = dragRef.current?.nextSizes || dragRef.current?.startSizes;
+      if (committedSizes) onResizeSizes?.(node.id, committedSizes);
+      dragRef.current = null;
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -2537,7 +2543,7 @@ function Workspace({
     onChangeFile: actions.changeFile,
     onSaveFile: actions.saveFile,
     onTabContextMenu,
-    onResizeSizes: (sizes) => { /* sizes persisted via local state for now */ },
+    onResizeSizes: actions.resizeSplit,
   };
 
   return (
@@ -4337,17 +4343,62 @@ function App() {
   }, []);
   const widthClass = winW < 940 ? "w-sm" : winW < 1180 ? "w-md" : "w-lg";
 
-  const [workspace, setWorkspace] = React.useState(WORKSPACE_INITIAL);
-  const workspaceRef = React.useRef(WORKSPACE_INITIAL);
+  const [fallbackWorkbench, setFallbackWorkbench] = React.useState(createProjectWorkbench);
   // Bridges provisional tabs to their eventual runtime owner so closing a tab
   // before create resolves still disposes the backend session when it arrives.
   const terminalCreateOwnersRef = React.useRef(new Map());
   const projectWorkspaces = useProjectWorkspaces({
     fallbackProject: PROJECT,
     readProjectOverview: readRuntimeProjectOverview,
+    createWorkbench: createProjectWorkbench,
     workspaceService: workspaceRuntimeService,
   });
   const activeProject = projectWorkspaces.activeProject;
+  const activeProjectPath = projectWorkspaces.registry.activePath;
+  const activeWorkbench = projectWorkspaces.activeWorkbench || fallbackWorkbench;
+  const workspace = activeWorkbench.workspace;
+  const selectedFile = activeWorkbench.selectedFile;
+  const updateProjectWorkbench = projectWorkspaces.updateProjectWorkbench;
+  const getProjectWorkbench = projectWorkspaces.getProjectWorkbench;
+  const getActiveProjectWorkbench = projectWorkspaces.getActiveProjectWorkbench;
+  const setWorkspace = React.useCallback((updater) => {
+    const applyWorkspaceUpdate = (current) => {
+      const nextWorkspace = typeof updater === "function"
+        ? updater(current.workspace)
+        : updater;
+      return nextWorkspace === current.workspace
+        ? current
+        : { ...current, workspace: nextWorkspace };
+    };
+    if (activeProjectPath) {
+      updateProjectWorkbench(activeProjectPath, applyWorkspaceUpdate);
+      return;
+    }
+    setFallbackWorkbench(applyWorkspaceUpdate);
+  }, [activeProjectPath, updateProjectWorkbench]);
+  const setSelectedFile = React.useCallback((nextSelectedFile) => {
+    const updateSelection = (current) => current.selectedFile === nextSelectedFile
+      ? current
+      : { ...current, selectedFile: nextSelectedFile };
+    if (activeProjectPath) {
+      updateProjectWorkbench(activeProjectPath, updateSelection);
+      return;
+    }
+    setFallbackWorkbench(updateSelection);
+  }, [activeProjectPath, updateProjectWorkbench]);
+  const getOwnedWorkspace = React.useCallback((projectPath) => {
+    if (!projectPath) return fallbackWorkbench.workspace;
+    return getProjectWorkbench(projectPath)?.workspace || null;
+  }, [fallbackWorkbench.workspace, getProjectWorkbench]);
+  const updateOwnedWorkspace = React.useCallback((projectPath, updater) => {
+    if (!projectPath) return false;
+    return updateProjectWorkbench(projectPath, (current) => {
+      const nextWorkspace = updater(current.workspace);
+      return nextWorkspace === current.workspace
+        ? current
+        : { ...current, workspace: nextWorkspace };
+    });
+  }, [updateProjectWorkbench]);
   const [projectBusy, setProjectBusy] = React.useState(false);
   const [projectError, setProjectError] = React.useState(null);
   const [providers, setProviders] = React.useState(PROVIDERS_INIT);
@@ -4445,10 +4496,6 @@ function App() {
     activeAgentSession?.reasoningLevel,
   );
   const agentFastMode = Boolean(activeAgentSession?.fastMode && activeProviderCapabilities?.supportsFastMode);
-
-  React.useEffect(() => {
-    workspaceRef.current = workspace;
-  }, [workspace]);
 
   React.useEffect(() => {
     setAgentSessionStore((prev) => ensureAgentWorkspace(prev, activeProject, lang));
@@ -4708,8 +4755,10 @@ function App() {
     if (!terminalRuntimeService.hasRuntime()) return undefined;
 
     let cancelled = false;
+    let nextSummaryTimeout = null;
     const pollRuntimeTerminals = async () => {
-      const runtimeTabs = allTabs(workspaceRef.current)
+      const mountedWorkbench = getActiveProjectWorkbench();
+      const runtimeTabs = allTabs(mountedWorkbench?.workspace || WORKSPACE_INITIAL)
         .map(({ tab }) => tab)
         .filter((tab) =>
           tab?.runtimeBacked &&
@@ -4726,7 +4775,7 @@ function App() {
         try {
           const logs = await terminalRuntimeService.readLogs(owner, 400);
           if (cancelled) return;
-          setWorkspace((current) => updateTab(current, tab.id, (currentTab) => {
+          updateOwnedWorkspace(owner.projectPath, (current) => updateTab(current, tab.id, (currentTab) => {
             if (
               currentTab.projectPath !== owner.projectPath ||
               currentTab.terminalSessionId !== owner.terminalSessionId
@@ -4753,7 +4802,7 @@ function App() {
         } catch (error) {
           if (cancelled) return;
           const message = error instanceof Error ? error.message : String(error);
-          setWorkspace((current) => updateTab(current, tab.id, (currentTab) => {
+          updateOwnedWorkspace(owner.projectPath, (current) => updateTab(current, tab.id, (currentTab) => {
             if (
               currentTab.projectPath !== owner.projectPath ||
               currentTab.terminalSessionId !== owner.terminalSessionId
@@ -4773,16 +4822,24 @@ function App() {
       }
     };
 
-    void pollRuntimeTerminals();
-    const interval = window.setInterval(() => {
-      void pollRuntimeTerminals();
-    }, 1000);
+    const pollAndSchedule = async () => {
+      try {
+        await pollRuntimeTerminals();
+      } finally {
+        if (!cancelled) {
+          nextSummaryTimeout = window.setTimeout(() => {
+            void pollAndSchedule();
+          }, 1000);
+        }
+      }
+    };
+    void pollAndSchedule();
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (nextSummaryTimeout != null) window.clearTimeout(nextSummaryTimeout);
     };
-  }, []);
+  }, [getActiveProjectWorkbench, updateOwnedWorkspace]);
 
   const pushProjectMessage = React.useCallback((message) => {
     setMessages((prev) => [...prev, {
@@ -4834,10 +4891,20 @@ function App() {
   };
 
   const handleOpenFile = async (path, name) => {
+    const originProject = { ...activeProject };
+    const ownerPath = activeProjectPath || originProject.path;
     setProjectError(null);
     try {
-      const tab = await readRuntimeProjectFile(activeProject, path, name);
-      setWorkspace((w) => openFile(w, w.activeGroupId, tab));
+      const tab = await readRuntimeProjectFile(originProject, path, name);
+      if (ownerPath) {
+        updateOwnedWorkspace(ownerPath, (current) => openFile(
+          current,
+          current.activeGroupId,
+          tab,
+        ));
+      } else {
+        setWorkspace((current) => openFile(current, current.activeGroupId, tab));
+      }
       setHistory((prev) => [...prev, {
         at: nowHm(),
         tab: "editor",
@@ -5154,18 +5221,19 @@ function App() {
     moveTabToNewGroup: (gId, tId, pos) => setWorkspace((w) => moveTabToNewGroup(w, gId, tId, pos)),
     splitGroup: (gId, pos) => setWorkspace((w) => splitGroup(w, gId, pos)),
     dropTabOnEdge: (tId, fromG, toG, pos) => setWorkspace((w) => dropTabOnEdge(w, tId, fromG, toG, pos)),
+    resizeSplit: (splitPath, sizes) => setWorkspace((w) => resizeSplit(w, splitPath, sizes)),
     closeTab: (gId, tId) => {
-      const found = findTab(workspaceRef.current, tId);
+      const found = findTab(getOwnedWorkspace(activeProjectPath) || WORKSPACE_INITIAL, tId);
       if (found?.tab) closeRuntimeTabs([found.tab]);
       setWorkspace((w) => closeTab(w, gId, tId));
     },
     closeOtherTabs: (gId, tId) => {
-      const group = workspaceRef.current.groups[gId];
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
       if (group) closeRuntimeTabs(group.tabs.filter((tab) => tab.id !== tId));
       setWorkspace((w) => closeOtherTabs(w, gId, tId));
     },
     closeTabsToRight: (gId, tId) => {
-      const group = workspaceRef.current.groups[gId];
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
       if (group) {
         const idx = group.tabs.findIndex((tab) => tab.id === tId);
         closeRuntimeTabs(idx >= 0 ? group.tabs.slice(idx + 1) : []);
@@ -5173,7 +5241,7 @@ function App() {
       setWorkspace((w) => closeTabsToRight(w, gId, tId));
     },
     closeTabsToLeft: (gId, tId) => {
-      const group = workspaceRef.current.groups[gId];
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
       if (group) {
         const idx = group.tabs.findIndex((tab) => tab.id === tId);
         closeRuntimeTabs(idx >= 0 ? group.tabs.slice(0, idx) : []);
@@ -5181,7 +5249,7 @@ function App() {
       setWorkspace((w) => closeTabsToLeft(w, gId, tId));
     },
     closeAllTabs: (gId) => {
-      const group = workspaceRef.current.groups[gId];
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
       if (group) closeRuntimeTabs(group.tabs);
       setWorkspace((w) => closeAllTabs(w, gId));
     },
@@ -5241,7 +5309,7 @@ function App() {
           return;
         }
         terminalCreateOwnersRef.current.set(localId, runtimeOwner);
-        setWorkspace((w) => updateTab(w, localId, (tab) => {
+        updateOwnedWorkspace(projectPath, (w) => updateTab(w, localId, (tab) => {
           if (
             tab.projectPath !== projectPath ||
             tab.runtimeBacked ||
@@ -5266,7 +5334,7 @@ function App() {
         ) return;
         terminalCreateOwnersRef.current.delete(localId);
         const message = error instanceof Error ? error.message : String(error);
-        setWorkspace((w) => updateTab(w, localId, (tab) => {
+        updateOwnedWorkspace(projectPath, (w) => updateTab(w, localId, (tab) => {
           if (
             tab.projectPath !== projectPath ||
             tab.runtimeBacked ||
@@ -5290,9 +5358,9 @@ function App() {
       })));
     },
     saveFile: async (fileTab) => {
-      const current = findTab(workspaceRef.current, fileTab.id)?.tab || fileTab;
+      const projectPath = fileTab.projectPath;
+      const current = findTab(getOwnedWorkspace(projectPath) || WORKSPACE_INITIAL, fileTab.id)?.tab || fileTab;
       if (current.type !== "editor") return;
-      const projectPath = current.projectPath;
       if (current.truncated) {
         pushProjectMessage("Reload the full file before saving; truncated previews cannot be written.");
         return;
@@ -5304,7 +5372,7 @@ function App() {
           runtimeBacked: true,
         };
         const saved = await saveRuntimeProjectFile(projectOwner, current);
-        setWorkspace((w) => updateTab(w, current.id, (tab) => {
+        updateOwnedWorkspace(projectPath, (w) => updateTab(w, current.id, (tab) => {
           if (tab.projectPath !== projectPath) return tab;
           if (tab.content !== current.content) {
             return {
@@ -5336,10 +5404,14 @@ function App() {
     closeRuntimeTabs,
     lang,
     activeProject,
+    activeProjectPath,
     activeProject.path,
     activeProject.branch,
     activeProject.runtimeBacked,
+    getOwnedWorkspace,
     pushProjectMessage,
+    setWorkspace,
+    updateOwnedWorkspace,
   ]);
 
   // ???? Send / approve flow uses workspace lookups ????????????????????????????????????????????????
@@ -5563,10 +5635,12 @@ function App() {
                   projectRows={projectWorkspaces.rows}
                   activeProjectPath={projectWorkspaces.registry.activePath}
                   openingProject={projectBusy}
+                  selectedFile={selectedFile}
                   collapseSidebar={() => setSidebarOpen(false)}
                   onOpenProject={handleOpenProject}
                   onSelectProject={handleSelectProject}
                   onOpenFile={handleOpenFile}
+                  onSelectFile={setSelectedFile}
                   agentWorkspace={activeAgentWorkspace}
                   activeAgentSessionId={activeAgentSessionId}
                   activeProvider={providers.find((p) => p.id === activeProviderId) || providers[0]}
@@ -5583,6 +5657,7 @@ function App() {
                 />
               )}
               <Workspace
+                key={activeProjectPath || "no-project"}
                 workspace={workspace}
                 lang={lang}
                 executing={executing}
