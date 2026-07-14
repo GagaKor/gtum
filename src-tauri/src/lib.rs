@@ -23,8 +23,8 @@ use runtime::filesystem::{
     ProjectSearchResult, SourceControlDiff, SourceControlOverview, WriteProjectFileRequest,
 };
 use runtime::pty::{
-    CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, TerminalSessionLogs,
-    TerminalSessionManager, TerminalSessionSnapshot,
+    CreateTerminalSessionRequest, CreateTerminalSessionWithCommandRequest, RawTerminalOutput,
+    TerminalSessionLogs, TerminalSessionManager, TerminalSessionSnapshot,
 };
 use runtime::telegram::{
     CompleteTelegramLinkRequest, CreateTelegramReportRequest, QueueTelegramRemoteCommandRequest,
@@ -197,6 +197,34 @@ fn create_terminal_session_with_command(
     request: CreateTerminalSessionWithCommandRequest,
 ) -> Result<TerminalSessionSnapshot, String> {
     state.create_session_with_command(request)
+}
+
+#[tauri::command]
+fn write_terminal_input(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    data: String,
+) -> Result<(), String> {
+    state.write_terminal_input(session_id, data)
+}
+
+#[tauri::command]
+fn read_raw_terminal_output(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    from: usize,
+) -> Result<RawTerminalOutput, String> {
+    state.read_raw_output(session_id, from)
+}
+
+#[tauri::command]
+fn resize_terminal_session(
+    state: tauri::State<'_, TerminalSessionManager>,
+    session_id: u64,
+    rows: u16,
+    cols: u16,
+) -> Result<(), String> {
+    state.resize_session(session_id, rows, cols)
 }
 
 #[tauri::command]
@@ -472,6 +500,9 @@ pub fn run() {
             read_terminal_session_logs,
             execute_terminal_session_command,
             create_terminal_session_with_command,
+            write_terminal_input,
+            read_raw_terminal_output,
+            resize_terminal_session,
             create_agent_job,
             read_agent_job_logs,
             cancel_agent_job,

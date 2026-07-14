@@ -102,6 +102,63 @@ test('executes commands and converts recent PTY logs into terminal lines', async
   ])
 })
 
+test('writes raw input and reads incremental raw PTY output', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const service = createTerminalRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+
+      if (command === 'read_raw_terminal_output') {
+        return {
+          sessionId: 42,
+          base: 0,
+          cursor: 12,
+          chunk: 'hello world\n',
+          status: 'running',
+        }
+      }
+
+      return undefined
+    },
+  })
+
+  await service.writeInput(42, 'ls\r')
+  const raw = await service.readRawOutput(42, 0)
+
+  expect(invoked).toEqual([
+    {
+      command: 'write_terminal_input',
+      args: { sessionId: 42, data: 'ls\r' },
+    },
+    {
+      command: 'read_raw_terminal_output',
+      args: { sessionId: 42, from: 0 },
+    },
+  ])
+  expect(raw.chunk).toBe('hello world\n')
+  expect(raw.cursor).toBe(12)
+})
+
+test('skips raw terminal IO when desktop runtime is unavailable', async () => {
+  let invokedRuntime = false
+  const service = createTerminalRuntimeService({
+    hasRuntime: () => false,
+    invokeRuntime: async () => {
+      invokedRuntime = true
+      throw new Error('runtime should not be invoked in browser fallback')
+    },
+  })
+
+  await service.writeInput(42, 'ls\r')
+  const raw = await service.readRawOutput(42, 7)
+
+  expect(invokedRuntime).toBe(false)
+  expect(raw.chunk).toBe('')
+  expect(raw.cursor).toBe(7)
+  expect(raw.status).toBe('unavailable')
+})
+
 test('keeps browser preview terminal tabs local when desktop runtime is unavailable', async () => {
   let invokedRuntime = false
   const service = createTerminalRuntimeService({

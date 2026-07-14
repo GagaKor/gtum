@@ -68,6 +68,14 @@ export type TerminalLogsView = {
   updatedAt: number
 }
 
+export type RawTerminalOutput = {
+  sessionId: number | null
+  base: number
+  cursor: number
+  chunk: string
+  status: RuntimeTerminalStatus | 'unavailable'
+}
+
 export type CreateTerminalTabRequest = {
   projectPath: string
   title?: string
@@ -98,6 +106,9 @@ export type TerminalRuntimeService = {
   closeSession(sessionId: number | null): Promise<RuntimeTerminalSnapshot>
   readLogs(sessionId: number | null, limit?: number): Promise<TerminalLogsView>
   executeCommand(sessionId: number | null, command: string): Promise<RuntimeTerminalSnapshot>
+  writeInput(sessionId: number | null, data: string): Promise<void>
+  readRawOutput(sessionId: number | null, from: number): Promise<RawTerminalOutput>
+  resizeSession(sessionId: number | null, rows: number, cols: number): Promise<void>
 }
 
 type RuntimeTerminalOverride = {
@@ -307,6 +318,37 @@ export const createTerminalRuntimeService = (
       return invokeRuntime<RuntimeTerminalSnapshot>('execute_terminal_session_command', {
         sessionId,
         command,
+      })
+    },
+    async writeInput(sessionId, data) {
+      if (!hasRuntime() || sessionId == null) return
+
+      await invokeRuntime<void>('write_terminal_input', { sessionId, data })
+    },
+    async readRawOutput(sessionId, from) {
+      if (!hasRuntime() || sessionId == null) {
+        return {
+          sessionId: null,
+          base: from,
+          cursor: from,
+          chunk: '',
+          status: 'unavailable',
+        }
+      }
+
+      return invokeRuntime<RawTerminalOutput>('read_raw_terminal_output', {
+        sessionId,
+        from,
+      })
+    },
+    async resizeSession(sessionId, rows, cols) {
+      if (!hasRuntime() || sessionId == null) return
+      if (!Number.isFinite(rows) || !Number.isFinite(cols) || rows < 1 || cols < 1) return
+
+      await invokeRuntime<void>('resize_terminal_session', {
+        sessionId,
+        rows: Math.floor(rows),
+        cols: Math.floor(cols),
       })
     },
   }
