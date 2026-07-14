@@ -618,6 +618,8 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .project-item.active .project-branch { color: var(--accent); }
 .project-changes { color: var(--warn); }
+.project-meta.project-error,
+.project-meta.project-error .project-branch { color: var(--err); }
 .project-tag {
   font-size: 9px;
   letter-spacing: 0.06em;
@@ -640,6 +642,25 @@ body.resizing-h-left, body.resizing-h-right {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+.project-workspace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 8px 2px 32px;
+  color: var(--text-dim);
+}
+.project-workspace-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .pg-header {
   min-width: 0;

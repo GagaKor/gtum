@@ -20,8 +20,10 @@ import { createAgentSuggestionRuntimeService } from './shared/api/runtimeAgentSu
 import { createAgentJobRuntimeService } from './shared/api/runtimeAgentJobs'
 import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
 import { createWorkspaceRuntimeService } from './shared/api/runtimeWorkspace'
+import { useProjectWorkspaces } from './features/projects/model/useProjectWorkspaces'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
+import { ProjectSwitcher } from './widgets/project-sidebar/ui/ProjectSwitcher'
 import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
 import '@xterm/xterm/css/xterm.css'
 import './styles.css'
@@ -719,6 +721,13 @@ const PROJECT = {
 };
 
 async function selectRuntimeProjectFolder(defaultPath, runtimeAvailable = hasTauriRuntime()) {
+  const pickerOverride = typeof window === "undefined"
+    ? null
+    : window.__GTUM_PROJECT_FOLDER_PICKER__;
+  if (pickerOverride?.pick) {
+    return pickerOverride.pick({ defaultPath });
+  }
+
   if (!hasTauriRuntime()) {
     return runtimeAvailable ? (defaultPath || PROJECT.path || ".") : null;
   }
@@ -1716,48 +1725,6 @@ function Section({ label, count, open, onToggle, children }) {
   );
 }
 
-// Recent projects are populated from runtime persistence after real project opens.
-const RECENT_PROJECTS = [];
-
-function ProjectItem({ project, active, lang, onSelect }) {
-  return (
-    <button
-      className={"project-item" + (active ? " active" : "")}
-      onClick={() => onSelect?.(project)}
-    >
-      <span className={"project-mark" + (active ? " active" : "")}>
-        {(project.name || "?")[0].toUpperCase()}
-      </span>
-      <span className="project-info">
-        <span className="project-name">
-          <span className="nm">{project.name}</span>
-          {active && (
-            <span className="project-tag">{"current"}</span>
-          )}
-        </span>
-        <span className="project-meta">
-          <Icon.branch />
-          <span className="project-branch">{project.branch}</span>
-          {project.changedFiles > 0 && (
-            <>
-              <span className="project-meta-sep">/</span>
-              <span className="project-changes">
-                {project.changedFiles} changes
-              </span>
-            </>
-          )}
-          {(project.ahead > 0 || project.behind > 0) && (
-            <>
-              <span className="project-meta-sep">/</span>
-              <span className="project-ahead">up {project.ahead} / down {project.behind}</span>
-            </>
-          )}
-        </span>
-      </span>
-    </button>
-  );
-}
-
 const WORKSPACE_CODENAME_STEMS = [
   "ridge",
   "harbor",
@@ -1824,20 +1791,9 @@ function ProjectWorkspaceGroup({
   const provider = activeProvider || PROVIDERS_INIT[0];
 
   return (
-    <div className="project-group open">
-      <div className="pg-header active">
-        <span className="pg-chev"><Icon.chevronDown /></span>
-        <span className="project-mark active">{(project.name || "?")[0].toUpperCase()}</span>
-        <span className="project-info">
-          <span className="project-name">
-            <span className="nm">{project.name}</span>
-            <span className="project-tag">current</span>
-          </span>
-          <span className="project-meta">
-            <Icon.branch />
-            <span className="project-branch">{project.branch}</span>
-          </span>
-        </span>
+    <div className="pg-body">
+      <div className="project-workspace-toolbar">
+        <span className="project-workspace-label">Agent workspaces</span>
         <span className="pg-count">{sessions.length}</span>
         <button
           className="project-workspace-new"
@@ -1848,9 +1804,7 @@ function ProjectWorkspaceGroup({
           <Icon.plus />
         </button>
       </div>
-
-      <div className="pg-body">
-        {sessions.map((session) => {
+      {sessions.map((session) => {
           const status = agentSessionStatusView(session);
           const active = session.id === activeAgentSessionId;
 
@@ -1905,14 +1859,14 @@ function ProjectWorkspaceGroup({
               )}
             </button>
           );
-        })}
-      </div>
+      })}
     </div>
   );
 }
 
 function Sidebar({
   lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject,
+  projectRows, activeProjectPath, onSelectProject,
   agentWorkspace, activeAgentSessionId, activeProvider,
   onSelectAgentSession, onNewAgentSession, onCloseAgentSession,
 }) {
@@ -1943,12 +1897,22 @@ function Sidebar({
       <div className="sb-scroll">
         <Section
           label={"Projects"}
-          count={activeProject.runtimeBacked ? 1 + RECENT_PROJECTS.length : RECENT_PROJECTS.length}
+          count={projectRows.length}
           open={projectsOpen}
           onToggle={() => setProjectsOpen((v) => !v)}
         >
-          <div className="project-list">
-            {activeProject.runtimeBacked && (
+          <ProjectSwitcher
+            rows={projectRows}
+            activePath={activeProjectPath}
+            openingProject={openingProject}
+            openProjectLabel={t(lang, "openProjectFolder")}
+            openingProjectLabel="Opening project"
+            openProjectHint="Open a local folder as a workspace"
+            onSelectProject={onSelectProject}
+            onOpenProject={onOpenProject}
+            plusIcon={<Icon.plus />}
+            branchIcon={<Icon.branch />}
+            activeDetails={activeProject.runtimeBacked ? (
               <ProjectWorkspaceGroup
                 project={activeProject}
                 agentWorkspace={agentWorkspace}
@@ -1958,31 +1922,8 @@ function Sidebar({
                 onNewAgentSession={onNewAgentSession}
                 onCloseAgentSession={onCloseAgentSession}
               />
-            )}
-            {RECENT_PROJECTS.map((p) => (
-              <ProjectItem
-                key={p.id}
-                project={p}
-                active={false}
-                lang={lang}
-                onSelect={() => {}}
-              />
-            ))}
-            <button className="project-item action" onClick={onOpenProject} disabled={openingProject}>
-              <span className="project-mark plus"><Icon.plus /></span>
-              <span className="project-info">
-                <span className="project-name">
-                  <span className="nm">{t(lang, "openProjectFolder")}</span>
-                </span>
-                <span className="project-meta">
-                  {openingProject
-                    ? ("Opening project")
-                    : ("Open a local folder as a workspace")}
-                </span>
-              </span>
-              <span className="kbd">Open</span>
-            </button>
-          </div>
+            ) : null}
+          />
         </Section>
 
         <Section
@@ -4401,7 +4342,12 @@ function App() {
   // Bridges provisional tabs to their eventual runtime owner so closing a tab
   // before create resolves still disposes the backend session when it arrives.
   const terminalCreateOwnersRef = React.useRef(new Map());
-  const [activeProject, setActiveProject] = React.useState(PROJECT);
+  const projectWorkspaces = useProjectWorkspaces({
+    fallbackProject: PROJECT,
+    readProjectOverview: readRuntimeProjectOverview,
+    workspaceService: workspaceRuntimeService,
+  });
+  const activeProject = projectWorkspaces.activeProject;
   const [projectBusy, setProjectBusy] = React.useState(false);
   const [projectError, setProjectError] = React.useState(null);
   const [providers, setProviders] = React.useState(PROVIDERS_INIT);
@@ -4849,31 +4795,13 @@ function App() {
   }, [lang]);
 
   React.useEffect(() => {
-    if (!workspaceRuntimeService.hasRuntime()) return undefined;
+    if (!projectWorkspaces.restoreError) return;
+    pushProjectMessage(`Could not restore the workspace: ${projectWorkspaces.restoreError}`);
+  }, [projectWorkspaces.restoreError, pushProjectMessage]);
 
-    let cancelled = false;
-
-    workspaceRuntimeService.readRuntimeSnapshot()
-      .then(async (runtimeSnapshot) => {
-        if (cancelled || !runtimeSnapshot) return;
-
-        const snapshot = runtimeSnapshot.snapshot;
-        if (!snapshot.lastOpenedProjectPath) return;
-
-        const restoredProject = await readRuntimeProjectOverview(snapshot.lastOpenedProjectPath);
-        if (cancelled) return;
-        setActiveProject(restoredProject);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error);
-        pushProjectMessage(`Could not restore the workspace: ${message}`);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [lang, pushProjectMessage]);
+  const handleSelectProject = React.useCallback((path) => {
+    void projectWorkspaces.activateProject(path);
+  }, [projectWorkspaces.activateProject]);
 
   const handleOpenProject = async () => {
     setProjectBusy(true);
@@ -4888,14 +4816,8 @@ function App() {
         projectRuntimeService.hasRuntime(),
       );
       if (!selectedPath) return;
-      const nextProject = await readRuntimeProjectOverview(selectedPath);
-      setActiveProject(nextProject);
-      if (nextProject.runtimeBacked && workspaceRuntimeService.hasRuntime()) {
-        workspaceRuntimeService.rememberProject(nextProject.path).catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          pushProjectMessage(`Could not persist the project path: ${message}`);
-        });
-      }
+      const nextProject = await projectWorkspaces.openProject(selectedPath);
+      if (!nextProject) return;
       setHistory((prev) => [...prev, {
         at: nowHm(),
         tab: "workspace",
@@ -5603,6 +5525,8 @@ function App() {
         <div className={"gtum-scaler" + (maximized ? " is-max" : "")} ref={scalerRef}>
             <div
               className={"gtum-window os-" + os + " " + widthClass + (maximized ? " is-max" : "")}
+              data-command-history-count={history.length}
+              data-project-error={projectError ? "true" : "false"}
               ref={windowRef}
             >
             <WindowResizeZones windowControls={windowControls} maximized={maximized} />
@@ -5636,9 +5560,12 @@ function App() {
                 <Sidebar
                   lang={lang}
                   project={activeProject}
+                  projectRows={projectWorkspaces.rows}
+                  activeProjectPath={projectWorkspaces.registry.activePath}
                   openingProject={projectBusy}
                   collapseSidebar={() => setSidebarOpen(false)}
                   onOpenProject={handleOpenProject}
+                  onSelectProject={handleSelectProject}
                   onOpenFile={handleOpenFile}
                   agentWorkspace={activeAgentWorkspace}
                   activeAgentSessionId={activeAgentSessionId}

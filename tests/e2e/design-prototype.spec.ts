@@ -649,17 +649,21 @@ test('restores the last runtime project from workspace persistence', async ({ pa
   ])
 })
 
-test('persists runtime project opens without writing hidden execution mode', async ({ page }) => {
+test('opens runtime projects through the workspace registry without hidden execution mode', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __workspaceCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_WORKSPACE_RUNTIME__: unknown
       __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_PROJECT_FOLDER_PICKER__: unknown
     }
 
     bridgeWindow.__workspaceCalls = []
     bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_FOLDER_PICKER__ = {
+      pick: async () => '/workspace/gtum',
+    }
     bridgeWindow.__GTUM_WORKSPACE_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
@@ -729,7 +733,7 @@ test('persists runtime project opens without writing hidden execution mode', asy
     )
     .toEqual(
       expect.arrayContaining([
-        'remember_workspace_project',
+        'open_workspace_project',
       ]),
     )
 
@@ -741,9 +745,9 @@ test('persists runtime project opens without writing hidden execution mode', asy
         }
       ).__workspaceCalls ?? [],
   )
-  const rememberCall = calls.find((call) => call.command === 'remember_workspace_project')
+  const openCall = calls.find((call) => call.command === 'open_workspace_project')
 
-  expect(rememberCall?.args).toEqual({
+  expect(openCall?.args).toEqual({
     request: {
       path: '/workspace/gtum',
     },
