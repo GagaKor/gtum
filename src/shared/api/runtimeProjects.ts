@@ -31,6 +31,7 @@ export type RuntimeProjectOverview = {
 };
 
 export type RuntimeProjectFileSnapshot = {
+  readonly projectPath: string;
   filePath: string;
   displayPath?: string | null;
   content?: string | null;
@@ -64,6 +65,7 @@ export type RuntimeProject = {
 };
 
 export type ProjectFileSnapshot = {
+  readonly projectPath: string;
   id: string;
   type: "editor";
   title: string;
@@ -101,6 +103,7 @@ export type RuntimeAvailability = () => boolean;
 export type FallbackProjectFileReader = (
   filePath: string,
   fallbackName?: string,
+  projectPath?: string,
 ) => ProjectFileSnapshot;
 
 export type ProjectRuntimeServiceOptions = {
@@ -126,11 +129,13 @@ export type ProjectRuntimeService = {
   ): Promise<ProjectFileSnapshot>;
   saveProjectFile(
     project: Pick<RuntimeProject, "path" | "runtimeBacked"> | null | undefined,
-    file: Pick<ProjectFileSnapshot, "path" | "content" | "contentHash">,
+    file: Pick<ProjectFileSnapshot, "projectPath" | "path" | "content" | "contentHash">,
   ): Promise<ProjectFileSnapshot>;
   applyProjectPatch(
     project: Pick<RuntimeProject, "path" | "runtimeBacked"> | null | undefined,
-    edits: Array<Pick<ProjectFileSnapshot, "path" | "content" | "contentHash">>,
+    edits: Array<
+      Pick<ProjectFileSnapshot, "projectPath" | "path" | "content" | "contentHash">
+    >,
   ): Promise<ProjectFileSnapshot[]>;
 };
 
@@ -175,6 +180,47 @@ export const extensionOf = (name: string | null | undefined): string => {
   return ext && ext !== name ? ext.toLowerCase() : "txt";
 };
 
+const projectPathIdentity = (value: string): string => {
+  const trimmed = value.trim();
+  const isWindowsUncPath = /^[/\\]{2}[^/\\]/.test(trimmed);
+  let normalized = trimmed.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+
+  if (isWindowsUncPath) normalized = `/${normalized}`;
+
+  while (
+    normalized.length > 1 &&
+    normalized.endsWith("/") &&
+    !/^[a-z]:\/$/i.test(normalized)
+  ) {
+    normalized = normalized.slice(0, -1);
+  }
+
+  return /^[a-z]:(?:\/|$)/i.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLowerCase()
+    : normalized;
+};
+
+const requiredProjectOwner = (value: unknown, label: string): string => {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} is missing.`);
+  }
+
+  return value;
+};
+
+const assertSameProjectOwner = (
+  expected: string,
+  actual: unknown,
+  label: string,
+): string => {
+  const actualOwner = requiredProjectOwner(actual, label);
+  if (projectPathIdentity(expected) !== projectPathIdentity(actualOwner)) {
+    throw new Error(`${label} does not match the immutable project owner.`);
+  }
+
+  return actualOwner;
+};
+
 export const projectTreeNodeFromRuntime = (node: RuntimeProjectTreeNode): ProjectTreeNode => {
   const isDir = node.kind === "directory";
 
@@ -215,11 +261,13 @@ export const projectFromRuntimeOverview = (
 export const fileSnapshotFromFallback = (
   filePath: string,
   fallbackName?: string,
+  projectPath = "",
 ): ProjectFileSnapshot => {
   const displayPath = fallbackName || filePath || "file";
   const title = basenameOfPath(displayPath);
 
   return {
+    projectPath,
     id: "ed-" + String(filePath || displayPath).replace(/[^a-z0-9]+/gi, "-"),
     type: "editor",
     title,
@@ -254,6 +302,7 @@ export const fileSnapshotFromRuntime = (
     : "";
 
   return {
+    projectPath: requiredProjectOwner(snapshot.projectPath, "Runtime file project owner"),
     id: "ed-" + String(tabPath).replace(/[^a-z0-9]+/gi, "-"),
     type: "editor",
     title: basenameOfPath(displayPath),
@@ -313,7 +362,11 @@ export const createProjectRuntimeService = (
     },
     async readProjectFile(project, filePath, fallbackName): Promise<ProjectFileSnapshot> {
       if (!project?.runtimeBacked || !hasRuntime()) {
-        return fallbackFileReader(filePath, fallbackName);
+        const projectPath = project?.path || "";
+        return {
+          ...fallbackFileReader(filePath, fallbackName, projectPath),
+          projectPath,
+        };
       }
 
       const snapshot = await invokeRuntime<RuntimeProjectFileSnapshot>("read_project_file", {
@@ -324,31 +377,44 @@ export const createProjectRuntimeService = (
       return fileSnapshotFromRuntime(snapshot, fallbackName);
     },
     async saveProjectFile(project, file): Promise<ProjectFileSnapshot> {
+      const fileOwner = requiredProjectOwner(file.projectPath, "File project owner");
       if (!project?.runtimeBacked || !hasRuntime()) {
         throw new Error("Saving files is available in the installed desktop app after opening a real project.");
       }
+      const projectOwner = requiredProjectOwner(project.path, "Project owner");
+      assertSameProjectOwner(fileOwner, projectOwner, "Selected project owner");
 
       const snapshot = await invokeRuntime<RuntimeProjectFileSnapshot>("write_project_file", {
         request: {
-          projectPath: project.path,
+          projectPath: fileOwner,
           filePath: file.path,
           content: file.content,
           expectedContentHash: file.contentHash || undefined,
         },
       });
 
+      assertSameProjectOwner(fileOwner, snapshot.projectPath, "Runtime save project owner");
       return fileSnapshotFromRuntime(snapshot);
     },
     async applyProjectPatch(project, edits): Promise<ProjectFileSnapshot[]> {
+      if (edits.length === 0) {
+        throw new Error("Patch must include at least one project-owned file edit.");
+      }
+      const patchOwner = requiredProjectOwner(edits[0].projectPath, "Patch project owner");
+      for (const edit of edits) {
+        assertSameProjectOwner(patchOwner, edit.projectPath, "Patch edit project owner");
+      }
       if (!project?.runtimeBacked || !hasRuntime()) {
         throw new Error("Applying patches is available in the installed desktop app after opening a real project.");
       }
+      const projectOwner = requiredProjectOwner(project.path, "Project owner");
+      assertSameProjectOwner(patchOwner, projectOwner, "Selected project owner");
 
       const result = await invokeRuntime<{ appliedFiles: RuntimeProjectFileSnapshot[] }>(
         "apply_project_patch",
         {
           request: {
-            projectPath: project.path,
+            projectPath: patchOwner,
             edits: edits.map((edit) => ({
               filePath: edit.path,
               content: edit.content,
@@ -358,7 +424,14 @@ export const createProjectRuntimeService = (
         },
       );
 
-      return result.appliedFiles.map((snapshot) => fileSnapshotFromRuntime(snapshot));
+      return result.appliedFiles.map((snapshot) => {
+        assertSameProjectOwner(
+          patchOwner,
+          snapshot.projectPath,
+          "Runtime patch project owner",
+        );
+        return fileSnapshotFromRuntime(snapshot);
+      });
     },
   };
 };

@@ -6,6 +6,7 @@ export interface WorkbenchTab {
   readonly id: string
   readonly kind: WorkbenchTabKind
   readonly title: string
+  readonly projectPath: string
   readonly path?: string
   readonly dirty?: boolean
 }

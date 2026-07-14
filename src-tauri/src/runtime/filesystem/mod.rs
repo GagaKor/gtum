@@ -157,7 +157,7 @@ pub fn read_project_overview(
     path: String,
     max_depth: Option<usize>,
 ) -> Result<ProjectOverview, String> {
-    let project_path = platform::normalize_project_path(&path)?;
+    let project_path = canonical_project_root(&path)?;
     let metadata = fs::metadata(&project_path).map_err(|error| {
         format!(
             "failed to read metadata for {}: {error}",
@@ -918,6 +918,53 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("gtum-filesystem-{label}-{nonce}"))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_project_overview_returns_the_canonical_root_for_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_project_dir("overview-canonical");
+        let link = temp_project_dir("overview-link");
+        fs::create_dir_all(root.join("src")).unwrap();
+        symlink(&root, &link).unwrap();
+
+        let overview = read_project_overview(link.to_string_lossy().into_owned(), None).unwrap();
+
+        assert_eq!(
+            overview.metadata.path,
+            fs::canonicalize(&root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        );
+        assert_eq!(overview.tree.path, overview.metadata.path);
+
+        let _ = fs::remove_file(link);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn read_project_file_rejects_a_file_outside_the_canonical_root() {
+        let root = temp_project_dir("inside-root");
+        let outside = temp_project_dir("outside-root");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let outside_file = outside.join("secret.txt");
+        fs::write(&outside_file, "secret\n").unwrap();
+
+        let error = read_project_file(
+            root.to_string_lossy().into_owned(),
+            outside_file.to_string_lossy().into_owned(),
+        )
+        .err()
+        .expect("outside-root reads must fail");
+
+        assert_eq!(error, "requested file is outside the active project root");
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(outside);
     }
 
     #[test]
