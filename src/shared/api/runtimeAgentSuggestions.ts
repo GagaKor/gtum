@@ -81,6 +81,7 @@ export type AgentSuggestionProjectInput = Pick<RuntimeProject, 'name' | 'path'>
 
 export type AgentSuggestionTabInput = {
   id?: string | null
+  projectPath?: string | null
   type?: string | null
   title?: string | null
   path?: string | null
@@ -122,6 +123,22 @@ type RuntimeAgentOverride = {
 
 const MAX_ATTACHED_LOG_LINES = 50
 const MAX_FILE_SNIPPET_CHARS = 4_000
+
+const validateActiveTabOwner = (input: RequestAgentSuggestionsInput): void => {
+  const activeTab = input.activeTab
+  if (!activeTab) return
+
+  const owner = activeTab.projectPath
+  const requiresOwner = activeTab.type === 'editor' || activeTab.runtimeBacked === true
+  if (typeof owner !== 'string' || owner.trim().length === 0) {
+    if (requiresOwner) throw new Error('Active tab project owner is missing.')
+    return
+  }
+
+  if (owner !== input.project.path) {
+    throw new Error('Active tab project owner mismatch.')
+  }
+}
 
 const agentOverride = (): RuntimeAgentOverride | null => {
   if (typeof window === 'undefined') return null
@@ -293,6 +310,7 @@ export const createAgentSuggestionRuntimeService = (
     },
     async requestSuggestions(input) {
       if (!hasRuntime()) return []
+      validateActiveTabOwner(input)
 
       const responses = await invokeRuntime<RuntimeAgentSuggestionResponse[]>(
         'request_agent_suggestions',

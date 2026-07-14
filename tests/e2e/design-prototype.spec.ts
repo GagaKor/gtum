@@ -751,9 +751,149 @@ test('persists runtime project opens without writing hidden execution mode', asy
   expect(calls.map((call) => call.command)).not.toContain('set_workspace_execution_mode')
 })
 
+test('saves through the editor tab owner and ignores a late response for a reused foreign tab id', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __resolveProjectSave?: () => void
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+    let overviewCount = 0
+
+    bridgeWindow.__projectCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__projectCalls.push({ command, args })
+
+        if (command === 'read_project_overview') {
+          overviewCount += 1
+          const owner = overviewCount === 1 ? 'project-a' : 'project-b'
+          const projectPath = `/workspace/${owner}`
+          return {
+            metadata: {
+              name: owner,
+              path: projectPath,
+            },
+            tree: {
+              name: owner,
+              path: projectPath,
+              kind: 'directory',
+              children: [
+                {
+                  name: 'shared.ts',
+                  path: 'src/shared.ts',
+                  kind: 'file',
+                },
+              ],
+            },
+            git: {
+              isRepository: true,
+              branch: 'dev',
+              branchType: 'local',
+              changedFilesCount: 1,
+            },
+          }
+        }
+
+        if (command === 'read_project_file') {
+          const projectPath = String(args?.projectPath)
+          const owner = projectPath.endsWith('project-a') ? 'A' : 'B'
+          return {
+            projectPath,
+            filePath: 'src/shared.ts',
+            displayPath: 'src/shared.ts',
+            content: `const owner = '${owner}'`,
+            contentHash: `hash-${owner.toLowerCase()}`,
+            isText: true,
+            truncated: false,
+          }
+        }
+
+        if (command === 'write_project_file') {
+          return new Promise((resolve) => {
+            bridgeWindow.__resolveProjectSave = () => resolve({
+              projectPath: '/workspace/project-a',
+              filePath: 'src/shared.ts',
+              displayPath: 'src/shared.ts',
+              content: "const owner = 'A changed'",
+              contentHash: 'hash-a-saved',
+              isText: true,
+              truncated: false,
+            })
+          })
+        }
+
+        throw new Error(`Unexpected project command: ${command}`)
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await page.locator('.tree-row.file').filter({ hasText: 'shared.ts' }).click()
+  await expect(page.locator('.editor-textarea')).toHaveValue("const owner = 'A'")
+  await page.locator('.editor-textarea').fill("const owner = 'A changed'")
+
+  // Change the selected project before saving. The editor tab must retain A as
+  // its immutable runtime owner even though project B is now active.
+  await page.getByText('Open project folder').click()
+  await expect(page.locator('.project-group')).toContainText('project-b')
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __projectCalls?: Array<{ command: string }>
+            }
+          ).__projectCalls?.filter((call) => call.command === 'write_project_file').length ?? 0,
+      ),
+    )
+    .toBe(1)
+
+  // Reuse the deterministic editor id with B's same relative path while A's
+  // save is pending. A's late response must not overwrite B's tab.
+  await page.locator('.group.active .gt.active .x-btn').click()
+  await page.locator('.tree-row.file').filter({ hasText: 'shared.ts' }).click()
+  await expect(page.locator('.editor-textarea')).toHaveValue("const owner = 'B'")
+
+  await page.evaluate(async () => {
+    const bridgeWindow = window as Window & { __resolveProjectSave?: () => void }
+    bridgeWindow.__resolveProjectSave?.()
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+  })
+
+  await expect(page.locator('.editor-textarea')).toHaveValue("const owner = 'B'")
+  const writeCall = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __projectCalls?: Array<{
+            command: string
+            args?: { request?: Record<string, unknown> }
+          }>
+        }
+      ).__projectCalls?.find((call) => call.command === 'write_project_file') ?? null,
+  )
+  expect(writeCall?.args).toEqual({
+    request: {
+      projectPath: '/workspace/project-a',
+      filePath: 'src/shared.ts',
+      content: "const owner = 'A changed'",
+      expectedContentHash: 'hash-a',
+    },
+  })
+})
+
 test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ page }) => {
   await page.addInitScript(() => {
     const snapshot = {
+      projectPath: '/workspace/project',
       sessionId: 77,
       name: 'New tab',
       cwd: '/workspace/project',
@@ -809,6 +949,7 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
 
         if (command === 'read_terminal_session_logs') {
           return {
+            projectPath: '/workspace/project',
             sessionId: 77,
             status: 'running',
             limit: 100,
@@ -821,6 +962,7 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
 
         if (command === 'read_raw_terminal_output') {
           return {
+            projectPath: '/workspace/project',
             sessionId: 77,
             base: 0,
             cursor: 13,
@@ -862,6 +1004,8 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
   await expect(page.locator('.term-xterm .xterm')).toHaveCount(1)
   await expect(page.locator('.terminal-input-form')).toHaveCount(0)
 
+  await page.keyboard.type('x')
+
   // The xterm effect pumps raw PTY output on an interval.
   await expect
     .poll(async () =>
@@ -875,6 +1019,25 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
       ),
     )
     .toContain('read_raw_terminal_output')
+
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __terminalCalls?: Array<{ command: string }>
+            }
+          ).__terminalCalls?.map((call) => call.command) ?? [],
+      ),
+    )
+    .toEqual(
+      expect.arrayContaining([
+        'resize_terminal_session',
+        'write_terminal_input',
+        'read_terminal_session_logs',
+      ]),
+    )
 
   await page.locator('.group.active .gt.active .x-btn').click()
 
@@ -890,6 +1053,435 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
       ),
     )
     .toContain('close_terminal_session')
+
+  const calls = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __terminalCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__terminalCalls ?? [],
+  )
+  expect(calls.find((call) => call.command === 'create_terminal_session')?.args).toEqual({
+    request: {
+      projectPath: '/workspace/project',
+      name: 'terminal',
+      cwd: '/workspace/project',
+    },
+  })
+  for (const command of [
+    'resize_terminal_session',
+    'write_terminal_input',
+    'read_raw_terminal_output',
+    'read_terminal_session_logs',
+    'close_terminal_session',
+  ]) {
+    const ownedCalls = calls.filter((call) => call.command === command)
+    expect(ownedCalls.length, `${command} must be invoked`).toBeGreaterThan(0)
+    for (const call of ownedCalls) {
+      expect(call.args).toMatchObject({
+        projectPath: '/workspace/project',
+        sessionId: 77,
+      })
+    }
+  }
+})
+
+test('closes a late runtime session after its provisional tab was closed', async ({ page }) => {
+  type TerminalCall = { command: string; args?: Record<string, unknown> }
+  type TestWindow = Window & {
+    __terminalCalls: TerminalCall[]
+    __resolveFirstTerminal?: () => void
+    __GTUM_PROJECT_RUNTIME__: unknown
+    __GTUM_TERMINAL_RUNTIME__: unknown
+  }
+
+  await page.addInitScript(() => {
+    const bridgeWindow = window as TestWindow
+    let createCount = 0
+    const snapshot = (sessionId: number, status = 'running') => ({
+      projectPath: '/workspace/project-a',
+      sessionId,
+      name: sessionId === 77 ? 'late terminal' : 'replacement terminal',
+      cwd: '/workspace/project-a',
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: sessionId * 100,
+      status,
+      createdAt: 100,
+      updatedAt: status === 'running' ? 120 : 180,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: status,
+    })
+
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'project-a', path: '/workspace/project-a' },
+        tree: {
+          name: 'project-a',
+          path: '/workspace/project-a',
+          kind: 'directory',
+          children: [],
+        },
+        git: {
+          isRepository: true,
+          branch: 'dev',
+          branchType: 'local',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+
+        if (command === 'create_terminal_session') {
+          createCount += 1
+          if (createCount === 1) {
+            return new Promise((resolve) => {
+              bridgeWindow.__resolveFirstTerminal = () => resolve(snapshot(77))
+            })
+          }
+          return snapshot(88)
+        }
+
+        const sessionId = Number(args?.sessionId)
+        if (command === 'read_raw_terminal_output') {
+          const from = Number(args?.from) || 0
+          const chunk = from === 0 ? `replacement session ${sessionId}` : ''
+          return {
+            projectPath: '/workspace/project-a',
+            sessionId,
+            base: 0,
+            cursor: from + chunk.length,
+            chunk,
+            status: 'running',
+          }
+        }
+        if (command === 'read_terminal_session_logs') {
+          return {
+            projectPath: '/workspace/project-a',
+            sessionId,
+            status: 'running',
+            limit: 400,
+            logLineCount: 1,
+            truncated: false,
+            entries: [`replacement session ${sessionId}`],
+            updatedAt: 140,
+          }
+        }
+        if (command === 'close_terminal_session') {
+          return snapshot(sessionId, 'terminated')
+        }
+        return undefined
+      },
+    }
+  })
+
+  const terminalCalls = () => page.evaluate(
+    () => (window as TestWindow).__terminalCalls,
+  )
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await page.locator('.gt-add').first().click()
+  await expect
+    .poll(() => page.evaluate(
+      () => Boolean((window as TestWindow).__resolveFirstTerminal),
+    ))
+    .toBe(true)
+
+  const provisionalTabId = await page.locator('.group.active .gt.active').getAttribute('data-tab-id')
+  expect(provisionalTabId).toBeTruthy()
+  await page.locator(`.gt[data-tab-id="${provisionalTabId}"] .x-btn`).click()
+  await expect(page.locator(`.gt[data-tab-id="${provisionalTabId}"]`)).toHaveCount(0)
+
+  // A replacement tab must remain untouched when the first create resolves.
+  await page.locator('.gt-add').first().click()
+  await expect(page.locator('.term-xterm')).toContainText('replacement session 88')
+  const replacementTabId = await page.locator('.group.active .gt.active').getAttribute('data-tab-id')
+  expect(replacementTabId).toBeTruthy()
+  expect(replacementTabId).not.toBe(provisionalTabId)
+  expect((await terminalCalls()).filter((call) => call.command === 'close_terminal_session')).toEqual([])
+
+  await page.evaluate(() => {
+    ;(window as TestWindow).__resolveFirstTerminal?.()
+  })
+
+  await expect
+    .poll(async () =>
+      (await terminalCalls()).filter((call) => call.command === 'close_terminal_session'),
+    )
+    .toEqual([
+      {
+        command: 'close_terminal_session',
+        args: {
+          projectPath: '/workspace/project-a',
+          sessionId: 77,
+        },
+      },
+    ])
+  const replacementTab = page.locator(`.gt[data-tab-id="${replacementTabId}"]`)
+  await expect(replacementTab).toHaveClass(/active/)
+  await expect(replacementTab.locator('.lamp')).toHaveClass(/running/)
+  await expect(page.locator('.term-xterm')).toContainText('replacement session 88')
+})
+
+test('keeps project A terminal ownership after switching to project B', async ({ page }) => {
+  type TerminalCall = {
+    command: string
+    args?: Record<string, unknown>
+    afterProjectSwitch: boolean
+  }
+  type TestWindow = Window & {
+    __projectBActive: boolean
+    __terminalCalls: TerminalCall[]
+    __resolveDelayedProjectALog?: () => void
+    __GTUM_PROJECT_RUNTIME__: unknown
+    __GTUM_TERMINAL_RUNTIME__: unknown
+  }
+
+  await page.addInitScript(() => {
+    const bridgeWindow = window as TestWindow
+    let delayedProjectALog = false
+    let projectOverviewCount = 0
+
+    const terminalSnapshot = (
+      projectPath: string,
+      sessionId: number,
+      status = 'running',
+    ) => ({
+      projectPath,
+      sessionId,
+      name: projectPath.endsWith('project-a') ? 'A terminal' : 'B terminal',
+      cwd: projectPath,
+      shell: '/bin/zsh',
+      shellArgs: ['-i'],
+      processId: sessionId * 100,
+      status,
+      createdAt: 100,
+      updatedAt: status === 'running' ? 120 : 180,
+      exitCode: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: status,
+    })
+
+    bridgeWindow.__projectBActive = false
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => {
+        projectOverviewCount += 1
+        const isProjectB = projectOverviewCount > 1
+        const name = isProjectB ? 'project-b' : 'project-a'
+        const projectPath = `/workspace/${name}`
+        if (isProjectB) bridgeWindow.__projectBActive = true
+
+        return {
+          metadata: { name, path: projectPath },
+          tree: {
+            name,
+            path: projectPath,
+            kind: 'directory',
+            children: [],
+          },
+          git: {
+            isRepository: true,
+            branch: 'dev',
+            branchType: 'local',
+            changedFilesCount: 0,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({
+          command,
+          args,
+          afterProjectSwitch: bridgeWindow.__projectBActive,
+        })
+
+        if (command === 'create_terminal_session') {
+          const request = args?.request as { projectPath?: string } | undefined
+          const projectPath = String(request?.projectPath)
+          const sessionId = projectPath.endsWith('project-a') ? 77 : 88
+          return terminalSnapshot(projectPath, sessionId)
+        }
+
+        const projectPath = String(args?.projectPath)
+        const sessionId = Number(args?.sessionId)
+        if (command === 'read_terminal_session_logs') {
+          if (projectPath.endsWith('project-a') && !delayedProjectALog) {
+            delayedProjectALog = true
+            return new Promise((resolve) => {
+              bridgeWindow.__resolveDelayedProjectALog = () => resolve({
+                projectPath: '/workspace/project-a',
+                sessionId: 77,
+                status: 'failed',
+                limit: 400,
+                logLineCount: 2,
+                truncated: false,
+                entries: ['A LATE FOREIGN LOG'],
+                updatedAt: 900,
+              })
+            })
+          }
+
+          // Keep B's log reads pending so they cannot mask an incorrect late
+          // A failure by immediately restoring B's status to running.
+          if (projectPath.endsWith('project-b')) {
+            return new Promise<never>(() => {
+              // Deliberately unresolved for this ownership race test.
+            })
+          }
+
+          return {
+            projectPath,
+            sessionId,
+            status: 'running',
+            limit: 400,
+            logLineCount: 1,
+            truncated: false,
+            entries: ['A steady log'],
+            updatedAt: 140,
+          }
+        }
+
+        if (command === 'read_raw_terminal_output') {
+          const from = Number(args?.from) || 0
+          const chunk = from === 0 ? `PROJECT ${sessionId === 77 ? 'A' : 'B'} SESSION ${sessionId}` : ''
+          return {
+            projectPath,
+            sessionId,
+            base: 0,
+            cursor: from + chunk.length,
+            chunk,
+            status: 'running',
+          }
+        }
+
+        if (command === 'close_terminal_session') {
+          return terminalSnapshot(projectPath, sessionId, 'terminated')
+        }
+
+        return undefined
+      },
+    }
+  })
+
+  const terminalCalls = () => page.evaluate(
+    () => (window as TestWindow).__terminalCalls,
+  )
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect(page.locator('.titlebar')).toContainText('project-a')
+  await page.locator('.gt-add').first().click()
+  await expect(page.locator('.term-xterm .xterm')).toHaveCount(1)
+
+  const projectATabId = await page.locator('.group.active .gt.active').getAttribute('data-tab-id')
+  expect(projectATabId).toBeTruthy()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () => Boolean((window as TestWindow).__resolveDelayedProjectALog),
+      ),
+    )
+    .toBe(true)
+
+  // A remains the active terminal while only the selected project changes.
+  await page.getByText('Open project folder').click()
+  await expect(page.locator('.titlebar')).toContainText('project-b')
+  await expect(page.locator(`.gt[data-tab-id="${projectATabId}"]`)).toHaveClass(/active/)
+  await page.locator('.term-xterm .xterm-helper-textarea').focus()
+  await page.keyboard.type('after-switch')
+  await page.setViewportSize({ width: 1210, height: 720 })
+
+  const projectACommandsAfterSwitch = [
+    'resize_terminal_session',
+    'write_terminal_input',
+    'read_raw_terminal_output',
+    'read_terminal_session_logs',
+  ]
+  await expect
+    .poll(async () => {
+      const calls = await terminalCalls()
+      return projectACommandsAfterSwitch.filter((command) =>
+        calls.some((call) =>
+          call.afterProjectSwitch &&
+          call.command === command &&
+          call.args?.projectPath === '/workspace/project-a' &&
+          call.args?.sessionId === 77,
+        ),
+      )
+    })
+    .toEqual(projectACommandsAfterSwitch)
+
+  // Create and activate a real B-owned terminal without removing A.
+  await page.locator('.gt-add').first().click()
+  await expect(page.locator('.group.active .gt.active .ttl')).toHaveText('terminal')
+  const projectBTabId = await page.locator('.group.active .gt.active').getAttribute('data-tab-id')
+  expect(projectBTabId).toBeTruthy()
+  expect(projectBTabId).not.toBe(projectATabId)
+  await expect(page.locator('.term-xterm')).toContainText('PROJECT B SESSION 88')
+
+  // Close A while B remains selected. The close must still use A's owner.
+  await page.locator(`.gt[data-tab-id="${projectATabId}"] .x-btn`).click()
+  await expect
+    .poll(async () => {
+      const calls = await terminalCalls()
+      return calls.some((call) =>
+          call.afterProjectSwitch &&
+          call.command === 'close_terminal_session' &&
+          call.args?.projectPath === '/workspace/project-a' &&
+          call.args?.sessionId === 77,
+      )
+    })
+    .toBe(true)
+
+  // Deliver A's pending failed-log response after B owns the visible terminal.
+  await page.evaluate(async () => {
+    ;(window as TestWindow).__resolveDelayedProjectALog?.()
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+  })
+
+  const projectBTab = page.locator(`.gt[data-tab-id="${projectBTabId}"]`)
+  await expect(projectBTab).toHaveClass(/active/)
+  await expect(projectBTab.locator('.lamp')).toHaveClass(/running/)
+  await expect(page.locator('.term-xterm')).toContainText('PROJECT B SESSION 88')
+  await expect(page.locator('.term-xterm')).not.toContainText('A LATE FOREIGN LOG')
+
+  const calls = await terminalCalls()
+  expect(calls.find((call) =>
+    call.command === 'create_terminal_session' &&
+    (call.args?.request as { projectPath?: string } | undefined)?.projectPath === '/workspace/project-a'
+  )?.args).toMatchObject({ request: { projectPath: '/workspace/project-a' } })
+  expect(calls.find((call) =>
+    call.command === 'create_terminal_session' &&
+    (call.args?.request as { projectPath?: string } | undefined)?.projectPath === '/workspace/project-b'
+  )?.args).toMatchObject({ request: { projectPath: '/workspace/project-b' } })
+
+  for (const call of calls.filter((entry) =>
+    projectACommandsAfterSwitch.includes(entry.command) ||
+    entry.command === 'close_terminal_session'
+  )) {
+    if (call.args?.sessionId !== 77) continue
+    expect(call.args).toMatchObject({
+      projectPath: '/workspace/project-a',
+      sessionId: 77,
+    })
+  }
 })
 
 test('routes agent requests through the Codex suggestion runtime bridge', async ({ page }) => {

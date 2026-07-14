@@ -2049,12 +2049,15 @@ function TabBody({ tab, onChangeFile }) {
 
 // Live xterm.js terminal wired to the runtime PTY session. Reads raw output
 // incrementally via readRawOutput and forwards keystrokes via writeInput.
-function XtermTerminal({ sessionId }) {
+function XtermTerminal({ owner }) {
   const containerRef = React.useRef(null);
+  const projectPath = owner?.projectPath;
+  const terminalSessionId = owner?.terminalSessionId;
 
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
+    const capturedOwner = { projectPath, terminalSessionId };
 
     let disposed = false;
     let from = 0;
@@ -2081,19 +2084,19 @@ function XtermTerminal({ sessionId }) {
       // Match the PTY size to the xterm viewport so the shell's line editor
       // (backspace, cursor moves, prompt redraw) uses the correct width and
       // does not overwrite earlier output.
-      void terminalRuntimeService.resizeSession(sessionId, term.rows, term.cols);
+      void terminalRuntimeService.resizeSession(capturedOwner, term.rows, term.cols);
     };
 
     safeFit();
     term.focus();
 
     const dataSub = term.onData((data) => {
-      void terminalRuntimeService.writeInput(sessionId, data);
+      void terminalRuntimeService.writeInput(capturedOwner, data);
     });
 
     const pump = async () => {
       try {
-        const output = await terminalRuntimeService.readRawOutput(sessionId, from);
+        const output = await terminalRuntimeService.readRawOutput(capturedOwner, from);
         if (disposed) return;
         if (output.chunk) {
           term.write(output.chunk);
@@ -2125,14 +2128,21 @@ function XtermTerminal({ sessionId }) {
       dataSub.dispose();
       term.dispose();
     };
-  }, [sessionId]);
+  }, [projectPath, terminalSessionId]);
 
   return <div className="term-xterm" ref={containerRef} />;
 }
 
 function TerminalBody({ tab }) {
   const bodyRef = React.useRef(null);
-  const runtimeBacked = Boolean(tab.runtimeBacked && tab.terminalSessionId != null);
+  const hasProjectOwner = typeof tab.projectPath === "string" && tab.projectPath.trim().length > 0;
+  const runtimeBacked = Boolean(
+    tab.runtimeBacked && hasProjectOwner && tab.terminalSessionId != null
+  );
+  const terminalOwner = React.useMemo(() => ({
+    projectPath: tab.projectPath,
+    terminalSessionId: tab.terminalSessionId,
+  }), [tab.projectPath, tab.terminalSessionId]);
 
   React.useEffect(() => {
     if (!runtimeBacked && bodyRef.current) {
@@ -2143,7 +2153,7 @@ function TerminalBody({ tab }) {
   if (runtimeBacked) {
     return (
       <div className="terminal-surface">
-        <XtermTerminal sessionId={tab.terminalSessionId} />
+        <XtermTerminal owner={terminalOwner} />
       </div>
     );
   }
@@ -4388,6 +4398,9 @@ function App() {
 
   const [workspace, setWorkspace] = React.useState(WORKSPACE_INITIAL);
   const workspaceRef = React.useRef(WORKSPACE_INITIAL);
+  // Bridges provisional tabs to their eventual runtime owner so closing a tab
+  // before create resolves still disposes the backend session when it arrives.
+  const terminalCreateOwnersRef = React.useRef(new Map());
   const [activeProject, setActiveProject] = React.useState(PROJECT);
   const [projectBusy, setProjectBusy] = React.useState(false);
   const [projectError, setProjectError] = React.useState(null);
@@ -4402,7 +4415,7 @@ function App() {
   const [agentActivity, setAgentActivity] = React.useState([]);
   const [approval, setApproval] = React.useState(null);
   const [oauth, setOauth] = React.useState(null);
-  const [executing, setExecuting] = React.useState(null);
+  const executing = null;
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [agentOpen, setAgentOpen] = React.useState(true);
   const [sidebarWidth, setSidebarWidth] = React.useState(264);
@@ -4633,8 +4646,22 @@ function App() {
 
   const closeRuntimeTabs = React.useCallback((tabs) => {
     for (const tab of tabs) {
-      if (tab?.terminalSessionId == null) continue;
-      terminalRuntimeService.closeSession(tab.terminalSessionId).catch(() => undefined);
+      const registeredOwner = terminalCreateOwnersRef.current.get(tab?.id);
+      if (tab?.id) terminalCreateOwnersRef.current.delete(tab.id);
+      const projectPath = tab?.terminalSessionId != null
+        ? tab.projectPath
+        : registeredOwner?.projectPath;
+      const terminalSessionId = tab?.terminalSessionId ?? registeredOwner?.terminalSessionId;
+      if (
+        typeof projectPath !== "string" ||
+        projectPath.trim().length === 0 ||
+        terminalSessionId == null
+      ) continue;
+      const owner = {
+        projectPath,
+        terminalSessionId,
+      };
+      terminalRuntimeService.closeSession(owner).catch(() => undefined);
     }
   }, []);
 
@@ -4738,13 +4765,28 @@ function App() {
     const pollRuntimeTerminals = async () => {
       const runtimeTabs = allTabs(workspaceRef.current)
         .map(({ tab }) => tab)
-        .filter((tab) => tab?.runtimeBacked && tab.terminalSessionId != null);
+        .filter((tab) =>
+          tab?.runtimeBacked &&
+          typeof tab.projectPath === "string" &&
+          tab.projectPath.trim().length > 0 &&
+          tab.terminalSessionId != null
+        );
 
       for (const tab of runtimeTabs) {
+        const owner = {
+          projectPath: tab.projectPath,
+          terminalSessionId: tab.terminalSessionId,
+        };
         try {
-          const logs = await terminalRuntimeService.readLogs(tab.terminalSessionId, 400);
+          const logs = await terminalRuntimeService.readLogs(owner, 400);
           if (cancelled) return;
           setWorkspace((current) => updateTab(current, tab.id, (currentTab) => {
+            if (
+              currentTab.projectPath !== owner.projectPath ||
+              currentTab.terminalSessionId !== owner.terminalSessionId
+            ) {
+              return currentTab;
+            }
             if (
               currentTab.lastLogLineCount === logs.logLineCount &&
               currentTab.runtimeUpdatedAt === logs.updatedAt &&
@@ -4765,14 +4807,22 @@ function App() {
         } catch (error) {
           if (cancelled) return;
           const message = error instanceof Error ? error.message : String(error);
-          setWorkspace((current) => updateTab(current, tab.id, (currentTab) => ({
-            ...currentTab,
-            status: "failed",
-            lines: [
-              ...currentTab.lines,
-              { kind: "log", text: `terminal read failed: ${message}`, color: "err" },
-            ],
-          })));
+          setWorkspace((current) => updateTab(current, tab.id, (currentTab) => {
+            if (
+              currentTab.projectPath !== owner.projectPath ||
+              currentTab.terminalSessionId !== owner.terminalSessionId
+            ) {
+              return currentTab;
+            }
+            return {
+              ...currentTab,
+              status: "failed",
+              lines: [
+                ...currentTab.lines,
+                { kind: "log", text: `terminal read failed: ${message}`, color: "err" },
+              ],
+            };
+          }));
         }
       }
     };
@@ -4880,22 +4930,27 @@ function App() {
   };
 
   const requestRuntimeAgentSuggestions = React.useCallback(async (text, messageId, active) => {
+    const originProject = { ...activeProject };
+    const originTab = active
+      ? { ...active, lines: Array.isArray(active.lines) ? [...active.lines] : active.lines }
+      : null;
+    const originProviderId = activeProviderId;
     const turnId = messageId + "-agent-turn";
     const requestGeneration = agentRequestGenerationRef.current + 1;
     agentRequestGenerationRef.current = requestGeneration;
     const isCurrentRequest = () => agentRequestGenerationRef.current === requestGeneration;
     const startedAtMs = Date.now();
-    const attachments = selectedProviderAttachments[activeProviderId] || [];
-    const selectedModelId = selectedProviderModels[activeProviderId] || null;
+    const attachments = [...(selectedProviderAttachments[originProviderId] || [])];
+    const selectedModelId = selectedProviderModels[originProviderId] || null;
     const reasoningLevel = agentReasoningLevel;
     const fastMode = agentFastMode;
     const reasoningLabel = reasoningLevel
       ? reasoningLevelLabel(activeProviderCapabilities, reasoningLevel)
       : "runtime default";
     const runningSteps = makeCodexProgressSteps({
-      project: activeProject,
-      activeTab: active,
-      providerId: activeProviderId,
+      project: originProject,
+      activeTab: originTab,
+      providerId: originProviderId,
       model: selectedModelId,
       attachments,
       reasoningLabel,
@@ -4924,7 +4979,7 @@ function App() {
     }]);
     setSelectedProviderAttachments((prev) => ({
       ...prev,
-      [activeProviderId]: [],
+      [originProviderId]: [],
     }));
     const revealRunningSteps = (steps) => {
       if (!isCurrentRequest()) return;
@@ -4946,9 +5001,9 @@ function App() {
       revealRunningSteps(runningSteps.slice(0, 2));
 
       const suggestionsResultPromise = Promise.resolve(agentSuggestionRuntimeService.requestSuggestions({
-          provider: activeProviderId,
-          project: activeProject,
-          activeTab: active,
+          provider: originProviderId,
+          project: originProject,
+          activeTab: originTab,
           userTask: text,
           model: selectedModelId,
           attachments,
@@ -5211,9 +5266,11 @@ function App() {
     newTab: (gId) => {
       const localId = uid("t");
       const title = "terminal";
+      const projectPath = activeProject.path;
       if (!activeProject.runtimeBacked) {
         setWorkspace((w) => openTab(w, gId, {
           id: localId,
+          projectPath,
           title,
           cwd: ".",
           status: "failed",
@@ -5227,35 +5284,80 @@ function App() {
         }));
         return;
       }
+      terminalCreateOwnersRef.current.set(localId, {
+        projectPath,
+        terminalSessionId: null,
+      });
       setWorkspace((w) => openTab(w, gId, {
         id: localId,
+        projectPath,
         title,
         cwd: ".",
         status: "running",
         runtimeBacked: false,
         terminalSessionId: null,
-        lines: [{ kind: "log", text: `${activeProject.path} (${activeProject.branch}) $`, color: "dim" }],
+        lines: [{ kind: "log", text: `${projectPath} (${activeProject.branch}) $`, color: "dim" }],
       }));
 
       terminalRuntimeService.createTerminalTab({
-        projectPath: activeProject.path,
+        projectPath,
         title,
         cwd: ".",
       }).then((runtimeTab) => {
-        setWorkspace((w) => updateTab(w, localId, (tab) => ({
-          ...tab,
-          ...runtimeTab,
-          id: localId,
-          title,
-          lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
-        })));
+        const registeredOwner = terminalCreateOwnersRef.current.get(localId);
+        const runtimeOwner = {
+          projectPath: runtimeTab.projectPath,
+          terminalSessionId: runtimeTab.terminalSessionId,
+        };
+        if (
+          !registeredOwner ||
+          registeredOwner.projectPath !== projectPath ||
+          registeredOwner.terminalSessionId != null
+        ) {
+          terminalCreateOwnersRef.current.delete(localId);
+          terminalRuntimeService.closeSession(runtimeOwner).catch(() => undefined);
+          return;
+        }
+        terminalCreateOwnersRef.current.set(localId, runtimeOwner);
+        setWorkspace((w) => updateTab(w, localId, (tab) => {
+          if (
+            tab.projectPath !== projectPath ||
+            tab.runtimeBacked ||
+            tab.terminalSessionId != null
+          ) {
+            return tab;
+          }
+          return {
+            ...tab,
+            ...runtimeTab,
+            id: localId,
+            title,
+            lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
+          };
+        }));
       }).catch((error) => {
+        const registeredOwner = terminalCreateOwnersRef.current.get(localId);
+        if (
+          !registeredOwner ||
+          registeredOwner.projectPath !== projectPath ||
+          registeredOwner.terminalSessionId != null
+        ) return;
+        terminalCreateOwnersRef.current.delete(localId);
         const message = error instanceof Error ? error.message : String(error);
-        setWorkspace((w) => updateTab(w, localId, (tab) => ({
-          ...tab,
-          status: "failed",
-          lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
-          })));
+        setWorkspace((w) => updateTab(w, localId, (tab) => {
+          if (
+            tab.projectPath !== projectPath ||
+            tab.runtimeBacked ||
+            tab.terminalSessionId != null
+          ) {
+            return tab;
+          }
+          return {
+            ...tab,
+            status: "failed",
+            lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
+          };
+        }));
       });
     },
     changeFile: (tabId, content) => {
@@ -5268,14 +5370,20 @@ function App() {
     saveFile: async (fileTab) => {
       const current = findTab(workspaceRef.current, fileTab.id)?.tab || fileTab;
       if (current.type !== "editor") return;
+      const projectPath = current.projectPath;
       if (current.truncated) {
         pushProjectMessage("Reload the full file before saving; truncated previews cannot be written.");
         return;
       }
 
       try {
-        const saved = await saveRuntimeProjectFile(activeProject, current);
+        const projectOwner = {
+          path: projectPath,
+          runtimeBacked: true,
+        };
+        const saved = await saveRuntimeProjectFile(projectOwner, current);
         setWorkspace((w) => updateTab(w, current.id, (tab) => {
+          if (tab.projectPath !== projectPath) return tab;
           if (tab.content !== current.content) {
             return {
               ...tab,
@@ -5361,170 +5469,6 @@ function App() {
 
     onSend(`${option.id}. ${option.label}`);
   }, [messages, onSend]);
-
-  // Append output to a specific tab (anywhere in any group)
-  const appendToTab = (tabId, lines) => {
-    setWorkspace((w) => {
-      const found = findTab(w, tabId);
-      if (!found) return w;
-      const { group } = found;
-      return {
-        ...w,
-        groups: {
-          ...w.groups,
-          [group.id]: {
-            ...group,
-            tabs: group.tabs.map((tb) => tb.id === tabId ? { ...tb, lines: [...tb.lines, ...lines] } : tb),
-          },
-        },
-      };
-    });
-  };
-  const setTabStatus = (tabId, status, cmd) => {
-    setWorkspace((w) => {
-      const found = findTab(w, tabId);
-      if (!found) return w;
-      const { group } = found;
-      return {
-        ...w,
-        groups: {
-          ...w.groups,
-          [group.id]: {
-            ...group,
-            tabs: group.tabs.map((tb) => tb.id === tabId ? { ...tb, status, cmd: cmd ?? tb.cmd } : tb),
-          },
-        },
-      };
-    });
-  };
-
-  const onApprove = async (sugg, { auto = false, blockedReason = null } = {}) => {
-    setApproval(null);
-    const startedAt = nowHm();
-    const ranCommands = [];
-    for (let i = 0; i < sugg.commands.length; i++) {
-      const c = sugg.commands[i];
-      let targetTabId = c.target;
-      let handledByRuntime = false;
-      if (targetTabId === "new") {
-        // Add a new tab into the active group, marked as running
-        const newId = "t-fix-" + Date.now() + "-" + i;
-        const title = `fix-${i + 1}`;
-        setWorkspace((w) => openTab(w, w.activeGroupId, {
-          id: newId,
-          title,
-          shell: "zsh", cwd: ".", status: "running", cmd: c.cmd,
-          runtimeBacked: false,
-          terminalSessionId: null,
-          lines: [{ kind: "cmd", text: c.cmd }],
-        }));
-        targetTabId = newId;
-
-        if (terminalRuntimeService.hasRuntime()) {
-          setExecuting(c.cmd);
-          try {
-            const runtimeTab = await terminalRuntimeService.createTerminalTabWithCommand({
-              projectPath: activeProject.path,
-              title,
-              cwd: ".",
-              command: c.cmd,
-            });
-            setWorkspace((w) => updateTab(w, newId, (tab) => ({
-              ...tab,
-              ...runtimeTab,
-              id: newId,
-              title,
-              cmd: c.cmd,
-              status: "running",
-              lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
-            })));
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            setWorkspace((w) => updateTab(w, newId, (tab) => ({
-              ...tab,
-              status: "failed",
-              lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
-            })));
-          } finally {
-            setExecuting(null);
-          }
-          handledByRuntime = true;
-        }
-      } else {
-        setWorkspace((w) => {
-          const f = findTab(w, targetTabId);
-          if (!f) return w;
-          return setActiveTab(w, f.group.id, targetTabId);
-        });
-
-        const found = findTab(workspaceRef.current, targetTabId);
-        if (found?.tab?.runtimeBacked && found.tab.terminalSessionId != null) {
-          appendToTab(targetTabId, [{ kind: "log", text: "" }, { kind: "cmd", text: c.cmd }]);
-          setTabStatus(targetTabId, "running", c.cmd);
-          setExecuting(c.cmd);
-          try {
-            await terminalRuntimeService.executeCommand(found.tab.terminalSessionId, c.cmd);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            appendToTab(targetTabId, [{ kind: "log", text: message, color: "err" }]);
-            setTabStatus(targetTabId, "failed", c.cmd);
-          } finally {
-            setExecuting(null);
-          }
-          handledByRuntime = true;
-        } else {
-          appendToTab(targetTabId, [{ kind: "log", text: "" }, { kind: "cmd", text: c.cmd }]);
-          setTabStatus(targetTabId, "running", c.cmd);
-        }
-      }
-
-      if (!handledByRuntime) {
-        appendToTab(targetTabId, [{
-          kind: "log",
-          text: "Agent-panel approval records the decision only; run reviewed commands manually in a user-owned terminal.",
-          color: "err",
-        }]);
-        setTabStatus(targetTabId, "failed", c.cmd);
-      }
-
-      ranCommands.push({ tabId: targetTabId, cmd: c.cmd, risk: c.risk });
-
-      setHistory((prev) => [...prev, {
-        at: nowHm(),
-        tab: findTab(workspace, targetTabId)?.tab.title || "new",
-        cmd: c.cmd, ok: true,
-      }]);
-    }
-
-    setMessages((prev) => [...prev, {
-      id: "done-" + Date.now(),
-      role: "assistant",
-      at: nowHm(),
-      autoRan: auto,
-      completed: {
-        summary: `Finished processing ${sugg.commands.length} command request(s).`,
-        commands: sugg.commands.map((c) => c.cmd),
-      },
-    }]);
-
-    if (auto) {
-      // Log it + show toast with undo
-      const entry = {
-        id: "auto-" + Date.now(),
-        at: startedAt,
-        suggestion: sugg,
-        commands: ranCommands,
-      };
-      setAutoApprovalLog((prev) => [entry, ...prev].slice(0, 20));
-      setToast({
-        id: entry.id,
-        title: "Auto-ran",
-        cmd: sugg.commands[0].cmd + (sugg.commands.length > 1 ? ` +${sugg.commands.length - 1}` : ""),
-        suggestion: sugg,
-      });
-      setTimeout(() => setToast((t) => t?.id === entry.id ? null : t), 5500);
-    }
-  };
 
   const recordPermissionDecision = React.useCallback(async (sugg, decision) => {
     const at = nowHm();
@@ -5783,7 +5727,9 @@ function App() {
           tabs={flatTabs}
           project={activeProject}
           onClose={() => setApproval(null)}
-          onApprove={onApprove}
+          onApprove={(suggestion) => {
+            void recordPermissionDecision(suggestion, "approved");
+          }}
         />
       )}
 

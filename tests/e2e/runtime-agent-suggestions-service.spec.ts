@@ -34,6 +34,7 @@ test('requests Codex suggestions with the documented agent envelope', async () =
     },
     activeTab: {
       id: 't-tests',
+      projectPath: '/workspace/gtum',
       title: 'tests',
       runtimeBacked: true,
       terminalSessionId: 42,
@@ -241,6 +242,7 @@ test('attaches selected editor context instead of terminal logs', async () => {
     },
     activeTab: {
       id: 'ed-runtime-agent',
+      projectPath: '/workspace/gtum',
       type: 'editor',
       title: 'runtimeAgentSuggestions.ts',
       path: 'src/shared/api/runtimeAgentSuggestions.ts',
@@ -287,6 +289,78 @@ test('routes current-tab suggestions to a new tab when the active tab is not run
   })
 
   expect(suggestions[0].commands[0].target).toBe('new')
+})
+
+test('rejects an exact active-tab project owner mismatch before provider invocation', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return [runtimeSuggestion]
+    },
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'codex',
+      project: {
+        name: 'project-a',
+        path: '/workspace/project-a',
+      },
+      activeTab: {
+        id: 'ed-b',
+        type: 'editor',
+        projectPath: '/workspace/project-a/',
+        path: 'src/app.ts',
+        content: 'export const owner = "b"',
+      },
+      userTask: 'review this file',
+    }),
+  ).rejects.toThrow(/active tab project owner mismatch/i)
+
+  expect(invocationCount).toBe(0)
+})
+
+test('rejects missing owners for runtime-backed terminal and editor context before invocation', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return [runtimeSuggestion]
+    },
+  })
+  const project = { name: 'gtum', path: '/workspace/gtum' }
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'codex',
+      project,
+      activeTab: {
+        id: 't-runtime',
+        type: 'terminal',
+        runtimeBacked: true,
+        terminalSessionId: 42,
+      },
+      userTask: 'inspect terminal output',
+    }),
+  ).rejects.toThrow(/active tab project owner is missing/i)
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'codex',
+      project,
+      activeTab: {
+        id: 'ed-runtime',
+        type: 'editor',
+        path: 'src/app.ts',
+      },
+      userTask: 'review editor context',
+    }),
+  ).rejects.toThrow(/active tab project owner is missing/i)
+
+  expect(invocationCount).toBe(0)
 })
 
 test('surfaces Codex CLI invocation failures', async () => {
