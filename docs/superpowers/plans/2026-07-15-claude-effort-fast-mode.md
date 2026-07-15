@@ -186,7 +186,7 @@ Review capability ownership, parser limits, exact argv/settings serialization, c
 
 Stage only intended files, create the implementation commit, require `git status --short` to be empty, and durably pin it with `git update-ref refs/gtum/tested/claude-effort-fast "$(git rev-parse HEAD)"`. Resolve `TESTED_SHA` only from that private local ref in later steps. If any verification command later modifies the tree, commit the correction, repoint the private ref, and restart the complete gate.
 
-- [ ] **Step 3: Run the complete fresh local gate on the clean candidate**
+- [x] **Step 3: Run the complete fresh local gate on the clean candidate**
 
 ```bash
 TESTED_SHA=$(git rev-parse refs/gtum/tested/claude-effort-fast)
@@ -201,7 +201,9 @@ test -z "$(git status --short)"
 test "$(git rev-parse HEAD)" = "$TESTED_SHA"
 ```
 
-- [ ] **Step 4: Run only the bounded, no-inference catalog compatibility smoke**
+Completion evidence for `0b472042a2930929bef8c541820c43bd959f6c19`: lint and production build passed, serial Playwright passed `233/233`, Rust formatting and check passed, and the full Rust suite passed `179` with `1` ignored. `git show --check`, the clean-tree assertion, and the exact `HEAD`/tested-ref assertion also passed.
+
+- [x] **Step 4: Run only the bounded, no-inference catalog compatibility smoke**
 
 Run the production catalog-discovery smoke exactly:
 
@@ -211,6 +213,10 @@ cargo test --manifest-path src-tauri/Cargo.toml runtime::claude::tests::live_cat
 
 Expected: one authenticated initialize-only catalog succeeds, each returned model has bounded sanitized execution options, and no user/assistant/result turn is emitted. Do not use `claude -p`, send a user prompt, test response quality, or incur paid inference. If the local CLI login is unavailable, record this smoke as blocked rather than weakening it.
 
-- [ ] **Step 5: Fetch and push only the tested SHA without renaming the branch**
+The exact clean-candidate command passed `1/1`. It sent only the bounded initialization request; no user prompt, assistant/result turn, paid inference, billing validation, or response-quality check ran.
+
+- [x] **Step 5: Fetch and push only the tested SHA without renaming the branch**
 
 After all tests finish, resolve `TESTED_SHA=$(git rev-parse refs/gtum/tested/claude-effort-fast)`, require the tree to be clean and `HEAD` to equal that SHA, then run `git fetch origin dev` and repeat both assertions. Prove `origin/dev` is an ancestor with `git merge-base --is-ancestor origin/dev "$TESTED_SHA"`. Push the exact commit with `git push origin "$TESTED_SHA":refs/heads/dev` without force, verify the remote SHA, then delete only the private local ref with `git update-ref -d refs/gtum/tested/claude-effort-fast`. If `origin/dev` moved incompatibly or reconciliation would change the candidate SHA, stop, reconcile, and repeat review plus the complete fresh gate on a newly pinned commit.
+
+The ancestor and clean-candidate assertions passed. Exact SHA `0b472042a2930929bef8c541820c43bd959f6c19` was pushed non-forced to `origin/dev`, the remote SHA was verified, the working branch was not renamed, and the private tested ref was deleted.

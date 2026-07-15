@@ -87,10 +87,11 @@ Delivered contract:
 
 Verification state:
 
-- malformed capability normalization, model switching, compact/narrow geometry, provider/project/session persistence, immutable request ownership, settings/argv mapping, policy-environment handling, and pre-spawn rejection have focused Rust and serial Playwright coverage; lint and production build passed during implementation
-- catalog fixtures and the bounded prompt-free compatibility smoke are distinct from live inference. The preliminary initialize-only smoke run today passed (`1 passed, 0 failed`) through `live_catalog_compatibility_smoke_is_prompt_free`; the final clean-candidate rerun remains pending. No user prompt, paid Claude inference, billing, or response-quality validation ran for this slice
+- malformed capability normalization, model switching, compact/narrow geometry, provider/project/session persistence, immutable request ownership, settings/argv mapping, policy-environment handling, and pre-spawn rejection have focused Rust and serial Playwright coverage. Final clean-candidate verification passed lint, production build, serial Playwright `233/233`, Rust formatting/check, and the full Rust suite with `179` passed and `1` ignored
+- catalog fixtures and the bounded prompt-free compatibility smoke are distinct from live inference. The exact clean-candidate initialize-only smoke passed `1/1` through `live_catalog_compatibility_smoke_is_prompt_free`. No user prompt, paid Claude inference, billing, or response-quality validation ran for this slice
 - Fast can require organization enablement and usage credits even when a model reports support; GTUM does not present discovered support as billing entitlement
-- the active execution record is [Claude Effort and Fast Mode Implementation Plan](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md); its final clean-tree full gate and exact-SHA integration record remain the closing step
+- exact tested SHA `0b472042a2930929bef8c541820c43bd959f6c19` was pushed non-forced to `origin/dev` after ancestor and clean-tree assertions, and the remote SHA was verified without renaming the working branch
+- the completed execution record is [Claude Effort and Fast Mode Implementation Plan](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
 
 ## Completed Claude Account Model Catalog And Picker Repair — 2026-07-15
 
