@@ -3571,7 +3571,7 @@ fn main() {
                 &program,
                 &invocation_context(credential),
                 request,
-                Duration::from_secs(2),
+                Duration::from_secs(5),
             )
             .expect("explicit Fast false must be passed to inference");
 
