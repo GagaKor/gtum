@@ -1,9 +1,41 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+
+const installConnectedCodexAuth = async (page: Page) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+    }
+    const codexConnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      availability: 'available',
+      status: 'connected',
+      connectionKind: 'real',
+      accountLabel: 'Codex CLI',
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: 1,
+      lastLoginAttemptAt: 1,
+      updatedAt: 1,
+      lastError: null,
+    }
+
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => [codexConnected],
+    }
+  })
+}
 
 function tauriLaunchWindowSize() {
   const configPath = resolve(repoRoot, 'src-tauri/tauri.conf.json')
@@ -176,6 +208,7 @@ test('exposes actual agent controls without fixed models or legacy execution mod
 })
 
 test('uses runtime provider capabilities for the composer model picker', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -422,6 +455,7 @@ test('shows project workspaces in the sidebar and switches agent sessions from t
 })
 
 test('lets users stop a running agent request from the composer', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __GTUM_AGENT_RUNTIME__: unknown
@@ -912,6 +946,8 @@ test('saves through the editor tab owner and ignores a late response for a reuse
 
 test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ page }) => {
   await page.addInitScript(() => {
+    const rawOutput =
+      '\u001b[31mRED\u001b[0m \u001b]633;Conductor;ProgramStart\u0007plain\r\n'
     const snapshot = {
       projectPath: '/workspace/project',
       sessionId: 77,
@@ -981,12 +1017,13 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
         }
 
         if (command === 'read_raw_terminal_output') {
+          const from = typeof args?.from === 'number' ? args.from : 0
           return {
             projectPath: '/workspace/project',
             sessionId: 77,
             base: 0,
-            cursor: 13,
-            chunk: 'runtime ready',
+            cursor: rawOutput.length,
+            chunk: from === 0 ? rawOutput : '',
             status: 'running',
           }
         }
@@ -1040,6 +1077,21 @@ test('routes terminal tab lifecycle through the runtime PTY bridge', async ({ pa
     )
     .toContain('read_raw_terminal_output')
 
+  await expect(page.locator('.term-xterm .xterm-rows')).toContainText('RED plain')
+  await expect(page.locator('.term-xterm .xterm-rows')).not.toContainText('[31m')
+  await expect(page.locator('.term-xterm .xterm-rows')).not.toContainText('Conductor;ProgramStart')
+  await expect(page.locator('.term-xterm .xterm-rows')).not.toContainText('\ufffd')
+
+  const resizeCall = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __terminalCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__terminalCalls?.find((call) => call.command === 'resize_terminal_session'),
+  )
+  expect(Number(resizeCall?.args?.rows)).toBeGreaterThan(0)
+  expect(Number(resizeCall?.args?.cols)).toBeGreaterThan(0)
   await expect
     .poll(async () =>
       page.evaluate(
@@ -1521,6 +1573,7 @@ test('keeps project A terminal alive and hidden after switching to project B', a
 })
 
 test('routes agent requests through the Codex suggestion runtime bridge', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1618,7 +1671,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
   const permissionPanel = page.locator('.composer-approval')
   await expect(permissionPanel).toContainText('Permission request')
   await expect(permissionPanel).toContainText('Allow once')
-  await expect(permissionPanel).toContainText('Always allow')
+  await expect(permissionPanel).not.toContainText('Always allow')
   await expect(permissionPanel).toContainText('Deny')
   await expect(agentTurn).not.toContainText('Review command')
   await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
@@ -1649,6 +1702,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
 })
 
 test('shows live Codex activity while waiting for runtime suggestions', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1775,6 +1829,7 @@ test('shows live Codex activity while waiting for runtime suggestions', async ({
 })
 
 test('surfaces Codex runtime failures without canned replies or approval cards', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1861,6 +1916,7 @@ test('surfaces Codex runtime failures without canned replies or approval cards',
 })
 
 test('renders Codex error-only suggestions as messages without approval', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1957,6 +2013,7 @@ test('renders Codex error-only suggestions as messages without approval', async 
 })
 
 test('renders Codex reply-only responses without review cards', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2053,6 +2110,7 @@ test('renders Codex reply-only responses without review cards', async ({ page })
 })
 
 test('renders numbered Codex choices as selectable event cards', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2190,6 +2248,7 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
 })
 
 test('requires a runtime-backed project before desktop Codex requests', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2259,19 +2318,25 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
   expect(calls.map((call) => call.command)).not.toContain('request_agent_suggestions')
 })
 
-test('does not use canned agent replies for deferred desktop providers', async ({ page }) => {
+test('keeps a legacy session on Codex when Claude is connected globally', async ({ page }) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
+      __authCalls: string[]
+      __agentCalls: string[]
       __GTUM_AGENT_AUTH_RUNTIME__?: unknown
       __GTUM_AGENT_RUNTIME__?: unknown
     }
 
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__agentCalls = []
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
+        bridgeWindow.__authCalls.push(command)
         const claudeConnection = {
           provider: 'claude',
           displayName: 'Claude',
+          availability: 'available',
           status: 'connected',
           connectionKind: 'real',
           accountLabel: 'Claude CLI',
@@ -2307,29 +2372,66 @@ test('does not use canned agent replies for deferred desktop providers', async (
     }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async () => {
-        throw new Error('runtime should not be called for deferred providers')
+      invokeRuntime: async (command: string) => {
+        bridgeWindow.__agentCalls.push(command)
+        if (command === 'request_agent_suggestions') {
+          throw new Error('default Codex session should not issue a Claude request')
+        }
+        return {
+          provider: 'codex',
+          supportsModelSelection: false,
+          currentModel: null,
+          availableModels: [],
+          reasoningLevels: [],
+          supportsFastMode: false,
+          attachments: [],
+          supportsLocalCliSession: true,
+          connectionLabel: 'Codex CLI',
+        }
       },
     }
   })
 
   await page.goto('/')
-  await expect(page.locator('.composer-provider-chip')).toContainText('Claude')
+  await expect(page.locator('.composer-provider-chip')).toContainText('Codex')
+  await page.locator('.titlebar .pill.icon-only').click()
+  await expect(page.locator('.settings-provider').filter({ hasText: 'Claude' })).toContainText(
+    'Connected',
+  )
+  await page.locator('.settings-close').click()
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
 
-  await expect(page.locator('.msg.assistant').last()).toContainText('Claude')
-  await expect(page.locator('.msg.assistant').last()).toContainText('deferred')
+  await expect(page.locator('.msg.assistant').last()).toContainText(/connect|reconnect/i)
+  await expect(page.locator('.msg.assistant').last()).toContainText('Codex')
   await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { __authCalls: string[] }).__authCalls.filter(
+          (command) => command === 'begin_agent_login',
+        ),
+    ),
+  ).toEqual([])
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { __agentCalls: string[] }).__agentCalls.filter(
+          (command) => command === 'request_agent_suggestions',
+        ),
+    ),
+  ).toEqual([])
 })
 
 test('keeps approved Codex command decisions in the agent panel without terminal execution', async ({ page }) => {
+  await installConnectedCodexAuth(page)
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
       __GTUM_AGENT_JOB_RUNTIME__: unknown
       __GTUM_AGENT_RUNTIME__: unknown
       __GTUM_PROJECT_RUNTIME__: unknown
@@ -2340,6 +2442,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
     bridgeWindow.__agentJobCalls = []
     bridgeWindow.__projectCalls = []
     bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
     bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
@@ -2388,8 +2491,39 @@ test('keeps approved Codex command decisions in the agent panel without terminal
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentJobCalls.push({ command, args })
 
+        if (command === 'list_agent_jobs') return []
+        if (command === 'read_agent_job_logs') {
+          return {
+            jobId: 77,
+            status: 'completed',
+            limit: 100,
+            logLineCount: 2,
+            truncated: false,
+            entries: [
+              {
+                sequence: 1,
+                stream: 'command',
+                text: 'pnpm test:funnel --reporter=verbose',
+                recordedAt: 100,
+              },
+              { sequence: 2, stream: 'stdout', text: 'tests passed', recordedAt: 140 },
+            ],
+            updatedAt: 150,
+            finishedAt: 150,
+            cancellationRequestedAt: null,
+            exitCode: 0,
+            logsComplete: true,
+            logCaptureError: null,
+            processError: null,
+            persistenceError: null,
+            lastEvent: 'agent job completed',
+          }
+        }
         return {
           jobId: 77,
+          sessionId: String(
+            (args?.request as { sessionId?: string } | undefined)?.sessionId || '',
+          ),
           name: 'agent-codex-runtime-current-tab-1',
           command: 'pnpm test:funnel --reporter=verbose',
           cwd: '~/code/aurora-monorepo',
@@ -2399,7 +2533,13 @@ test('keeps approved Codex command decisions in the agent panel without terminal
           status: 'running',
           createdAt: 100,
           updatedAt: 120,
+          finishedAt: null,
+          cancellationRequestedAt: null,
           exitCode: null,
+          logsComplete: false,
+          logCaptureError: null,
+          processError: null,
+          persistenceError: null,
           logLineCount: 1,
           maxLogEntries: 400,
           lastEvent: 'agent job created',
@@ -2483,8 +2623,14 @@ test('keeps approved Codex command decisions in the agent panel without terminal
   await expect(permissionPanel).toContainText('Command preview')
   await expect(permissionPanel).toContainText('pnpm test:funnel --reporter=verbose')
   await expect(permissionPanel.getByRole('button', { name: 'Allow once' })).toBeVisible()
-  await expect(permissionPanel.getByRole('button', { name: 'Always allow' })).toBeVisible()
+  await expect(permissionPanel.getByRole('button', { name: 'Always allow' })).toHaveCount(0)
   await expect(permissionPanel.getByRole('button', { name: 'Deny' })).toBeVisible()
+  expect(
+    await page.evaluate(() => ({
+      approvalModal: 'ApprovalModal' in window,
+      approvalToast: 'ApprovalToast' in window,
+    })),
+  ).toEqual({ approvalModal: false, approvalToast: false })
   await expect(page.locator('.agent-turn').last()).not.toContainText('Review command')
   await expect
     .poll(async () =>
@@ -2548,7 +2694,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
             window as Window & {
               __agentJobCalls?: Array<{ command: string; args?: Record<string, unknown> }>
             }
-          ).__agentJobCalls ?? [],
+          ).__agentJobCalls?.filter((call) => call.command === 'create_agent_job') ?? [],
       ),
     )
     .toEqual([
@@ -2559,10 +2705,1475 @@ test('keeps approved Codex command decisions in the agent panel without terminal
             projectPath: '~/code/aurora-monorepo',
             command: 'pnpm test:funnel --reporter=verbose',
             name: 'agent-codex-runtime-current-tab-1',
+            sessionId: expect.any(String),
           },
         },
       },
     ])
+})
+
+test('blocks a disconnected Codex request before invoking the provider runtime', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+    const codexDisconnected = {
+      provider: 'codex',
+      displayName: 'Codex',
+      availability: 'available',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'list_agent_connections') return [codexDisconnected]
+        return codexDisconnected
+      },
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'codex-gated', path: '/workspace/codex-gated' },
+        tree: {
+          name: 'codex-gated',
+          path: '/workspace/codex-gated',
+          kind: 'directory',
+          children: [],
+        },
+        git: {
+          isRepository: true,
+          branch: 'dev',
+          branchType: 'development',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+        return []
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & { __authCalls: Array<{ command: string }> }
+          ).__authCalls.map((call) => call.command),
+      ),
+    )
+    .toContain('list_agent_connections')
+
+  await page.getByPlaceholder('Ask Codex').fill('run a disconnected request')
+  await page.locator('.composer-input .send').click()
+
+  await expect(page.locator('.msg.assistant').last()).toContainText(/connect|reconnect/i)
+  await expect(page.locator('.msg.assistant').last()).toContainText('Codex')
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & { __agentCalls: Array<{ command: string }> }
+        ).__agentCalls.filter((call) => call.command === 'request_agent_suggestions'),
+    ),
+  ).toEqual([])
+})
+
+test('connects an existing Claude CLI session without opening a login terminal', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+    const claudeDisconnected = {
+      provider: 'claude',
+      displayName: 'Claude',
+      availability: 'available',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      credentialSource: null,
+      requiredScopes: ['provider:request'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const codexDisconnected = {
+      ...claudeDisconnected,
+      provider: 'codex',
+      displayName: 'Codex',
+      credentialSource: null,
+      requiredScopes: ['project:read', 'terminal:read'],
+    }
+    const claudeConnected = {
+      ...claudeDisconnected,
+      status: 'connected',
+      credentialSource: 'claude_cli_session',
+      requiredScopes: ['provider:request', 'credential:cli_session'],
+      connectedAt: 125,
+      lastLoginAttemptAt: 120,
+      updatedAt: 130,
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'list_agent_connections') {
+          return [claudeDisconnected, codexDisconnected]
+        }
+        if (command === 'begin_agent_login') return claudeConnected
+        throw new Error(`Unexpected auth command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error(`Claude connect must not touch the center terminal: ${command}`)
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(claude.getByRole('button', { name: 'Connect' })).toHaveCount(1)
+  await claude.getByRole('button', { name: 'Connect' }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Claude connected through the local Claude CLI session.',
+  )
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  const connectedClaude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(connectedClaude).toContainText('Connected')
+  await expect(connectedClaude).toContainText('CLI session')
+  await expect(connectedClaude).toContainText('credential:cli_session')
+  await expect(connectedClaude).not.toContainText('credential:api_key')
+  await expect(connectedClaude).not.toContainText('API credential')
+  await expect(connectedClaude.getByRole('button', { name: 'Disconnect' })).toHaveCount(1)
+  await expect(page.locator('.group-tabbar').getByText('Claude Login')).toHaveCount(0)
+
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & { __authCalls: Array<{ command: string }> }
+        ).__authCalls.filter((call) => call.command === 'begin_agent_login'),
+    ),
+  ).toEqual([{ command: 'begin_agent_login', args: expect.objectContaining({ provider: 'claude' }) }])
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & { __terminalCalls: Array<{ command: string }> }
+        ).__terminalCalls,
+    ),
+  ).toEqual([])
+})
+
+test('shows external Claude auth login guidance without opening a terminal', async ({ page }) => {
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+    const claudeDisconnected = {
+      provider: 'claude',
+      displayName: 'Claude',
+      availability: 'available',
+      status: 'disconnected',
+      connectionKind: 'real',
+      accountLabel: null,
+      accountEmail: null,
+      credentialSource: null,
+      requiredScopes: ['provider:request'],
+      expiresAt: null,
+      callbackUrl: null,
+      authUrl: null,
+      activeLoginId: null,
+      activeLoginState: null,
+      connectedAt: null,
+      lastLoginAttemptAt: null,
+      updatedAt: 100,
+      lastError: null,
+    }
+    const claudeMissingLogin = {
+      ...claudeDisconnected,
+      status: 'error',
+      lastLoginAttemptAt: 125,
+      updatedAt: 130,
+      lastError: null,
+    }
+
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'list_agent_connections') return [claudeDisconnected]
+        if (command === 'begin_agent_login') return claudeMissingLogin
+        throw new Error(`Unexpected auth command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error(`Claude setup must stay outside the center terminal: ${command}`)
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claude.getByRole('button', { name: 'Connect' }).click()
+
+  await expect(claude).toContainText(
+    'Run claude auth login in your terminal, then reconnect Claude.',
+  )
+  await expect(page.locator('.msg.assistant').last()).toContainText(
+    'Run claude auth login in your terminal, then reconnect Claude.',
+  )
+  await expect(page.locator('.group-tabbar').getByText('Claude Login')).toHaveCount(0)
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls: Array<{ command: string }> }
+  ).__terminalCalls)).toEqual([])
+})
+
+for (const credentialSource of ['anthropic_api_key', 'api_key_helper'] as const) {
+  test(`renders ${credentialSource} Claude snapshots as an API credential`, async ({ page }) => {
+    await page.addInitScript((source) => {
+      const claudeConnected = {
+        provider: 'claude',
+        displayName: 'Claude',
+        availability: 'available',
+        status: 'connected',
+        connectionKind: 'real',
+        accountLabel: null,
+        accountEmail: null,
+        credentialSource: source,
+        requiredScopes: ['provider:request', 'credential:api_key'],
+        expiresAt: null,
+        callbackUrl: null,
+        authUrl: null,
+        activeLoginId: null,
+        activeLoginState: null,
+        connectedAt: 125,
+        lastLoginAttemptAt: 120,
+        updatedAt: 130,
+        lastError: null,
+      }
+      ;(window as Window & { __GTUM_AGENT_AUTH_RUNTIME__: unknown })
+        .__GTUM_AGENT_AUTH_RUNTIME__ = {
+          hasRuntime: () => true,
+          invokeRuntime: async () => [claudeConnected],
+        }
+    }, credentialSource)
+
+    await page.goto('/')
+    await page.locator('.titlebar .pill.icon-only').click()
+    const claude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+    await expect(claude).toContainText('Connected')
+    await expect(claude).toContainText('API credential')
+    await expect(claude).toContainText('credential:api_key')
+    await expect(claude).not.toContainText('credential:cli_session')
+    await expect(claude).not.toContainText('CLI session')
+  })
+}
+
+test('shows truthful isolated execution settings without auto-approval controls', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('.titlebar .pill.icon-only').click()
+  await page.getByRole('button', { name: 'Execution' }).click()
+
+  const settings = page.locator('.settings-modal')
+  await expect(settings).toContainText('Every command requires review')
+  await expect(settings).toContainText('isolated Agent job')
+  await expect(settings).toContainText('center terminal is never touched')
+  await expect(settings.locator('.policy-box')).toHaveCount(0)
+  await expect(settings.locator('.audit-box')).toHaveCount(0)
+  await expect(settings).not.toContainText('Auto-approve')
+})
+
+test('shows cancellable agent job output without mutating the center workbench', async ({ page }) => {
+  await installConnectedCodexAuth(page)
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+    const projectPath = '/workspace/aurora'
+    let cancelled = false
+    let sessionId = ''
+    const snapshot = (status: string, logsComplete = false) => ({
+      jobId: 88,
+      sessionId,
+      name: 'agent-cancellable',
+      command: 'pnpm test:funnel',
+      cwd: projectPath,
+      runner: 'pnpm',
+      runnerArgs: ['test:funnel'],
+      processId: status === 'running' || status === 'cancelling' ? 8800 : null,
+      status,
+      createdAt: 100,
+      updatedAt: status === 'running' ? 120 : 180,
+      finishedAt: logsComplete ? 180 : null,
+      cancellationRequestedAt: status === 'running' ? null : 150,
+      exitCode: null,
+      logsComplete,
+      logCaptureError: null,
+      processError: null,
+      persistenceError: null,
+      logLineCount: 2,
+      maxLogEntries: 400,
+      lastEvent: logsComplete ? 'agent job cancelled' : 'agent job output received',
+    })
+
+    bridgeWindow.__agentJobCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'aurora', path: projectPath },
+        tree: { name: 'aurora', path: projectPath, kind: 'directory', children: [] },
+        git: {
+          isRepository: true,
+          branch: 'feature/jobs',
+          branchType: 'feature',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => [
+        {
+          id: 'cancellable-job',
+          provider: 'codex',
+          summary: 'Run a cancellable job',
+          command: 'pnpm test:funnel',
+          preferredTarget: 'current_tab',
+          confidence: 'low',
+          error: null,
+        },
+      ],
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentJobCalls.push({ command, args })
+        if (command === 'list_agent_jobs') {
+          sessionId = String(args?.sessionId || '')
+          return []
+        }
+        if (command === 'create_agent_job') {
+          sessionId = String(
+            (args?.request as { sessionId?: string } | undefined)?.sessionId || sessionId,
+          )
+          return snapshot('running')
+        }
+        if (command === 'cancel_agent_job') {
+          cancelled = true
+          return snapshot('cancelling')
+        }
+        if (command === 'read_agent_job_logs') {
+          const terminal = cancelled
+          return {
+            jobId: 88,
+            status: terminal ? 'cancelled' : 'running',
+            limit: 100,
+            logLineCount: 2,
+            truncated: false,
+            entries: [
+              { sequence: 1, stream: 'command', text: 'pnpm test:funnel', recordedAt: 100 },
+              { sequence: 2, stream: 'stdout', text: 'running funnel tests', recordedAt: 120 },
+            ],
+            updatedAt: terminal ? 180 : 120,
+            finishedAt: terminal ? 180 : null,
+            cancellationRequestedAt: terminal ? 150 : null,
+            exitCode: null,
+            logsComplete: terminal,
+            logCaptureError: null,
+            processError: null,
+            persistenceError: null,
+            lastEvent: terminal ? 'agent job cancelled' : 'agent job output received',
+          }
+        }
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error('agent jobs must not invoke the terminal runtime')
+      },
+    }
+  })
+
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { projectPath: string }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.projectPath ?? '',
+      ),
+    )
+    .toBe('/workspace/aurora')
+  const centerBefore = await page.locator('.center').evaluate((element) => element.innerHTML)
+
+  await page.getByPlaceholder('Ask Codex').fill('run cancellable test')
+  await page.locator('.composer-input .send').click()
+  await page.locator('.composer-approval').getByRole('button', { name: 'Allow once' }).click()
+
+  const job = page.locator('.agent-job-row').filter({ hasText: 'agent-cancellable' })
+  await expect(job).toBeVisible()
+  await expect(job).toHaveAttribute('data-status', 'running')
+  await expect(job).toContainText('pnpm test:funnel')
+  await expect(job).toContainText('running funnel tests')
+  await expect(job.getByRole('button', { name: 'Cancel' })).toBeVisible()
+
+  await job.getByRole('button', { name: 'Cancel' }).click()
+  await expect(job).toHaveAttribute('data-status', 'cancelled')
+  await expect(job).toContainText('running funnel tests')
+  await expect(job.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+  expect(await page.locator('.center').evaluate((element) => element.innerHTML)).toBe(centerBefore)
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+          }
+        ).__terminalCalls,
+    ),
+  ).toEqual([])
+  const cancelCall = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__agentJobCalls.find((call) => call.command === 'cancel_agent_job'),
+  )
+  expect(cancelCall?.args).toEqual({
+    projectPath: '/workspace/aurora',
+    jobId: 88,
+  })
+})
+
+test('does not regress an agent job when a pre-cancel log read resolves late', async ({ page }) => {
+  await page.addInitScript(() => {
+    type Resolver = (value: unknown) => void
+    const bridgeWindow = window as Window & {
+      __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __staleReadStarted: boolean
+      __resolveStaleRead: () => void
+      __resolveFinalRead: () => void
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+    const projectPath = '/workspace/cancel-race'
+    let sessionId = ''
+    let staleResolver: Resolver = () => undefined
+    let finalResolver: Resolver = () => undefined
+    let readCount = 0
+    const snapshot = (status: string, updatedAt: number, logsComplete: boolean) => ({
+      jobId: 89,
+      sessionId,
+      name: 'cancel-race',
+      command: 'npm run slow-test',
+      cwd: projectPath,
+      runner: 'npm',
+      runnerArgs: ['run', 'slow-test'],
+      processId: status === 'running' || status === 'cancelling' ? 8900 : null,
+      status,
+      createdAt: 100,
+      updatedAt,
+      finishedAt: status === 'cancelled' ? updatedAt : null,
+      cancellationRequestedAt: status === 'running' ? null : 200,
+      exitCode: null,
+      logsComplete,
+      logCaptureError: null,
+      processError: null,
+      persistenceError: null,
+      logLineCount: logsComplete ? 2 : 1,
+      maxLogEntries: 400,
+      lastEvent: status === 'running' ? 'agent job output received' : `agent job ${status}`,
+    })
+    const logs = (status: string, updatedAt: number, logsComplete: boolean, text: string) => ({
+      jobId: 89,
+      status,
+      limit: 100,
+      logLineCount: logsComplete ? 2 : 1,
+      truncated: false,
+      entries: [
+        { sequence: 1, stream: 'stdout', text, recordedAt: updatedAt },
+        ...(logsComplete
+          ? [{ sequence: 2, stream: 'system', text: 'cancel complete', recordedAt: updatedAt }]
+          : []),
+      ],
+      updatedAt,
+      finishedAt: status === 'cancelled' ? updatedAt : null,
+      cancellationRequestedAt: status === 'running' ? null : 200,
+      exitCode: null,
+      logsComplete,
+      logCaptureError: null,
+      processError: null,
+      persistenceError: null,
+      lastEvent: `agent job ${status}`,
+    })
+
+    bridgeWindow.__agentJobCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__staleReadStarted = false
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__resolveStaleRead = () =>
+      staleResolver(logs('running', 150, false, 'late output from before cancel'))
+    bridgeWindow.__resolveFinalRead = () =>
+      finalResolver(logs('cancelled', 250, true, 'late output from before cancel'))
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'cancel-race', path: projectPath },
+        tree: { name: 'cancel-race', path: projectPath, kind: 'directory', children: [] },
+        git: {
+          isRepository: true,
+          branch: 'dev',
+          branchType: 'development',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentJobCalls.push({ command, args })
+        if (command === 'list_agent_jobs') {
+          sessionId = String(args?.sessionId || '')
+          return [snapshot('running', 100, false)]
+        }
+        if (command === 'cancel_agent_job') return snapshot('cancelling', 200, false)
+        if (command === 'read_agent_job_logs') {
+          readCount += 1
+          if (readCount === 1) {
+            bridgeWindow.__staleReadStarted = true
+            return new Promise((resolve) => {
+              staleResolver = resolve
+            })
+          }
+          return new Promise((resolve) => {
+            finalResolver = resolve
+          })
+        }
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error('cancel races must not touch the center terminal')
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  const job = page.locator('.agent-job-row[data-job-id="89"]')
+  await expect(job).toHaveAttribute('data-status', 'running')
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { __staleReadStarted: boolean }).__staleReadStarted,
+      ),
+    )
+    .toBe(true)
+  const centerBefore = await page.locator('.center').evaluate((element) => element.innerHTML)
+
+  await job.getByRole('button', { name: 'Cancel' }).click()
+  await expect(job).toHaveAttribute('data-status', 'cancelling')
+  await page.evaluate(() =>
+    (window as Window & { __resolveStaleRead: () => void }).__resolveStaleRead(),
+  )
+  await expect(job).toContainText('late output from before cancel')
+  await expect(job).toHaveAttribute('data-status', 'cancelling')
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & { __agentJobCalls: Array<{ command: string }> }
+          ).__agentJobCalls.filter((call) => call.command === 'read_agent_job_logs').length,
+      ),
+    )
+    .toBe(2)
+  await page.evaluate(() =>
+    (window as Window & { __resolveFinalRead: () => void }).__resolveFinalRead(),
+  )
+  await expect(job).toHaveAttribute('data-status', 'cancelled')
+  await expect(job).toContainText('cancel complete')
+  expect(await page.locator('.center').evaluate((element) => element.innerHTML)).toBe(centerBefore)
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & { __terminalCalls: Array<{ command: string }> }
+        ).__terminalCalls,
+    ),
+  ).toEqual([])
+})
+
+test('keeps agent job history and stale reads scoped to the starting session', async ({ page }) => {
+  await page.addInitScript(() => {
+    type Resolver = (value: unknown) => void
+    const bridgeWindow = window as Window & {
+      __resolveSessionARead: () => void
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+    const projectPath = '/workspace/session-jobs'
+    let listCount = 0
+    let sessionARead: Resolver = () => undefined
+    const snapshot = (jobId: number, sessionId: string, name: string, status: string) => ({
+      jobId,
+      sessionId,
+      name,
+      command: `echo ${name}`,
+      cwd: projectPath,
+      runner: 'echo',
+      runnerArgs: [name],
+      processId: status === 'running' ? jobId * 10 : null,
+      status,
+      createdAt: jobId,
+      updatedAt: jobId + 1,
+      finishedAt: status === 'running' ? null : jobId + 1,
+      cancellationRequestedAt: null,
+      exitCode: null,
+      logsComplete: status !== 'running',
+      logCaptureError: null,
+      processError: null,
+      persistenceError: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: status === 'running' ? 'agent job output received' : 'agent job interrupted',
+    })
+    const logs = (jobId: number, status: string, text: string) => ({
+      jobId,
+      status,
+      limit: 100,
+      logLineCount: 1,
+      truncated: false,
+      entries: [{ sequence: 1, stream: 'system', text, recordedAt: jobId + 2 }],
+      updatedAt: jobId + 2,
+      finishedAt: status === 'running' ? null : jobId + 2,
+      cancellationRequestedAt: null,
+      exitCode: null,
+      logsComplete: status !== 'running',
+      logCaptureError: null,
+      processError: null,
+      persistenceError: null,
+      lastEvent: status === 'running' ? 'agent job output received' : 'agent job interrupted',
+    })
+
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__resolveSessionARead = () =>
+      sessionARead(logs(101, 'running', 'must not cross sessions'))
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'session-jobs', path: projectPath },
+        tree: { name: 'session-jobs', path: projectPath, kind: 'directory', children: [] },
+        git: {
+          isRepository: true,
+          branch: 'dev',
+          branchType: 'development',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        if (command === 'list_agent_jobs') {
+          if (args?.sessionId == null) return []
+          listCount += 1
+          const sessionId = String(args.sessionId)
+          return listCount === 1
+            ? [snapshot(101, sessionId, 'session-a-job', 'running')]
+            : [snapshot(102, sessionId, 'session-b-job', 'interrupted')]
+        }
+        if (command === 'read_agent_job_logs' && args?.jobId === 101) {
+          return new Promise((resolve) => {
+            sessionARead = resolve
+          })
+        }
+        if (command === 'read_agent_job_logs' && args?.jobId === 102) {
+          return logs(102, 'interrupted', 'session B restored history')
+        }
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect(page.locator('.agent-job-row[data-job-id="101"]')).toBeVisible()
+  const centerBefore = await page.locator('.center').evaluate((element) => element.innerHTML)
+
+  await page.locator('.agent-session-new').click()
+  await expect(page.locator('.agent-job-row[data-job-id="101"]')).toHaveCount(0)
+  const sessionBJob = page.locator('.agent-job-row[data-job-id="102"]')
+  await expect(sessionBJob).toHaveAttribute('data-status', 'interrupted')
+  await expect(sessionBJob).toContainText('session B restored history')
+
+  await page.evaluate(() =>
+    (window as Window & { __resolveSessionARead: () => void }).__resolveSessionARead(),
+  )
+  await page.waitForTimeout(80)
+  await expect(page.locator('.agent-job-row[data-job-id="101"]')).toHaveCount(0)
+  await expect(page.locator('.agent-job-activity')).not.toContainText('must not cross sessions')
+  expect(await page.locator('.center').evaluate((element) => element.innerHTML)).toBe(centerBefore)
+})
+
+test('renders completed and failed agent job outcomes and stops after final logs', async ({ page }) => {
+  await installConnectedCodexAuth(page)
+  await page.addInitScript(() => {
+    const bridgeWindow = window as Window & {
+      __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __releaseCompletedJobReads: () => void
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+    const projectPath = '/workspace/job-outcomes'
+    const readCounts = new Map<number, number>()
+    let sessionId = ''
+    let releaseReads = () => undefined
+    const readGate = new Promise<void>((resolve) => {
+      releaseReads = resolve
+    })
+    const snapshot = (
+      jobId: number,
+      name: string,
+      command: string,
+      status: string,
+      exitCode: number | null,
+      logsComplete: boolean,
+    ) => ({
+      jobId,
+      sessionId,
+      name,
+      command,
+      cwd: projectPath,
+      runner: command.split(' ')[0],
+      runnerArgs: command.split(' ').slice(1),
+      processId: status === 'running' ? jobId * 100 : null,
+      status,
+      createdAt: jobId,
+      updatedAt: jobId + 1,
+      finishedAt: status === 'running' ? null : jobId + 1,
+      cancellationRequestedAt: null,
+      exitCode,
+      logsComplete,
+      logCaptureError: null,
+      processError: status === 'failed' ? 'process exited with code 2' : null,
+      persistenceError: null,
+      logLineCount: status === 'running' ? 1 : 2,
+      maxLogEntries: 400,
+      lastEvent: status === 'failed' ? 'agent job failed' : 'agent job created',
+    })
+    const logs = (
+      jobId: number,
+      status: string,
+      exitCode: number | null,
+      logsComplete: boolean,
+      entries: Array<{
+        sequence: number
+        stream: string
+        text: string
+        recordedAt: number
+      }>,
+    ) => ({
+      jobId,
+      status,
+      limit: 100,
+      logLineCount: entries.length,
+      truncated: false,
+      entries,
+      updatedAt: jobId + entries.length + 10,
+      finishedAt: status === 'running' ? null : jobId + entries.length + 10,
+      cancellationRequestedAt: null,
+      exitCode,
+      logsComplete,
+      logCaptureError: null,
+      processError: status === 'failed' ? 'process exited with code 2' : null,
+      persistenceError: null,
+      lastEvent: status === 'failed' ? 'agent job failed' : 'agent job completed',
+    })
+
+    bridgeWindow.__agentJobCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__releaseCompletedJobReads = () => releaseReads()
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'job-outcomes', path: projectPath },
+        tree: { name: 'job-outcomes', path: projectPath, kind: 'directory', children: [] },
+        git: {
+          isRepository: true,
+          branch: 'feature/jobs',
+          branchType: 'feature',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => [
+        {
+          id: 'completed-job',
+          provider: 'codex',
+          summary: 'Run the completion probe',
+          command: 'npm run completion-probe',
+          preferredTarget: 'current_tab',
+          confidence: 'low',
+          error: null,
+        },
+      ],
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentJobCalls.push({ command, args })
+        if (command === 'list_agent_jobs') {
+          sessionId = String(args?.sessionId || '')
+          return [snapshot(40, 'restored-failure', 'npm test', 'failed', 2, true)]
+        }
+        if (command === 'create_agent_job') {
+          sessionId = String(
+            (args?.request as { sessionId?: string } | undefined)?.sessionId || sessionId,
+          )
+          return snapshot(41, 'agent-completed-job-1', 'npm run completion-probe', 'running', null, false)
+        }
+        if (command === 'read_agent_job_logs') {
+          const jobId = Number(args?.jobId)
+          const count = (readCounts.get(jobId) ?? 0) + 1
+          readCounts.set(jobId, count)
+          if (jobId === 40) {
+            return logs(40, 'failed', 2, true, [
+              { sequence: 1, stream: 'command', text: 'npm test', recordedAt: 40 },
+              { sequence: 2, stream: 'stderr', text: 'assertion failed', recordedAt: 41 },
+            ])
+          }
+          if (jobId === 41) {
+            await readGate
+            if (count === 1) {
+              return logs(41, 'completed', 0, false, [
+                {
+                  sequence: 1,
+                  stream: 'stdout',
+                  text: 'process exited; draining logs',
+                  recordedAt: 42,
+                },
+              ])
+            }
+            return logs(41, 'completed', 0, true, [
+              {
+                sequence: 1,
+                stream: 'stdout',
+                text: 'process exited; draining logs',
+                recordedAt: 42,
+              },
+              { sequence: 2, stream: 'system', text: 'final log flushed', recordedAt: 43 },
+            ])
+          }
+        }
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error('job outcomes must not touch the center terminal')
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & { __GTUM_BACKEND_BRIDGE__?: { projectPath: string } }
+          ).__GTUM_BACKEND_BRIDGE__?.projectPath ?? '',
+      ),
+    )
+    .toBe('/workspace/job-outcomes')
+
+  const failed = page.locator('.agent-job-row[data-job-id="40"]')
+  await expect(failed).toHaveAttribute('data-status', 'failed')
+  await expect(failed).toContainText('assertion failed')
+  await expect(failed.locator('.agent-job-exit')).toHaveText('Exit 2')
+  await expect(failed.locator('.agent-job-error')).toContainText('process exited with code 2')
+  await expect(failed.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+
+  const centerBefore = await page.locator('.center').evaluate((element) => element.innerHTML)
+  await page.getByPlaceholder('Ask Codex').fill('run completion probe')
+  await page.locator('.composer-input .send').click()
+  await page.locator('.composer-approval').getByRole('button', { name: 'Allow once' }).click()
+
+  const completed = page.locator('.agent-job-row[data-job-id="41"]')
+  await expect(completed).toHaveAttribute('data-status', 'running')
+  await expect(completed.getByRole('button', { name: 'Cancel' })).toBeVisible()
+  await page.evaluate(() =>
+    (
+      window as Window & { __releaseCompletedJobReads: () => void }
+    ).__releaseCompletedJobReads(),
+  )
+  await expect(completed).toHaveAttribute('data-status', 'completed')
+  await expect(completed).toContainText('final log flushed')
+  await expect(completed.locator('.agent-job-exit')).toHaveText('Exit 0')
+  await expect(completed.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+
+  const finalReadCount = await page.evaluate(
+    () =>
+      (
+        window as Window & {
+          __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
+        }
+      ).__agentJobCalls.filter(
+        (call) => call.command === 'read_agent_job_logs' && call.args?.jobId === 41,
+      ).length,
+  )
+  await page.waitForTimeout(120)
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
+          }
+        ).__agentJobCalls.filter(
+          (call) => call.command === 'read_agent_job_logs' && call.args?.jobId === 41,
+        ).length,
+    ),
+  ).toBe(finalReadCount)
+  expect(finalReadCount).toBe(2)
+  expect(await page.locator('.center').evaluate((element) => element.innerHTML)).toBe(centerBefore)
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & { __terminalCalls: Array<{ command: string }> }
+        ).__terminalCalls,
+    ),
+  ).toEqual([])
+})
+
+test('restores interrupted agent job history after a real page reload', async ({ page }) => {
+  await page.addInitScript(() => {
+    const projectPath = '/workspace/restored-jobs'
+    const restoredSessionId = 'agent-restored-session'
+    const bridgeWindow = window as Window & {
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+      __GTUM_WORKSPACE_RUNTIME__: unknown
+    }
+    const increment = (key: string) => {
+      const next = Number(sessionStorage.getItem(key) || '0') + 1
+      sessionStorage.setItem(key, String(next))
+    }
+
+    localStorage.setItem(
+      'gtum.agent-session-directory.v1',
+      JSON.stringify({
+        [projectPath]: {
+          workspaceTitle: 'restored-jobs',
+          activeSessionId: restoredSessionId,
+          sessions: [
+            {
+              id: restoredSessionId,
+              title: 'harbor',
+              createdAt: '10:00',
+              updatedAt: '10:00',
+            },
+          ],
+        },
+      }),
+    )
+
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__GTUM_WORKSPACE_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        if (command === 'read_workspace_runtime_snapshot') {
+          return {
+            storagePath: '/tmp/workspace.json',
+            restoredAt: 100,
+            snapshot: {
+              recentProjects: [projectPath],
+              lastOpenedProjectPath: projectPath,
+              updatedAt: 100,
+              storageVersion: 1,
+            },
+          }
+        }
+        return null
+      },
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'restored-jobs', path: projectPath },
+        tree: { name: 'restored-jobs', path: projectPath, kind: 'directory', children: [] },
+        git: {
+          isRepository: true,
+          branch: 'dev',
+          branchType: 'development',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        if (command === 'list_agent_jobs') {
+          if (args?.sessionId == null) return []
+          increment('restored-list-count')
+          if (String(args.sessionId) !== restoredSessionId) return []
+          return [
+            {
+              jobId: 63,
+              sessionId: restoredSessionId,
+              name: 'restored-after-reload',
+              command: 'npm run interrupted',
+              cwd: projectPath,
+              runner: 'npm',
+              runnerArgs: ['run', 'interrupted'],
+              processId: null,
+              status: 'interrupted',
+              createdAt: 60,
+              updatedAt: 63,
+              finishedAt: 63,
+              cancellationRequestedAt: null,
+              exitCode: null,
+              logsComplete: true,
+              logCaptureError: null,
+              processError: null,
+              persistenceError: null,
+              logLineCount: 1,
+              maxLogEntries: 400,
+              lastEvent: 'agent job interrupted by runtime restart',
+            },
+          ]
+        }
+        if (command === 'read_agent_job_logs') {
+          increment('restored-read-count')
+          return {
+            jobId: 63,
+            status: 'interrupted',
+            limit: 100,
+            logLineCount: 1,
+            truncated: false,
+            entries: [
+              {
+                sequence: 1,
+                stream: 'system',
+                text: 'runtime restart interrupted this process',
+                recordedAt: 63,
+              },
+            ],
+            updatedAt: 63,
+            finishedAt: 63,
+            cancellationRequestedAt: null,
+            exitCode: null,
+            logsComplete: true,
+            logCaptureError: null,
+            processError: null,
+            persistenceError: null,
+            lastEvent: 'agent job interrupted by runtime restart',
+          }
+        }
+        if (command === 'create_agent_job') increment('restored-create-count')
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => {
+        increment('restored-terminal-count')
+        throw new Error('restoration must not touch the terminal runtime')
+      },
+    }
+  })
+
+  await page.goto('/')
+  const restored = page.locator('.agent-job-row[data-job-id="63"]')
+  await expect(restored).toHaveAttribute('data-status', 'interrupted')
+  await expect(restored).toContainText('runtime restart interrupted this process')
+  const centerBefore = await page.locator('.center').evaluate((element) => element.innerHTML)
+
+  await page.reload()
+  await expect(restored).toHaveAttribute('data-status', 'interrupted')
+  await expect(restored).toContainText('runtime restart interrupted this process')
+  expect(await page.locator('.center').evaluate((element) => element.innerHTML)).toBe(centerBefore)
+  expect(await page.evaluate(() => Number(sessionStorage.getItem('restored-list-count')))).toBe(2)
+  expect(await page.evaluate(() => Number(sessionStorage.getItem('restored-read-count')))).toBe(2)
+  expect(await page.evaluate(() => Number(sessionStorage.getItem('restored-create-count') || '0'))).toBe(0)
+  expect(await page.evaluate(() => Number(sessionStorage.getItem('restored-terminal-count') || '0'))).toBe(0)
+})
+
+test('keeps a newly created agent job when delayed hydration returns an empty history', async ({ page }) => {
+  await installConnectedCodexAuth(page)
+  await page.addInitScript(() => {
+    type Resolver = (jobs: unknown[]) => void
+    const bridgeWindow = window as Window & {
+      __resolveDelayedJobHistory: () => void
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+    const projectPath = '/workspace/create-race'
+    const historyResolvers: Resolver[] = []
+    let sessionId = ''
+
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__resolveDelayedJobHistory = () => {
+      for (const resolve of historyResolvers.splice(0)) resolve([])
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        metadata: { name: 'create-race', path: projectPath },
+        tree: { name: 'create-race', path: projectPath, kind: 'directory', children: [] },
+        git: {
+          isRepository: true,
+          branch: 'feature/jobs',
+          branchType: 'feature',
+          changedFilesCount: 0,
+        },
+      }),
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => [
+        {
+          id: 'create-race',
+          provider: 'codex',
+          summary: 'Create while hydration is pending',
+          command: 'npm run race',
+          preferredTarget: 'current_tab',
+          confidence: 'low',
+          error: null,
+        },
+      ],
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        if (command === 'list_agent_jobs') {
+          sessionId = String(args?.sessionId || '')
+          return new Promise<unknown[]>((resolve) => historyResolvers.push(resolve))
+        }
+        if (command === 'create_agent_job') {
+          sessionId = String(
+            (args?.request as { sessionId?: string } | undefined)?.sessionId || sessionId,
+          )
+          return {
+            jobId: 71,
+            sessionId,
+            name: 'agent-create-race-1',
+            command: 'npm run race',
+            cwd: projectPath,
+            runner: 'npm',
+            runnerArgs: ['run', 'race'],
+            processId: 7100,
+            status: 'running',
+            createdAt: 70,
+            updatedAt: 71,
+            finishedAt: null,
+            cancellationRequestedAt: null,
+            exitCode: null,
+            logsComplete: false,
+            logCaptureError: null,
+            processError: null,
+            persistenceError: null,
+            logLineCount: 0,
+            maxLogEntries: 400,
+            lastEvent: 'agent job created',
+          }
+        }
+        if (command === 'read_agent_job_logs') {
+          return new Promise(() => undefined)
+        }
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error('create/hydration races must not use terminal commands')
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & { __GTUM_BACKEND_BRIDGE__?: { projectPath: string } }
+          ).__GTUM_BACKEND_BRIDGE__?.projectPath ?? '',
+      ),
+    )
+    .toBe('/workspace/create-race')
+  const centerBefore = await page.locator('.center').evaluate((element) => element.innerHTML)
+
+  await page.getByPlaceholder('Ask Codex').fill('test creation race')
+  await page.locator('.composer-input .send').click()
+  await page.locator('.composer-approval').getByRole('button', { name: 'Allow once' }).click()
+  const created = page.locator('.agent-job-row[data-job-id="71"]')
+  await expect(created).toHaveAttribute('data-status', 'running')
+
+  await page.evaluate(() =>
+    (
+      window as Window & { __resolveDelayedJobHistory: () => void }
+    ).__resolveDelayedJobHistory(),
+  )
+  await page.waitForTimeout(80)
+  await expect(created).toHaveAttribute('data-status', 'running')
+  expect(await page.locator('.center').evaluate((element) => element.innerHTML)).toBe(centerBefore)
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+          }
+        ).__terminalCalls,
+    ),
+  ).toEqual([])
+})
+
+test('hydrates interrupted agent job history and ignores stale project responses', async ({ page }) => {
+  await page.addInitScript(() => {
+    type Resolver = (value: unknown[]) => void
+    const bridgeWindow = window as Window & {
+      __resolveProjectAJobs: () => void
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+    }
+    const projectA = '/workspace/project-a'
+    const projectB = '/workspace/project-b'
+    const staleResolvers: Resolver[] = []
+    const sessionByProject = new Map<string, string>()
+    let overviewCount = 0
+    const jobSnapshot = (jobId: number, name: string, cwd: string, status: string) => ({
+      jobId,
+      sessionId: sessionByProject.get(cwd) || '',
+      name,
+      command: `echo ${name}`,
+      cwd,
+      runner: 'echo',
+      runnerArgs: [name],
+      processId: null,
+      status,
+      createdAt: jobId,
+      updatedAt: jobId + 1,
+      finishedAt: jobId + 1,
+      cancellationRequestedAt: null,
+      exitCode: status === 'completed' ? 0 : null,
+      logsComplete: true,
+      logCaptureError: null,
+      processError: null,
+      persistenceError: null,
+      logLineCount: 1,
+      maxLogEntries: 400,
+      lastEvent: status === 'interrupted' ? 'agent job interrupted by runtime restart' : 'done',
+    })
+
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 20
+    bridgeWindow.__resolveProjectAJobs = () => {
+      for (const resolve of staleResolvers.splice(0)) {
+        resolve([jobSnapshot(91, 'stale-project-a', projectA, 'completed')])
+      }
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async () => {
+        overviewCount += 1
+        const path = overviewCount === 1 ? projectA : projectB
+        return {
+          metadata: { name: path.endsWith('a') ? 'project-a' : 'project-b', path },
+          tree: { name: 'project', path, kind: 'directory', children: [] },
+          git: {
+            isRepository: true,
+            branch: 'dev',
+            branchType: 'development',
+            changedFilesCount: 0,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        const projectPath = String(args?.projectPath || '')
+        if (command === 'list_agent_jobs') {
+          sessionByProject.set(projectPath, String(args?.sessionId || ''))
+          if (projectPath === projectA) {
+            return new Promise<unknown[]>((resolve) => staleResolvers.push(resolve))
+          }
+          if (projectPath === projectB) {
+            return [jobSnapshot(92, 'restored-project-b', projectB, 'interrupted')]
+          }
+        }
+        if (command === 'read_agent_job_logs') {
+          return {
+            jobId: 92,
+            status: 'interrupted',
+            limit: 100,
+            logLineCount: 1,
+            truncated: false,
+            entries: [
+              { sequence: 1, stream: 'system', text: 'restart interrupted this job', recordedAt: 93 },
+            ],
+            updatedAt: 93,
+            finishedAt: 93,
+            cancellationRequestedAt: null,
+            exitCode: null,
+            logsComplete: true,
+            logCaptureError: null,
+            processError: null,
+            persistenceError: null,
+            lastEvent: 'agent job interrupted by runtime restart',
+          }
+        }
+        throw new Error(`unexpected agent job command: ${command}`)
+      },
+    }
+  })
+
+  await page.goto('/')
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { projectPath: string }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.projectPath ?? '',
+      ),
+    )
+    .toBe('/workspace/project-a')
+
+  await page.getByText('Open project folder').click()
+  await expect
+    .poll(async () =>
+      page.evaluate(
+        () =>
+          (
+            window as Window & {
+              __GTUM_BACKEND_BRIDGE__?: { projectPath: string }
+            }
+          ).__GTUM_BACKEND_BRIDGE__?.projectPath ?? '',
+      ),
+    )
+    .toBe('/workspace/project-b')
+  const restored = page.locator('.agent-job-row').filter({ hasText: 'restored-project-b' })
+  await expect(restored).toHaveAttribute('data-status', 'interrupted')
+  await expect(restored).toContainText('restart interrupted this job')
+
+  await page.evaluate(() =>
+    (
+      window as Window & {
+        __resolveProjectAJobs: () => void
+      }
+    ).__resolveProjectAJobs(),
+  )
+  await page.waitForTimeout(100)
+  await expect(page.locator('.agent-job-row')).toHaveCount(1)
+  await expect(page.locator('.agent-job-row')).not.toContainText('stale-project-a')
 })
 
 test('keeps Codex setup guidance in the agent panel without opening a login terminal', async ({ page }) => {

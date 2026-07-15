@@ -188,6 +188,9 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 2. `docs/architecture.md`
 3. `docs/message-flow.md` if needed
 4. `docs/product-plan.md` if needed
+5. `docs/superpowers/plans/2026-07-15-claude-cli-session-auth.md` for the active Claude CLI-session correction, safe-mode boundary, and public-distribution gate
+
+The 2026-07-15 plan supersedes `docs/superpowers/plans/2026-07-14-claude-api-provider.md` for current Claude authentication policy. Read the 2026-07-14 file only when historical API-only implementation context is needed.
 
 ### When the issue is current implementation structure or persistence boundaries
 

@@ -205,8 +205,11 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. Titlebar dragging and edge/corner resizing must call the native window API, while browser preview keeps safe no-op fallbacks.
 - `agent-header`
   - Compactly shows the selected runtime model, provider readiness, active workspace, and active agent session. It must not include a generic `Agent / provider` title or a detached provider tab row.
+- `agent-provider-selector`
+  - Belongs to the active Agent session rather than global app state. It lists Codex and Claude as real providers, distinguishes availability from connection readiness, and persists the selected `providerId` with that session. Switching one session must not change another session or project.
+  - Claude connection copy must say `API key` or use the runtime's sanitized non-secret credential label. It must never describe Claude as a subscription or generic CLI session, expose a raw-key input, or render helper output, identity, organization, token, or subscription metadata.
 - `agent-session-strip`
-  - Manages agent conversation tabs per workspace. Switching projects switches the active agent workspace session set, so agent history and mode state do not bleed across projects.
+  - Manages Agent conversation tabs per workspace. Switching projects restores the active Agent workspace session set and each session's provider, so Agent history, provider choice, and request state do not bleed across projects.
 - `project-group`, `ws-item`
   - Mirror the active project's agent workspace sessions in the left `Projects` tree. A workspace row must expose provider identity, branch context, changed-file count, and one of `Waiting`, `Working`, `Review needed`, or `Done` so parallel agent work is visible before the right panel is opened.
 - `composer-reasoning-chip`, `fast-toggle`
@@ -218,7 +221,9 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `agent-event-card`
   - Lives inside the conversational agent turn for reply decisions such as numbered choices and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Command permission decisions do not live here; they open as a composer-level approval panel directly above the composer.
 - `composer-approval`
-  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, target, reason, and direct `Deny`, `Always allow`, and `Allow once` actions. It disappears after a decision; every decision is recorded in the Agent panel. `Deny` records refusal, while `Allow once` and `Always allow` record approval in the agent workspace. Approval must not create, focus, write to, or otherwise mutate a user-visible center terminal tab or pane, and must not forward the command to the terminal runtime target.
+  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, isolated Agent-job target, reason, and only `Deny` and `Allow once` actions. It disappears after a decision; every decision is recorded in the Agent panel. Approval creates at most one isolated Agent job and must not create, focus, write to, or otherwise mutate a user-visible center terminal tab or pane.
+- `agent-job-activity`, `agent-job-row`
+  - Renders only in the right Agent workspace and shows the bounded lifecycle of jobs owned by the active project and Agent session. Rows expose command, job ID, truthful `running`, `cancelling`, `completed`, `failed`, `cancelled`, or `interrupted` state, bounded structured logs, exit metadata, distinct process/log-read errors, and `Cancel` only while running. Active jobs take retention priority over terminal history. Closing an Agent session is blocked while its job creation is in flight or a job remains active.
 
 ## 인터랙션 기준 / Interaction Rules
 
@@ -234,6 +239,8 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 ### English
 
 - Panel collapse, tab switching, provider selection, and line-anchor navigation must respond immediately.
+- Provider selection updates only the active Agent session. Provider connection state remains canonical runtime state shared by that provider, while request ownership remains `projectPath + agentSessionId + providerId`.
+- An available but disconnected provider shows setup guidance instead of a fabricated response. Browser preview must not fabricate provider connection or suggestion state.
 - Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
 - Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.

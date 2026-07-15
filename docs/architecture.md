@@ -66,6 +66,14 @@ This document exceeds 200 lines. Read only the matching route first.
 
 ## Current System Boundaries
 
+### 2026-07-15 Agent Runtime And Claude CLI Session
+
+- `src/features/agents/model/useAgentJobLifecycle.ts` owns the bounded project/session-scoped job view, hydration generations, polling, read/cancel deduplication, stale-response rejection, and final structured-log collection.
+- `src/features/agents/ui/AgentJobActivity.tsx` renders job state, command, structured output, exit metadata, error categories, and Cancel only in the right Agent workspace.
+- `src/prototype.jsx` persists the Agent session directory metadata needed to keep durable ownership addressable across reload, including the session `providerId`. Conversation content remains outside that directory, and provider selection is not global.
+- `src-tauri/src/runtime/agent_jobs.rs` owns durable Agent jobs and `agent-jobs.json`; the PTY manager remains a separate user-terminal subsystem.
+- `src-tauri/src/runtime/auth/mod.rs` exposes `Codex` and `Claude` as available, real providers. Both gate connect/request completion through stored-connection revision leases so stale work cannot change auth state or publish a response. Claude validates an explicit API key, then a strict helper, then an installed user-owned CLI session; availability still does not imply a connected credential or a live-inference-validated state.
+
 As of the 2026-05-28 frontend reset, the implemented system is best read as three active layers:
 
 1. `TSX App Shell And Legacy Design Prototype`
@@ -85,8 +93,8 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for user-owned terminal runtime sessions. The prototype uses it for user-created PTY tabs, user-submitted terminal input, log polling, and tab close termination. Agent approval decisions must not call this seam to create command tabs or write reviewed commands into existing terminals.
    - `src/shared/api/runtimeAgentJobs.ts` is the typed frontend seam for agent-owned background execution. Approved agent commands use this job surface and stream/log through the Agent panel/task history path instead of mutating the center terminal.
    - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for provider connection snapshots, disconnects, and `begin_agent_login` validation. It does not own terminal creation; setup guidance stays in the Agent panel.
-   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics, provider capabilities, and `request_agent_suggestions`. The prototype uses it for runtime-backed model/attachment metadata and Codex suggestion requests; when Tauri is unavailable, browser preview shows a runtime-unavailable state instead of canned agent replies.
-   - Desktop runtime provider flows must not silently fall back to prototype data. Non-`Codex` providers surface an explicit deferred state. Codex command-bearing responses remain reviewable in the Agent panel until explicit approval; `Allow once` and `Always allow` record the decision in the Agent panel without terminal execution.
+   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics, provider capabilities, and `request_agent_suggestions`. Requests require the owning `agentSessionId`; the seam rejects blank ownership and provider-mismatched responses before either Codex or Claude output can render. When Tauri is unavailable, browser preview shows a runtime-unavailable state instead of canned agent replies.
+   - Desktop runtime provider flows must not silently fall back to prototype data. A provider is requestable only after its real runtime connection succeeds. Command-bearing responses remain reviewable in the owning Agent session until explicit approval; `Allow once` creates one isolated Agent job and `Deny` starts no work.
    - The fixed uploaded-design shell is `1320x824`; `src-tauri/tauri.conf.json` uses the same default launch size so the frameless desktop window opens without shell letterboxing.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
@@ -97,7 +105,7 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - [`src-tauri/tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json) and [`src-tauri/tauri.macos.conf.json`](../src-tauri/tauri.macos.conf.json) pin platform bundle targets while the base Tauri config keeps shared app settings
    - [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) grants `core:default`, `dialog:allow-open`, and only the explicit native window permissions needed by the custom chrome (`close`, `minimize`, `toggleMaximize`, `startDragging`, `startResizeDragging`) before calling filesystem commands
 3. `Runtime Modules`
-   - `filesystem`, `pty`, `auth`, `codex`, `workspace`, `telegram`, `platform`
+   - `filesystem`, `pty`, `auth`, `codex`, `claude`, `workspace`, `telegram`, `platform`
    - own the actual system behavior and persistence
 
 The frontend reset intentionally removes the old frontend contract layer from the active app. Reintroducing runtime-backed behavior should be planned as a new integration slice on top of the clean design prototype, not by restoring the deleted FSD UI wholesale.
@@ -120,7 +128,7 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - renders readiness, branch, changed-file count, ahead/behind, tab/group status, and palette hint
 - [`src/prototype.jsx`](../src/prototype.jsx)
   - legacy uploaded design module used by the TSX app entry during migration
-  - contains the shell, sidebar, workbench, agent panel, modals, approval policy, and tweak controls; the default project/workspace state is now empty until a real runtime project opens
+  - contains the shell, sidebar, workbench, agent panel, settings, explicit per-command review flow, and tweak controls; the default project/workspace state is now empty until a real runtime project opens
   - consumes `src/shared/api/runtimeProjects.ts` for `ProjectOverview` and `ProjectFileSnapshot` payloads while browser preview stays on an empty no-runtime fallback
   - consumes `src/shared/api/runtimeWorkspace.ts` for desktop workspace snapshot restore and `remember_workspace_project`
   - consumes `src/shared/api/runtimeWindow.ts` so the custom titlebar controls the frameless Tauri window while keeping browser preview no-op fallbacks
@@ -146,6 +154,13 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts)
   - owns the frontend command seam for `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`
   - forwards selected provider model ids only when they came from runtime-backed capabilities
+- [`src/shared/api/runtimeAgentJobs.ts`](../src/shared/api/runtimeAgentJobs.ts)
+  - validates and maps project-scoped Agent-job create/list/read/cancel payloads
+  - never invokes a terminal command and returns explicit unavailable state for non-runtime projects
+- [`src/features/agents/model/useAgentJobLifecycle.ts`](../src/features/agents/model/useAgentJobLifecycle.ts)
+  - owns session-scoped hydration, bounded view state, polling, final-log reads, cancellation, and stale async-response rejection
+- [`src/features/agents/ui/AgentJobActivity.tsx`](../src/features/agents/ui/AgentJobActivity.tsx)
+  - renders Agent-job lifecycle and structured errors only in the right panel
 - [`src/styles.css`](../src/styles.css)
   - single active frontend stylesheet copied from the uploaded design source
 
@@ -163,7 +178,6 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - PTY 세션 생성, 최근 로그 읽기, command injection, reader/reaper thread, bounded log buffer를 담당한다.
 - [`src-tauri/src/runtime/auth/mod.rs`](../src-tauri/src/runtime/auth/mod.rs)
   - provider 연결 상태와 저장을 관리한다.
-  - 현재 real daily-use 기준은 `Codex`이며, `Claude`는 deferred 상태로 유지한다.
 - [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs)
   - `Codex CLI` 진단, ChatGPT session 검증, `codex exec` 기반 suggestion request, request payload normalization을 담당한다.
   - 현재 source of truth는 `OAuth/session login`이며 `API key` 경로는 개발용 임시 경로다.
@@ -187,14 +201,23 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - on Windows, user-created center terminal sessions use a hidden persistent PowerShell-first shell process with stdin/stdout pipes, so user-submitted commands such as `dir`, `cd`, `ls`, and `clear` keep shell state without opening an external console window
   - keeps `create_terminal_session_with_command` as a terminal-owned command-output helper, but Agent-panel approval must not route through it because center terminal surfaces are user-owned
 - `src-tauri/src/runtime/agent_jobs.rs`
-  - owns agent-approved background process jobs, hidden subprocess spawning, stdout/stderr capture, cancellation, and bounded job logs
+  - owns agent-approved background process jobs, hidden subprocess spawning, stdout/stderr capture, idempotent cancellation, bounded structured logs, and bounded `agent-jobs.json` persistence
+  - requires canonical project ownership for create/list/read/cancel; optional session ownership filters the right-panel history
+  - restores persisted `running`/`cancelling` jobs as `interrupted` without relaunching them, and exposes terminal states only after process exit and log-reader drain
   - uses shell-free Windows command resolution for direct `.exe`/`.com` execution and rejects shell syntax or batch shims without opening center terminal tabs
 - [`src-tauri/src/runtime/auth/mod.rs`](../src-tauri/src/runtime/auth/mod.rs)
   - manages provider connection state and persistence
-  - the current real daily-use baseline is `Codex`, while `Claude` remains deferred
+  - preserves `Codex` and `Claude` as available, real providers while requiring provider-specific validation before connected state and applying blocking connect/request results only while their captured revision lease is current
 - [`src-tauri/src/runtime/codex.rs`](../src-tauri/src/runtime/codex.rs)
   - owns `Codex CLI` diagnostics, ChatGPT-session validation, `codex exec`-based suggestion requests, and payload normalization
   - the source-of-truth path is `OAuth/session login`, while `API key` is only a temporary development bridge
+- `src-tauri/src/runtime/claude.rs`
+  - owns Claude CLI discovery, explicit API-key/strict-helper/local-CLI-session credential selection, auth-status classification, structured-output parsing, bounded subprocess behavior, and redaction
+  - uses source precedence `ANTHROPIC_API_KEY -> apiKeyHelper -> claude_cli_session`; the helper must be one canonical absolute regular executable path, while a CLI session is read only by the installed CLI after the user authenticates externally with `claude auth login`
+  - executes the Claude CLI and helper by canonical absolute path, accepts a custom config root only when it is an existing canonical directory under the current-user home, pins/revalidates that context across validation and request, supplies an absolute-only child `PATH`, removes competing credentials plus inherited provider/debug/telemetry/process-wrapper controls, explicitly disables nonessential traffic and official-marketplace auto-install, and bounds stdin/stdout/stderr plus child completion under one deadline while discarding stderr
+  - uses `--safe-mode --setting-sources ""` for CLI-session status/requests and retains `--bare` for API-key/helper requests; model tools, MCP, slash commands, Chrome integration, and session persistence are disabled
+  - excludes user/project customizations but cannot override organization-managed policy hooks, status-line commands, or file-suggestion commands; no absolute process-level no-hooks claim is made
+  - persists only non-secret source metadata and scopes, never raw keys, helper output, identity, tokens, or subscription metadata; no live `claude -p` inference was run without explicit user approval
 - [`src-tauri/src/runtime/workspace.rs`](../src-tauri/src/runtime/workspace.rs)
   - persists recent projects and the last opened project
 - [`src-tauri/src/runtime/telegram.rs`](../src-tauri/src/runtime/telegram.rs)
@@ -220,6 +243,7 @@ The current commands group into these domains:
   - `execute_terminal_session_command`
 - agent jobs
   - `create_agent_job`
+  - `list_agent_jobs`
   - `read_agent_job_logs`
   - `cancel_agent_job`
 - file edits
@@ -255,11 +279,13 @@ Current persistence is split like this:
   - if an older install left a file at the app-data root, startup renames it to a sibling `.legacy-file-<timestamp>.json` backup, creates the directory, and then initializes the per-store files
   - agent auth state
   - workspace state: recent project paths, last opened project path, storage version, and timestamps
+  - Agent job state: bounded snapshots and structured logs in `agent-jobs.json`
   - Telegram state
 - frontend `localStorage`
   - tweak/edit-mode values used by the design prototype
   - browser-preview-only UI defaults
-  - future selected-file, line-anchor, provider-choice, and task-history restore metadata once those fields receive a runtime contract
+  - minimal Agent session directory metadata (`id`, title, active session, `providerId`, timestamps) used to address persisted session-owned requests and jobs after reload; conversation content is not stored in this directory
+  - future selected-file, line-anchor, and task-history restore metadata once those fields receive a runtime contract
 - memory-only state
   - PTY session objects
   - bounded terminal logs
@@ -287,7 +313,9 @@ Restore is split into two layers:
 ### English
 
 - the main product surface is a peer structure of `terminal + code surface + agent approval`
-- command execution remains user-owned; explicit Agent-panel approval records the decision and must not dispatch agent commands through the terminal runtime or provider-side execution
+- the center terminal remains user-owned; explicit Agent-panel approval may execute only through the isolated Agent-job runtime and must never dispatch through the terminal runtime or provider-side execution
 - the real `Codex` path must pass `Codex CLI` and ChatGPT-session validation
+- the real `Claude` path must pass explicit first-party API-key, strict user-level `apiKeyHelper`, or installed first-party CLI-session validation. GTUM never performs Claude.ai OAuth or reads the credential store; provider availability is distinct from connection readiness, and implemented revision leases fail stale completion closed before any UI result is accepted
+- every provider request is owned by `projectPath + agentSessionId + providerId`, and a session switch or delayed completion must not move results into another owner
 - `Windows` is the first daily-use validation baseline, and path/shell differences should be absorbed in the `platform` layer
 - a `WORKLOG` is only a temporary in-sprint trace, not a source of truth; once the sprint closes, structural changes should be absorbed into this doc or into [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), and [`technical-design.md`](./technical-design.md), and then the `WORKLOG` should be deleted

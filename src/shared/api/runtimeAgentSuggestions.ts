@@ -95,6 +95,7 @@ export type AgentSuggestionTabInput = {
 
 export type RequestAgentSuggestionsInput = {
   provider: AgentProviderId
+  agentSessionId: string
   project: AgentSuggestionProjectInput
   activeTab?: AgentSuggestionTabInput | null
   userTask: string
@@ -123,6 +124,15 @@ type RuntimeAgentOverride = {
 
 const MAX_ATTACHED_LOG_LINES = 50
 const MAX_FILE_SNIPPET_CHARS = 4_000
+
+const providerLabel = (provider: AgentProviderId): string =>
+  provider === 'codex' ? 'Codex' : 'Claude'
+
+const validateAgentSessionOwner = (input: RequestAgentSuggestionsInput): void => {
+  if (input.agentSessionId.trim().length === 0) {
+    throw new Error('Agent session owner is missing.')
+  }
+}
 
 const validateActiveTabOwner = (input: RequestAgentSuggestionsInput): void => {
   const activeTab = input.activeTab
@@ -183,6 +193,7 @@ export const activeFileSnippetFromTab = (
 
 const requestPayloadFromInput = (input: RequestAgentSuggestionsInput): Record<string, unknown> => ({
   provider: input.provider,
+  agentSessionId: input.agentSessionId.trim(),
   model: input.model?.trim() || null,
   reasoningLevel: input.reasoningLevel || null,
   fastMode: input.fastMode ?? false,
@@ -233,6 +244,7 @@ export const suggestionCardFromRuntime = (
   suggestion: RuntimeAgentSuggestionResponse,
   activeTab?: AgentSuggestionTabInput | null,
 ): AgentSuggestionCard => {
+  const label = providerLabel(suggestion.provider)
   const command = normalizeText(suggestion.command)
   const error = normalizeText(suggestion.error)
   const summary = normalizeText(suggestion.summary)
@@ -240,15 +252,15 @@ export const suggestionCardFromRuntime = (
   const preferredTarget = normalizeTarget(suggestion.preferredTarget)
 
   if (!command && !error && !summary) {
-    throw new Error('Codex CLI returned an empty response without a command or error reason.')
+    throw new Error(`${label} CLI returned an empty response without a command or error reason.`)
   }
 
   return {
-    id: normalizeText(suggestion.id) || `codex-${Date.now()}`,
+    id: normalizeText(suggestion.id) || `${suggestion.provider}-${Date.now()}`,
     provider: suggestion.provider,
     title:
       summary ||
-      (error ? 'Codex suggestion unavailable' : 'Codex response'),
+      (error ? `${label} suggestion unavailable` : `${label} response`),
     commands: command
       ? [
           {
@@ -258,9 +270,21 @@ export const suggestionCardFromRuntime = (
           },
         ]
       : [],
-    note: error || (command ? `Codex confidence: ${confidence}` : ''),
+    note: error || (command ? `${label} confidence: ${confidence}` : ''),
     error: error || null,
   }
+}
+
+const validateResponseProviders = (
+  responses: readonly RuntimeAgentSuggestionResponse[],
+  requestedProvider: AgentProviderId,
+): void => {
+  const mismatch = responses.find((response) => response.provider !== requestedProvider)
+  if (!mismatch) return
+
+  throw new Error(
+    `Agent suggestion provider mismatch: requested ${providerLabel(requestedProvider)} but received ${providerLabel(mismatch.provider)}.`,
+  )
 }
 
 const fallbackDiagnostics = (provider: AgentProviderId): RuntimeAgentProviderDiagnostics => ({
@@ -309,6 +333,7 @@ export const createAgentSuggestionRuntimeService = (
       })
     },
     async requestSuggestions(input) {
+      validateAgentSessionOwner(input)
       if (!hasRuntime()) return []
       validateActiveTabOwner(input)
 
@@ -319,6 +344,7 @@ export const createAgentSuggestionRuntimeService = (
         },
       )
 
+      validateResponseProviders(responses, input.provider)
       return responses.map((response) => suggestionCardFromRuntime(response, input.activeTab))
     },
   }

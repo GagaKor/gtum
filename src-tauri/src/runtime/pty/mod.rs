@@ -1,5 +1,6 @@
+use portable_pty::PtySize;
 #[cfg(not(target_os = "windows"))]
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, ChildKiller, CommandBuilder};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, VecDeque},
@@ -1012,6 +1013,68 @@ fn is_clear_terminal_command(command: &str) -> bool {
         command.trim().to_ascii_lowercase().as_str(),
         "clear" | "cls"
     )
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod unix_tests {
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
+
+    use super::{CreateTerminalSessionRequest, TerminalSessionManager};
+
+    #[test]
+    fn raw_output_preserves_terminal_control_sequences() {
+        let manager = TerminalSessionManager::new();
+        let project_path = std::env::current_dir()
+            .unwrap()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let snapshot = manager
+            .create_session(CreateTerminalSessionRequest {
+                project_path,
+                name: Some("raw-output-test".into()),
+                cwd: None,
+                shell: Some("/bin/sh".into()),
+                rows: Some(24),
+                cols: Some(80),
+                max_log_entries: Some(100),
+            })
+            .unwrap();
+        let expected = "\u{1b}[31mRED\u{1b}[0m \u{1b}]633;Conductor;ProgramStart\u{7}plain";
+
+        manager
+            .write_terminal_input(
+                &snapshot.project_path,
+                snapshot.session_id,
+                "printf '\\033[31mRED\\033[0m \\033]633;Conductor;ProgramStart\\007plain\\n'\n"
+                    .into(),
+            )
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let output = manager
+                .read_raw_output(&snapshot.project_path, snapshot.session_id, 0)
+                .unwrap();
+            if output.chunk.contains(expected) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "raw PTY output did not contain the expected control sequence: {:?}",
+                output.chunk
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        manager
+            .close_session(&snapshot.project_path, snapshot.session_id)
+            .unwrap();
+    }
 }
 
 #[cfg(test)]

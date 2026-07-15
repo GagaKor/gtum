@@ -1,13 +1,4 @@
-mod runtime {
-    pub mod agent_jobs;
-    pub mod auth;
-    pub mod codex;
-    pub mod filesystem;
-    pub mod platform;
-    pub mod pty;
-    pub mod telegram;
-    pub mod workspace;
-}
+mod runtime;
 
 use runtime::agent_jobs::{AgentJobLogs, AgentJobManager, AgentJobSnapshot, CreateAgentJobRequest};
 use runtime::auth::{
@@ -244,36 +235,58 @@ fn create_agent_job(
 }
 
 #[tauri::command]
+fn list_agent_jobs(
+    state: tauri::State<'_, AgentJobManager>,
+    project_path: String,
+    session_id: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<AgentJobSnapshot>, String> {
+    match session_id.as_deref() {
+        Some(session_id) => state.list_jobs_for_session(&project_path, Some(session_id), limit),
+        None => state.list_jobs(&project_path, limit),
+    }
+}
+
+#[tauri::command]
 fn read_agent_job_logs(
     state: tauri::State<'_, AgentJobManager>,
+    project_path: String,
     job_id: u64,
     limit: Option<usize>,
 ) -> Result<AgentJobLogs, String> {
-    state.read_logs(job_id, limit)
+    state.read_logs(&project_path, job_id, limit)
 }
 
 #[tauri::command]
 fn cancel_agent_job(
     state: tauri::State<'_, AgentJobManager>,
+    project_path: String,
     job_id: u64,
 ) -> Result<AgentJobSnapshot, String> {
-    state.cancel_job(job_id)
+    state.cancel_job(&project_path, job_id)
 }
 
 #[tauri::command]
-fn list_agent_connections(
-    state: tauri::State<'_, AgentAuthManager>,
-) -> Vec<AgentConnectionSnapshot> {
-    state.list_connections()
+async fn list_agent_connections(
+    app: tauri::AppHandle,
+) -> Result<Vec<AgentConnectionSnapshot>, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AgentAuthManager>().list_connections())
+        .await
+        .map_err(|error| format!("failed to join agent connection refresh: {error}"))
 }
 
 #[tauri::command]
-fn begin_agent_login(
-    state: tauri::State<'_, AgentAuthManager>,
+async fn begin_agent_login(
+    app: tauri::AppHandle,
     provider: AgentProvider,
     requested_scopes: Option<Vec<String>>,
-) -> AgentConnectionSnapshot {
-    state.begin_login(provider, requested_scopes)
+) -> Result<AgentConnectionSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AgentAuthManager>()
+            .begin_login(provider, requested_scopes)
+    })
+    .await
+    .map_err(|error| format!("failed to join agent login validation: {error}"))?
 }
 
 #[tauri::command]
@@ -284,21 +297,64 @@ fn complete_agent_login(
     state.complete_login(request)
 }
 
+fn resolve_provider_suggestion_attempt<T>(
+    validation_applied: bool,
+    validation: Result<(), String>,
+    suggestions: Option<Result<T, String>>,
+) -> Result<T, String> {
+    if !validation_applied {
+        return Err(
+            "The provider connection changed while the request was running. Retry the request."
+                .into(),
+        );
+    }
+    validation?;
+    suggestions
+        .ok_or_else(|| "The provider returned no suggestion result after validation.".to_string())?
+}
+
 #[tauri::command]
 async fn request_agent_suggestions(
-    auth_state: tauri::State<'_, AgentAuthManager>,
+    app: tauri::AppHandle,
     request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
-    let _ = auth_state.require_connected_provider(request.provider)?;
-
+    if request.agent_session_id.trim().is_empty() {
+        return Err("agentSessionId is required to own a provider request.".into());
+    }
     match request.provider {
-        AgentProvider::Codex => tauri::async_runtime::spawn_blocking(move || {
-            runtime::codex::request_codex_suggestions(request)
-        })
-        .await
-        .map_err(|error| format!("failed to join Codex suggestion task: {error}"))?,
+        AgentProvider::Codex => {
+            let auth_state = app.state::<AgentAuthManager>();
+            let lease = auth_state.require_stored_connected_provider(AgentProvider::Codex)?;
+            let attempt = tauri::async_runtime::spawn_blocking(move || {
+                runtime::codex::request_codex_suggestion_attempt(request)
+            })
+            .await
+            .map_err(|error| format!("failed to join Codex suggestion task: {error}"))?;
+
+            let validation_applied =
+                auth_state.apply_validation_if_current(&lease, &attempt.validation);
+            resolve_provider_suggestion_attempt(
+                validation_applied,
+                attempt.validation.map(|_| ()),
+                attempt.suggestions,
+            )
+        }
         AgentProvider::Claude => {
-            Err("Claude real-provider support is deferred for the first daily-use release.".into())
+            let auth_state = app.state::<AgentAuthManager>();
+            let lease = auth_state.require_stored_connected_provider(AgentProvider::Claude)?;
+            let attempt = tauri::async_runtime::spawn_blocking(move || {
+                runtime::claude::request_claude_suggestion_attempt(request)
+            })
+            .await
+            .map_err(|error| format!("failed to join Claude suggestion task: {error}"))?;
+
+            let validation_applied =
+                auth_state.apply_claude_validation_if_current(&lease, &attempt.validation);
+            resolve_provider_suggestion_attempt(
+                validation_applied,
+                attempt.validation.map(|_| ()),
+                attempt.suggestions,
+            )
         }
     }
 }
@@ -307,7 +363,7 @@ async fn request_agent_suggestions(
 fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
     match provider {
         AgentProvider::Codex => runtime::codex::read_codex_diagnostics(),
-        AgentProvider::Claude => runtime::codex::deferred_provider_diagnostics(provider),
+        AgentProvider::Claude => runtime::claude::read_claude_diagnostics(),
     }
 }
 
@@ -315,7 +371,7 @@ fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiag
 fn read_agent_provider_capabilities(provider: AgentProvider) -> AgentProviderCapabilities {
     match provider {
         AgentProvider::Codex => runtime::codex::read_codex_capabilities(),
-        AgentProvider::Claude => runtime::codex::read_claude_capabilities(),
+        AgentProvider::Claude => runtime::claude::read_claude_capabilities(),
     }
 }
 
@@ -547,6 +603,7 @@ pub fn run() {
             read_raw_terminal_output,
             resize_terminal_session,
             create_agent_job,
+            list_agent_jobs,
             read_agent_job_logs,
             cancel_agent_job,
             list_agent_connections,
@@ -571,6 +628,12 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle();
             let app_storage_dir = resolve_app_storage_dir(app_handle)?;
+            let agent_jobs_storage_path = app_storage_dir.join("agent-jobs.json");
+
+            app_handle
+                .state::<AgentJobManager>()
+                .initialize_storage(agent_jobs_storage_path)?;
+
             let auth_storage_path = app_storage_dir.join("agent-auth.json");
 
             app_handle
@@ -667,6 +730,39 @@ mod tests {
         assert!(storage_dir.is_dir());
 
         remove_test_path(&storage_dir);
+    }
+
+    #[test]
+    fn stale_successful_provider_result_is_rejected_instead_of_returned() {
+        let result = resolve_provider_suggestion_attempt(
+            false,
+            Ok(()),
+            Some(Ok::<_, String>(vec!["stale suggestion"])),
+        );
+
+        let error = result.expect_err("stale provider success must be rejected");
+        assert!(error.to_lowercase().contains("retry"));
+    }
+
+    #[test]
+    fn current_provider_result_and_auth_failure_are_resolved_authoritatively() {
+        assert_eq!(
+            resolve_provider_suggestion_attempt(
+                true,
+                Ok(()),
+                Some(Ok::<_, String>(vec!["current suggestion"])),
+            )
+            .unwrap(),
+            vec!["current suggestion"]
+        );
+
+        let failure = resolve_provider_suggestion_attempt::<Vec<&str>>(
+            true,
+            Err("provider credential expired".into()),
+            None,
+        )
+        .expect_err("current auth failure should be returned");
+        assert_eq!(failure, "provider credential expired");
     }
 
     #[test]

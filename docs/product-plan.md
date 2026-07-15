@@ -18,6 +18,20 @@ Read this document when:
 - you need to confirm product vision, scope, core value, or user problem framing
 - you are changing top-level policies such as provider direction, execution modes, or multi-agent product behavior
 
+## Current Runtime Policy (2026-07-15)
+
+- `Codex` and `Claude` are available, real provider choices. `Codex` requires a validated local Codex CLI ChatGPT session. Claude credential precedence is an explicit non-empty `ANTHROPIC_API_KEY`, then a valid top-level user `apiKeyHelper`, then an already authenticated session in the installed, user-owned Claude Code CLI. Bedrock, Vertex, Foundry, unknown providers, and source mismatches fail closed.
+- GTUM does not implement Claude.ai OAuth, open an authentication browser, collect a token, or read a Keychain/credential file. When the CLI session is missing, the app instructs the user to run `claude auth login` in their own terminal and reconnect. The CLI alone reads its credential store; GTUM persists only the non-secret source label `claude_cli_session` or the corresponding API-credential label.
+- The Claude runtime adapter and its fail-closed connect/request revision leases are implemented and covered by focused and full Rust verification. A non-billing auth-status smoke succeeded for the local CLI-session path. No live `claude -p` inference has been run because it would consume Agent SDK/subscription credit; live response quality and billing behavior remain an explicit user-approval gate rather than an implementation claim.
+- Provider selection belongs to each Agent session. The session directory persists `providerId`, and switching projects or sessions restores that session's provider without changing another session.
+- Every provider request captures `projectPath + agentSessionId + providerId`. Blank session ownership is rejected before IPC, a response whose provider does not match the request is discarded, and stale connection-lease completion must be rejected before any reply or permission card is rendered.
+- Claude CLI-session requests use `--safe-mode --setting-sources ""`; API-key/helper requests retain the `--bare` path. Both use strict structured output, disable model tools, MCP, slash commands, Chrome integration, session persistence, nonessential traffic, and official-marketplace auto-install, and run independently of the user-owned center terminal. Safe mode excludes user/project customizations, but organization-managed policy still applies and can include policy hooks, status-line commands, or file-suggestion commands; GTUM therefore does not claim an absolute process-level "no hooks" boundary. GTUM executes the CLI and any configured helper by validated canonical absolute paths, does not interpret helper arguments or shell syntax, and does not accept, render, log, or persist a raw Anthropic key or helper output.
+- Local technical support for a user-owned Claude CLI session is not permission to distribute third-party Claude.ai login routing. Public distribution remains blocked until Anthropic approval/contract review confirms this use; otherwise public builds must keep Claude on API-key or supported cloud-provider credentials.
+- Command-bearing replies expose only `Allow once` and `Deny`. There is no auto-approval, persisted allow rule, or `Always allow` action.
+- `Allow once` creates exactly one isolated, session-owned Agent job. The job is observed, cancelled, and restored only in the right Agent workspace; it never creates, focuses, writes to, or otherwise mutates the user-owned center terminal.
+- Agent jobs have bounded durable history and structured logs with `running`, `cancelling`, `completed`, `failed`, `cancelled`, and `interrupted` states. Runtime restart marks unfinished persisted jobs `interrupted` and never relaunches them.
+- MVP stabilization is not complete until the full automated gate and installed-app Windows sign-off pass. The current automated aging scenario is necessary evidence, not a substitute for native Windows validation or a longer manual soak.
+
 ## 장문 문서 라우팅 / Long-Doc Routing
 
 ### 한국어
@@ -425,7 +439,7 @@ An agent can suggest actions such as:
 - inspecting a log file
 - creating a dedicated debugging tab
 
-The center terminal is user-owned. Agent conversations, command review, and decisions stay in the right agent panel. When the user selects `Allow once` or `Always allow`, the app records the decision in the Agent panel and must not create a terminal tab, write into an existing terminal, or dispatch the command through the terminal runtime.
+The center terminal is user-owned. Agent conversations, command review, decisions, and isolated job activity stay in the right agent panel. `Allow once` records the decision and creates one agent-owned job without creating a terminal tab, writing into an existing terminal, or dispatching through the terminal runtime. `Deny` records the refusal and starts no process.
 
 #### 5. Agent Account Connection
 
@@ -439,8 +453,10 @@ The initial supported providers are:
 The authentication model follows these rules:
 
 - the target first daily-use `Codex` path is `OAuth/session login`, similar in shape to `Conductor` or `Codex CLI`
-- long-lived API tokens or `OPENAI_API_KEY` should not become the default end-user connection path
-- an env/API-key bridge may exist temporarily during development, but it is an internal bridge rather than the release target
+- the `Claude` path uses an explicit API key first, then a strict top-level user `apiKeyHelper`, then an already authenticated local Claude Code CLI session; the CLI-session fallback is local/internal-use infrastructure pending Anthropic approval for third-party distribution
+- GTUM never starts Claude.ai OAuth or captures a token. Users authenticate externally with `claude auth login`, and the installed CLI alone reads its credential store
+- GTUM must not expose an in-app raw-key form or persist the key, helper command output, email, organization, token, or subscription metadata
+- an `OPENAI_API_KEY` bridge may exist temporarily during development, but it is an internal Codex bridge rather than the release target
 - the app should show connection state, granted scopes, and readiness diagnostics
 
 #### 6. Remote Command and Report Channels
@@ -464,15 +480,14 @@ Because this adds important security and authentication boundaries, it should be
 
 The updated design treats settings as an execution-control surface, not a secondary preferences page.
 
-Settings should cover at least:
+Current settings cover:
 
 - provider connections and session state
 - runtime-synced provider capabilities and readiness diagnostics
 - appearance settings such as the accent color
-- parallel worker count and response streaming
-- approval policy by risk level
-- trusted directories and forbidden patterns
-- auto-approval history and undoable notifications
+- a read-only execution contract stating that every command requires review and approved work runs as an isolated Agent job
+
+Parallel-worker tuning, risk-based policy, trusted directories, forbidden patterns, and auto-approval remain future work. They must not appear as functional controls before a persisted runtime contract exists.
 
 Model, reasoning, attachment, and provider fast-mode request controls are exposed only when the runtime discovers provider capabilities. Fixed `Fast`/`Balanced`/`Deep` execution-policy controls remain deferred until scheduling policies are explicit; the Codex path must not display those fixed modes as if they were synchronized runtime state.
 
@@ -590,11 +605,10 @@ Responsibilities:
 
 Responsibilities:
 
-- manage provider connections, model choices, appearance, execution policy, and product information in one settings surface
+- manage available provider connections and appearance, and show the current execution contract and product information in one settings surface
 - keep approval behavior in `always ask` mode for agent-suggested commands
-- keep high-risk commands pinned to explicit approval
-- block or reconfirm forbidden patterns regardless of the active policy
-- record approval decisions in the Agent panel without terminal execution side effects
+- expose only `Allow once` and `Deny` for the current command-review contract
+- create approved work through isolated Agent jobs without terminal side effects
 
 ## 권장 UI 구조 / Recommended UI Structure
 
@@ -672,9 +686,7 @@ Responsibilities:
 
 - settings modal with `Connections`, `Appearance`, `Execution`, and `About` tabs
 - provider sessions, scopes, expiration state, and readiness diagnostics
-- parallel worker count and response streaming settings
-- approval policy by risk level, trusted directories, and forbidden patterns
-- auto-approval history and undoable toast notifications
+- a truthful read-only Execution description until persisted scheduling and approval policies exist
 
 #### Bottom Panel or Drawer
 
@@ -684,33 +696,7 @@ Responsibilities:
 
 Use `docs/design-system.md` for concrete UI tokens, colors, radius, and component state representation.
 
-## 핵심 사용자 흐름 / Core User Flow
-
-### 한국어
-
-#### 기본 흐름
-
-1. 사용자가 프로젝트를 연다.
-2. 사용자가 좌측 `Projects`와 `Files` accordion에서 프로젝트와 파일을 확인한다.
-3. 사용자가 중앙 workbench에서 editor 탭 또는 terminal 탭을 열고, 필요하면 split group으로 배치한다.
-4. 사용자가 탭별로 명령을 실행하거나 코드를 읽는다.
-5. 에이전트가 현재 프로젝트, 선택 파일, 활성 탭 출력, 최근 명령 맥락을 읽는다.
-6. 에이전트가 설명 또는 다음 작업을 제안한다.
-7. 승인 정책이 허용한 low-risk 명령은 audit/undo 가능한 toast와 함께 자동 실행될 수 있고, 그 외 명령은 승인 modal에서 대상, 위험도, rollback 가능성을 검토한다.
-8. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
-9. 사용자가 지금까지의 승인, 실패, 재시도 경로를 확인하고 다음 행동을 결정한다.
-
-#### 예시 시나리오
-
-1. 사용자가 모노레포를 연다.
-2. `frontend`, `backend`, `tests` 탭을 만든다.
-3. `backend` 탭에서 서버 실행 오류가 발생한다.
-4. 에이전트가 출력과 관련 설정 파일을 읽는다.
-5. 에이전트가 원인을 설명하고 수정용 명령을 제안한다.
-6. 사용자가 승인하면 새 디버깅 탭에서 명령이 실행된다.
-7. 사용자가 이전 시도와 새 결과를 비교해 반복 문제인지 판단한다.
-
-### English
+## Core User Flow
 
 #### Primary Flow
 
@@ -721,8 +707,8 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 5. The agent reads current project, selected-file, active-tab output, and recent-command context.
 6. The agent suggests explanations or next actions.
 7. Suggested commands open inline review inside the right agent panel.
-8. The user records the decision in the agent panel, then manually uses the center terminal when they want to run anything.
-9. The user reviews the agent decision, failure, and retry path before deciding the next action.
+8. `Allow once` creates one isolated Agent job. The right panel shows its status, bounded structured logs, exit metadata, and Cancel action while the center terminal remains unchanged.
+9. The user reviews the agent decision, job outcome, failure, and retry path before deciding the next action.
 
 #### Example Scenario
 
@@ -731,7 +717,7 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 3. A startup error appears in the `backend` tab.
 4. The agent reads the output and related config files.
 5. The agent explains the likely cause and proposes a fix command.
-6. The user approves execution in a new debugging tab.
+6. The user selects `Allow once`; an isolated Agent job runs without opening a debugging tab in the center workbench.
 7. The user compares the new result with prior attempts to see whether the problem is repeating.
 
 ## 에이전트 모델 / Agent Model
@@ -1152,7 +1138,7 @@ The first version should focus on the smallest complete experience.
 - inspect provider/session readiness and switch providers in the right agent workspace
 - let the agent suggest commands
 - keep command review and decisions in the right agent workspace
-- keep command execution user-owned until explicit approval; approved agent commands may create or use runtime-backed terminal tabs
+- execute approved agent commands only through isolated, observable Agent jobs; center terminal tabs remain user-owned
 
 #### Out of Scope
 
@@ -1238,13 +1224,15 @@ The first version should focus on the smallest complete experience.
 - agents should be able to read selected project files
 - agents should be able to read current or selected tab output
 - agents should be able to generate task suggestions
-- users should be able to review and approve command targets before execution
-- users should be able to connect `Codex` and `Claude` providers from inside the app
+- users should be able to review commands before one-time execution in an isolated Agent job
+- users should be able to connect `Codex` and `Claude` through their approved runtime credential contracts, and each Agent session should persist its own selected `providerId`
 - the first daily-use `Codex` path should use `OAuth/session login`
-- any env/API-key bridge should remain a temporary development path rather than the default user route
+- the `Claude` path should prefer an explicit `ANTHROPIC_API_KEY`, then a user-level `apiKeyHelper` containing one canonical absolute regular executable path, then an authenticated installed CLI session; it should never collect or persist raw credentials in GTUM
+- a missing Claude session should direct the user to run `claude auth login` outside GTUM. GTUM must not initiate Claude.ai OAuth or capture tokens
+- any `OPENAI_API_KEY` bridge should remain a temporary Codex development path rather than the default user route
 - the app should display connection state, readiness diagnostics, and granted scopes
 - the app should not expose fixed model selection or execution-mode choices until provider capability discovery and scheduling policy support exist
-- the app should expose approval policy by risk level, trusted directories, forbidden patterns, and auto-approval history
+- risk-based policies, trusted-directory rules, and auto-approval history remain future work and must not appear as functional controls before a persisted runtime contract exists
 - the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 
 #### Task Awareness
@@ -1306,7 +1294,6 @@ The first version should focus on the smallest complete experience.
 - 초기 지원 제공자: `Codex`, `Claude`
 - 첫 실사용 `Codex` 경로: `OAuth/session login`
 - 개발용 임시 경로: 필요 시 `OPENAI_API_KEY` 기반 bridge를 둘 수 있지만 source of truth는 아님
-- `Claude`: provider contract 호환 대상이지만 첫 실사용 릴리스에서는 deferred path 유지
 
 한 줄로 정리하면 다음과 같다.
 
@@ -1377,7 +1364,7 @@ Agent connection rules are:
 - initial providers: `Codex`, `Claude`
 - first daily-use `Codex` path: `OAuth/session login`
 - temporary development path: an `OPENAI_API_KEY`-backed bridge may exist, but it is not the source-of-truth release path
-- `Claude`: contract-compatible provider that stays on the deferred path for the first daily-use release
+- `Claude`: an implemented real-provider path that selects an explicit first-party Anthropic API key, then a strict top-level user `apiKeyHelper`, then an already authenticated user-owned local CLI session. No in-app OAuth/token handling exists, no live inference has been run without explicit user approval, and public CLI-session distribution remains blocked pending Anthropic approval/contract review
 
 In one sentence:
 
@@ -1532,40 +1519,6 @@ Against those requirements, `Tauri + Rust + React + TypeScript` provides the bes
 
 ## 제안 마일스톤 / Proposed Milestones
 
-### 한국어
-
-#### 마일스톤 1: 로컬 프로젝트 셸
-
-- 프로젝트 열기
-- 파일 트리 렌더링
-- 기본 프로젝트 메타데이터 표시
-
-#### 마일스톤 2: 터미널 워크스페이스
-
-- PTY 기반 탭
-- 탭 상태 저장
-- 안정적인 터미널 렌더링
-
-#### 마일스톤 3: 에이전트 패널
-
-- 에이전트 채팅 UI
-- 프로젝트 및 탭 컨텍스트 읽기
-- 제안 UI 표시
-
-#### 마일스톤 4: 승인 기반 액션
-
-- 명령 제안 흐름
-- 사용자 승인 UI
-- 현재 탭 또는 새 탭에서 실행
-
-#### 마일스톤 5: 프로젝트 작업 레이어
-
-- 작업 피드
-- 명령 실행 기록
-- 경량 프로젝트 요약
-
-### English
-
 #### Milestone 1: Local Project Shell
 
 - open a project
@@ -1588,7 +1541,7 @@ Against those requirements, `Tauri + Rust + React + TypeScript` provides the bes
 
 - command proposal flow
 - user approval UI
-- execution in the current tab or a new tab
+- isolated Agent-job execution with right-panel lifecycle visibility and no center-terminal mutation
 
 #### Milestone 5: Project Task Layer
 

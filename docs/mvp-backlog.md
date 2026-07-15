@@ -64,15 +64,9 @@ This document exceeds 200 lines. Read only the route that matches your question.
 - when you need actual execution order or the active sprint baseline
   - read `sprint-plan.md` first and use this doc as confirmation
 
-## MVP 한 줄 정의 / One-Line MVP Definition
+## One-Line MVP Definition
 
-### 한국어
-
-`gtum`의 MVP는 Ubuntu, Windows, macOS를 구조적으로 지원하면서, 첫 실사용 기준은 Windows에 두고, 로컬 프로젝트를 열고 멀티 탭 터미널을 사용하며 에이전트 제안을 승인 기반으로 실행할 수 있는 데스크톱 앱이다.
-
-### English
-
-The MVP of `gtum` is a desktop app that structurally supports Ubuntu, Windows, and macOS, uses Windows as the first daily-use baseline, lets users open local projects, work with multi-tab terminals, and execute agent suggestions with project and terminal awareness under user approval.
+The MVP of `gtum` is a cross-platform desktop workspace where users open local projects, use user-owned multi-tab terminals, select Codex or Claude per Agent session, request provider suggestions with project context, and approve commands into observable isolated Agent jobs without mutating the center terminal. Windows remains the first daily-use release baseline. Claude is a real provider path that selects an explicit API key, then a strict user-level `apiKeyHelper`, then an already authenticated installed CLI session without in-app OAuth or token capture. Public CLI-session distribution remains blocked pending Anthropic approval/contract review.
 
 ## MVP가 풀어야 할 핵심 가치 / Core MVP Value
 
@@ -92,26 +86,7 @@ The MVP is not successful merely by being "an agent app with terminals." It must
 - live logs from active testing sessions can be used immediately as agent context
 - it combines the multi-terminal strength felt in `cmux` with the agent-management strength felt in `conductor`
 
-## MVP 완료 정의 / MVP Definition of Done
-
-### 한국어
-
-아래 조건이 모두 충족되면 MVP가 완료된 것으로 본다.
-
-1. 사용자가 로컬 프로젝트를 열 수 있다.
-2. 파일 트리와 현재 Git 브랜치 및 dirty state를 볼 수 있다.
-3. 탭 단위로 독립적인 터미널 세션을 만들고 종료할 수 있다.
-4. 터미널 출력과 기본 세션 상태가 유지된다.
-5. 사용자가 앱 안에서 최소 1개 provider에 대해 세션 기반 로그인 연결을 완료하고, `Claude`의 deferred 상태를 구분해서 볼 수 있다.
-6. 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽어 제안을 생성할 수 있다.
-7. 사용자가 제안된 명령을 검토하고 승인 후 실행할 수 있다.
-8. 작업 이력과 기본적인 에이전트 상태를 UI에서 확인할 수 있다.
-9. 앱이 Ubuntu, Windows, macOS를 지원하는 구조로 동작하고, 첫 실사용 기준 흐름은 Windows에서 검증된다.
-10. 현재 테스트 중인 터미널 로그를 에이전트 제안 흐름에 연결할 수 있다.
-11. 핵심 사용자 흐름이 UI E2E 검증으로 확인된다.
-12. 일정 시간 이상 지속 실행 또는 반복 사용 후에도 핵심 흐름이 깨지지 않는 `aging test` 결과가 확보된다.
-
-### English
+## MVP Definition of Done
 
 The MVP is considered complete when all of the following are true:
 
@@ -119,24 +94,18 @@ The MVP is considered complete when all of the following are true:
 2. users can view the file tree, current Git branch, and dirty state
 3. users can create and close isolated terminal sessions by tab
 4. terminal output and basic session state are preserved
-5. users can complete a session-based sign-in flow for at least one provider and clearly distinguish the deferred `Claude` path
-6. an agent can read project context and current terminal output to generate suggestions
-7. users can review and approve suggested commands before execution
-8. task history and basic agent state are visible in the UI
+5. users can connect Codex through its CLI ChatGPT session and Claude through an explicit API key, strict helper, or pre-authenticated installed CLI session; GTUM exposes no raw-key form, performs no Claude.ai OAuth, and stores no secret or identity metadata
+6. the selected provider can read project context and current terminal output to generate suggestions owned by the originating Agent session
+7. users can review suggested commands through `Deny` or `Allow once`, and approval creates one observable isolated Agent job
+8. Agent-job status, bounded logs, exit metadata, cancellation, interruption on restart, task history, and basic agent state are visible in the UI
 9. the app works within a cross-platform architecture targeting Ubuntu, Windows, and macOS, and the first daily-use flow is validated on Windows
 10. live logs from active testing terminals can be attached to agent suggestion flows
 11. core user flows are covered by UI end-to-end verification
 12. `aging test` evidence shows that core flows remain stable after sustained runtime or repeated use
 
-## MVP 상태 / MVP Status
+## MVP Status
 
-### 한국어
-
-현재 저장소 기준으로 MVP는 완료된 상태로 판단한다. 상세 근거는 `docs/MVP_VALIDATION_NOTES.md`, `docs/sprint-plan.md`, 현재 E2E 시나리오를 따른다.
-
-### English
-
-At the current repository state, the MVP is considered complete. See `docs/MVP_VALIDATION_NOTES.md`, `docs/sprint-plan.md`, and the current E2E scenarios for the supporting evidence.
+The core implementation includes durable isolated Agent jobs, truthful Codex authentication, session-owned Codex/Claude selection with persisted `providerId`, provider-neutral frontend IPC with required `agentSessionId`, provider-mismatch rejection, center-terminal isolation, a bounded repeated-use E2E scenario, the Claude API-key/helper/CLI-session adapter, and fail-closed connect/request revision leases. Claude helper configuration is intentionally restricted to one canonical absolute regular executable path rather than a command line. CLI-session mode uses safe mode with empty user/project setting sources; API-key/helper mode retains bare operation. Integrated verification passes serial Playwright 200/200, focused Claude tests 42/42, and the full Rust suite 147/147; lint, production build, Rust formatting, and Rust check also pass. Only non-billing auth status was exercised; no live `claude -p` inference was run without explicit user approval. MVP stabilization also remains incomplete until public Claude authentication terms are approved or the release is restricted to API/cloud credentials, the Windows installed-app daily-use flow receives native sign-off, and a sustained manual soak is recorded. The older backlog entries below preserve the decisions and sequencing that were true when those slices were planned; this current status section overrides their historical Claude-deferred and API-only wording. See `docs/MVP_VALIDATION_NOTES.md` and `docs/sprint-plan.md` for evidence and open gates.
 
 ## MVP 검증 원칙 / MVP Validation Principles
 
@@ -620,49 +589,28 @@ Acceptance Criteria:
 - selected file and line anchor restore after reload through best-effort recovery
 - binary and large files are handled through safe bounded fallback
 
-### 10. 승인 기반 명령 실행 / Approval-Based Command Execution
-
-#### 한국어
-
-우선순위: `P0`
-
-목표:
-
-- 제안된 명령을 사용자가 검토한 뒤 승인 기반으로 실행하게 한다.
-
-백로그 항목:
-
-- 승인 다이얼로그 또는 승인 패널
-- 현재 탭 실행
-- 새 탭 실행
-- 실행 로그 연결
-
-완료조건:
-
-- 에이전트 제안 명령은 자동 실행되지 않는다.
-- 사용자는 현재 탭 또는 새 탭을 선택해 실행할 수 있다.
-- 실행 결과가 터미널과 작업 이력에 연결된다.
-
-#### English
+### 10. Approval-Based Isolated Agent Jobs
 
 Priority: `P0`
 
 Goal:
 
-- ensure suggested commands execute only through user approval
+- ensure suggested commands execute only through explicit, one-time user approval in an Agent-owned runtime
 
 Backlog:
 
-- approval dialog or approval panel
-- execute in current tab
-- execute in new tab
-- link execution results to logs
+- composer-level permission panel with only `Deny` and `Allow once`
+- one isolated Agent job per approved command
+- project- and Agent-session-scoped list, read, cancel, restore, and bounded structured logs
+- truthful terminal outcomes: `completed`, `failed`, `cancelled`, or restart-normalized `interrupted`
 
 Acceptance Criteria:
 
 - agent-suggested commands never auto-run by default
-- users can review current-tab or new-tab target intent in the Agent panel
-- approval decisions are tied to Agent-panel history, not automatic terminal output
+- double activation cannot create duplicate jobs
+- approvals, polling, cancellation, restore, and failure handling never create or mutate a user-visible center terminal/workbench surface
+- active jobs remain observable and cancellable even when terminal history reaches the display limit
+- approval decisions and job results remain tied to Agent-panel history and the originating Agent session
 
 ### 11. 작업 이력과 기본 상태 / Task History and Basic Status
 

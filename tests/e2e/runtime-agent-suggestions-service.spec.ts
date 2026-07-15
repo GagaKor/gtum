@@ -28,6 +28,7 @@ test('requests Codex suggestions with the documented agent envelope', async () =
 
   const suggestions = await service.requestSuggestions({
     provider: 'codex',
+    agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
       path: '/workspace/gtum',
@@ -52,6 +53,7 @@ test('requests Codex suggestions with the documented agent envelope', async () =
       args: {
         request: {
           provider: 'codex',
+          agentSessionId: 'agent-session-1',
           model: null,
           reasoningLevel: null,
           fastMode: false,
@@ -158,6 +160,7 @@ test('reads provider capabilities and forwards the selected model in suggestion 
   const capabilities = await service.readProviderCapabilities('codex')
   await service.requestSuggestions({
     provider: 'codex',
+    agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
       path: '/workspace/gtum',
@@ -198,6 +201,7 @@ test('reads provider capabilities and forwards the selected model in suggestion 
       args: {
         request: {
           provider: 'codex',
+          agentSessionId: 'agent-session-1',
           model: 'gpt-5-codex',
           reasoningLevel: 'medium',
           fastMode: true,
@@ -236,6 +240,7 @@ test('attaches selected editor context instead of terminal logs', async () => {
 
   const suggestions = await service.requestSuggestions({
     provider: 'codex',
+    agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
       path: '/workspace/gtum',
@@ -274,6 +279,7 @@ test('routes current-tab suggestions to a new tab when the active tab is not run
 
   const suggestions = await service.requestSuggestions({
     provider: 'codex',
+    agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
       path: '/workspace/gtum',
@@ -304,6 +310,7 @@ test('rejects an exact active-tab project owner mismatch before provider invocat
   await expect(
     service.requestSuggestions({
       provider: 'codex',
+      agentSessionId: 'agent-session-1',
       project: {
         name: 'project-a',
         path: '/workspace/project-a',
@@ -322,6 +329,59 @@ test('rejects an exact active-tab project owner mismatch before provider invocat
   expect(invocationCount).toBe(0)
 })
 
+test('rejects a blank agent session owner before provider invocation', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return [runtimeSuggestion]
+    },
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'codex',
+      agentSessionId: '   ',
+      project: {
+        name: 'gtum',
+        path: '/workspace/gtum',
+      },
+      activeTab: null,
+      userTask: 'review the project',
+    }),
+  ).rejects.toThrow(/agent session owner is missing/i)
+
+  expect(invocationCount).toBe(0)
+})
+
+test('rejects a returned provider mismatch before rendering a suggestion', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      {
+        ...runtimeSuggestion,
+        provider: 'codex',
+        summary: '',
+        command: '',
+      },
+    ],
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'claude',
+      agentSessionId: 'claude-session-1',
+      project: {
+        name: 'gtum',
+        path: '/workspace/gtum',
+      },
+      activeTab: null,
+      userTask: 'review the project',
+    }),
+  ).rejects.toThrow(/provider mismatch.*claude.*codex/i)
+})
+
 test('rejects missing owners for runtime-backed terminal and editor context before invocation', async () => {
   let invocationCount = 0
   const service = createAgentSuggestionRuntimeService({
@@ -336,6 +396,7 @@ test('rejects missing owners for runtime-backed terminal and editor context befo
   await expect(
     service.requestSuggestions({
       provider: 'codex',
+      agentSessionId: 'agent-session-1',
       project,
       activeTab: {
         id: 't-runtime',
@@ -350,6 +411,7 @@ test('rejects missing owners for runtime-backed terminal and editor context befo
   await expect(
     service.requestSuggestions({
       provider: 'codex',
+      agentSessionId: 'agent-session-1',
       project,
       activeTab: {
         id: 'ed-runtime',
@@ -374,6 +436,7 @@ test('surfaces Codex CLI invocation failures', async () => {
   await expect(
     service.requestSuggestions({
       provider: 'codex',
+      agentSessionId: 'agent-session-1',
       project: {
         name: 'gtum',
         path: '/workspace/gtum',
@@ -400,6 +463,7 @@ test('normalizes Codex error-only responses without approval commands', async ()
 
   const suggestions = await service.requestSuggestions({
     provider: 'codex',
+    agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
       path: '/workspace/gtum',
@@ -436,6 +500,7 @@ test('normalizes Codex reply-only responses without approval commands', async ()
 
   const suggestions = await service.requestSuggestions({
     provider: 'codex',
+    agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
       path: '/workspace/gtum',
@@ -456,6 +521,69 @@ test('normalizes Codex reply-only responses without approval commands', async ()
   ])
 })
 
+test('derives fallback card metadata from the Claude provider', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      {
+        ...runtimeSuggestion,
+        id: '   ',
+        provider: 'claude',
+        summary: '',
+        confidence: 'medium',
+      },
+    ],
+  })
+
+  const suggestions = await service.requestSuggestions({
+    provider: 'claude',
+    agentSessionId: 'claude-session-1',
+    project: {
+      name: 'gtum',
+      path: '/workspace/gtum',
+    },
+    activeTab: null,
+    userTask: 'suggest a focused test command',
+  })
+
+  expect(suggestions).toHaveLength(1)
+  expect(suggestions[0]).toMatchObject({
+    provider: 'claude',
+    title: 'Claude response',
+    note: 'Claude confidence: medium',
+    error: null,
+  })
+  expect(suggestions[0].id).toMatch(/^claude-\d+$/)
+})
+
+test('uses the actual provider label in empty-response errors', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      {
+        ...runtimeSuggestion,
+        provider: 'claude',
+        summary: ' ',
+        command: '',
+        error: null,
+      },
+    ],
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'claude',
+      agentSessionId: 'claude-session-1',
+      project: {
+        name: 'gtum',
+        path: '/workspace/gtum',
+      },
+      activeTab: null,
+      userTask: 'suggest a next command',
+    }),
+  ).rejects.toThrow('Claude CLI returned an empty response without a command or error reason.')
+})
+
 test('rejects empty Codex responses without an error reason', async () => {
   const service = createAgentSuggestionRuntimeService({
     hasRuntime: () => true,
@@ -472,6 +600,7 @@ test('rejects empty Codex responses without an error reason', async () => {
   await expect(
     service.requestSuggestions({
       provider: 'codex',
+      agentSessionId: 'agent-session-1',
       project: {
         name: 'gtum',
         path: '/workspace/gtum',
@@ -511,4 +640,29 @@ test('reads provider diagnostics through the runtime command', async () => {
     },
   ])
   expect(diagnostics.setupState).toBe('ready')
+})
+
+test('keeps browser preview inert without fabricating provider suggestions', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => false,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return [runtimeSuggestion]
+    },
+  })
+
+  await expect(
+    service.requestSuggestions({
+      provider: 'claude',
+      agentSessionId: 'claude-session-1',
+      project: {
+        name: 'gtum',
+        path: '/workspace/gtum',
+      },
+      activeTab: null,
+      userTask: 'suggest a next command',
+    }),
+  ).resolves.toEqual([])
+  expect(invocationCount).toBe(0)
 })

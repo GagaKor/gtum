@@ -11,6 +11,7 @@ import {
 } from '../../../shared/api/runtimeWorkspace'
 import {
   activateProjectWorkspace,
+  closeProjectWorkspace,
   createProjectWorkspaceStore,
   openProjectWorkspace,
   selectActiveProjectWorkbench,
@@ -33,6 +34,19 @@ export type ProjectWorkspaceRow = {
   project: RuntimeProject
   hydration: ProjectWorkspaceHydration
   error: string | null
+  closeChecking: boolean
+  closeBlockedReason: string | null
+}
+
+export type ProjectClosePreflightResult = {
+  blocked: boolean
+  reason: string | null
+  release?: () => void
+}
+
+export type ProjectCloseResult = {
+  closed: boolean
+  reason: string | null
 }
 
 export type UseProjectWorkspacesOptions<W extends JsonSafeValue> = {
@@ -109,7 +123,11 @@ export function useProjectWorkspaces<W extends JsonSafeValue>({
   const transitionGenerationRef = useRef(0)
   const successfulWorkspaceMutationRevisionRef = useRef(0)
   const workspaceMutationQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const projectClosePromisesRef = useRef(new Map<string, Promise<ProjectCloseResult>>())
   const [errorsByPath, setErrorsByPath] = useState<Record<string, string>>({})
+  const [closeCheckingPaths, setCloseCheckingPaths] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
   const [restoreError, setRestoreError] = useState<string | null>(null)
 
   const commitRegistry = useCallback((next: Registry<W>) => {
@@ -331,6 +349,92 @@ export function useProjectWorkspaces<W extends JsonSafeValue>({
     workspaceService,
   ])
 
+  const closeProject = useCallback((
+    path: string,
+    preflight: (projectPath: string) => Promise<ProjectClosePreflightResult>,
+  ): Promise<ProjectCloseResult> => {
+    const existing = projectClosePromisesRef.current.get(path)
+    if (existing) return existing
+    if (!registryRef.current.entriesByPath[path]) {
+      return Promise.resolve({ closed: false, reason: 'Project workspace is not open.' })
+    }
+
+    setCloseCheckingPaths((current) => new Set(current).add(path))
+    commitRegistry(setProjectWorkspaceCloseBlockedReason(
+      registryRef.current,
+      path,
+      null,
+    ))
+
+    const operation = (async (): Promise<ProjectCloseResult> => {
+      let preflightResult: ProjectClosePreflightResult | null = null
+      try {
+        preflightResult = await preflight(path)
+        if (preflightResult.blocked) {
+          const reason = preflightResult.reason || 'Project close was blocked.'
+          if (registryRef.current.entriesByPath[path]) {
+            commitRegistry(setProjectWorkspaceCloseBlockedReason(
+              registryRef.current,
+              path,
+              reason,
+            ))
+          }
+          return { closed: false, reason }
+        }
+
+        if (workspaceService.hasRuntime()) {
+          const snapshot = await enqueueWorkspaceMutation(
+            () => workspaceService.closeProject(path),
+          )
+          if (!snapshot) throw new Error('Workspace runtime did not return a close snapshot')
+          successfulWorkspaceMutationRevisionRef.current += 1
+          commitRegistry(reconcileSnapshot(registryRef.current, snapshot, createWorkbench))
+          const nextActivePath = snapshot.activeProjectPath
+          clearProjectErrors(path, ...(nextActivePath ? [nextActivePath] : []))
+          if (nextActivePath) void hydrateProject(nextActivePath)
+          return { closed: true, reason: null }
+        }
+
+        const result = closeProjectWorkspace(registryRef.current, path)
+        if (result.blocked) return { closed: false, reason: result.reason }
+        commitRegistry(result.state)
+        clearProjectErrors(path)
+        if (result.state.activePath) void hydrateProject(result.state.activePath)
+        return { closed: true, reason: null }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const reason = `Could not close project: ${message}`
+        if (registryRef.current.entriesByPath[path]) {
+          commitRegistry(setProjectWorkspaceCloseBlockedReason(
+            registryRef.current,
+            path,
+            reason,
+          ))
+          setErrorsByPath((current) => ({ ...current, [path]: message }))
+        }
+        return { closed: false, reason }
+      } finally {
+        preflightResult?.release?.()
+        projectClosePromisesRef.current.delete(path)
+        setCloseCheckingPaths((current) => {
+          if (!current.has(path)) return current
+          const next = new Set(current)
+          next.delete(path)
+          return next
+        })
+      }
+    })()
+    projectClosePromisesRef.current.set(path, operation)
+    return operation
+  }, [
+    clearProjectErrors,
+    commitRegistry,
+    createWorkbench,
+    enqueueWorkspaceMutation,
+    hydrateProject,
+    workspaceService,
+  ])
+
   const rows = useMemo<ProjectWorkspaceRow[]>(() => registry.openOrder.map((path) => {
     const entry = registry.entriesByPath[path]
     return {
@@ -338,8 +442,10 @@ export function useProjectWorkspaces<W extends JsonSafeValue>({
       project: (entry.project as RuntimeProject | null) ?? placeholderProject(path),
       hydration: entry.hydration,
       error: errorsByPath[path] ?? null,
+      closeChecking: closeCheckingPaths.has(path),
+      closeBlockedReason: entry.closeBlockedReason ?? null,
     }
-  }), [errorsByPath, registry])
+  }), [closeCheckingPaths, errorsByPath, registry])
 
   const activeProject = useMemo(() => {
     if (!registry.activePath) return fallbackProject
@@ -363,5 +469,6 @@ export function useProjectWorkspaces<W extends JsonSafeValue>({
     updateProjectWorkbench,
     activateProject,
     openProject,
+    closeProject,
   }
 }

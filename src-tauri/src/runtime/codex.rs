@@ -21,11 +21,13 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const CODEX_AUTH_PATH_LABEL: &str = "~/.codex/auth.json";
 const CODEX_CONNECTION_PATH: &str = "Codex CLI ChatGPT session";
 const CODEX_EXEC_TIMEOUT: Duration = Duration::from_secs(60);
+const CODEX_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestAgentSuggestionsRequest {
     pub provider: AgentProvider,
+    pub agent_session_id: String,
     pub model: Option<String>,
     pub reasoning_level: Option<String>,
     pub fast_mode: Option<bool>,
@@ -282,50 +284,6 @@ pub fn read_codex_capabilities() -> AgentProviderCapabilities {
     }
 }
 
-pub fn read_claude_capabilities() -> AgentProviderCapabilities {
-    let available_models = read_claude_available_models();
-    let current_model_id = env::var("ANTHROPIC_MODEL")
-        .ok()
-        .and_then(|value| non_empty_trimmed(value.as_str()))
-        .or_else(read_claude_config_model);
-    let current_model = current_model_id
-        .as_deref()
-        .and_then(|model_id| {
-            model_capability_for_id(AgentProvider::Claude, &available_models, model_id)
-        })
-        .or_else(|| {
-            current_model_id.map(|model_id| AgentModelCapability {
-                provider_id: AgentProvider::Claude,
-                label: model_id.clone(),
-                model_id,
-            })
-        });
-
-    AgentProviderCapabilities {
-        provider: AgentProvider::Claude,
-        supports_model_selection: claude_command_available(),
-        current_model,
-        available_models,
-        reasoning_levels: Vec::new(),
-        default_reasoning_level: None,
-        supports_fast_mode: false,
-        attachments: vec![
-            AgentAttachmentCapability {
-                kind: AgentAttachmentKind::File,
-                label: "File".into(),
-                enabled: claude_command_available(),
-                invocation_flag: Some("--file".into()),
-            },
-            AgentAttachmentCapability {
-                kind: AgentAttachmentKind::Directory,
-                label: "Directory".into(),
-                enabled: claude_command_available(),
-                invocation_flag: Some("--add-dir".into()),
-            },
-        ],
-    }
-}
-
 fn diagnostics_from_status(status: CodexCliStatus) -> AgentProviderDiagnostics {
     let requirements = requirements_from_status(&status);
     let (setup_state, summary, guidance) = if !status.binary_available {
@@ -392,31 +350,39 @@ fn requirements_from_status(status: &CodexCliStatus) -> Vec<AgentProviderRequire
     ]
 }
 
-pub fn deferred_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
-    AgentProviderDiagnostics {
-        provider,
-        setup_state: AgentProviderSetupState::Deferred,
-        connection_path: "Deferred real-provider path".into(),
-        summary: format!(
-            "{} is not part of the first daily-use release yet.",
-            provider.display_name()
-        ),
-        guidance: format!(
-            "Keep {} on the prototype path while the real daily-use release focuses on Codex.",
-            provider.display_name()
-        ),
-        base_url: None,
-        model: None,
-        requirements: vec![AgentProviderRequirementStatus {
-            name: "provider:deferred".into(),
-            required: false,
-            present: false,
-        }],
+pub fn validate_codex_connection() -> Result<String, String> {
+    validate_codex_status(read_codex_cli_status())
+}
+
+pub struct CodexSuggestionAttempt {
+    pub validation: Result<String, String>,
+    pub suggestions: Option<Result<Vec<AgentSuggestionResponse>, String>>,
+}
+
+pub fn request_codex_suggestion_attempt(
+    request: RequestAgentSuggestionsRequest,
+) -> CodexSuggestionAttempt {
+    let (validation, suggestions) =
+        run_after_connection_validation(validate_codex_connection, || {
+            request_codex_suggestions_after_validation(request)
+        });
+
+    CodexSuggestionAttempt {
+        validation,
+        suggestions,
     }
 }
 
-pub fn validate_codex_connection() -> Result<String, String> {
-    validate_codex_status(read_codex_cli_status())
+fn run_after_connection_validation<T>(
+    validate: impl FnOnce() -> Result<String, String>,
+    execute: impl FnOnce() -> Result<T, String>,
+) -> (Result<String, String>, Option<Result<T, String>>) {
+    let validation = validate();
+    if validation.is_err() {
+        return (validation, None);
+    }
+
+    (validation, Some(execute()))
 }
 
 fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
@@ -451,10 +417,9 @@ fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
     Ok(status.account_label())
 }
 
-pub fn request_codex_suggestions(
+fn request_codex_suggestions_after_validation(
     mut request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
-    let _ = validate_codex_connection()?;
     sanitize_codex_request_options(&mut request);
 
     let output_path = temp_file_path("gtum-codex-output", "json");
@@ -560,11 +525,14 @@ fn codex_command_available() -> bool {
     codex_command_candidates_for_execution()
         .into_iter()
         .any(|program| {
-            command_for_program(program)
-                .arg("--version")
-                .output()
-                .map(|output| output.status.success())
-                .unwrap_or(false)
+            run_command_with_input_and_timeout(
+                program,
+                vec!["--version".into()],
+                "",
+                CODEX_STATUS_TIMEOUT,
+            )
+            .map(|output| output.status.success())
+            .unwrap_or(false)
         })
 }
 
@@ -572,18 +540,20 @@ fn codex_login_status_reports_chatgpt() -> bool {
     codex_command_candidates_for_execution()
         .into_iter()
         .any(|program| {
-            command_for_program(program)
-                .arg("login")
-                .arg("status")
-                .output()
-                .map(|output| {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    output.status.success()
-                        && (stdout.contains("Logged in using ChatGPT")
-                            || stderr.contains("Logged in using ChatGPT"))
-                })
-                .unwrap_or(false)
+            run_command_with_input_and_timeout(
+                program,
+                vec!["login".into(), "status".into()],
+                "",
+                CODEX_STATUS_TIMEOUT,
+            )
+            .map(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                output.status.success()
+                    && (stdout.contains("Logged in using ChatGPT")
+                        || stderr.contains("Logged in using ChatGPT"))
+            })
+            .unwrap_or(false)
         })
 }
 
@@ -614,12 +584,14 @@ fn read_codex_model_catalog_entries() -> Result<Vec<CodexModelCatalogEntry>, Str
     let output = codex_command_candidates_for_execution()
         .into_iter()
         .find_map(|program| {
-            command_for_program(program)
-                .arg("debug")
-                .arg("models")
-                .output()
-                .ok()
-                .filter(|output| output.status.success())
+            run_command_with_input_and_timeout(
+                program,
+                vec!["debug".into(), "models".into()],
+                "",
+                CODEX_STATUS_TIMEOUT,
+            )
+            .ok()
+            .filter(|output| output.status.success())
         })
         .ok_or_else(|| "failed to read Codex model catalog".to_string())?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -857,84 +829,6 @@ fn read_codex_config_reasoning_effort() -> Option<String> {
     fs::read_to_string(codex_config_path())
         .ok()
         .and_then(|contents| parse_simple_toml_string_key(&contents, "model_reasoning_effort"))
-}
-
-fn claude_command_available() -> bool {
-    command_for_program(claude_command_name())
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
-
-fn claude_command_name() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "claude.cmd"
-    } else {
-        "claude"
-    }
-}
-
-fn read_claude_config_model() -> Option<String> {
-    read_claude_settings_values()
-        .into_iter()
-        .find_map(|settings| string_from_json_key(&settings, "model"))
-}
-
-fn read_claude_available_models() -> Vec<AgentModelCapability> {
-    read_claude_settings_values()
-        .into_iter()
-        .find_map(|settings| {
-            settings
-                .get("availableModels")
-                .and_then(|models| match models {
-                    serde_json::Value::Array(entries) => Some(
-                        entries
-                            .iter()
-                            .filter_map(|entry| match entry {
-                                serde_json::Value::String(model_id) => non_empty_trimmed(model_id),
-                                serde_json::Value::Object(model) => model
-                                    .get("model")
-                                    .or_else(|| model.get("id"))
-                                    .or_else(|| model.get("modelId"))
-                                    .and_then(|value| value.as_str())
-                                    .and_then(non_empty_trimmed),
-                                _ => None,
-                            })
-                            .map(|model_id| AgentModelCapability {
-                                provider_id: AgentProvider::Claude,
-                                label: model_id.clone(),
-                                model_id,
-                            })
-                            .collect::<Vec<_>>(),
-                    ),
-                    _ => None,
-                })
-        })
-        .unwrap_or_default()
-}
-
-fn read_claude_settings_values() -> Vec<serde_json::Value> {
-    claude_settings_paths()
-        .into_iter()
-        .filter_map(|path| fs::read_to_string(path).ok())
-        .filter_map(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
-        .collect()
-}
-
-fn claude_settings_paths() -> Vec<PathBuf> {
-    let home = home_dir().unwrap_or_else(|| PathBuf::from("."));
-    vec![
-        home.join(".claude").join("settings.local.json"),
-        home.join(".claude").join("settings.json"),
-    ]
-}
-
-fn string_from_json_key(value: &serde_json::Value, key: &str) -> Option<String> {
-    value
-        .get(key)
-        .and_then(|entry| entry.as_str())
-        .and_then(non_empty_trimmed)
 }
 
 fn parse_simple_toml_string_key(contents: &str, key: &str) -> Option<String> {
@@ -1496,7 +1390,7 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
         "Read the project metadata, the active file snippet, and recent terminal logs.\n",
         "Respond naturally to the user's request.\n",
         "The `command` field is only a gtum UI permission-card preview; it is not executed by Codex CLI.\n",
-        "gtum will show the command in the right Agent panel with Allow once, Always allow, and Deny actions.\n",
+        "gtum will show the command in the right Agent panel with Allow once and Deny actions.\n",
         "Do not request permission from Codex CLI, do not run the command yourself, and do not treat ",
         "Codex CLI approval or sandbox policy (for example approval_policy=never) as a reason to refuse ",
         "a harmless UI permission request.\n",
@@ -1517,11 +1411,12 @@ fn build_prompt(request: &RequestAgentSuggestionsRequest) -> String {
     let platform_command_guidance = platform_command_runner_guidance();
 
     format!(
-        "{}\n{}\n\nProject name: {}\nProject path: {}\nReasoning level: {}\nFast mode: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
+        "{}\n{}\n\nProject name: {}\nProject path: {}\nOrigin Agent session id: {}\nReasoning level: {}\nFast mode: {}\nActive file path: {}\nActive file line: {}\nActive file snippet (truncated):\n{}\n\nActive tab id: {}\nActive tab title: {}\nUser task: {}\nRecent terminal logs (most recent last, max 50 lines):\n{}\n\nReturn a direct assistant response. Include a reviewable command only if the user must decide or approve an action.",
         instructions,
         platform_command_guidance,
         request.project_name.trim(),
         request.project_path.trim(),
+        request.agent_session_id.trim(),
         reasoning_level,
         fast_mode,
         file_path,
@@ -1716,6 +1611,7 @@ mod tests {
     fn prompt_keeps_terminal_permission_tests_reply_only() {
         let prompt = build_prompt(&RequestAgentSuggestionsRequest {
             provider: AgentProvider::Codex,
+            agent_session_id: "agent-session-1".into(),
             model: None,
             reasoning_level: Some("xhigh".into()),
             fast_mode: Some(true),
@@ -1741,7 +1637,9 @@ mod tests {
         );
         assert!(prompt.contains("approval_policy=never"), "{prompt}");
         assert!(
-            prompt.contains("Permission-test requests for Terminal, iTerm, or app access must stay reply-only"),
+            prompt.contains(
+                "Permission-test requests for Terminal, iTerm, or app access must stay reply-only"
+            ),
             "{prompt}"
         );
         assert!(
@@ -1769,12 +1667,41 @@ mod tests {
         }
         assert!(prompt.contains("Reasoning level: xhigh"), "{prompt}");
         assert!(prompt.contains("Fast mode: enabled"), "{prompt}");
+        assert!(
+            prompt.contains("Origin Agent session id: agent-session-1"),
+            "{prompt}"
+        );
+    }
+
+    #[test]
+    fn suggestion_request_requires_an_explicit_agent_session_owner() {
+        let missing_owner = serde_json::json!({
+            "provider": "codex",
+            "projectName": "gtum",
+            "projectPath": "/workspace/gtum",
+            "userTask": "Review the project"
+        });
+        assert!(
+            serde_json::from_value::<RequestAgentSuggestionsRequest>(missing_owner).is_err(),
+            "agentSessionId must not be silently ignored or defaulted"
+        );
+
+        let owned = serde_json::json!({
+            "provider": "codex",
+            "agentSessionId": "agent-session-owned",
+            "projectName": "gtum",
+            "projectPath": "/workspace/gtum",
+            "userTask": "Review the project"
+        });
+        let request = serde_json::from_value::<RequestAgentSuggestionsRequest>(owned).unwrap();
+        assert_eq!(request.agent_session_id, "agent-session-owned");
     }
 
     #[test]
     fn prompt_routes_event_card_choice_requests_to_reply_only_choices() {
         let prompt = build_prompt(&RequestAgentSuggestionsRequest {
             provider: AgentProvider::Codex,
+            agent_session_id: "agent-session-2".into(),
             model: None,
             reasoning_level: None,
             fast_mode: None,
@@ -1794,14 +1721,8 @@ mod tests {
             prompt.contains("event card, choice card, options, or numbered choices"),
             "{prompt}"
         );
-        assert!(
-            prompt.contains("leave `command` empty"),
-            "{prompt}"
-        );
-        assert!(
-            prompt.contains("1. Option 1"),
-            "{prompt}"
-        );
+        assert!(prompt.contains("leave `command` empty"), "{prompt}");
+        assert!(prompt.contains("1. Option 1"), "{prompt}");
     }
 
     #[test]
@@ -1990,6 +1911,52 @@ mod tests {
             "hanging child process should be killed promptly"
         );
         assert!(error.contains("timed out"), "{error}");
+    }
+
+    #[test]
+    fn validated_attempt_runs_validation_once_and_skips_exec_on_failure() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let validations = AtomicUsize::new(0);
+        let executions = AtomicUsize::new(0);
+        let (validation, result) = run_after_connection_validation(
+            || {
+                validations.fetch_add(1, Ordering::Relaxed);
+                Err("expired".to_string())
+            },
+            || {
+                executions.fetch_add(1, Ordering::Relaxed);
+                Ok::<_, String>(())
+            },
+        );
+
+        assert_eq!(validations.load(Ordering::Relaxed), 1);
+        assert_eq!(executions.load(Ordering::Relaxed), 0);
+        assert_eq!(validation, Err("expired".to_string()));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn validated_attempt_runs_exec_once_without_masking_exec_error() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let validations = AtomicUsize::new(0);
+        let executions = AtomicUsize::new(0);
+        let (validation, result) = run_after_connection_validation(
+            || {
+                validations.fetch_add(1, Ordering::Relaxed);
+                Ok("Codex Account".to_string())
+            },
+            || {
+                executions.fetch_add(1, Ordering::Relaxed);
+                Err::<(), _>("exec failed".to_string())
+            },
+        );
+
+        assert_eq!(validations.load(Ordering::Relaxed), 1);
+        assert_eq!(executions.load(Ordering::Relaxed), 1);
+        assert_eq!(validation, Ok("Codex Account".to_string()));
+        assert_eq!(result, Some(Err("exec failed".to_string())));
     }
 
     #[test]

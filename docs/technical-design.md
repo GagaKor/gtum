@@ -91,6 +91,22 @@ This document defines technical direction and boundaries. Read these alongside i
 - [`development-guide.md`](./development-guide.md)
   - implementation rules, doc-absorption policy, and the `WORKLOG` lifecycle policy
 
+## Current Agent Runtime Contract (2026-07-15)
+
+- The center terminal runtime is exclusively user-owned. Agent requests, review, approval, job polling, cancellation, and restore must not invoke terminal creation, focus, input, close, rename, or split commands.
+- Approved commands use `AgentJobManager` and persist to `agent-jobs.json`. Create, list, read, and cancel all require canonical project ownership; session-filtered list requests also require the durable Agent session identifier.
+- Job history is bounded to 100 persisted records. UI hydration defaults to 25 rows, structured log tails are bounded, and terminal visibility requires both process exit and completed stdout/stderr reader drains.
+- Runtime states are `running`, `cancelling`, `completed`, `failed`, `cancelled`, and `interrupted`. On restart, persisted active states become `interrupted`; no process is resumed or relaunched.
+- The frontend owns project/session generations, deduplicated reads and cancels, stale-response rejection, final-log polling, and a bounded right-panel job map. Agent session identifiers and their selected `providerId` are persisted separately from conversation content so restored request and job ownership remain addressable.
+- `Codex` is available only after local CLI-session validation. A request first obtains a stored-connection revision lease, then performs exactly one CLI validation and optional execution on a blocking worker. Validation results update auth state only while the lease is current, so late results cannot overwrite disconnect/reconnect. CLI discovery, login status, and catalog probes have bounded subprocess timeouts.
+- `Claude` is exposed as an available, real provider through the same typed frontend auth and suggestion seams. A session can select and persist Claude independently from every other session; the request includes `agentSessionId`, and the frontend rejects blank ownership or a response from a different provider before rendering.
+- The Claude backend selects credentials in this order: a non-empty explicit `ANTHROPIC_API_KEY`, a valid top-level user `apiKeyHelper` containing one canonical absolute regular executable path, then an already authenticated session in the installed user-owned Claude Code CLI. The helper path accepts no arguments, whitespace, or shell syntax; callers that need arguments or secret lookup must provide a user-owned, cwd-independent executable wrapper. Bedrock, Vertex, Foundry, unknown providers, and credential-source mismatches fail closed.
+- For CLI-session mode, auth status and requests run with `--safe-mode --setting-sources ""` and without `--bare`; the API-key/helper modes retain bare operation. The request writes the prompt only to stdin, disables model tools, MCP, slash commands, Chrome integration, and session persistence, and accepts only schema-validated `structured_output`. Safe mode excludes user/project customizations, but organization-managed policy can still supply hooks, status-line commands, or file-suggestion commands, so this is not an absolute process-level no-hooks guarantee.
+- The adapter launches the validated Claude CLI by canonical absolute path, supplies an absolute-only child `PATH`, strips competing credentials, host-managed markers, custom headers, alternate hosts, cloud-provider modes, and inherited debug/telemetry/process-wrapper controls, then explicitly disables nonessential traffic and official-marketplace auto-install. An optional `CLAUDE_CONFIG_DIR` is accepted only as an existing canonical directory inside the canonical current-user home, pinned across validation/request, and revalidated before child launch. The adapter bounds process I/O under one deadline and discards stderr bytes after bounded draining. It never persists or exposes a key, helper output, identity, subscription metadata, token, or raw provider stderr.
+- GTUM does not implement Claude.ai OAuth or capture credentials. A missing local session returns typed guidance to run `claude auth login` in the user's own terminal and reconnect; the CLI alone reads its credential store. Connect and request completion remain protected by revision leases, and reloaded state requires fresh runtime validation.
+- Final integrated evidence: Claude Code CLI 2.1.210 exact safe-mode status exits 0 with `loggedIn: true`, `authMethod: claude.ai`, `apiProvider: firstParty`, and zero stderr bytes; exact bare status exits 1 with `loggedIn: false`, `authMethod: none`, `apiProvider: firstParty`, and zero stderr bytes. Lint passes, the production build passes with only the existing greater-than-500-KB chunk warning, isolated serial Playwright passes 200/200, Rust formatting and check pass, focused Claude tests pass 42/42, and the full Rust suite passes 147/147. No live `claude -p` inference was run without explicit user approval.
+- Technical support for a local CLI session does not authorize public third-party Claude.ai login routing. A public build must either pass an Anthropic approval/contract review for this use or keep Claude on API-key/supported-cloud credentials.
+
 ## 설계 기준 / Design Constraints
 
 ### 한국어
@@ -607,6 +623,8 @@ Selected-file state should be restorable at the workspace level, but should not 
 
 The initial request envelope for this slice includes:
 
+- `provider`
+- `agentSessionId`
 - `projectPath`
 - `projectName`
 - `activeTabId`
@@ -619,6 +637,7 @@ The initial request envelope for this slice includes:
 
 `activeFileSnippet` may be a bounded preview excerpt rather than the full file and should stay size-limited in the same spirit as attached terminal logs.
 When a line anchor exists, the snippet should prefer the anchored region rather than only the top of the file.
+The frontend captures `projectPath + agentSessionId + provider` before every async request boundary. `agentSessionId` is required and trimmed before IPC, and every returned suggestion must identify the requested provider before it can enter conversation or permission state.
 
 ## 터미널 세션 설계 / Terminal Session Design
 
@@ -697,7 +716,7 @@ The terminal should be treated as a long-lived session object, not just a text v
 - `src/prototype.jsx` now uses that seam only for user-owned terminal actions: creating terminal tabs, submitting user-typed terminal input, runtime log polling, and tab close termination. Agent approval decisions must not call this seam.
 - On Windows, user-created center terminal tabs use a hidden persistent shell process, preferring `powershell.exe -NoLogo -NoProfile -NoExit` before `pwsh.exe` and `cmd.exe` fallback. User input is written to that shell over stdin and stdout/stderr are streamed back into the center terminal, so shell builtins and aliases such as `dir`, `cd`, `ls`, and `clear` work without opening an external console window. `clear` and `cls` clear the runtime log buffer as well as being submitted to the shell.
 - The active frontend file-edit seam is `src/shared/api/runtimeProjects.ts`; it wraps `read_project_file`, `write_project_file`, and `apply_project_patch` so the center editor can save real files with a content-hash conflict guard and agent patch application can happen through an explicit file contract. Multi-file patch application must preflight every edit before writing any file, which prevents stale hashes or duplicate targets from producing partial writes.
-- The active frontend agent-owned execution seam is `src/shared/api/runtimeAgentJobs.ts`; it wraps `create_agent_job`, `read_agent_job_logs`, and `cancel_agent_job` so approved agent commands run as hidden background jobs instead of mutating center terminal tabs.
+- The active frontend agent-owned execution seam is `src/shared/api/runtimeAgentJobs.ts`; it wraps project-scoped `create_agent_job`, `list_agent_jobs`, `read_agent_job_logs`, and `cancel_agent_job` so approved agent commands run as hidden background jobs instead of mutating center terminal tabs.
 - Browser preview remains deterministic through the same service fallback, while interactive terminal ownership and Windows shell sessions stay in `src-tauri/src/runtime/pty/mod.rs`.
 
 ## 크로스 플랫폼 전략 / Cross-Platform Strategy
@@ -886,7 +905,6 @@ Project state should include at least the following Git metadata:
   - 작업 요청 전송
   - 응답 스트리밍 정규화
 - `ClaudeAdapter`
-  - Claude deferred path 상태 확인
   - 작업 요청 전송
   - 응답 스트리밍 정규화
 
@@ -918,9 +936,43 @@ The initial providers are `Codex` and `Claude`.
   - send task requests
   - normalize response streaming
 - `ClaudeAdapter`
-  - validate the Claude deferred-path state
-  - send task requests
-  - normalize response streaming
+  - discover the Claude CLI as a canonical absolute regular executable and select an explicit API key, then a strict user-level `apiKeyHelper` executable path, then a first-party authenticated local CLI session
+  - never initiate Claude.ai OAuth or read a Keychain/credential file; return external `claude auth login` guidance when the installed CLI has no valid first-party session
+  - reject third-party provider modes, unknown auth methods, and credential-source mismatches
+  - run a no-model-tools, no-MCP, no-slash-commands, no-Chrome, non-persistent structured-output request without using the center terminal
+  - parse only schema-valid `structured_output`, discard bounded stderr, enforce one all-I/O deadline, and return the shared provider response format
+  - protect connect and request completion with the same fail-closed revision-lease semantics used at the application boundary
+
+The implemented Claude CLI-session status check is constrained to this shape:
+
+```text
+claude --safe-mode --setting-sources "" auth status --json
+```
+
+The corresponding CLI-session request is constrained to this shape:
+
+```text
+claude --safe-mode --setting-sources "" --strict-mcp-config
+       --disable-slash-commands --no-chrome --no-session-persistence
+       --permission-mode dontAsk --tools "" --print
+       --output-format json --json-schema <compact-schema>
+```
+
+API-key and helper requests retain the isolated bare shape:
+
+```text
+claude --bare --safe-mode --strict-mcp-config --disable-slash-commands
+       --no-chrome --no-session-persistence --permission-mode dontAsk
+       --tools "" --print --output-format json --json-schema <compact-schema>
+```
+
+Only a sanitized `--settings <apiKeyHelper-only-json>` argument may be appended for the helper credential source. It is never passed into CLI-session mode. The top-level `apiKeyHelper` value is not a command line: it must be a single absolute path that canonicalizes to a regular executable, with a Unix execute bit where applicable, and it may contain no arguments, whitespace, or shell syntax. A caller that needs arguments or a secret lookup must provide a user-owned, cwd-independent executable wrapper. On Windows, a local-drive extended prefix such as `\\?\C:\...` is normalized to its drive path; UNC, volume-GUID, whitespace-bearing, and shell-bearing forms fail closed. An optional custom Claude config root must canonicalize to an existing directory inside the canonical current-user home; the adapter pins that approved root for helper discovery and CLI-session child setup, then fails closed if the path changes before launch.
+
+The Claude CLI itself is also selected and launched only as a canonical absolute regular executable. The child receives only absolute `PATH` entries and a credential-specific environment: competing credentials, host-managed markers, custom headers, alternate Anthropic hosts, cloud modes, and inherited debug/telemetry/process-wrapper controls are removed. Nonessential traffic and official-marketplace auto-install are explicitly disabled. One deadline covers child completion plus stdin, stdout, and stderr workers; timeout kills the owned child, stdout remains bounded, and stderr is bounded-drained and discarded instead of being returned through diagnostics or errors.
+
+The prompt is written to stdin, the child cwd is the captured canonical project, and the adapter does not pass `--file`, `--add-dir`, MCP config, browser-enable flags, resume/session flags, or provider-side write/terminal tools. Credential precedence is explicit API key, valid helper, then CLI session. A CLI-session status payload with no login becomes typed `MissingCliSession` guidance to run `claude auth login` externally; malformed or mismatched status remains a redacted fail-closed error.
+
+`--safe-mode --setting-sources ""` prevents user/project customizations from loading while leaving official CLI authentication available. It does not override organization-managed policy. Policy-configured hooks, status-line commands, or file-suggestion commands may still apply, although model tools and MCP remain disabled by the request flags; this design therefore makes no absolute no-hooks claim.
 
 ## 로그인 및 세션 설계 / Login and Session Design
 
@@ -950,32 +1002,36 @@ The initial providers are `Codex` and `Claude`.
 
 ### English
 
-The target path for the first daily-use release is `OAuth/session login` for `Codex`. Any env/API-key bridge that remains in the repository should be treated as a temporary development path rather than the release design.
+The target `Codex` path is `OAuth/session login`. Claude selects an explicit first-party API credential, then a strict top-level user `apiKeyHelper`, then the already authenticated session of the installed user-owned CLI. GTUM does not start Claude.ai OAuth or capture its token. The local CLI-session path remains internal-use infrastructure until Anthropic approval/contract review authorizes third-party distribution. Any `OPENAI_API_KEY` bridge that remains in the repository is a temporary Codex development path rather than the release design.
 
 #### Goals
 
 - users should be able to connect provider accounts from within the app
-- prefer browser or desktop-session login over in-app token forms
+- use the provider-approved credential path without an in-app raw-token form
 - store connection state securely and detect expiry, cancellation, or missing-scope errors
 
 #### Recommended Flow
 
-1. the user clicks connect for `Codex` or `Claude`
-2. the app opens the provider-approved login path in the system browser or desktop flow
-3. the runtime handles the callback, deep link, or sign-in completion event
-4. the runtime stores connection state and baseline diagnostics
-5. the UI shows connection state, reconnect state, and granted scopes
+1. the user clicks Connect for the provider selected by the active Agent session
+2. Codex validates the local CLI ChatGPT session; Claude selects an explicit API key, then a valid helper, then validates the installed CLI's first-party session through safe mode
+3. if the Claude CLI session is missing, the runtime tells the user to run `claude auth login` in their own terminal. It never opens a login browser, captures a token, reads the credential store, or mutates the center terminal
+4. the runtime stores only non-secret connection state and baseline diagnostics
+5. the UI shows connection state, reconnect state, and non-secret credential readiness while the session keeps its own `providerId`
 
 #### Session Storage Rules
 
 - prefer OS-level secure storage when available
 - do not store sensitive credentials in plain-text config files
+- persist only the non-secret credential-source label and documented scopes; do not persist or render an Anthropic API key, helper output, email, organization, OAuth token, or subscription metadata
 - if the session expires or loses scope, show a clear reconnect state in the UI
 
 #### Current Implementation Notes
 
 - The active frontend auth seam is `src/shared/api/runtimeAgentAuth.ts`; it wraps `list_agent_connections`, `begin_agent_login`, `disconnect_agent_provider`, and `agent_auth_runtime_snapshot`.
 - In the desktop runtime path, clicking `Connect Codex` calls `begin_agent_login` so the Rust auth manager can validate the local ChatGPT-backed Codex CLI session. It does not open a terminal tab or run `codex login`; setup guidance stays in the right Agent panel and provider row.
+- Claude now survives frontend normalization as `available + real`; connect and disconnect use the same runtime IPC boundary instead of a local deferred shortcut. The Rust API-key/helper/CLI-session adapter and stale-completion rejection are implemented and Rust-verified. Frontend availability still must not be read as proof of a connected credential or a live inference request.
+- A successful CLI-session validation persists only `credentialSource: "claude_cli_session"` and the scopes `provider:request` plus `credential:cli_session`. API-key/helper connections retain `credential:api_key`; restored records are not trusted until fresh runtime validation.
+- Public distribution of the CLI-session path is blocked pending Anthropic approval/contract review. The fallback public-release contract is API-key or supported cloud-provider authentication.
 - The Rust Codex runtime resolves the CLI from `PATH` first and then known macOS `Codex.app` bundle locations. PTY shells also receive existing Codex app resource directories in `PATH`, which keeps user-owned terminal sessions and `codex exec` working when the installed app is launched from Finder with a limited environment.
 - The current Codex runtime scope contract is `project:read` and `terminal:read`; missing or expired session state maps to provider `error` and can be retried by reconnecting after the CLI login finishes.
 - Browser preview keeps only explicit no-runtime fallbacks. It does not load a bundled project fixture, fabricate provider answers, or treat simulated browser-only UI as desktop-runtime success.
@@ -1248,13 +1304,14 @@ Because `gtum` interacts with local files and shell execution, security boundari
 - login sessions and sensitive data must use secure storage
 - provider responses should be normalized into shared internal formats before being exposed to the UI
 - the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
-- The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`, then normalizes the Codex response into either a reply-only assistant turn or a command-bearing turn that requires review.
-- `src/prototype.jsx` uses that seam only when the desktop runtime is available, `Codex` is the active provider, and the project is runtime-backed. Pending requests render concrete operation progress sequentially in the right agent workspace, completed turns record answer-time metadata, numbered replies can become selectable decision event cards, and command-bearing responses become explicit permission event cards with direct `Allow once`, `Always allow`, and `Deny` actions. Browser preview and deferred providers must not keep a canned agent response path; they surface explicit unavailable states instead.
-- The right agent workspace owns Codex conversation, command review, and decision recording. `Deny` keeps the refusal in the agent panel. `Allow once` and `Always allow` may mark a command as approved, but they must not dispatch work to user-visible center terminal tabs or panes. Existing interactive runtime tabs may receive command writes only from explicit user terminal actions, not from agent approval.
+- The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`, requires `agentSessionId`, rejects provider-mismatched responses, and normalizes either provider into a reply-only assistant turn or a command-bearing turn that requires review.
+- `src/prototype.jsx` uses that seam only when the desktop runtime is available, the selected session provider is connected, and the project is runtime-backed. Pending requests render concrete operation progress sequentially in the owning Agent session, completed turns record answer-time metadata, numbered replies can become selectable decision event cards, and command-bearing responses become explicit permission event cards with direct `Allow once` and `Deny` actions. Browser preview must not keep a canned agent response path; it surfaces an explicit runtime-unavailable state instead.
+- The right Agent workspace owns provider conversation, command review, decision recording, and Agent-job activity. `Deny` keeps the refusal in the Agent panel. `Allow once` is guarded so one decision creates at most one job, and it must not dispatch work to user-visible center terminal tabs or panes. Existing interactive runtime tabs may receive command writes only from explicit user terminal actions, not from agent approval.
 - Agent-owned execution is modeled as a separate background contract through `src-tauri/src/runtime/agent_jobs.rs` and `src/shared/api/runtimeAgentJobs.ts`. It must not reuse `create_terminal_session`, `create_terminal_session_with_command`, `execute_terminal_session_command`, or a future equivalent when that command creates or mutates the center workbench terminal surface.
 - The Codex `command` response is a gtum permission-card preview until the user approves it. Provider-side approval or sandbox settings, including `approval_policy=never`, must not be treated as a reason to refuse harmless permission-card suggestions.
 - Desktop `request_agent_suggestions` runs Codex response generation in a blocking worker task rather than the command handler path. The `codex exec` child process has a 60-second timeout and is killed before returning a visible error if it hangs.
 - Windows `Codex` suggestion requests must avoid passing the full prompt as a `codex.cmd` batch-file argument. The runtime sends the prompt over stdin and, when the npm shim can be resolved, executes `node.exe <codex.js>` directly before falling back to `codex.cmd`. Windows runtime subprocesses must be launched with no console window so Codex probes, model catalog reads, `codex exec`, and Git metadata reads do not flash terminal windows over the desktop UI.
+- Claude subprocesses execute the CLI and optional helper only by validated canonical absolute executable paths. Helper command lines, arguments, whitespace, and shell syntax are rejected; Windows extended local-drive paths are normalized while UNC and volume paths fail closed. The child uses an absolute-only `PATH`, strips alternate provider/host/authentication environment variables, applies one deadline to all process I/O, and never exposes drained stderr.
 
 ## MVP 구현 순서 / MVP Implementation Order
 

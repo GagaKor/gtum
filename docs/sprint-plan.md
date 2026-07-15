@@ -72,6 +72,38 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
+## Current Claude CLI Session Correction — 2026-07-15
+
+Goal: let GTUM validate an already authenticated, user-owned local Claude Code CLI session without reading or persisting its credentials, while retaining explicit API-key/helper support, fail-closed ownership, and the user-owned center-terminal boundary.
+
+Delivered scope:
+
+- approved commands create project- and Agent-session-scoped jobs in the isolated Agent runtime; `Always allow`, auto-approval, and terminal-target execution paths are removed
+- `agent-jobs.json` stores at most 100 jobs with bounded structured logs; restart converts stored nonterminal work to `interrupted` without relaunching it
+- the right Agent panel hydrates, polls, cancels, and renders job outcomes while prioritizing active work over terminal history
+- session close and approval creation are protected in both event orders, stale hydration/cancel responses cannot regress terminal state, and completed jobs stop polling
+- Codex requires a validated local CLI ChatGPT session; request validation runs once on a blocking worker and synchronizes through a revision lease so stale results cannot overwrite disconnect/reconnect
+- Claude is exposed as an available, real provider; the auth and suggestion services no longer coerce it to deferred or short-circuit Connect/Disconnect IPC
+- every Agent session persists its own `providerId`, and delayed provider requests are owned by captured `projectPath + agentSessionId + providerId`; blank ownership and provider-mismatched responses are rejected before rendering
+- Claude selects credentials in the order `ANTHROPIC_API_KEY`, strict top-level user `apiKeyHelper`, then the installed CLI's existing first-party session. Helper arguments, whitespace, shell syntax, third-party provider authentication, unknown methods, and source mismatches fail closed
+- GTUM never starts Claude.ai OAuth, captures a token, or reads the Keychain/credential store. Missing-login guidance tells the user to run `claude auth login` in their own terminal, then reconnect
+- CLI-session status and requests use `--safe-mode --setting-sources ""`; API-key/helper requests retain `--bare`. The runtime resolves canonical executables, uses an absolute-only child `PATH`, removes competing credential/provider modes, bounds all child I/O under one deadline, discards stderr, disables model tools, MCP, slash commands, Chrome integration, and session persistence, and accepts only schema-valid `structured_output`
+- safe mode excludes user/project customizations, but organization-managed policy hooks, status-line commands, or file-suggestion commands may still apply; this sprint does not claim an absolute process-level no-hooks boundary
+- auth persistence contains only non-secret credential-source labels and source-specific scopes. CLI sessions use `credential:cli_session`; API-key/helper sources use `credential:api_key`; restored state is revalidated before trust
+- connect and request results apply only while their captured revision lease is current; stale validation or completion cannot overwrite auth state, publish a reply, or create a permission card
+- the repeated-use E2E scenario covers 30 approve/run/complete-fail-cancel cycles across project switching, session reopen, and reload while proving the center workbench and terminal call log remain unchanged
+
+Current evidence and closing gates:
+
+- superseded pre-correction frontend baseline: the auth/suggestion services passed 22/22 tests, the Agent-session/provider workspace coverage passed 19/19, and the modified design regression selection passed 2/2. These counts are historical comparison only; the integrated 200/200 result below is authoritative
+- the focused Claude workspace path distinguishes CLI-session and API-credential labels and covers external missing-login guidance, stale discovery ordering, reverse-order request ownership, command review, `Allow once`, exactly one isolated Agent job, project switching, and a zero-call center-terminal assertion
+- final integrated automated evidence: lint passes; the production build passes with only the existing greater-than-500-KB chunk warning; isolated serial Playwright passes 200/200; Rust formatting and check pass; focused Claude tests pass 42/42; and the full Rust suite passes 147/147
+- non-billing local evidence with Claude Code CLI 2.1.210: exact safe-mode status exits 0 with `loggedIn: true`, `authMethod: claude.ai`, `apiProvider: firstParty`, and zero stderr bytes; exact bare status exits 1 with `loggedIn: false`, `authMethod: none`, `apiProvider: firstParty`, and zero stderr bytes. Only allowlisted classification fields were retained; no identity, raw status payload, Keychain data, or child stderr was recorded
+- no live `claude -p` inference was run because it consumes Agent SDK/subscription credit. Run one minimal structured request only after explicit user approval, then verify project/session ownership and zero center-terminal mutation
+- local technical support is not permission to ship third-party Claude.ai login routing. Public distribution is blocked until Anthropic approval/contract review confirms this use; otherwise the release provider must remain on API-key or supported cloud-provider credentials
+- retain Windows cross-compilation evidence, then complete the still-pending Windows installed-app sign-off for folder picker, PTY commands, Codex connection, isolated Agent jobs, restart restore, and a first real suggestion
+- run a longer manual soak; the bounded automated aging scenario is evidence of repeated-use stability, not a substitute for sustained native use
+
 ## 장문 문서 라우팅 / Long-Doc Routing
 
 ### 한국어
@@ -1899,7 +1931,7 @@ Sprint 17 initial backlog:
 - `P0` done: fix the Windows Codex request launch path that failed with `batch file arguments are invalid` by moving the prompt to stdin and bypassing the npm `.cmd` shim when possible
 - `P0` done: fix Windows installed-app startup when a legacy file occupies the app-data root, including Rust unit coverage and release-executable launch smoke
 - `P0` done: replace the simulated Codex provider-login path in the runtime desktop flow with `src/shared/api/runtimeAgentAuth.ts`, a `codex login --device-auth` terminal launcher, runtime connection hydration, disconnect handling, and Codex reconnect/error display
-- `P0` partial: approved commands now write to runtime-backed terminal tabs after the risk-based approval gate; remaining work is to broaden approval E2E coverage
+- `P0` done: approved commands run only as isolated Agent-owned jobs with right-panel status/log/cancel visibility; the user-visible center terminal is never created, selected, written, or otherwise mutated by Agent approval
 - `P0` partial: run an installable desktop smoke pass first; Windows build/launch/state-file initialization is covered, while native folder picker, PTY terminal, Codex login launcher, and first real suggestion request still need manual sign-off
 - `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files after the installed-app smoke baseline is captured
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
@@ -2033,12 +2065,6 @@ Sprint 17 initial backlog:
 - `Sprint 17`
   - is the new product design clearly prioritized over the existing implementation, with a small and testable first implementation slice
 
-## 다음 실행 추천 / Recommended Next Action
+## Recommended Next Action
 
-### 한국어
-
-다음 단계로는 [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)의 `Sprint 17`부터 실행한다. 첫 구현은 titlebar/statusbar, 좌측 `Projects/Files` accordion, 우측 agent model row를 대상으로 하고, 기존 구조와 충돌하면 새 디자인 시안을 우선한다.
-
-### English
-
-The next step is to execute `Sprint 17` from the [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md). The first implementation slice should target the titlebar/statusbar, left `Projects/Files` accordion, and right agent model row, and the new design should win whenever it conflicts with existing structure.
+Do not run live `claude -p` inference without explicit user approval. Next, resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Auto-approval remains out of scope.

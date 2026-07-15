@@ -136,9 +136,7 @@ fn terminal_path_env_from(path: Option<OsString>, extra_dirs: Vec<PathBuf>) -> O
 fn terminal_tool_dirs() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        let mut dirs = vec![PathBuf::from(
-            "/Applications/Codex.app/Contents/Resources",
-        )];
+        let mut dirs = vec![PathBuf::from("/Applications/Codex.app/Contents/Resources")];
 
         if let Ok(home) = user_home_dir() {
             dirs.push(
@@ -301,9 +299,7 @@ fn reject_shell_syntax(command: &str) -> Result<(), String> {
         .chars()
         .any(|ch| matches!(ch, '|' | '&' | '<' | '>' | ';' | '(' | ')'))
     {
-        return Err(
-            "approved command contains shell syntax; run it manually in a terminal".into(),
-        );
+        return Err("approved command contains shell syntax; run it manually in a terminal".into());
     }
 
     Ok(())
@@ -475,16 +471,14 @@ mod tests {
     fn windows_default_shell_prefers_powershell_then_cmd_fallback() {
         let candidates = terminal_shell_candidates(None);
 
-        assert!(
-            candidates[0]
-                .program
-                .to_ascii_lowercase()
-                .ends_with("powershell.exe")
-        );
+        assert!(candidates[0]
+            .program
+            .to_ascii_lowercase()
+            .ends_with("powershell.exe"));
         assert_eq!(candidates[0].args, vec!["-NoLogo", "-NoProfile", "-NoExit"]);
-        assert!(candidates.iter().any(|candidate| {
-            candidate.program.to_ascii_lowercase().ends_with("cmd.exe")
-        }));
+        assert!(candidates
+            .iter()
+            .any(|candidate| { candidate.program.to_ascii_lowercase().ends_with("cmd.exe") }));
     }
 
     #[cfg(target_os = "windows")]
@@ -552,10 +546,7 @@ mod tests {
                 .unwrap()
                 .as_millis()
         ));
-        let tool_dir = root
-            .join("Codex.app")
-            .join("Contents")
-            .join("Resources");
+        let tool_dir = root.join("Codex.app").join("Contents").join("Resources");
         std::fs::create_dir_all(&tool_dir).unwrap();
 
         let path = terminal_path_env_from(

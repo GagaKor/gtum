@@ -15,14 +15,21 @@ export type RuntimeAgentConnectionStatus =
   | 'error'
 
 export type RuntimeAgentConnectionKind = 'mock' | 'prototype' | 'real'
+export type RuntimeAgentProviderAvailability = 'available' | 'deferred'
+export type RuntimeAgentCredentialSource =
+  | 'claude_cli_session'
+  | 'anthropic_api_key'
+  | 'api_key_helper'
 
 export type RuntimeAgentConnectionSnapshot = {
   provider: AgentProviderId
   displayName: string
+  availability: RuntimeAgentProviderAvailability
   status: RuntimeAgentConnectionStatus
   connectionKind: RuntimeAgentConnectionKind
   accountLabel?: string | null
   accountEmail?: string | null
+  credentialSource?: RuntimeAgentCredentialSource | null
   requiredScopes: string[]
   expiresAt?: number | null
   callbackUrl?: string | null
@@ -64,7 +71,9 @@ export type AgentProviderViewState = {
   scope: string[]
   expiresInDays: number | null
   accountLabel?: string | null
+  credentialSource?: RuntimeAgentCredentialSource | null
   connectionKind?: RuntimeAgentConnectionKind
+  availability: RuntimeAgentProviderAvailability
   lastError?: string | null
 }
 
@@ -113,19 +122,58 @@ const expiresInDays = (expiresAt?: number | null): number | null => {
   return Math.ceil(diff / 86_400_000)
 }
 
+const normalizeConnection = (
+  connection: RuntimeAgentConnectionSnapshot,
+): RuntimeAgentConnectionSnapshot => ({
+  ...connection,
+  availability: connection.availability ?? 'available',
+})
+
+const unavailableConnection = (
+  provider: AgentProviderId,
+  status: RuntimeAgentConnectionStatus,
+  lastError: string | null,
+): RuntimeAgentConnectionSnapshot =>
+  normalizeConnection({
+    provider,
+    displayName: provider === 'codex' ? 'Codex' : 'Claude',
+    availability: 'available',
+    status,
+    connectionKind: 'real',
+    accountLabel: null,
+    accountEmail: null,
+    credentialSource: null,
+    requiredScopes: [],
+    expiresAt: null,
+    callbackUrl: null,
+    authUrl: null,
+    activeLoginId: null,
+    activeLoginState: null,
+    connectedAt: null,
+    lastLoginAttemptAt: status === 'error' ? Date.now() : null,
+    updatedAt: Date.now(),
+    lastError,
+  })
+
 export const providerViewStateFromConnection = (
   connection: RuntimeAgentConnectionSnapshot,
-): AgentProviderViewState => ({
-  id: connection.provider,
-  label: connection.displayName,
-  abbr: providerAbbr(connection.provider),
-  state: connection.status,
-  scope: connection.requiredScopes,
-  expiresInDays: expiresInDays(connection.expiresAt),
-  accountLabel: connection.accountLabel ?? null,
-  connectionKind: connection.connectionKind,
-  lastError: connection.lastError ?? null,
-})
+): AgentProviderViewState => {
+  const normalized = normalizeConnection(connection)
+
+  return {
+    id: normalized.provider,
+    label: normalized.displayName,
+    abbr: providerAbbr(normalized.provider),
+    state: normalized.status,
+    scope: normalized.requiredScopes,
+    expiresInDays: expiresInDays(normalized.expiresAt),
+    accountLabel: normalized.accountLabel ?? null,
+    credentialSource: normalized.credentialSource ?? null,
+    connectionKind: normalized.connectionKind,
+    availability: normalized.availability,
+    lastError: normalized.lastError ?? null,
+  }
+}
 
 const beginLoginPayload = (
   provider: AgentProviderId,
@@ -148,65 +196,48 @@ export const createAgentAuthRuntimeService = (
     async listConnections() {
       if (!hasRuntime()) return []
 
-      return invokeRuntime<RuntimeAgentConnectionSnapshot[]>('list_agent_connections')
+      const connections = await invokeRuntime<RuntimeAgentConnectionSnapshot[]>(
+        'list_agent_connections',
+      )
+      return connections.map(normalizeConnection)
     },
     async beginLogin(provider, requestedScopes) {
       if (!hasRuntime()) {
-        return {
+        return unavailableConnection(
           provider,
-          displayName: provider === 'codex' ? 'Codex' : 'Claude',
-          status: 'error',
-          connectionKind: provider === 'codex' ? 'real' : 'prototype',
-          accountLabel: null,
-          accountEmail: null,
-          requiredScopes: requestedScopes ? [...requestedScopes] : [],
-          expiresAt: null,
-          callbackUrl: null,
-          authUrl: null,
-          activeLoginId: null,
-          activeLoginState: null,
-          connectedAt: null,
-          lastLoginAttemptAt: Date.now(),
-          updatedAt: Date.now(),
-          lastError: 'Desktop runtime is not connected.',
-        }
+          'error',
+          'Desktop runtime is not connected.',
+        )
       }
 
-      return invokeRuntime<RuntimeAgentConnectionSnapshot>(
+      const connection = await invokeRuntime<RuntimeAgentConnectionSnapshot>(
         'begin_agent_login',
         beginLoginPayload(provider, requestedScopes),
       )
+      return normalizeConnection(connection)
     },
     async disconnect(provider) {
       if (!hasRuntime()) {
-        return {
-          provider,
-          displayName: provider === 'codex' ? 'Codex' : 'Claude',
-          status: 'disconnected',
-          connectionKind: provider === 'codex' ? 'real' : 'prototype',
-          accountLabel: null,
-          accountEmail: null,
-          requiredScopes: [],
-          expiresAt: null,
-          callbackUrl: null,
-          authUrl: null,
-          activeLoginId: null,
-          activeLoginState: null,
-          connectedAt: null,
-          lastLoginAttemptAt: null,
-          updatedAt: Date.now(),
-          lastError: null,
-        }
+        return unavailableConnection(provider, 'disconnected', null)
       }
 
-      return invokeRuntime<RuntimeAgentConnectionSnapshot>('disconnect_agent_provider', {
-        provider,
-      })
+      const connection = await invokeRuntime<RuntimeAgentConnectionSnapshot>(
+        'disconnect_agent_provider',
+        { provider },
+      )
+      return normalizeConnection(connection)
     },
     async readRuntimeSnapshot() {
       if (!hasRuntime()) return null
 
-      return invokeRuntime<RuntimeAgentAuthSnapshot>('agent_auth_runtime_snapshot')
+      const snapshot = await invokeRuntime<RuntimeAgentAuthSnapshot>(
+        'agent_auth_runtime_snapshot',
+      )
+      return {
+        ...snapshot,
+        connections: snapshot.connections.map(normalizeConnection),
+        pendingLogins: snapshot.pendingLogins,
+      }
     },
   }
 }

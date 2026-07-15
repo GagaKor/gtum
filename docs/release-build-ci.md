@@ -268,6 +268,24 @@ Important operating rules:
 - If release decisions feel unclear, reread `docs/DOCS_READING_ORDER.md` and this document.
 - The baseline credential required for release automation is `GITHUB_TOKEN`. Consider `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` only if code signing or macOS notarization is introduced later.
 
+## Claude Public-Distribution Compliance Gate
+
+GTUM can technically validate an already authenticated, user-owned local Claude Code CLI session without reading or persisting its credential. That local/internal capability is not evidence that GTUM may distribute third-party Claude.ai login routing.
+
+Anthropic's current official guidance distinguishes native subscription use from third-party products: developers building products or services should use API-key authentication through Claude Console or a supported cloud provider, and Claude.ai login or subscription-credential routing may require a separate approved commercial arrangement. Therefore:
+
+- public release is blocked while the CLI-session path is enabled unless Anthropic approval/contract review explicitly authorizes GTUM's use
+- without that approval, distributable builds must disable the CLI-session path and keep Claude on API-key or supported cloud-provider credentials
+- GTUM must not add in-app Claude.ai OAuth, capture tokens, or copy Keychain/credential data as a workaround
+- release evidence must distinguish non-billing `auth status` validation from live `claude -p` inference; live inference requires explicit user approval because it consumes Agent SDK/subscription credit
+
+Official references:
+
+- [Claude Code authentication](https://code.claude.com/docs/en/authentication)
+- [Programmatic/headless Claude Code usage](https://code.claude.com/docs/en/headless)
+- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-usage)
+- [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)
+
 ## Current Release Status Snapshot
 
 This section is the readiness view: what is already shippable, what is partial, and what is missing before `gtum` can be **successfully deployed and operated** in production. It is intentionally scoped to core deployment concerns (build/packaging, code signing, auto-update, CI/CD and versioning). For the full feature trace see `docs/sprint-plan.md`; for validation/aging coverage see `docs/MVP_VALIDATION_NOTES.md`. The project is currently at Sprint 17 (active), with Sprints 18–20 planned.
@@ -281,7 +299,7 @@ Done (verified against code/config):
 
 Partial:
 
-- Provider auth: the Codex real path now has a workspace-native `codex login --device-auth` terminal launcher, but cancellation, reconnect-after-expiry, and missing-scope UX still need broader validation.
+- Provider auth: Codex validates a local CLI session. Claude now supports an explicit API key, strict helper, and already authenticated local CLI session without in-app OAuth/token capture, but live inference, native Windows validation, and the public-distribution compliance gate remain open.
 - Agent suggestions/approval: approval-policy logic is duplicated between `src/prototype.jsx` and the FSD helper and is not wired to real command execution.
 - Frontend architecture: `src/prototype.jsx` is still ~4462 lines; only `Titlebar`/`StatusBar` are extracted to TSX.
 - Testing: browser/Vite E2E now covers the active design shell and typed service seams, and local macOS DMG smoke has been recorded. Windows real-device validation remains the first release-readiness gate; there are still no Rust unit tests around persistence.
@@ -292,6 +310,7 @@ Missing for production deployment:
 - The auto-update pipeline (the spec in `Auto Update Specification` above is 0% implemented).
 - A version-bump gate and a Linux release-artifact presence check.
 - Installed-app sign-off on Windows real hardware (Windows is the declared first daily-use platform).
+- Anthropic approval/contract confirmation for public Claude CLI-session routing, or a release-time restriction to API-key/supported-cloud credentials.
 
 ## Production Readiness Checklist (Core Deployment)
 
@@ -339,6 +358,7 @@ Action: treat the updater as a single dedicated sprint deliverable; it is requir
 4. `open` — **Version-bump / tag-collision.** A `master` merge without a version bump fails or collides on the `v__VERSION__` tag and confuses any future updater channel. Mitigate with a CI version-bump gate.
 5. `open` — **Windows real-device sign-off.** Windows is the first daily-use platform but only the compile path is automated; install + launch + Codex-connect + suggestion run on real hardware is not yet validated.
 6. `partial` — **Installed-app validation priority.** Web/Vite preview remains useful for fast UI regression checks, but it is explicitly secondary. Local macOS DMG smoke is recorded; Windows real-device install + launch + Codex-connect + suggestion execution is still required.
+7. `open` — **Claude public-distribution authentication terms.** The local CLI-session adapter is technically implemented, but Anthropic's official third-party guidance points product developers to API-key or supported-cloud authentication. Public builds must not offer Claude.ai login or route subscription credentials until Anthropic approval/contract review authorizes the use; otherwise disable the CLI-session path for distribution.
 
 ## First-Release Go / No-Go Matrix
 
@@ -352,8 +372,9 @@ Action: treat the updater as a single dedicated sprint deliverable; it is requir
 | Auto-update pipeline | missing | No — manual install is acceptable initially | Yes |
 | Version-bump gate / tag collision | partial | No — manageable by release discipline | Yes (automate it) |
 | Linux release-artifact check | missing | No | Recommended |
+| Claude CLI-session distribution approval | open | Yes if a manual release is distributed outside approved internal use; otherwise ship API/cloud auth only | Yes |
 
-Verdict: a **manual-install first release to Windows is a conditional GO** once (1) the storage-path fix is verified on-device and (2) Windows real-device sign-off is recorded, with the unsigned-install workaround documented in the release notes. It is a **NO-GO for public, store, or auto-updating GA** until code signing + notarization and the auto-update pipeline are implemented.
+Verdict: an **internal/manual-install Windows validation build is a conditional GO** once (1) the storage-path fix is verified on-device and (2) Windows real-device sign-off is recorded, with the unsigned-install workaround documented. Any distribution outside approved internal use must either disable Claude CLI-session authentication in favor of API/cloud credentials or complete the Anthropic approval/contract gate. It is a **NO-GO for public, store, or auto-updating GA** until that provider-auth gate, code signing + notarization, and the auto-update pipeline are resolved.
 
 ## Deferred Readiness Pass
 
