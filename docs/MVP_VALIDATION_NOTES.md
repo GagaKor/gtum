@@ -10,6 +10,14 @@
 
 This document captures the validation notes needed to judge `gtum` MVP completion. It records feature validation, E2E coverage, the first aging-test draft, and the current platform status.
 
+## Long-Doc Routing
+
+This document exceeds 200 lines. Read only the section needed for the current gate:
+
+- use `Automated Validation Coverage` and the newest dated validation section for current code evidence
+- use `Validation Priority` and `Current MVP Assessment` for remaining release gates
+- use `Current Automated Aging Test` and `Platform Status` for repeated-use or installed-app validation
+
 ## 자동화 검증 범위 / Automated Validation Coverage
 
 ### 한국어
@@ -76,6 +84,17 @@ Before using web-preview results as evidence, the current sprint or release pass
 - validate Claude through an explicit `ANTHROPIC_API_KEY`, an explicitly selected top-level user `apiKeyHelper` containing one canonical absolute regular executable path, or an already authenticated installed user-owned CLI session; keep all credential values, tokens, and identity metadata out of UI, logs, and persistence
 - when CLI login is missing, instruct the user to run `claude auth login` externally. GTUM must not open a Claude login browser, capture OAuth tokens, read Keychain/credential files, or mutate the center terminal
 - request Claude through the source-specific safe-mode or bare no-tools structured-output contract, reject stale connection/request completion, and prove the result remains in its captured project and Agent session without mutating the center terminal
+
+## 2026-07-15 Provider-Aware Model Selection Slice
+
+- Runtime capability ownership is provider-specific. Claude advertises exactly `default`, `best`, `sonnet`, `opus`, and `haiku`; top-level/per-model provider mismatches, blank model metadata, and duplicate IDs are rejected before the catalog reaches UI state.
+- `best` delegates account-entitlement resolution to Claude Code. Direct Fable, exact-version, 1M-context, effort, and fast-mode controls remain deferred until structured entitlement discovery exists, and organization-managed policy remains authoritative.
+- Agent directory persistence stores trimmed `selectedModels.codex` and `selectedModels.claude` per project/session. A supported catalog that definitively removes a model clears only that provider key and sends `model: null`; unavailable or not-yet-loaded capability state preserves persistence until it can be validated.
+- Send snapshots the provider with only its validated explicit selection. Claude adds one separate `--model`, `opus` pair in fake-child coverage, leaves implicit default requests flag-free, and rejects blank, cross-provider, version-specific, leading-dash, and unknown values before spawning the child.
+- Focused evidence: the Claude Rust runtime module passes 44/44; `runtime-agent-suggestions-service.spec.ts` passes 24/24; and the provider model workspace/UI subset passes 5/5, including provider round trips, localStorage reload, stale cleanup, unavailable preservation, accessible picker state, request ownership, and zero center-terminal calls.
+- The touched slices pass lint, production build with only the existing greater-than-500-KB chunk warning, and Rust formatting checks. The complete post-change regression gate remains pending and is not claimed by these focused counts.
+- No live `claude -p` inference was run for this slice. Model response quality, account-specific alias resolution, and billing behavior remain outside this evidence.
+- The [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md) tracks the remaining full verification and `dev` integration steps.
 
 ## 2026-07-15 Claude CLI Session Authentication Correction
 
@@ -181,7 +200,7 @@ This is bounded browser-driven evidence with injected runtime seams. Rust tests 
 
 ## Current MVP Assessment
 
-The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The following gates remain before an MVP-complete claim:
+The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude provider and model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The provider-aware model slice has focused verification only; the complete post-change regression gate still remains before integration. The following gates remain before an MVP-complete claim:
 
 - native Windows installed-app validation for folder picker, PTY commands, Codex reconnect/expiry behavior, isolated Agent-job execution, restart restore, and a first real suggestion
 - one explicitly user-approved live Claude request plus the full connect, command review, `Allow once`, isolated Agent-job, project-switch, and zero-center-terminal-mutation regression path

@@ -20,7 +20,7 @@
 - Test: `src-tauri/src/runtime/claude.rs:1695-1753`
 - Test: `src-tauri/src/runtime/claude.rs:2104-2185`
 
-- [ ] **Step 1: Write failing capability tests**
+- [x] **Step 1: Write failing capability tests**
 
 Replace the default-only assertion with an installed-CLI capability assertion whose model IDs and provider ownership are exactly:
 
@@ -35,11 +35,11 @@ assert!(capabilities.supports_model_selection);
 
 Also assert that an unavailable CLI keeps the same descriptive aliases but reports selection support as unavailable.
 
-- [ ] **Step 2: Write failing argv and rejection tests**
+- [x] **Step 2: Write failing argv and rejection tests**
 
 Require `model: Some("opus")` to add exactly one `--model`, `opus` pair without changing the existing safe-mode/no-tools arguments. Require `None` to preserve the current exact argv. Require blank, Codex, version-specific, leading-dash, and unknown model values to fail before the fake child is spawned.
 
-- [ ] **Step 3: Run focused Rust tests and verify RED**
+- [x] **Step 3: Run focused Rust tests and verify RED**
 
 Run:
 
@@ -50,7 +50,7 @@ cargo test --manifest-path src-tauri/Cargo.toml runtime::claude::tests::selected
 
 Expected: both fail because Claude currently exposes only `default` and ignores `request.model`.
 
-- [ ] **Step 4: Implement the bounded model contract**
+- [x] **Step 4: Implement the bounded model contract**
 
 Add one static capability table:
 
@@ -66,9 +66,11 @@ const CLAUDE_MODEL_ALIASES: [(&str, &str); 5] = [
 
 Build `AgentModelCapability` rows with `provider_id: AgentProvider::Claude`. Normalize only exact trimmed aliases from this table. Add `--model` and the selected alias as two `OsString` entries only after validation. Do not add exact-version, 1M, effort, fast-mode, attachment, tool, resume, or fallback controls.
 
-- [ ] **Step 5: Run focused Rust tests and verify GREEN**
+- [x] **Step 5: Run focused Rust tests and verify GREEN**
 
 Run the two focused commands plus all Claude runtime tests. Expected: selected aliases pass, invalid values never spawn the child, and existing API/helper/CLI-session argv assertions remain green.
+
+Completed evidence: the Claude runtime module passes 44/44. Fake-child coverage verifies the exact separate `--model`, `opus` pair, no flag for implicit default, and rejection before spawn for invalid values.
 
 ### Task 2: Validate provider capability ownership at the frontend boundary
 
@@ -77,7 +79,7 @@ Run the two focused commands plus all Claude runtime tests. Expected: selected a
 - Modify: `src/shared/api/runtimeAgentSuggestions.ts:328-334`
 - Test: `tests/e2e/runtime-agent-suggestions-service.spec.ts:93-228`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Add Claude capability fixtures and require the service to reject:
 
@@ -89,7 +91,7 @@ await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
 
 Cover a response whose top-level provider is Codex, a Claude response containing a Codex-owned model, blank model IDs, and duplicate model IDs.
 
-- [ ] **Step 2: Run the focused Playwright service test and verify RED**
+- [x] **Step 2: Run the focused Playwright service test and verify RED**
 
 Run:
 
@@ -99,13 +101,15 @@ npx playwright test tests/e2e/runtime-agent-suggestions-service.spec.ts --worker
 
 Expected: invalid capability payloads are currently returned unchanged.
 
-- [ ] **Step 3: Implement runtime capability validation**
+- [x] **Step 3: Implement runtime capability validation**
 
 Normalize the capability response before returning it. Require the response provider and every `currentModel`/`availableModels[].providerId` to equal the requested provider, require nonblank IDs and labels, and reject duplicate IDs. Preserve valid reasoning, fast-mode, and attachment fields unchanged.
 
-- [ ] **Step 4: Re-run the focused service tests and verify GREEN**
+- [x] **Step 4: Re-run the focused service tests and verify GREEN**
 
 Expected: valid Codex and Claude capability responses pass; cross-provider or malformed model ownership fails closed.
+
+Completed evidence: `runtime-agent-suggestions-service.spec.ts` passes 24/24 with provider-owner, malformed metadata, and duplicate-ID rejection coverage.
 
 ### Task 3: Preserve provider-specific selections and drop stale models
 
@@ -118,15 +122,15 @@ Expected: valid Codex and Claude capability responses pass; cross-provider or ma
 - Test: `tests/e2e/claude-provider-workspaces.spec.ts:79-183`
 - Test: `tests/e2e/claude-provider-workspaces.spec.ts:432-548`
 
-- [ ] **Step 1: Write a failing provider round-trip test**
+- [x] **Step 1: Write a failing provider round-trip test**
 
 Make the harness return distinct Codex and Claude capabilities. Select a Codex model, switch to Claude, select `opus`, switch back and forth, and assert each provider restores only its own selection. Assert the request payloads pair `provider: "claude"` with `model: "opus"` and Codex with its own model.
 
-- [ ] **Step 2: Write failing persistence and stale-selection tests**
+- [x] **Step 2: Write failing persistence and stale-selection tests**
 
 Require `selectedModels.codex` and `selectedModels.claude` in `gtum.agent-session-directory.v1`, reload the page, and verify the correct model returns for each provider. Then seed a removed Claude model ID, return a catalog without it, and require the UI to show the current/default model, remove the stale stored value, and send `model: null`.
 
-- [ ] **Step 3: Run the focused UI test and verify RED**
+- [x] **Step 3: Run the focused UI test and verify RED**
 
 Run:
 
@@ -136,17 +140,19 @@ npx playwright test tests/e2e/claude-provider-workspaces.spec.ts --workers=1
 
 Expected: Claude has no selectable models, selected model state is not serialized, and stale values are sent unchanged.
 
-- [ ] **Step 4: Implement provider-keyed persistence and effective-model derivation**
+- [x] **Step 4: Implement provider-keyed persistence and effective-model derivation**
 
 Read and write only trimmed non-empty `codex` and `claude` entries in each session's `selectedModels`. Derive the send-time model only when it remains present in the active provider capability list. When a loaded capability no longer contains a stored selection, remove that provider key without touching the other provider. Keep `null` as the unselected runtime-default request value.
 
-- [ ] **Step 5: Make the picker state truthful and accessible**
+- [x] **Step 5: Make the picker state truthful and accessible**
 
 Use the effective selected/current model when setting the active option. Add a provider-specific accessible trigger name, `aria-haspopup="listbox"`, one truthful `aria-selected`, and close the model menu when the provider changes. Do not create or touch a center terminal surface.
 
-- [ ] **Step 6: Re-run the focused UI tests and verify GREEN**
+- [x] **Step 6: Re-run the focused UI tests and verify GREEN**
 
 Expected: provider round trips, reload restore, stale cleanup, request payload ownership, and zero center-terminal calls all pass.
+
+Completed evidence: the provider-aware subset in `claude-provider-workspaces.spec.ts` passes 5/5, covering reload persistence, stale-versus-unavailable behavior, provider/model request snapshots, accessible picker state, and zero center-terminal calls. The touched frontend slice passes lint and production build.
 
 ### Task 4: Synchronize the runtime contract and evidence
 
@@ -160,13 +166,15 @@ Expected: provider round trips, reload restore, stale cleanup, request payload o
 - Modify: `docs/MVP_VALIDATION_NOTES.md:80-91`
 - Modify: `docs/README.md`
 
-- [ ] **Step 1: Document the new provider/model contract in English**
+- [x] **Step 1: Document the new provider/model contract in English**
 
 State that Claude exposes a bounded alias capability list, selected models belong to `project + Agent session + provider`, invalid or stale IDs become the runtime default, and only validated Claude aliases become `--model` child arguments. State that organization policy and account entitlement remain authoritative and that direct Fable, exact-version, 1M, effort, and fast controls remain deferred until structured discovery exists.
 
 - [ ] **Step 2: Record verification evidence without claiming live inference**
 
 Record focused/full Rust and Playwright counts, lint/build results, fake-child exact argv evidence, and that no paid Claude inference was used for this slice.
+
+Current evidence recorded: Rust Claude module 44/44, suggestion service Playwright 24/24, provider UI Playwright 5/5, touched-slice lint/build/fmt checks, and fake-child argv coverage. The complete post-change suite is intentionally still pending under Task 5, so this step remains open and no live-inference claim is made.
 
 ### Task 5: Verify and integrate all Madrid work into `dev`
 

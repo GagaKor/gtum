@@ -72,6 +72,28 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
+## Current Provider-Aware Model Selection Slice — 2026-07-15
+
+Goal: make model choices follow the selected provider, survive project/session/provider switching, and reach the isolated provider process only after runtime-backed ownership validation.
+
+Delivered scope:
+
+- `read_agent_provider_capabilities` remains the catalog authority. The frontend rejects a top-level provider mismatch, cross-provider current/available models, blank IDs or labels, and duplicate model IDs.
+- Claude exposes exactly `default`, `best`, `sonnet`, `opus`, and `haiku`. `best` delegates the entitlement-aware choice to Claude Code; direct Fable, exact-version, 1M-context, effort, and fast-mode controls remain deferred until structured entitlement discovery exists.
+- Each project/Agent-session record persists `selectedModels` independently for Codex and Claude. Provider switching restores the matching choice without leaking one provider's model into the other.
+- A supported catalog that definitively omits a stored model removes only that provider's value and sends `model: null`; unavailable or not-yet-loaded capability state preserves persistence but cannot forward the value until validation succeeds.
+- Send snapshots the provider and its validated explicit model together. Claude accepts only bounded aliases, adds exactly one separate `--model <alias>` pair for an explicit choice, adds no model flag for implicit default, and rejects invalid values before child spawn.
+- The model picker exposes provider-specific accessible naming, listbox semantics, one truthful selection, Escape close/focus behavior, and closes when the provider changes. These paths do not touch the user-owned center terminal.
+- Account entitlement and organization-managed policy remain authoritative. This slice does not infer direct Fable availability and did not run live `claude -p` inference.
+
+Current focused evidence and remaining gate:
+
+- the Claude Rust runtime module passes 44/44, including fake-child exact argv and pre-spawn invalid-value rejection
+- `runtime-agent-suggestions-service.spec.ts` passes 24/24
+- the provider-aware subset in `claude-provider-workspaces.spec.ts` passes 5/5, including reload, stale/unavailable behavior, request ownership, accessibility state, and zero center-terminal calls
+- the touched slices pass lint, production build with only the existing greater-than-500-KB chunk warning, and Rust formatting checks
+- the complete post-change lint/build/serial Playwright/Rust check/test gate and `dev` integration remain pending; do not treat the focused counts as final integrated verification
+
 ## Current Claude CLI Session Correction — 2026-07-15
 
 Goal: let GTUM validate an already authenticated, user-owned local Claude Code CLI session without reading or persisting its credentials, while retaining explicit API-key/helper support, fail-closed ownership, and the user-owned center-terminal boundary.
@@ -2067,4 +2089,4 @@ Sprint 17 initial backlog:
 
 ## Recommended Next Action
 
-Do not run live `claude -p` inference without explicit user approval. Next, resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Auto-approval remains out of scope.
+First complete the post-model-selection lint/build/serial Playwright/Rust gate and integrate the verified result into `dev`. Do not run live `claude -p` inference without explicit user approval. Then resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Auto-approval remains out of scope.

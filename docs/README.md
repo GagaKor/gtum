@@ -21,6 +21,7 @@
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
 - [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
+- [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
 - [Claude API Provider Integration Plan (Historical, Superseded)](./superpowers/plans/2026-07-14-claude-api-provider.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
@@ -89,6 +90,8 @@
   - Codex login, real suggestion, approval, PTY execution, restore, and installable-app smoke를 mock fallback 없이 완성할 때 읽는다.
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
   - Read this for the active Claude credential-source correction, external CLI login flow, safe-mode isolation contract, validation evidence, and public-distribution compliance gate. It supersedes the 2026-07-14 API-only plan.
+- [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
+  - Read this for the active provider capability catalog, per-session provider/model persistence, stale-model fallback, and validated Claude `--model` alias contract.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
