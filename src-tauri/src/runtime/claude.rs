@@ -31,8 +31,13 @@ const MAX_CLAUDE_PROMPT_BYTES: usize = 256 * 1024;
 const CLAUDE_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const CLAUDE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CLAUDE_SCHEMA_VERSION: u64 = 1;
-const CLAUDE_DEFAULT_MODEL_ID: &str = "default";
-const CLAUDE_DEFAULT_MODEL_LABEL: &str = "Claude CLI default";
+const CLAUDE_MODEL_ALIASES: [(&str, &str); 5] = [
+    ("default", "Claude default"),
+    ("best", "Best available"),
+    ("sonnet", "Sonnet"),
+    ("opus", "Opus"),
+    ("haiku", "Haiku"),
+];
 
 const CLAUDE_ALWAYS_REMOVED_ENVIRONMENT: &[&str] = &[
     "DEBUG",
@@ -1204,6 +1209,35 @@ fn claude_request_arguments(
     arguments
 }
 
+fn validated_claude_model(model: Option<&str>) -> Result<Option<&str>, String> {
+    let Some(model) = model else {
+        return Ok(None);
+    };
+    let model = model.trim();
+    if CLAUDE_MODEL_ALIASES
+        .iter()
+        .any(|(model_id, _)| *model_id == model)
+    {
+        Ok(Some(model))
+    } else {
+        Err("Claude request selected an unsupported model.".into())
+    }
+}
+
+fn claude_request_arguments_for_model(
+    credential: Option<&ClaudeCredentialSelection>,
+    schema: &str,
+    model: Option<&str>,
+) -> Result<Vec<OsString>, String> {
+    let model = validated_claude_model(model)?;
+    let mut arguments = claude_request_arguments(credential, schema);
+    if let Some(model) = model {
+        arguments.push(OsString::from("--model"));
+        arguments.push(OsString::from(model));
+    }
+    Ok(arguments)
+}
+
 fn build_claude_prompt(request: &RequestAgentSuggestionsRequest) -> Result<String, String> {
     let session_id = request.agent_session_id.trim();
     if session_id.is_empty() {
@@ -1382,9 +1416,11 @@ fn request_claude_suggestions_with(
     request.project_path = canonical_project.to_string_lossy().into_owned();
     let prompt = build_claude_prompt(&request)?;
     let schema = claude_suggestion_schema()?;
+    let arguments =
+        claude_request_arguments_for_model(credential, &schema, request.model.as_deref())?;
     let output = run_bounded_process(
         program,
-        &claude_request_arguments(credential, &schema),
+        &arguments,
         Some(&canonical_project),
         Some(prompt.as_bytes()),
         context,
@@ -1453,16 +1489,23 @@ pub fn request_claude_suggestion_attempt(
 }
 
 pub fn read_claude_capabilities() -> AgentProviderCapabilities {
-    let default_model = AgentModelCapability {
-        provider_id: AgentProvider::Claude,
-        model_id: CLAUDE_DEFAULT_MODEL_ID.into(),
-        label: CLAUDE_DEFAULT_MODEL_LABEL.into(),
-    };
+    claude_capabilities(discover_claude_cli().is_some())
+}
+
+fn claude_capabilities(cli_available: bool) -> AgentProviderCapabilities {
+    let available_models = CLAUDE_MODEL_ALIASES
+        .into_iter()
+        .map(|(model_id, label)| AgentModelCapability {
+            provider_id: AgentProvider::Claude,
+            model_id: model_id.into(),
+            label: label.into(),
+        })
+        .collect::<Vec<_>>();
     AgentProviderCapabilities {
         provider: AgentProvider::Claude,
-        supports_model_selection: false,
-        current_model: Some(default_model.clone()),
-        available_models: vec![default_model],
+        supports_model_selection: cli_available,
+        current_model: available_models.first().cloned(),
+        available_models,
         reasoning_levels: Vec::new(),
         default_reasoning_level: None,
         supports_fast_mode: false,
@@ -1749,6 +1792,112 @@ mod tests {
             "--session-id",
         ] {
             assert!(!rendered.contains(forbidden), "unexpected {forbidden}");
+        }
+    }
+
+    #[test]
+    fn selected_model_is_a_single_validated_cli_argument() {
+        let credential = ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        };
+        let schema = claude_suggestion_schema().unwrap();
+        let base_arguments = [
+            "--bare",
+            "--safe-mode",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--no-chrome",
+            "--no-session-persistence",
+            "--permission-mode",
+            "dontAsk",
+            "--tools",
+            "",
+            "--print",
+            "--output-format",
+            "json",
+            "--json-schema",
+            schema.as_str(),
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect::<Vec<_>>();
+        assert_eq!(
+            claude_request_arguments_for_model(Some(&credential), &schema, None).unwrap(),
+            base_arguments
+        );
+
+        let mut expected_opus_arguments = base_arguments.clone();
+        expected_opus_arguments.extend([OsString::from("--model"), OsString::from("opus")]);
+        let opus_arguments =
+            claude_request_arguments_for_model(Some(&credential), &schema, Some("opus")).unwrap();
+        assert_eq!(opus_arguments, expected_opus_arguments);
+        assert_eq!(
+            opus_arguments
+                .iter()
+                .filter(|argument| *argument == OsStr::new("--model"))
+                .count(),
+            1
+        );
+
+        let mut expected_default_arguments = base_arguments.clone();
+        expected_default_arguments.extend([OsString::from("--model"), OsString::from("default")]);
+        assert_eq!(
+            claude_request_arguments_for_model(Some(&credential), &schema, Some("default"))
+                .unwrap(),
+            expected_default_arguments
+        );
+        assert_eq!(
+            claude_request_arguments_for_model(Some(&credential), &schema, Some("  opus  "))
+                .unwrap(),
+            expected_opus_arguments
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn invalid_models_are_rejected_before_child_spawn() {
+        let root = TestRoot::new("invalid-model-spawn");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = root.path().join("fake-claude");
+        let spawned = PathBuf::from(format!("{}.spawned", program.display()));
+        write_test_executable(
+            &program,
+            concat!(
+                "printf ran > \"$0.spawned\"\n",
+                "/bin/cat >/dev/null\n",
+                "printf '%s' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"provider\":\"claude\",\"schemaVersion\":1,\"summary\":\"Unexpected spawn\",\"command\":\"\",\"preferredTarget\":\"current_tab\",\"confidence\":\"high\",\"error\":null}}'\n",
+            ),
+        );
+        let credential = ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        };
+        let context = invocation_context(Some(credential));
+
+        for (kind, model) in [
+            ("blank", "   "),
+            ("Codex", "gpt-5.2-codex"),
+            ("version-specific", "claude-opus-4-1-20250805"),
+            ("leading-dash", "--help"),
+            ("unknown", "fable"),
+        ] {
+            let mut request = claude_request(&project);
+            request.model = Some(model.into());
+            let result = request_claude_suggestions_with(
+                &program,
+                &context,
+                request,
+                Duration::from_secs(2),
+            );
+
+            assert!(
+                result.is_err(),
+                "{kind} model reached the fake child: {}",
+                spawned.exists()
+            );
+            assert!(!spawned.exists(), "{kind} model spawned the fake child");
         }
     }
 
@@ -2101,20 +2250,56 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_are_default_only_without_tools_or_attachments() {
-        let capabilities = read_claude_capabilities();
-        assert_eq!(capabilities.provider, AgentProvider::Claude);
-        assert!(!capabilities.supports_model_selection);
-        assert!(capabilities.current_model.is_some());
-        assert_eq!(capabilities.available_models.len(), 1);
-        assert!(capabilities.reasoning_levels.is_empty());
-        assert_eq!(capabilities.default_reasoning_level, None);
-        assert!(!capabilities.supports_fast_mode);
-        assert_eq!(capabilities.attachments.len(), 4);
-        assert!(capabilities
-            .attachments
-            .iter()
-            .all(|attachment| !attachment.enabled && attachment.invocation_flag.is_none()));
+    fn capabilities_offer_bounded_claude_aliases() {
+        let assert_descriptive_aliases = |capabilities: &AgentProviderCapabilities| {
+            assert_eq!(capabilities.provider, AgentProvider::Claude);
+            assert_eq!(
+                capabilities
+                    .available_models
+                    .iter()
+                    .map(|model| model.model_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["default", "best", "sonnet", "opus", "haiku"],
+            );
+            assert_eq!(
+                capabilities
+                    .available_models
+                    .iter()
+                    .map(|model| model.label.as_str())
+                    .collect::<Vec<_>>(),
+                vec![
+                    "Claude default",
+                    "Best available",
+                    "Sonnet",
+                    "Opus",
+                    "Haiku",
+                ],
+            );
+            assert!(capabilities
+                .available_models
+                .iter()
+                .all(|model| model.provider_id == AgentProvider::Claude));
+            let current_model = capabilities.current_model.as_ref().unwrap();
+            assert_eq!(current_model.provider_id, AgentProvider::Claude);
+            assert_eq!(current_model.model_id, "default");
+            assert_eq!(current_model.label, "Claude default");
+            assert!(capabilities.reasoning_levels.is_empty());
+            assert_eq!(capabilities.default_reasoning_level, None);
+            assert!(!capabilities.supports_fast_mode);
+            assert_eq!(capabilities.attachments.len(), 4);
+            assert!(capabilities
+                .attachments
+                .iter()
+                .all(|attachment| !attachment.enabled && attachment.invocation_flag.is_none()));
+        };
+
+        let installed = claude_capabilities(true);
+        assert_descriptive_aliases(&installed);
+        assert!(installed.supports_model_selection);
+
+        let unavailable = claude_capabilities(false);
+        assert_descriptive_aliases(&unavailable);
+        assert!(!unavailable.supports_model_selection);
     }
 
     #[cfg(unix)]
@@ -3508,7 +3693,9 @@ mod tests {
         std::env::remove_var("CLAUDE_CONFIG_DIR");
         assert_eq!(current_claude_credential().unwrap(), None);
 
-        let attempt = request_claude_suggestion_attempt(claude_request(&project));
+        let mut request = claude_request(&project);
+        request.model = Some("opus".into());
+        let attempt = request_claude_suggestion_attempt(request);
         let validation = attempt.validation.unwrap();
         assert_eq!(
             validation.credential_source.persistence_label(),
@@ -3554,6 +3741,8 @@ mod tests {
             "json",
             "--json-schema",
             schema.as_str(),
+            "--model",
+            "opus",
         ]
         .into_iter()
         .map(str::to_owned)
