@@ -28,9 +28,16 @@ const MAX_CLAUDE_SETTINGS_BYTES: usize = 64 * 1024;
 const MAX_CLAUDE_STDERR_BYTES: usize = 16 * 1024;
 const MAX_CLAUDE_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_CLAUDE_PROMPT_BYTES: usize = 256 * 1024;
+const MAX_CLAUDE_MODEL_CATALOG_BYTES: usize = 64 * 1024;
+const MAX_CLAUDE_MODELS: usize = 32;
+const MAX_CLAUDE_MODEL_ID_BYTES: usize = 128;
+const MAX_CLAUDE_MODEL_LABEL_BYTES: usize = 160;
 const CLAUDE_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const CLAUDE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const CLAUDE_MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(5);
 const CLAUDE_SCHEMA_VERSION: u64 = 1;
+const CLAUDE_MODEL_CATALOG_REQUEST_ID: &str = "gtum-claude-model-catalog-v1";
+const CLAUDE_MODEL_CATALOG_INITIALIZE_REQUEST: &[u8] = b"{\"request_id\":\"gtum-claude-model-catalog-v1\",\"type\":\"control_request\",\"request\":{\"subtype\":\"initialize\"}}\n";
 const CLAUDE_MODEL_ALIASES: [(&str, &str); 5] = [
     ("default", "Claude default"),
     ("best", "Best available"),
@@ -1209,6 +1216,44 @@ fn claude_request_arguments(
     arguments
 }
 
+fn claude_model_catalog_arguments(credential: Option<&ClaudeCredentialSelection>) -> Vec<OsString> {
+    let mut arguments = if credential.is_some() {
+        ["--bare", "--safe-mode"]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+    } else {
+        ["--safe-mode", "--setting-sources", ""]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+    };
+    arguments.extend(
+        [
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--no-chrome",
+            "--no-session-persistence",
+            "--permission-mode",
+            "dontAsk",
+            "--tools",
+            "",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--input-format",
+            "stream-json",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    );
+    if let Some(settings) = credential.and_then(|value| value.sanitized_settings.as_deref()) {
+        arguments.push(OsString::from("--settings"));
+        arguments.push(OsString::from(settings));
+    }
+    arguments
+}
+
 fn validated_claude_model(model: Option<&str>) -> Result<Option<&str>, String> {
     let Some(model) = model else {
         return Ok(None);
@@ -1488,23 +1533,154 @@ pub fn request_claude_suggestion_attempt(
     }
 }
 
-pub fn read_claude_capabilities() -> AgentProviderCapabilities {
-    claude_capabilities(discover_claude_cli().is_some())
+#[derive(Deserialize)]
+struct ClaudeModelCatalogEnvelope {
+    #[serde(rename = "type")]
+    message_type: String,
+    response: ClaudeModelCatalogControlResponse,
 }
 
-fn claude_capabilities(cli_available: bool) -> AgentProviderCapabilities {
-    let available_models = CLAUDE_MODEL_ALIASES
-        .into_iter()
-        .map(|(model_id, label)| AgentModelCapability {
+#[derive(Deserialize)]
+struct ClaudeModelCatalogControlResponse {
+    subtype: String,
+    request_id: String,
+    response: Option<ClaudeModelCatalogPayload>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeModelCatalogPayload {
+    models: Vec<ClaudeSdkModelInfo>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeSdkModelInfo {
+    value: String,
+    resolved_model: Option<String>,
+    display_name: String,
+    description: String,
+}
+
+fn invalid_claude_model_text(value: &str, max_bytes: usize) -> bool {
+    value.len() > max_bytes || value.chars().any(char::is_control)
+}
+
+fn parse_claude_model_catalog(raw: &[u8]) -> Result<Vec<AgentModelCapability>, String> {
+    if raw.len() > MAX_CLAUDE_MODEL_CATALOG_BYTES {
+        return Err("Claude model catalog exceeded the output limit.".into());
+    }
+    let envelope = serde_json::from_slice::<ClaudeModelCatalogEnvelope>(raw)
+        .map_err(|_| "Claude model catalog returned malformed JSON.".to_string())?;
+    if envelope.message_type != "control_response"
+        || envelope.response.request_id != CLAUDE_MODEL_CATALOG_REQUEST_ID
+        || envelope.response.subtype != "success"
+    {
+        return Err("Claude model catalog returned an invalid control response.".into());
+    }
+    let payload = envelope
+        .response
+        .response
+        .ok_or_else(|| "Claude model catalog returned no model payload.".to_string())?;
+    if payload.models.is_empty() || payload.models.len() > MAX_CLAUDE_MODELS {
+        return Err("Claude model catalog returned an invalid model count.".into());
+    }
+
+    let mut models = Vec::with_capacity(payload.models.len());
+    for model in payload.models {
+        let model_id = model.value.trim();
+        if model_id.is_empty()
+            || model_id.starts_with('-')
+            || invalid_claude_model_text(model_id, MAX_CLAUDE_MODEL_ID_BYTES)
+            || models
+                .iter()
+                .any(|existing: &AgentModelCapability| existing.model_id == model_id)
+        {
+            return Err("Claude model catalog returned an invalid model identifier.".into());
+        }
+        if model
+            .resolved_model
+            .as_deref()
+            .is_some_and(|resolved| invalid_claude_model_text(resolved, MAX_CLAUDE_MODEL_ID_BYTES))
+            || invalid_claude_model_text(&model.display_name, MAX_CLAUDE_MODEL_LABEL_BYTES)
+            || invalid_claude_model_text(&model.description, MAX_CLAUDE_MODEL_LABEL_BYTES)
+        {
+            return Err("Claude model catalog returned an excessive model field.".into());
+        }
+
+        let display_name = model.display_name.trim();
+        let version_label = model
+            .description
+            .split('·')
+            .next()
+            .unwrap_or_default()
+            .trim();
+        if display_name.is_empty() || version_label.is_empty() {
+            return Err("Claude model catalog returned a blank model label.".into());
+        }
+        let label = format!("{display_name} · {version_label}");
+        if invalid_claude_model_text(&label, MAX_CLAUDE_MODEL_LABEL_BYTES) {
+            return Err("Claude model catalog returned an invalid model label.".into());
+        }
+        models.push(AgentModelCapability {
             provider_id: AgentProvider::Claude,
             model_id: model_id.into(),
-            label: label.into(),
-        })
-        .collect::<Vec<_>>();
+            label,
+        });
+    }
+    Ok(models)
+}
+
+fn discover_claude_model_catalog_with(
+    program: &Path,
+    context: &ClaudeInvocationContext,
+    timeout: Duration,
+) -> Result<Vec<AgentModelCapability>, String> {
+    // This intentionally mirrors the Agent SDK initialize handshake. The private wire is
+    // version-coupled, so any response drift is rejected and model selection fails closed.
+    let output = run_bounded_process(
+        program,
+        &claude_model_catalog_arguments(context.credential()),
+        None,
+        Some(CLAUDE_MODEL_CATALOG_INITIALIZE_REQUEST),
+        context,
+        timeout,
+        MAX_CLAUDE_MODEL_CATALOG_BYTES,
+        MAX_CLAUDE_STDERR_BYTES,
+    )?;
+    if output.stdout_truncated {
+        return Err("Claude model catalog exceeded the output limit.".into());
+    }
+    if !output.status.success() {
+        return Err(if output.stderr_truncated {
+            "Claude model catalog failed and its diagnostics exceeded the output limit.".into()
+        } else {
+            "Claude model catalog discovery failed. Child diagnostics were discarded.".into()
+        });
+    }
+    parse_claude_model_catalog(&output.stdout)
+}
+
+pub fn read_claude_capabilities() -> AgentProviderCapabilities {
+    let models = discover_claude_cli().and_then(|program| {
+        let context = current_claude_invocation_context().ok()?;
+        discover_claude_model_catalog_with(&program, &context, CLAUDE_MODEL_CATALOG_TIMEOUT).ok()
+    });
+    claude_capabilities(models)
+}
+
+fn claude_capabilities(models: Option<Vec<AgentModelCapability>>) -> AgentProviderCapabilities {
+    let available_models = models
+        .filter(|models| !models.is_empty())
+        .unwrap_or_default();
+    let supports_model_selection = !available_models.is_empty();
+    let current_model = available_models
+        .iter()
+        .find(|model| model.model_id == "default")
+        .cloned();
     AgentProviderCapabilities {
         provider: AgentProvider::Claude,
-        supports_model_selection: cli_available,
-        current_model: available_models.first().cloned(),
+        supports_model_selection,
+        current_model,
         available_models,
         reasoning_levels: Vec::new(),
         default_reasoning_level: None,
@@ -1732,6 +1908,399 @@ mod tests {
         credential: Option<ClaudeCredentialSelection>,
     ) -> ClaudeInvocationContext {
         ClaudeInvocationContext::new(credential, None)
+    }
+
+    fn model_catalog_response(models: Value) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": CLAUDE_MODEL_CATALOG_REQUEST_ID,
+                "response": {
+                    "models": models,
+                    "accountEmail": "must-not-be-retained@example.invalid"
+                }
+            }
+        }))
+        .unwrap()
+    }
+
+    fn expected_account_models() -> Value {
+        json!([
+            {
+                "value": " default ",
+                "resolvedModel": "claude-opus-4-8[1m]",
+                "displayName": "Default (recommended)",
+                "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks"
+            },
+            {
+                "value": "opus[1m]",
+                "resolvedModel": "claude-opus-4-8[1m]",
+                "displayName": "Opus",
+                "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks"
+            },
+            {
+                "value": "claude-fable-5[1m]",
+                "resolvedModel": "claude-fable-5",
+                "displayName": "Fable",
+                "description": "Fable 5 · Most capable for your hardest and longest-running tasks"
+            },
+            {
+                "value": "sonnet",
+                "resolvedModel": "claude-sonnet-5",
+                "displayName": "Sonnet",
+                "description": "Sonnet 5 · Efficient for routine tasks"
+            },
+            {
+                "value": "haiku",
+                "resolvedModel": "claude-haiku-4-5-20251001",
+                "displayName": "Haiku",
+                "description": "Haiku 4.5 · Fastest for quick answers"
+            }
+        ])
+    }
+
+    fn account_model(
+        value: impl Into<String>,
+        display_name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Value {
+        json!({
+            "value": value.into(),
+            "resolvedModel": "resolved-model-must-not-be-selected",
+            "displayName": display_name.into(),
+            "description": description.into()
+        })
+    }
+
+    #[test]
+    fn sdk_initialize_catalog_maps_account_models_in_returned_order() {
+        let models = parse_claude_model_catalog(&model_catalog_response(expected_account_models()))
+            .expect("valid SDK initialize model catalog");
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.model_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "default",
+                "opus[1m]",
+                "claude-fable-5[1m]",
+                "sonnet",
+                "haiku"
+            ]
+        );
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.label.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "Default (recommended) · Opus 4.8 with 1M context",
+                "Opus · Opus 4.8 with 1M context",
+                "Fable · Fable 5",
+                "Sonnet · Sonnet 5",
+                "Haiku · Haiku 4.5",
+            ]
+        );
+        assert!(models
+            .iter()
+            .all(|model| model.provider_id == AgentProvider::Claude));
+        assert_ne!(models[1].model_id, "claude-opus-4-8[1m]");
+    }
+
+    #[test]
+    fn sdk_initialize_catalog_rejects_invalid_envelopes_and_models_atomically() {
+        let valid_model =
+            account_model("sonnet", "Sonnet", "Sonnet 5 · Efficient for routine tasks");
+        let invalid_cases = [
+            ("malformed", b"not-json".to_vec()),
+            (
+                "wrong request id",
+                serde_json::to_vec(&json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "success",
+                        "request_id": "different-request",
+                        "response": { "models": [valid_model.clone()] }
+                    }
+                }))
+                .unwrap(),
+            ),
+            (
+                "error response",
+                serde_json::to_vec(&json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "error",
+                        "request_id": CLAUDE_MODEL_CATALOG_REQUEST_ID,
+                        "error": "ANTHROPIC_API_KEY=must-not-echo"
+                    }
+                }))
+                .unwrap(),
+            ),
+            ("empty catalog", model_catalog_response(json!([]))),
+            (
+                "blank id",
+                model_catalog_response(json!([account_model("  ", "Sonnet", "Sonnet 5")])),
+            ),
+            (
+                "control id",
+                model_catalog_response(json!([account_model("son\u{0}net", "Sonnet", "Sonnet 5")])),
+            ),
+            (
+                "leading dash id",
+                model_catalog_response(json!([account_model(" --help ", "Sonnet", "Sonnet 5")])),
+            ),
+            (
+                "duplicate trimmed id",
+                model_catalog_response(json!([
+                    valid_model.clone(),
+                    account_model(" sonnet ", "Sonnet duplicate", "Sonnet 5")
+                ])),
+            ),
+            (
+                "blank display label",
+                model_catalog_response(json!([account_model("sonnet", "  ", "Sonnet 5")])),
+            ),
+            (
+                "blank description label",
+                model_catalog_response(json!([account_model("sonnet", "Sonnet", "  ")])),
+            ),
+            (
+                "oversized id",
+                model_catalog_response(json!([account_model(
+                    "m".repeat(MAX_CLAUDE_MODEL_ID_BYTES + 1),
+                    "Model",
+                    "Model 1"
+                )])),
+            ),
+            (
+                "oversized final label",
+                model_catalog_response(json!([account_model(
+                    "model",
+                    "L".repeat(MAX_CLAUDE_MODEL_LABEL_BYTES),
+                    "Version"
+                )])),
+            ),
+            (
+                "excessive count",
+                model_catalog_response(Value::Array(
+                    (0..=MAX_CLAUDE_MODELS)
+                        .map(|index| {
+                            json!({
+                                "value": format!("model-{index}"),
+                                "displayName": format!("Model {index}"),
+                                "description": format!("Version {index}")
+                            })
+                        })
+                        .collect(),
+                )),
+            ),
+        ];
+
+        for (label, raw) in invalid_cases {
+            let error = match parse_claude_model_catalog(&raw) {
+                Ok(_) => panic!("{label} catalog should be rejected"),
+                Err(error) => error,
+            };
+            assert!(
+                !error.contains("must-not-echo"),
+                "{label} leaked diagnostics"
+            );
+            assert!(
+                !error.contains("ANTHROPIC_API_KEY"),
+                "{label} leaked a key name"
+            );
+        }
+
+        let oversized = vec![b' '; MAX_CLAUDE_MODEL_CATALOG_BYTES + 1];
+        assert!(parse_claude_model_catalog(&oversized).is_err());
+    }
+
+    #[test]
+    fn catalog_argv_reuses_source_specific_isolation_without_request_surfaces() {
+        let environment = ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        };
+        let helper = ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::ApiKeyHelper,
+            sanitized_settings: Some(r#"{"apiKeyHelper":"safe-helper"}"#.into()),
+        };
+
+        let cli_session = claude_model_catalog_arguments(None);
+        assert_eq!(
+            cli_session,
+            [
+                "--safe-mode",
+                "--setting-sources",
+                "",
+                "--strict-mcp-config",
+                "--disable-slash-commands",
+                "--no-chrome",
+                "--no-session-persistence",
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--input-format",
+                "stream-json",
+            ]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            claude_model_catalog_arguments(Some(&environment)),
+            [
+                "--bare",
+                "--safe-mode",
+                "--strict-mcp-config",
+                "--disable-slash-commands",
+                "--no-chrome",
+                "--no-session-persistence",
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--input-format",
+                "stream-json",
+            ]
+            .into_iter()
+            .map(OsString::from)
+            .collect::<Vec<_>>()
+        );
+        let mut expected_helper = claude_model_catalog_arguments(Some(&environment));
+        expected_helper.extend([
+            OsString::from("--settings"),
+            OsString::from(r#"{"apiKeyHelper":"safe-helper"}"#),
+        ]);
+        assert_eq!(
+            claude_model_catalog_arguments(Some(&helper)),
+            expected_helper
+        );
+
+        for arguments in [
+            cli_session,
+            claude_model_catalog_arguments(Some(&environment)),
+            claude_model_catalog_arguments(Some(&helper)),
+        ] {
+            for forbidden in [
+                "--print",
+                "--model",
+                "--resume",
+                "--continue",
+                "--allowedTools",
+                "--mcp-config",
+                "--file",
+                "--add-dir",
+                "--session-id",
+            ] {
+                assert!(
+                    !arguments
+                        .iter()
+                        .any(|argument| argument == OsStr::new(forbidden)),
+                    "catalog argv unexpectedly contains {forbidden}"
+                );
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn catalog_discovery_writes_one_initialize_request_then_eof() {
+        let root = TestRoot::new("model-catalog-wire");
+        let program = root.path().join("fake-claude");
+        write_test_executable(
+            &program,
+            &format!(
+                concat!(
+                    "printf '%s\\n' \"$@\" > \"$0.argv\"\n",
+                    "cat > \"$0.stdin\"\n",
+                    "printf '%s' '{}'\n",
+                ),
+                String::from_utf8(model_catalog_response(expected_account_models())).unwrap()
+            ),
+        );
+        let context = invocation_context(None);
+
+        let models =
+            discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).unwrap();
+
+        assert_eq!(models.len(), 5);
+        let recorded_arguments = fs::read_to_string(format!("{}.argv", program.display()))
+            .unwrap()
+            .split_terminator('\n')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            recorded_arguments,
+            claude_model_catalog_arguments(context.credential())
+                .into_iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            fs::read(format!("{}.stdin", program.display())).unwrap(),
+            CLAUDE_MODEL_CATALOG_INITIALIZE_REQUEST
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn catalog_discovery_rejects_nonzero_timeout_spawn_and_oversized_output() {
+        let root = TestRoot::new("model-catalog-failures");
+        let context = invocation_context(None);
+        let valid_response = String::from_utf8(model_catalog_response(json!([{
+            "value": "sonnet",
+            "displayName": "Sonnet",
+            "description": "Sonnet 5"
+        }])))
+        .unwrap();
+
+        let nonzero = root.path().join("nonzero");
+        write_test_executable(
+            &nonzero,
+            &format!("cat >/dev/null\nprintf '%s' '{valid_response}'\nexit 7"),
+        );
+        assert!(
+            discover_claude_model_catalog_with(&nonzero, &context, Duration::from_secs(2)).is_err()
+        );
+
+        let timeout = root.path().join("timeout");
+        write_test_executable(&timeout, "cat >/dev/null\nsleep 1");
+        assert!(
+            discover_claude_model_catalog_with(&timeout, &context, Duration::from_millis(20))
+                .is_err()
+        );
+
+        assert!(discover_claude_model_catalog_with(
+            &root.path().join("missing"),
+            &context,
+            Duration::from_secs(2)
+        )
+        .is_err());
+
+        let oversized = root.path().join("oversized");
+        write_test_executable(
+            &oversized,
+            &format!(
+                "cat >/dev/null\nprintf '%*s' {} ''",
+                MAX_CLAUDE_MODEL_CATALOG_BYTES + 1
+            ),
+        );
+        assert!(
+            discover_claude_model_catalog_with(&oversized, &context, Duration::from_secs(2))
+                .is_err()
+        );
     }
 
     #[test]
@@ -2250,56 +2819,39 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_offer_bounded_claude_aliases() {
-        let assert_descriptive_aliases = |capabilities: &AgentProviderCapabilities| {
-            assert_eq!(capabilities.provider, AgentProvider::Claude);
-            assert_eq!(
-                capabilities
-                    .available_models
-                    .iter()
-                    .map(|model| model.model_id.as_str())
-                    .collect::<Vec<_>>(),
-                vec!["default", "best", "sonnet", "opus", "haiku"],
-            );
-            assert_eq!(
-                capabilities
-                    .available_models
-                    .iter()
-                    .map(|model| model.label.as_str())
-                    .collect::<Vec<_>>(),
-                vec![
-                    "Claude default",
-                    "Best available",
-                    "Sonnet",
-                    "Opus",
-                    "Haiku",
-                ],
-            );
-            assert!(capabilities
-                .available_models
-                .iter()
-                .all(|model| model.provider_id == AgentProvider::Claude));
-            let current_model = capabilities.current_model.as_ref().unwrap();
-            assert_eq!(current_model.provider_id, AgentProvider::Claude);
-            assert_eq!(current_model.model_id, "default");
-            assert_eq!(current_model.label, "Claude default");
-            assert!(capabilities.reasoning_levels.is_empty());
-            assert_eq!(capabilities.default_reasoning_level, None);
-            assert!(!capabilities.supports_fast_mode);
-            assert_eq!(capabilities.attachments.len(), 4);
-            assert!(capabilities
-                .attachments
-                .iter()
-                .all(|attachment| !attachment.enabled && attachment.invocation_flag.is_none()));
-        };
+    fn capabilities_expose_only_a_valid_live_catalog_and_fail_closed() {
+        let models =
+            parse_claude_model_catalog(&model_catalog_response(expected_account_models())).unwrap();
+        let available = claude_capabilities(Some(models));
+        assert_eq!(available.provider, AgentProvider::Claude);
+        assert!(available.supports_model_selection);
+        assert_eq!(available.available_models.len(), 5);
+        assert_eq!(
+            available.current_model.as_ref().unwrap().model_id,
+            "default"
+        );
+        assert!(available.reasoning_levels.is_empty());
+        assert_eq!(available.default_reasoning_level, None);
+        assert!(!available.supports_fast_mode);
+        assert_eq!(available.attachments.len(), 4);
+        assert!(available
+            .attachments
+            .iter()
+            .all(|attachment| !attachment.enabled && attachment.invocation_flag.is_none()));
 
-        let installed = claude_capabilities(true);
-        assert_descriptive_aliases(&installed);
-        assert!(installed.supports_model_selection);
+        let without_default = claude_capabilities(Some(vec![AgentModelCapability {
+            provider_id: AgentProvider::Claude,
+            model_id: "sonnet".into(),
+            label: "Sonnet · Sonnet 5".into(),
+        }]));
+        assert!(without_default.supports_model_selection);
+        assert!(without_default.current_model.is_none());
 
-        let unavailable = claude_capabilities(false);
-        assert_descriptive_aliases(&unavailable);
-        assert!(!unavailable.supports_model_selection);
+        for unavailable in [claude_capabilities(None), claude_capabilities(Some(vec![]))] {
+            assert!(!unavailable.supports_model_selection);
+            assert!(unavailable.current_model.is_none());
+            assert!(unavailable.available_models.is_empty());
+        }
     }
 
     #[cfg(unix)]
