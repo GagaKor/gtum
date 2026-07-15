@@ -114,6 +114,15 @@ pub struct AgentModelCapability {
     pub provider_id: AgentProvider,
     pub model_id: String,
     pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_options: Option<AgentModelExecutionOptions>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentModelExecutionOptions {
+    pub reasoning_levels: Vec<AgentReasoningLevelCapability>,
+    pub supports_fast_mode: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
@@ -640,6 +649,7 @@ fn model_capabilities_from_codex_entries(
                 provider_id: AgentProvider::Codex,
                 model_id,
                 label,
+                execution_options: None,
             })
         })
         .collect()
@@ -780,6 +790,7 @@ fn model_capability_for_id(
                 provider_id: provider,
                 label: model_id.clone(),
                 model_id,
+                execution_options: None,
             })
         })
 }

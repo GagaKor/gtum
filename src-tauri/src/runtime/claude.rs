@@ -17,9 +17,9 @@ use crate::runtime::{
     auth::AgentProvider,
     codex::{
         AgentAttachmentCapability, AgentAttachmentKind, AgentExecutionTarget, AgentModelCapability,
-        AgentProviderCapabilities, AgentProviderDiagnostics, AgentProviderRequirementStatus,
-        AgentProviderSetupState, AgentSuggestionConfidence, AgentSuggestionResponse,
-        RequestAgentSuggestionsRequest,
+        AgentModelExecutionOptions, AgentProviderCapabilities, AgentProviderDiagnostics,
+        AgentProviderRequirementStatus, AgentProviderSetupState, AgentReasoningLevelCapability,
+        AgentSuggestionConfidence, AgentSuggestionResponse, RequestAgentSuggestionsRequest,
     },
 };
 
@@ -32,6 +32,9 @@ const MAX_CLAUDE_MODEL_CATALOG_BYTES: usize = 64 * 1024;
 const MAX_CLAUDE_MODELS: usize = 32;
 const MAX_CLAUDE_MODEL_ID_BYTES: usize = 128;
 const MAX_CLAUDE_MODEL_LABEL_BYTES: usize = 160;
+const MAX_CLAUDE_REASONING_LEVELS: usize = 5;
+const MAX_CLAUDE_REASONING_LEVEL_BYTES: usize = 16;
+const MAX_CLAUDE_REASONING_LABEL_BYTES: usize = 64;
 const CLAUDE_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 const CLAUDE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CLAUDE_MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(5);
@@ -1611,6 +1614,9 @@ struct ClaudeSdkModelInfo {
     resolved_model: Option<String>,
     display_name: String,
     description: String,
+    supports_effort: Option<bool>,
+    supported_effort_levels: Option<Vec<String>>,
+    supports_fast_mode: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -1641,6 +1647,65 @@ fn claude_model_catalog_initialize_request() -> Result<Vec<u8>, String> {
 
 fn invalid_claude_model_text(value: &str, max_bytes: usize) -> bool {
     value.len() > max_bytes || value.chars().any(char::is_control)
+}
+
+fn claude_reasoning_level_label(level: &str) -> Option<&'static str> {
+    match level {
+        "low" => Some("Low"),
+        "medium" => Some("Medium"),
+        "high" => Some("High"),
+        "xhigh" => Some("XHigh"),
+        "max" => Some("Max"),
+        _ => None,
+    }
+}
+
+fn claude_model_execution_options(
+    model: &ClaudeSdkModelInfo,
+) -> Result<AgentModelExecutionOptions, String> {
+    let supported_levels = model.supported_effort_levels.as_deref().unwrap_or(&[]);
+    if model.supports_effort.unwrap_or(false) {
+        if model.supported_effort_levels.is_none() || supported_levels.is_empty() {
+            return Err("Claude model catalog returned inconsistent execution options.".into());
+        }
+    } else if !supported_levels.is_empty() {
+        return Err("Claude model catalog returned inconsistent execution options.".into());
+    }
+    if supported_levels.len() > MAX_CLAUDE_REASONING_LEVELS {
+        return Err("Claude model catalog returned too many reasoning levels.".into());
+    }
+
+    let mut reasoning_levels = Vec::with_capacity(supported_levels.len());
+    for level in supported_levels {
+        if invalid_claude_model_text(level, MAX_CLAUDE_REASONING_LEVEL_BYTES)
+            || level.trim().is_empty()
+            || level.starts_with('-')
+        {
+            return Err("Claude model catalog returned an invalid reasoning level.".into());
+        }
+        let label = claude_reasoning_level_label(level).ok_or_else(|| {
+            "Claude model catalog returned an unknown reasoning level.".to_string()
+        })?;
+        if invalid_claude_model_text(label, MAX_CLAUDE_REASONING_LABEL_BYTES)
+            || reasoning_levels
+                .iter()
+                .any(|existing: &AgentReasoningLevelCapability| {
+                    existing.level.as_str() == level.as_str()
+                })
+        {
+            return Err("Claude model catalog returned an invalid reasoning level.".into());
+        }
+        reasoning_levels.push(AgentReasoningLevelCapability {
+            level: level.clone(),
+            label: label.into(),
+            description: None,
+        });
+    }
+
+    Ok(AgentModelExecutionOptions {
+        reasoning_levels,
+        supports_fast_mode: model.supports_fast_mode.unwrap_or(false),
+    })
 }
 
 fn parse_claude_model_catalog(raw: &[u8]) -> Result<Vec<AgentModelCapability>, String> {
@@ -1702,10 +1767,12 @@ fn parse_claude_model_catalog(raw: &[u8]) -> Result<Vec<AgentModelCapability>, S
         if invalid_claude_model_text(&label, MAX_CLAUDE_MODEL_LABEL_BYTES) {
             return Err("Claude model catalog returned an invalid model label.".into());
         }
+        let execution_options = claude_model_execution_options(&model)?;
         models.push(AgentModelCapability {
             provider_id: AgentProvider::Claude,
             model_id: model_id.into(),
             label,
+            execution_options: Some(execution_options),
         });
     }
     Ok(models)
@@ -1759,14 +1826,23 @@ fn claude_capabilities(models: Option<Vec<AgentModelCapability>>) -> AgentProvid
         .iter()
         .find(|model| model.model_id == "default")
         .cloned();
+    let current_execution_options = current_model
+        .as_ref()
+        .and_then(|model| model.execution_options.as_ref());
+    let reasoning_levels = current_execution_options
+        .map(|options| options.reasoning_levels.clone())
+        .unwrap_or_default();
+    let supports_fast_mode = current_execution_options
+        .map(|options| options.supports_fast_mode)
+        .unwrap_or(false);
     AgentProviderCapabilities {
         provider: AgentProvider::Claude,
         supports_model_selection,
         current_model,
         available_models,
-        reasoning_levels: Vec::new(),
+        reasoning_levels,
         default_reasoning_level: None,
-        supports_fast_mode: false,
+        supports_fast_mode,
         attachments: [
             (AgentAttachmentKind::Image, "Image"),
             (AgentAttachmentKind::File, "File"),
@@ -2298,6 +2374,189 @@ fn main() {
             .iter()
             .all(|model| model.provider_id == AgentProvider::Claude));
         assert_ne!(models[1].model_id, "claude-opus-4-8[1m]");
+    }
+
+    #[test]
+    fn model_catalog_preserves_model_specific_execution_options() {
+        let models = parse_claude_model_catalog(&model_catalog_response(json!([
+            {
+                "value": "default",
+                "resolvedModel": "resolved-default",
+                "displayName": "Default",
+                "description": "Current default",
+                "supportsEffort": true,
+                "supportedEffortLevels": ["high", "low", "max"],
+                "supportsFastMode": true
+            },
+            {
+                "value": "metadata-effort-only",
+                "resolvedModel": "resolved-effort-only",
+                "displayName": "Effort only",
+                "description": "Metadata driven",
+                "supportsEffort": true,
+                "supportedEffortLevels": ["medium", "xhigh"]
+            },
+            {
+                "value": "metadata-unsupported",
+                "resolvedModel": "resolved-unsupported",
+                "displayName": "Unsupported",
+                "description": "No execution options",
+                "supportsEffort": false,
+                "supportedEffortLevels": [],
+                "supportsFastMode": false
+            }
+        ])))
+        .expect("valid model-specific execution metadata");
+
+        assert_eq!(
+            serde_json::to_value(&models).unwrap(),
+            json!([
+                {
+                    "providerId": "claude",
+                    "modelId": "default",
+                    "label": "Default · Current default",
+                    "executionOptions": {
+                        "reasoningLevels": [
+                            { "level": "high", "label": "High", "description": null },
+                            { "level": "low", "label": "Low", "description": null },
+                            { "level": "max", "label": "Max", "description": null }
+                        ],
+                        "supportsFastMode": true
+                    }
+                },
+                {
+                    "providerId": "claude",
+                    "modelId": "metadata-effort-only",
+                    "label": "Effort only · Metadata driven",
+                    "executionOptions": {
+                        "reasoningLevels": [
+                            { "level": "medium", "label": "Medium", "description": null },
+                            { "level": "xhigh", "label": "XHigh", "description": null }
+                        ],
+                        "supportsFastMode": false
+                    }
+                },
+                {
+                    "providerId": "claude",
+                    "modelId": "metadata-unsupported",
+                    "label": "Unsupported · No execution options",
+                    "executionOptions": {
+                        "reasoningLevels": [],
+                        "supportsFastMode": false
+                    }
+                }
+            ])
+        );
+
+        let capabilities = claude_capabilities(Some(models));
+        assert_eq!(
+            serde_json::to_value(&capabilities.reasoning_levels).unwrap(),
+            json!([
+                { "level": "high", "label": "High", "description": null },
+                { "level": "low", "label": "Low", "description": null },
+                { "level": "max", "label": "Max", "description": null }
+            ])
+        );
+        assert_eq!(capabilities.default_reasoning_level, None);
+        assert!(capabilities.supports_fast_mode);
+
+        let codex_model: AgentModelCapability = serde_json::from_value(json!({
+            "providerId": "codex",
+            "modelId": "catalog-model",
+            "label": "Catalog model"
+        }))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(codex_model).unwrap(),
+            json!({
+                "providerId": "codex",
+                "modelId": "catalog-model",
+                "label": "Catalog model"
+            })
+        );
+    }
+
+    #[test]
+    fn model_catalog_rejects_malformed_execution_options_atomically() {
+        let malformed_metadata = vec![
+            ("effort without levels", json!({ "supportsEffort": true })),
+            (
+                "effort with empty levels",
+                json!({ "supportsEffort": true, "supportedEffortLevels": [] }),
+            ),
+            (
+                "disabled effort with levels",
+                json!({ "supportsEffort": false, "supportedEffortLevels": ["low"] }),
+            ),
+            (
+                "levels without effort support",
+                json!({ "supportedEffortLevels": ["low"] }),
+            ),
+            (
+                "unknown level",
+                json!({ "supportsEffort": true, "supportedEffortLevels": ["ultra"] }),
+            ),
+            (
+                "blank level",
+                json!({ "supportsEffort": true, "supportedEffortLevels": ["  "] }),
+            ),
+            (
+                "leading dash level",
+                json!({ "supportsEffort": true, "supportedEffortLevels": ["-high"] }),
+            ),
+            (
+                "control level",
+                json!({ "supportsEffort": true, "supportedEffortLevels": ["hi\u{0}gh"] }),
+            ),
+            (
+                "oversized level",
+                json!({
+                    "supportsEffort": true,
+                    "supportedEffortLevels": ["x".repeat(17)]
+                }),
+            ),
+            (
+                "duplicate level",
+                json!({
+                    "supportsEffort": true,
+                    "supportedEffortLevels": ["low", "low"]
+                }),
+            ),
+            (
+                "excessive levels",
+                json!({
+                    "supportsEffort": true,
+                    "supportedEffortLevels": [
+                        "low", "medium", "high", "xhigh", "max", "low"
+                    ]
+                }),
+            ),
+            (
+                "non-boolean fast mode",
+                json!({ "supportsFastMode": "true" }),
+            ),
+        ];
+
+        for (label, metadata) in malformed_metadata {
+            let mut malformed = account_model(
+                format!("malformed-{label}"),
+                "Malformed",
+                "Invalid execution metadata",
+            );
+            malformed
+                .as_object_mut()
+                .unwrap()
+                .extend(metadata.as_object().unwrap().clone());
+            let raw = model_catalog_response(json!([
+                account_model("valid-model", "Valid", "Valid metadata-free model"),
+                malformed
+            ]));
+
+            assert!(
+                parse_claude_model_catalog(&raw).is_err(),
+                "{label} must reject the complete catalog"
+            );
+        }
     }
 
     #[test]
@@ -2979,6 +3238,10 @@ fn main() {
                         provider_id: AgentProvider::Claude,
                         model_id: "sonnet".into(),
                         label: "Sonnet · Sonnet 5".into(),
+                        execution_options: Some(AgentModelExecutionOptions {
+                            reasoning_levels: Vec::new(),
+                            supports_fast_mode: false,
+                        }),
                     }])
                 },
             ),
@@ -3019,6 +3282,7 @@ fn main() {
                         provider_id: AgentProvider::Codex,
                         model_id: "claude-fable-5[1m]".into(),
                         label: "Wrong provider".into(),
+                        execution_options: None,
                     }])
                 },
             ),
@@ -3158,6 +3422,10 @@ fn main() {
             provider_id: AgentProvider::Claude,
             model_id: "claude-fable-5[1m]".into(),
             label: "Fable · Fable 5".into(),
+            execution_options: Some(AgentModelExecutionOptions {
+                reasoning_levels: Vec::new(),
+                supports_fast_mode: false,
+            }),
         }];
         let mut expected_model_arguments = base_arguments;
         expected_model_arguments.extend([
@@ -3564,6 +3832,10 @@ fn main() {
             provider_id: AgentProvider::Claude,
             model_id: "sonnet".into(),
             label: "Sonnet · Sonnet 5".into(),
+            execution_options: Some(AgentModelExecutionOptions {
+                reasoning_levels: Vec::new(),
+                supports_fast_mode: false,
+            }),
         }]));
         assert!(without_default.supports_model_selection);
         assert!(without_default.current_model.is_none());
