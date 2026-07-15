@@ -2002,6 +2002,7 @@ mod tests {
     static CATALOG_TEST_EXECUTABLE_COMPILE_COUNT: AtomicU64 = AtomicU64::new(0);
     static CATALOG_TEST_EXECUTABLE: OnceLock<Result<Vec<u8>, String>> = OnceLock::new();
     static CATALOG_TEST_EXECUTABLE_COMPILE_ROOT: OnceLock<PathBuf> = OnceLock::new();
+    const SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT: Duration = Duration::from_secs(5);
     const ISOLATED_TEST_TIMEOUT: Duration = Duration::from_secs(10);
     const MAX_ISOLATED_TEST_OUTPUT_BYTES: usize = 64 * 1024;
 
@@ -3303,7 +3304,7 @@ fn main() {
             &program,
             &invocation_context(None),
             request,
-            Duration::from_secs(2),
+            SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
         )
         .expect("supported effort and Fast mode must reach Claude safely");
 
@@ -3373,7 +3374,7 @@ fn main() {
             &program,
             &invocation_context(Some(helper)),
             request,
-            Duration::from_secs(2),
+            SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
         )
         .expect("Fast mode must merge with the sanitized API key helper");
 
@@ -3571,7 +3572,7 @@ fn main() {
                 &program,
                 &invocation_context(credential),
                 request,
-                Duration::from_secs(5),
+                SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
             )
             .expect("explicit Fast false must be passed to inference");
 
@@ -3726,9 +3727,13 @@ fn main() {
         let mut request = claude_request(&project);
         request.model = Some("claude-fable-5[1m]".into());
 
-        let suggestions =
-            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2))
-                .expect("live catalog model must reach the inference child");
+        let suggestions = request_claude_suggestions_with(
+            &program,
+            &context,
+            request,
+            SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
+        )
+        .expect("live catalog model must reach the inference child");
 
         assert_eq!(suggestions[0].summary, "Selected model result");
         let arguments = recorded_arguments(root.path().join("inference-argv"));
@@ -3863,7 +3868,7 @@ fn main() {
             &program,
             &context,
             claude_request(&project),
-            Duration::from_secs(2),
+            SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
         )
         .expect("implicit model must preserve the runtime-default inference path");
 
@@ -5918,12 +5923,13 @@ fn main() {
         std::env::set_var("HOME", &home_b);
         std::env::set_var("USERPROFILE", &home_b);
         std::env::set_var("CLAUDE_CONFIG_DIR", &config_b);
-        run_claude_status_probe(&program, &context, Duration::from_secs(2)).unwrap();
+        run_claude_status_probe(&program, &context, SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT)
+            .unwrap();
         request_claude_suggestions_with(
             &program,
             &context,
             claude_request(&project),
-            Duration::from_secs(2),
+            SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
         )
         .unwrap();
 
