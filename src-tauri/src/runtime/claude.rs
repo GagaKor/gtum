@@ -45,6 +45,7 @@ const CLAUDE_ALWAYS_REMOVED_ENVIRONMENT: &[&str] = &[
     "DEBUG",
     "CLAUDE_CODE_DEBUG_LOGS_DIR",
     "CLAUDE_CODE_DEBUG_LOG_LEVEL",
+    "CLAUDE_CODE_EFFORT_LEVEL",
     "CLAUDE_CODE_EXTRA_BODY",
     "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
     "CLAUDE_CODE_ENABLE_TELEMETRY",
@@ -1209,10 +1210,52 @@ fn append_claude_sanitized_settings(
     }
 }
 
+fn claude_request_settings(
+    credential: Option<&ClaudeCredentialSelection>,
+    fast_mode: bool,
+) -> Result<String, String> {
+    let api_key_helper = match credential {
+        Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::ApiKeyHelper,
+            sanitized_settings,
+        }) => {
+            let raw = sanitized_settings.as_deref().ok_or_else(|| {
+                "Claude API key helper settings are unavailable for this request.".to_string()
+            })?;
+            if raw.len() > MAX_CLAUDE_SETTINGS_BYTES {
+                return Err(
+                    "Claude API key helper settings exceed the supported size limit.".into(),
+                );
+            }
+            let settings = serde_json::from_str::<Value>(raw).map_err(|_| {
+                "Claude API key helper settings are invalid for this request.".to_string()
+            })?;
+            let helper = settings
+                .as_object()
+                .and_then(|object| object.get("apiKeyHelper"))
+                .and_then(Value::as_str)
+                .filter(|helper| !helper.is_empty())
+                .ok_or_else(|| {
+                    "Claude API key helper settings are invalid for this request.".to_string()
+                })?;
+            Some(helper.to_owned())
+        }
+        _ => None,
+    };
+
+    let settings = match api_key_helper {
+        Some(helper) => json!({ "apiKeyHelper": helper, "fastMode": fast_mode }),
+        None => json!({ "fastMode": fast_mode }),
+    };
+    serde_json::to_string(&settings)
+        .map_err(|_| "Could not build the Claude request settings overlay.".to_string())
+}
+
 fn claude_request_arguments(
     credential: Option<&ClaudeCredentialSelection>,
     schema: &str,
-) -> Vec<OsString> {
+    fast_mode: bool,
+) -> Result<Vec<OsString>, String> {
     let mut arguments = claude_isolated_arguments(credential);
     arguments.extend(
         [
@@ -1225,8 +1268,11 @@ fn claude_request_arguments(
         .into_iter()
         .map(OsString::from),
     );
-    append_claude_sanitized_settings(&mut arguments, credential);
-    arguments
+    arguments.push(OsString::from("--settings"));
+    arguments.push(OsString::from(claude_request_settings(
+        credential, fast_mode,
+    )?));
+    Ok(arguments)
 }
 
 fn claude_model_catalog_arguments(credential: Option<&ClaudeCredentialSelection>) -> Vec<OsString> {
@@ -1259,44 +1305,109 @@ fn validated_claude_model(model: Option<&str>) -> Result<Option<&str>, String> {
     Ok(Some(model))
 }
 
-fn validated_claude_catalog_model<'a>(
-    model: Option<&'a str>,
-    catalog: &[AgentModelCapability],
-) -> Result<Option<&'a str>, String> {
-    let Some(model) = validated_claude_model(model)? else {
+fn validated_claude_reasoning_level(level: Option<&str>) -> Result<Option<&str>, String> {
+    let Some(level) = level else {
         return Ok(None);
     };
-    let is_returned_sanitized_value = catalog.iter().any(|capability| {
+    if level.trim().is_empty()
+        || invalid_claude_model_text(level, MAX_CLAUDE_REASONING_LEVEL_BYTES)
+        || level.starts_with('-')
+    {
+        return Err("Claude request selected an invalid reasoning level.".into());
+    }
+    Ok(Some(level))
+}
+
+fn claude_catalog_model<'a>(
+    model_id: &str,
+    catalog: &'a [AgentModelCapability],
+) -> Option<&'a AgentModelCapability> {
+    catalog.iter().find(|capability| {
         capability.provider_id == AgentProvider::Claude
-            && capability.model_id == model
+            && capability.model_id == model_id
             && capability.model_id == capability.model_id.trim()
             && validated_claude_model(Some(&capability.model_id)).is_ok()
-    });
-    if !is_returned_sanitized_value {
-        return Err("Claude request selected a model unavailable in the current catalog.".into());
-    }
-    Ok(Some(model))
+    })
 }
 
 fn claude_request_arguments_for_model(
     credential: Option<&ClaudeCredentialSelection>,
     schema: &str,
     model: Option<&str>,
+    reasoning_level: Option<&str>,
+    fast_mode: bool,
     catalog: Option<&[AgentModelCapability]>,
 ) -> Result<Vec<OsString>, String> {
-    let model = match model {
-        Some(_) => validated_claude_catalog_model(
-            model,
-            catalog.ok_or_else(|| {
+    let model = validated_claude_model(model)?;
+    let reasoning_level = validated_claude_reasoning_level(reasoning_level)?;
+    let advanced_options_requested = reasoning_level.is_some() || fast_mode;
+    let selected_capability = match model {
+        Some(model) => Some(
+            claude_catalog_model(
+                model,
+                catalog.ok_or_else(|| {
+                    "Claude request selected a model unavailable in the current catalog."
+                        .to_string()
+                })?,
+            )
+            .ok_or_else(|| {
                 "Claude request selected a model unavailable in the current catalog.".to_string()
             })?,
-        )?,
-        None => validated_claude_model(None)?,
+        ),
+        None if advanced_options_requested => Some(
+            claude_catalog_model(
+                "default",
+                catalog.ok_or_else(|| {
+                    "Claude request could not resolve the default model in the current catalog."
+                        .to_string()
+                })?,
+            )
+            .ok_or_else(|| {
+                "Claude request could not resolve the default model in the current catalog."
+                    .to_string()
+            })?,
+        ),
+        None => None,
     };
-    let mut arguments = claude_request_arguments(credential, schema);
+
+    if let Some(reasoning_level) = reasoning_level {
+        let is_supported = selected_capability
+            .and_then(|capability| capability.execution_options.as_ref())
+            .is_some_and(|options| {
+                options
+                    .reasoning_levels
+                    .iter()
+                    .any(|capability| capability.level == reasoning_level)
+            });
+        if !is_supported {
+            return Err(
+                "Claude request selected a reasoning level unavailable for the current model."
+                    .into(),
+            );
+        }
+    }
+    if fast_mode {
+        let is_supported = selected_capability
+            .and_then(|capability| capability.execution_options.as_ref())
+            .is_some_and(|options| options.supports_fast_mode);
+        if !is_supported {
+            return Err(
+                "Claude request enabled Fast mode for a model that does not support it.".into(),
+            );
+        }
+        if env::var_os("CLAUDE_CODE_DISABLE_FAST_MODE").as_deref() == Some(OsStr::new("1")) {
+            return Err("Claude Fast mode is disabled by CLAUDE_CODE_DISABLE_FAST_MODE.".into());
+        }
+    }
+
+    let mut arguments = claude_request_arguments(credential, schema, fast_mode)?;
     if let Some(model) = model {
         arguments.push(OsString::from("--model"));
         arguments.push(OsString::from(model));
+    }
+    if let Some(reasoning_level) = reasoning_level {
+        arguments.push(OsString::from("--effort"));
+        arguments.push(OsString::from(reasoning_level));
     }
     Ok(arguments)
 }
@@ -1499,11 +1610,17 @@ where
         return Err("Claude attachments are disabled for this provider path.".into());
     }
     let requested_model = validated_claude_model(request.model.as_deref())?;
+    let requested_reasoning_level =
+        validated_claude_reasoning_level(request.reasoning_level.as_deref())?;
+    let requested_fast_mode = request.fast_mode.unwrap_or(false);
     let canonical_project = canonical_project_directory(&request.project_path)?;
     request.project_path = canonical_project.to_string_lossy().into_owned();
     let prompt = build_claude_prompt(&request)?;
     let schema = claude_suggestion_schema()?;
-    let catalog = if requested_model.is_some() {
+    let catalog = if requested_model.is_some()
+        || requested_reasoning_level.is_some()
+        || requested_fast_mode
+    {
         Some(catalog_probe(
             program,
             context,
@@ -1516,6 +1633,8 @@ where
         credential,
         &schema,
         requested_model,
+        requested_reasoning_level,
+        requested_fast_mode,
         catalog.as_deref(),
     )?;
     let output = run_bounded_process(
@@ -2106,6 +2225,32 @@ fn main() {
         }
     }
 
+    fn assert_no_unsafe_request_argument_expansion(arguments: &[OsString]) {
+        for forbidden in [
+            "--mcp-config",
+            "--plugin-dir",
+            "--plugins",
+            "--agent",
+            "--agents",
+            "--resume",
+            "--continue",
+            "--session-id",
+            "--fork-session",
+            "--chrome",
+            "--session-persistence",
+            "--file",
+            "--add-dir",
+            "--fast",
+        ] {
+            assert!(
+                !arguments
+                    .iter()
+                    .any(|argument| argument == OsStr::new(forbidden)),
+                "request argv unexpectedly expanded with {forbidden}"
+            );
+        }
+    }
+
     struct IsolatedTestOutput {
         status: ExitStatus,
         stdout: Vec<u8>,
@@ -2327,6 +2472,43 @@ fn main() {
             .split_terminator('\n')
             .map(str::to_owned)
             .collect()
+    }
+
+    fn execution_capable_account_model(
+        value: &str,
+        reasoning_levels: &[&str],
+        supports_fast_mode: bool,
+    ) -> Value {
+        json!({
+            "value": value,
+            "resolvedModel": format!("resolved-{value}"),
+            "displayName": value,
+            "description": format!("{value} current"),
+            "supportsEffort": !reasoning_levels.is_empty(),
+            "supportedEffortLevels": reasoning_levels,
+            "supportsFastMode": supports_fast_mode
+        })
+    }
+
+    fn settings_overlay(arguments: &[String]) -> Value {
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.as_str() == "--settings")
+                .count(),
+            1,
+            "each inference request must receive exactly one settings overlay"
+        );
+        let settings_index = arguments
+            .iter()
+            .position(|argument| argument == "--settings")
+            .expect("settings overlay argument");
+        serde_json::from_str(
+            arguments
+                .get(settings_index + 1)
+                .expect("settings overlay JSON value"),
+        )
+        .expect("valid settings overlay JSON")
     }
 
     fn expect_request_error(
@@ -2969,7 +3151,7 @@ fn main() {
     }
 
     #[test]
-    fn request_argv_is_exact_inert_surface_with_optional_sanitized_helper_only() {
+    fn request_argv_is_exact_inert_surface_with_one_explicit_fast_settings_overlay() {
         let environment = ClaudeCredentialSelection {
             source: ClaudeCredentialSource::EnvironmentApiKey,
             sanitized_settings: None,
@@ -2991,12 +3173,14 @@ fn main() {
             "json",
             "--json-schema",
             schema.as_str(),
+            "--settings",
+            r#"{"fastMode":false}"#,
         ]
         .into_iter()
         .map(OsString::from)
         .collect::<Vec<_>>();
         assert_eq!(
-            claude_request_arguments(Some(&environment), &schema),
+            claude_request_arguments(Some(&environment), &schema, false).unwrap(),
             expected
         );
 
@@ -3005,11 +3189,9 @@ fn main() {
             sanitized_settings: Some(r#"{"apiKeyHelper":"safe-helper"}"#.into()),
         };
         let mut expected_helper = expected;
-        expected_helper.extend([
-            OsString::from("--settings"),
-            OsString::from(r#"{"apiKeyHelper":"safe-helper"}"#),
-        ]);
-        let helper_arguments = claude_request_arguments(Some(&helper), &schema);
+        *expected_helper.last_mut().unwrap() =
+            OsString::from(r#"{"apiKeyHelper":"safe-helper","fastMode":false}"#);
+        let helper_arguments = claude_request_arguments(Some(&helper), &schema, false).unwrap();
         assert_eq!(helper_arguments, expected_helper);
 
         let rendered = helper_arguments
@@ -3027,6 +3209,435 @@ fn main() {
         ] {
             assert!(!rendered.contains(forbidden), "unexpected {forbidden}");
         }
+    }
+
+    #[test]
+    fn request_maps_supported_effort_and_fast_to_safe_cli_options() {
+        let root = TestRoot::new("request-effort-fast-safe-cli");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([execution_capable_account_model(
+                "opus",
+                &["low", "high", "max"],
+                true,
+            )]),
+        );
+        let mut request = claude_request(&project);
+        request.model = Some("opus".into());
+        request.reasoning_level = Some("high".into());
+        request.fast_mode = Some(true);
+
+        request_claude_suggestions_with(
+            &program,
+            &invocation_context(None),
+            request,
+            Duration::from_secs(2),
+        )
+        .expect("supported effort and Fast mode must reach Claude safely");
+
+        assert!(root.path().join("catalog-argv").exists());
+        let arguments = recorded_arguments(root.path().join("inference-argv"));
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.as_str() == "--effort")
+                .count(),
+            1
+        );
+        let effort_index = arguments
+            .iter()
+            .position(|argument| argument == "--effort")
+            .unwrap();
+        assert_eq!(
+            arguments.get(effort_index + 1).map(String::as_str),
+            Some("high")
+        );
+        assert_eq!(settings_overlay(&arguments), json!({ "fastMode": true }));
+        assert!(arguments.iter().any(|argument| argument == "--safe-mode"));
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair[0] == "--setting-sources" && pair[1].is_empty()));
+        assert!(!arguments.iter().any(|argument| argument == "--bare"));
+        for forbidden in ["--fast", "/fast", "/effort"] {
+            assert!(
+                !arguments.iter().any(|argument| argument == forbidden),
+                "inference argv emitted forbidden {forbidden}"
+            );
+        }
+        let stdin = fs::read_to_string(root.path().join("inference-stdin")).unwrap();
+        assert!(!stdin.contains("/fast"));
+        assert!(!stdin.contains("/effort"));
+    }
+
+    #[test]
+    fn request_merges_fast_with_api_key_helper_in_one_settings_overlay() {
+        let root = TestRoot::new("request-helper-fast-overlay");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([execution_capable_account_model(
+                "default",
+                &["medium", "high"],
+                true,
+            )]),
+        );
+        let helper_path = r#"C:\safe\helper.exe"#;
+        let helper = ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::ApiKeyHelper,
+            sanitized_settings: Some(
+                serde_json::to_string(&json!({
+                    "apiKeyHelper": helper_path,
+                    "arbitraryUserSetting": { "must": "be dropped" },
+                    "fastMode": false
+                }))
+                .unwrap(),
+            ),
+        };
+        let mut request = claude_request(&project);
+        request.fast_mode = Some(true);
+
+        request_claude_suggestions_with(
+            &program,
+            &invocation_context(Some(helper)),
+            request,
+            Duration::from_secs(2),
+        )
+        .expect("Fast mode must merge with the sanitized API key helper");
+
+        assert!(
+            root.path().join("catalog-argv").exists(),
+            "implicit-model Fast requests require a fresh catalog"
+        );
+        let arguments = recorded_arguments(root.path().join("inference-argv"));
+        assert_eq!(
+            settings_overlay(&arguments),
+            json!({ "apiKeyHelper": helper_path, "fastMode": true })
+        );
+        assert!(!arguments.iter().any(|argument| argument == "--model"));
+        assert!(!arguments.iter().any(|argument| argument == "--fast"));
+    }
+
+    #[test]
+    fn request_rejects_unsupported_advanced_options_before_spawn() {
+        for (label, model, reasoning_level, fast_mode, catalog, expected_error) in [
+            (
+                "cross-model-effort",
+                Some("sonnet"),
+                Some("high"),
+                None,
+                json!([execution_capable_account_model("sonnet", &["low"], false)]),
+                "Claude request selected a reasoning level unavailable for the current model.",
+            ),
+            (
+                "unsupported-fast",
+                Some("sonnet"),
+                None,
+                Some(true),
+                json!([execution_capable_account_model(
+                    "sonnet",
+                    &["low", "medium"],
+                    false,
+                )]),
+                "Claude request enabled Fast mode for a model that does not support it.",
+            ),
+            (
+                "invalid-leading-dash-effort",
+                None,
+                Some("--high"),
+                None,
+                json!([execution_capable_account_model("default", &["high"], true)]),
+                "Claude request selected an invalid reasoning level.",
+            ),
+        ] {
+            let root = TestRoot::new(label);
+            let project = root.path().join("project");
+            fs::create_dir_all(&project).unwrap();
+            let program = request_lifecycle_fake(&root, catalog);
+            let mut request = claude_request(&project);
+            request.model = model.map(str::to_owned);
+            request.reasoning_level = reasoning_level.map(str::to_owned);
+            request.fast_mode = fast_mode;
+
+            let error = expect_request_error(
+                request_claude_suggestions_with(
+                    &program,
+                    &invocation_context(Some(ClaudeCredentialSelection {
+                        source: ClaudeCredentialSource::EnvironmentApiKey,
+                        sanitized_settings: None,
+                    })),
+                    request,
+                    Duration::from_secs(2),
+                ),
+                "unsupported advanced options must stop before inference",
+            );
+
+            assert_eq!(error, expected_error, "unexpected {label} rejection");
+            assert!(
+                !root.path().join("inference-spawned").exists(),
+                "{label} reached inference"
+            );
+        }
+
+        for (label, reasoning_level) in [
+            ("invalid-blank-effort", "   ".to_string()),
+            ("invalid-control-effort", "hi\ngh".to_string()),
+            (
+                "invalid-oversized-effort",
+                "x".repeat(MAX_CLAUDE_REASONING_LEVEL_BYTES + 1),
+            ),
+        ] {
+            let root = TestRoot::new(label);
+            let project = root.path().join("project");
+            fs::create_dir_all(&project).unwrap();
+            let program = request_lifecycle_fake(
+                &root,
+                json!([execution_capable_account_model("default", &["high"], true)]),
+            );
+            let mut request = claude_request(&project);
+            request.reasoning_level = Some(reasoning_level);
+
+            let error = expect_request_error(
+                request_claude_suggestions_with(
+                    &program,
+                    &invocation_context(Some(ClaudeCredentialSelection {
+                        source: ClaudeCredentialSource::EnvironmentApiKey,
+                        sanitized_settings: None,
+                    })),
+                    request,
+                    Duration::from_secs(2),
+                ),
+                "invalid effort syntax must stop before catalog and inference",
+            );
+
+            assert_eq!(
+                error, "Claude request selected an invalid reasoning level.",
+                "unexpected {label} rejection"
+            );
+            assert!(!root.path().join("catalog-argv").exists());
+            assert!(!root.path().join("inference-spawned").exists());
+        }
+    }
+
+    #[test]
+    fn request_settings_fail_closed_before_spawn_when_helper_overlay_is_invalid() {
+        for (label, settings) in [
+            ("malformed", "not-json".to_string()),
+            ("non-object", "[]".to_string()),
+            ("missing-helper", r#"{"fastMode":true}"#.to_string()),
+            ("non-string-helper", r#"{"apiKeyHelper":7}"#.to_string()),
+        ] {
+            let root = TestRoot::new(label);
+            let project = root.path().join("project");
+            fs::create_dir_all(&project).unwrap();
+            let program = request_lifecycle_fake(
+                &root,
+                json!([execution_capable_account_model(
+                    "default",
+                    &["medium"],
+                    true,
+                )]),
+            );
+
+            let error = expect_request_error(
+                request_claude_suggestions_with(
+                    &program,
+                    &invocation_context(Some(ClaudeCredentialSelection {
+                        source: ClaudeCredentialSource::ApiKeyHelper,
+                        sanitized_settings: Some(settings.clone()),
+                    })),
+                    claude_request(&project),
+                    Duration::from_secs(2),
+                ),
+                "invalid helper request settings must fail before inference",
+            );
+
+            assert!(error.contains("API key helper settings"));
+            assert!(!error.contains(&settings));
+            assert!(!root.path().join("inference-spawned").exists());
+        }
+    }
+
+    #[test]
+    fn request_explicitly_disables_fast_for_all_credential_paths() {
+        let credential_cases = [
+            ("cli-session", None, json!({ "fastMode": false })),
+            (
+                "environment-api-key",
+                Some(ClaudeCredentialSelection {
+                    source: ClaudeCredentialSource::EnvironmentApiKey,
+                    sanitized_settings: None,
+                }),
+                json!({ "fastMode": false }),
+            ),
+            (
+                "api-key-helper",
+                Some(ClaudeCredentialSelection {
+                    source: ClaudeCredentialSource::ApiKeyHelper,
+                    sanitized_settings: Some(r#"{"apiKeyHelper":"/safe/helper"}"#.to_string()),
+                }),
+                json!({ "apiKeyHelper": "/safe/helper", "fastMode": false }),
+            ),
+        ];
+
+        for (label, credential, expected_settings) in credential_cases {
+            let root = TestRoot::new(label);
+            let project = root.path().join("project");
+            fs::create_dir_all(&project).unwrap();
+            let program = request_lifecycle_fake(
+                &root,
+                json!([execution_capable_account_model(
+                    "default",
+                    &["medium"],
+                    true,
+                )]),
+            );
+            let mut request = claude_request(&project);
+            request.fast_mode = Some(false);
+
+            request_claude_suggestions_with(
+                &program,
+                &invocation_context(credential),
+                request,
+                Duration::from_secs(2),
+            )
+            .expect("explicit Fast false must be passed to inference");
+
+            assert!(
+                !root.path().join("catalog-argv").exists(),
+                "Fast false with an implicit model must skip catalog discovery"
+            );
+            let arguments = recorded_arguments(root.path().join("inference-argv"));
+            assert_eq!(settings_overlay(&arguments), expected_settings, "{label}");
+        }
+    }
+
+    #[test]
+    fn advanced_options_with_implicit_model_require_exact_default_catalog_entry() {
+        for (label, reasoning_level, fast_mode) in [
+            ("implicit-effort-no-default", Some("high"), None),
+            ("implicit-fast-no-default", None, Some(true)),
+        ] {
+            let root = TestRoot::new(label);
+            let project = root.path().join("project");
+            fs::create_dir_all(&project).unwrap();
+            let program = request_lifecycle_fake(
+                &root,
+                json!([execution_capable_account_model(
+                    "not-default",
+                    &["high"],
+                    true,
+                )]),
+            );
+            let mut request = claude_request(&project);
+            request.reasoning_level = reasoning_level.map(str::to_owned);
+            request.fast_mode = fast_mode;
+
+            let error = expect_request_error(
+                request_claude_suggestions_with(
+                    &program,
+                    &invocation_context(Some(ClaudeCredentialSelection {
+                        source: ClaudeCredentialSource::EnvironmentApiKey,
+                        sanitized_settings: None,
+                    })),
+                    request,
+                    Duration::from_secs(2),
+                ),
+                "implicit advanced options must fail closed without an exact default entry",
+            );
+
+            assert_eq!(
+                error,
+                "Claude request could not resolve the default model in the current catalog."
+            );
+            assert!(root.path().join("catalog-argv").exists());
+            assert!(!root.path().join("inference-spawned").exists());
+        }
+    }
+
+    #[test]
+    fn advanced_options_fail_closed_on_catalog_failure_before_spawn() {
+        let root = TestRoot::new("advanced-catalog-failure");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([execution_capable_account_model("default", &["high"], true)]),
+        );
+        fs::write(root.path().join("catalog-response"), b"not-json").unwrap();
+        let mut request = claude_request(&project);
+        request.reasoning_level = Some("high".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(
+                &program,
+                &invocation_context(Some(ClaudeCredentialSelection {
+                    source: ClaudeCredentialSource::EnvironmentApiKey,
+                    sanitized_settings: None,
+                })),
+                request,
+                Duration::from_secs(2),
+            ),
+            "advanced options must stop when fresh catalog discovery fails",
+        );
+
+        assert_eq!(error, "Claude model catalog returned malformed JSON.");
+        assert!(root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
+    }
+
+    #[test]
+    fn request_rejects_parent_fast_disable_policy_before_spawn() {
+        const CHILD: &str = "GTUM_CLAUDE_FAST_DISABLE_CHILD";
+        const TEST_NAME: &str = concat!(
+            "runtime::claude::tests::",
+            "request_rejects_parent_fast_disable_policy_before_spawn"
+        );
+        if std::env::var_os(CHILD).is_none() {
+            assert_isolated_test_succeeded(
+                run_isolated_test(
+                    TEST_NAME,
+                    [
+                        (OsString::from(CHILD), OsString::from("1")),
+                        (
+                            OsString::from("CLAUDE_CODE_DISABLE_FAST_MODE"),
+                            OsString::from("1"),
+                        ),
+                    ],
+                ),
+                "Claude parent Fast-disable policy",
+            );
+            return;
+        }
+
+        let root = TestRoot::new("fast-disable-policy");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([execution_capable_account_model("default", &["high"], true)]),
+        );
+        let mut request = claude_request(&project);
+        request.fast_mode = Some(true);
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(
+                &program,
+                &invocation_context(None),
+                request,
+                Duration::from_secs(2),
+            ),
+            "parent Fast-disable policy must reject before inference",
+        );
+
+        assert_eq!(
+            error,
+            "Claude Fast mode is disabled by CLAUDE_CODE_DISABLE_FAST_MODE."
+        );
+        assert!(root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
     }
 
     #[test]
@@ -3192,7 +3803,7 @@ fn main() {
     }
 
     #[test]
-    fn request_catalog_probe_is_injected_only_for_explicit_model_with_real_deadline() {
+    fn request_catalog_probe_is_injected_for_model_or_advanced_options_with_real_deadline() {
         use std::cell::Cell;
 
         let root = TestRoot::new("request-catalog-seam");
@@ -3252,6 +3863,49 @@ fn main() {
             missing_model_error,
             "Claude request selected a model unavailable in the current catalog."
         );
+
+        for (label, reasoning_level, fast_mode) in [
+            ("reasoning", Some("high"), None),
+            ("fast", None, Some(true)),
+        ] {
+            let probe_calls = Cell::new(0);
+            let mut advanced_request = claude_request(&project);
+            advanced_request.reasoning_level = reasoning_level.map(str::to_owned);
+            advanced_request.fast_mode = fast_mode;
+            let error = expect_request_error(
+                request_claude_suggestions_with_catalog_probe(
+                    &missing_program,
+                    &context,
+                    advanced_request,
+                    Duration::from_secs(2),
+                    |seen_program, seen_context, deadline| {
+                        probe_calls.set(probe_calls.get() + 1);
+                        assert_eq!(seen_program, missing_program);
+                        assert_eq!(seen_context, &context);
+                        assert_eq!(deadline, CLAUDE_MODEL_CATALOG_TIMEOUT);
+                        Ok(vec![AgentModelCapability {
+                            provider_id: AgentProvider::Claude,
+                            model_id: "not-default".into(),
+                            label: "Not default".into(),
+                            execution_options: Some(AgentModelExecutionOptions {
+                                reasoning_levels: vec![AgentReasoningLevelCapability {
+                                    level: "high".into(),
+                                    label: "High".into(),
+                                    description: None,
+                                }],
+                                supports_fast_mode: true,
+                            }),
+                        }])
+                    },
+                ),
+                "advanced implicit-model request must run a catalog probe",
+            );
+            assert_eq!(probe_calls.get(), 1, "missing {label} catalog probe");
+            assert_eq!(
+                error,
+                "Claude request could not resolve the default model in the current catalog."
+            );
+        }
     }
 
     #[test]
@@ -3409,12 +4063,22 @@ fn main() {
             "json",
             "--json-schema",
             schema.as_str(),
+            "--settings",
+            r#"{"fastMode":false}"#,
         ]
         .into_iter()
         .map(OsString::from)
         .collect::<Vec<_>>();
         assert_eq!(
-            claude_request_arguments_for_model(Some(&credential), &schema, None, None).unwrap(),
+            claude_request_arguments_for_model(
+                Some(&credential),
+                &schema,
+                None,
+                None,
+                false,
+                None,
+            )
+            .unwrap(),
             base_arguments
         );
 
@@ -3436,6 +4100,8 @@ fn main() {
             Some(&credential),
             &schema,
             Some("claude-fable-5[1m]"),
+            None,
+            false,
             Some(&catalog),
         )
         .unwrap();
@@ -3452,6 +4118,8 @@ fn main() {
                 Some(&credential),
                 &schema,
                 Some("claude-fable-5[1m]"),
+                None,
+                false,
                 None,
             )
             .unwrap_err(),
@@ -3587,6 +4255,7 @@ fn main() {
             "CLAUDE_CODE_DEBUG_LOGS_DIR",
             "CLAUDE_CODE_DEBUG_LOG_LEVEL",
             "CLAUDE_CODE_EXTRA_BODY",
+            "CLAUDE_CODE_EFFORT_LEVEL",
             "CLAUDE_CODE_FORCE_SESSION_PERSISTENCE",
             "CLAUDE_CODE_ENABLE_TELEMETRY",
             "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA",
@@ -3664,6 +4333,18 @@ fn main() {
                 "did not force {key}"
             );
         }
+
+        let mut fast_policy_command = Command::new("claude");
+        fast_policy_command.env("CLAUDE_CODE_DISABLE_FAST_MODE", "1");
+        configure_claude_child_environment(&mut fast_policy_command, &invocation_context(None));
+        assert_eq!(
+            fast_policy_command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new("CLAUDE_CODE_DISABLE_FAST_MODE"))
+                .and_then(|(_, value)| value),
+            Some(OsStr::new("1")),
+            "Fast-disable policy must remain visible to the child"
+        );
     }
 
     #[test]
@@ -3891,7 +4572,8 @@ fn main() {
 
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].provider, AgentProvider::Claude);
-        let expected_arguments = claude_request_arguments(Some(&credential), &schema)
+        let expected_arguments = claude_request_arguments(Some(&credential), &schema, false)
+            .unwrap()
             .into_iter()
             .map(|value| value.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
@@ -5314,6 +5996,8 @@ fn main() {
             "json",
             "--json-schema",
             schema.as_str(),
+            "--settings",
+            r#"{"fastMode":false}"#,
             "--model",
             "opus[1m]",
         ]
@@ -5330,7 +6014,7 @@ fn main() {
             fs::read_to_string(format!("{}.order", program.display())).unwrap(),
             "status\ncatalog\ninference\n"
         );
-        assert_no_argument_expansion(
+        assert_no_unsafe_request_argument_expansion(
             &recorded_request
                 .iter()
                 .map(OsString::from)
