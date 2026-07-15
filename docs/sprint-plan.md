@@ -72,11 +72,31 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
-## Current Claude Account Model Catalog And Picker Repair — 2026-07-15
+## Current Claude Model-Specific Effort And Fast Mode — 2026-07-15
+
+Goal: expose only the reasoning and Fast options returned for the effective Claude model, preserve independent Codex/Claude preferences, and reject stale or unsupported combinations before inference.
+
+Delivered contract:
+
+- each prompt-free Claude catalog model carries bounded `executionOptions`; selected-model data overrides provider-level compatibility fields, and no alias or entitlement is inferred
+- the compact composer renders only supported controls. Claude adds a UI-only `Default` effort row that sends `reasoningLevel: null`; unsupported models hide the controls without erasing saved provider preferences
+- each project Agent session persists `selectedReasoningLevels` and `fastModes` under `codex`/`claude`. Stale provider-level Codex effort recovers to the current supported default, while stale Claude model-owned effort remains null
+- send freezes provider, model, attachments, effort, and Fast with the original project/session owner before asynchronous work; Agent execution never mutates the user-visible center terminal
+- an explicit Claude model, explicit effort, or enabled Fast triggers a fresh catalog read and exact effective-model validation before inference. Supported effort maps to separate `--effort <level>` arguments
+- every inference request emits exactly one sanitized settings JSON with explicit `fastMode`; helper mode merges only `apiKeyHelper`. The child removes `CLAUDE_CODE_EFFORT_LEVEL`, and `CLAUDE_CODE_DISABLE_FAST_MODE=1` rejects enabled Fast before spawn
+
+Verification state:
+
+- malformed capability normalization, model switching, compact/narrow geometry, provider/project/session persistence, immutable request ownership, settings/argv mapping, policy-environment handling, and pre-spawn rejection have focused Rust and serial Playwright coverage; lint and production build passed during implementation
+- catalog fixtures and the bounded prompt-free compatibility smoke are distinct from live inference. The preliminary initialize-only smoke run today passed (`1 passed, 0 failed`) through `live_catalog_compatibility_smoke_is_prompt_free`; the final clean-candidate rerun remains pending. No user prompt, paid Claude inference, billing, or response-quality validation ran for this slice
+- Fast can require organization enablement and usage credits even when a model reports support; GTUM does not present discovered support as billing entitlement
+- the active execution record is [Claude Effort and Fast Mode Implementation Plan](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md); its final clean-tree full gate and exact-SHA integration record remain the closing step
+
+## Completed Claude Account Model Catalog And Picker Repair — 2026-07-15
 
 Goal: replace the clipped static Claude alias menu with the bounded model catalog returned by the authenticated installed CLI, then preserve each exact selectable value through renderer state and request-time validation.
 
-Current scope:
+Delivered scope:
 
 - `read_agent_provider_capabilities` remains the provider-owned catalog boundary and runs blocking provider discovery away from the Tauri IPC executor.
 - Claude starts the installed CLI in source-specific isolated SDK stream mode, sends exactly one serialized `initialize` control request, closes stdin, and parses only one bounded matching success response. Discovery sends no prompt, `--print`, assistant turn, or inference request.
@@ -84,7 +104,7 @@ Current scope:
 - The native control envelope is version-coupled to Claude Code. Wrong IDs, error or extra envelopes, malformed JSON, blank/control-bearing/leading-dash/duplicate/excessive fields, empty results, spawn failure, timeout, or oversized output reject the catalog atomically. There is no static, cached, historical, or inferred entitlement fallback.
 - Historical versions, Fable, and extended-context variants are selectable only when the current account/policy response returns their exact `value`. `resolvedModel` never grants a second selectable identifier.
 - Failed or unavailable discovery exposes no selectable catalog and preserves the stored per-project/session/provider value for a later valid read. A successful supported catalog may remove a definitively absent value.
-- An explicit request refreshes the authenticated catalog before inference spawn and requires exact returned-value membership. It adds exactly one separate `--model <value>` pair only after validation. `model: null` skips the extra catalog probe and keeps the CLI runtime default.
+- In this completed catalog slice, an explicit model refreshes the authenticated catalog before inference spawn, requires exact returned-value membership, and adds exactly one separate `--model <value>` pair after validation. `model: null` omits the model flag. The newer effort/Fast contract still refreshes and resolves the returned `default` entry when an explicit effort or enabled Fast is requested with a null model.
 - Closed composer provider/model/reasoning/fast controls use compact non-wrapping icons or marks. Exact names and current state appear inside the opened lists, while exact accessible labels remain on the controls. Every popup stays within the Agent panel and viewport at the default, 260 px, and 240 px Agent widths. Current account labels remain one line at the default width; longer valid labels wrap inside their option without clipping or horizontal overflow. The model list scrolls internally and brings the selected row into view when reopened. Listbox semantics, one truthful selection, Escape focus restoration, provider-change close, persistence, and zero center-terminal mutation remain required.
 - Provider capability state is generation-owned. Each successfully returned startup connection and every connect, disconnect, reconnect, provider-action error, or capability-read error invalidates the old provider catalog synchronously; a connected active provider schedules a fresh read, and a late success or rejection cannot overwrite a newer connection or catalog state.
 

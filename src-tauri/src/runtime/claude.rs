@@ -3144,9 +3144,79 @@ fn main() {
             discover_claude_model_catalog_with(&program, &context, CLAUDE_MODEL_CATALOG_TIMEOUT)
                 .expect("prompt-free Claude model catalog initialization must succeed");
 
-        assert!(!models.is_empty(), "live Claude catalog must not be empty");
+        assert!(
+            !models.is_empty() && models.len() <= MAX_CLAUDE_MODELS,
+            "live Claude catalog must have a bounded model count"
+        );
         for model in models {
-            println!("{}\t{}", model.model_id, model.label);
+            assert_eq!(model.provider_id, AgentProvider::Claude);
+            assert!(
+                !model.model_id.is_empty()
+                    && model.model_id.len() <= MAX_CLAUDE_MODEL_ID_BYTES
+                    && model.model_id == model.model_id.trim()
+                    && !model.model_id.starts_with('-')
+                    && !model.model_id.chars().any(char::is_control),
+                "live Claude model identifiers must remain bounded and sanitized"
+            );
+            assert!(
+                !model.label.is_empty()
+                    && model.label.len() <= MAX_CLAUDE_MODEL_LABEL_BYTES
+                    && model.label == model.label.trim()
+                    && !model.label.chars().any(char::is_control),
+                "live Claude model labels must remain bounded and sanitized"
+            );
+
+            let execution_options = model
+                .execution_options
+                .expect("every live Claude model must project execution options");
+            assert!(
+                execution_options.reasoning_levels.len() <= MAX_CLAUDE_REASONING_LEVELS,
+                "live Claude reasoning levels must remain bounded"
+            );
+
+            let known_levels = ["low", "medium", "high", "xhigh", "max"];
+            let mut seen_levels = Vec::new();
+            for reasoning in &execution_options.reasoning_levels {
+                assert!(
+                    !reasoning.level.is_empty()
+                        && reasoning.level.len() <= MAX_CLAUDE_REASONING_LEVEL_BYTES
+                        && reasoning.level == reasoning.level.trim()
+                        && !reasoning.level.starts_with('-')
+                        && !reasoning.level.chars().any(char::is_control),
+                    "live Claude reasoning levels must remain bounded and sanitized"
+                );
+                assert!(
+                    !reasoning.label.is_empty()
+                        && reasoning.label.len() <= MAX_CLAUDE_REASONING_LABEL_BYTES
+                        && reasoning.label == reasoning.label.trim()
+                        && !reasoning.label.chars().any(char::is_control),
+                    "live Claude reasoning labels must remain bounded and sanitized"
+                );
+
+                assert!(
+                    known_levels.contains(&reasoning.level.as_str()),
+                    "live Claude reasoning levels must remain known"
+                );
+                assert!(
+                    !seen_levels.contains(&reasoning.level.as_str()),
+                    "live Claude reasoning levels must remain unique"
+                );
+                seen_levels.push(reasoning.level.as_str());
+                assert!(
+                    claude_reasoning_level_label(&reasoning.level)
+                        .is_some_and(|known_label| known_label == reasoning.label),
+                    "live Claude reasoning labels must match known level labels"
+                );
+            }
+
+            let projected_options = serde_json::to_value(&execution_options)
+                .expect("live Claude execution options must serialize");
+            assert!(
+                projected_options
+                    .get("supportsFastMode")
+                    .is_some_and(Value::is_boolean),
+                "live Claude Fast support must remain a boolean projection"
+            );
         }
     }
 
