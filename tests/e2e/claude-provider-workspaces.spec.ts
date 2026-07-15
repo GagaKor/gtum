@@ -33,11 +33,41 @@ const claudeModelCatalog = [
   },
 ] as const
 
+const claudePriorPolicyCatalog = [
+  {
+    providerId: 'claude',
+    modelId: 'opus[1m]',
+    label: 'Opus · Prior account policy',
+  },
+] as const
+
+const claudeUpdatedPolicyCatalog = [
+  {
+    providerId: 'claude',
+    modelId: 'sonnet',
+    label: 'Sonnet · Updated account policy',
+  },
+] as const
+
+const claudeMaxHumanLabel = `Maximum catalog label · ${'W'.repeat(132)}`
+
+type ClaudeCapabilityFixture = {
+  deferred?: boolean
+  models: ReadonlyArray<{
+    providerId: 'claude'
+    modelId: string
+    label: string
+  }>
+}
+
 type ClaudeWorkspaceHarnessOptions = {
   sessionAProvider?: 'codex' | 'claude'
   sessionASelectedModels?: Record<string, unknown>
   claudeSupportsModelSelection?: boolean
   includeAdvancedControls?: boolean
+  claudeInitialConnectionStatus?: 'connected' | 'disconnected'
+  claudeCapabilityFixtures?: ClaudeCapabilityFixture[]
+  deferInitialConnectionList?: boolean
 }
 
 const installClaudeWorkspaceHarness = async (
@@ -59,6 +89,10 @@ const installClaudeWorkspaceHarness = async (
       __authCalls: RuntimeCall[]
       __agentJobCalls: RuntimeCall[]
       __terminalCalls: RuntimeCall[]
+      __claudeCapabilityReadCount: number
+      __resolveClaudeCapabilityRead(readIndex: number, models: unknown[]): void
+      __rejectClaudeCapabilityRead(readIndex: number, message: string): void
+      __resolveInitialConnectionList(status: 'connected' | 'disconnected'): void
       __resolveProviderRequest(
         provider: string,
         projectPath: string,
@@ -79,6 +113,12 @@ const installClaudeWorkspaceHarness = async (
 
     const bridgeWindow = window as TestWindow
     const requestResolvers = new Map<string, SuggestionResolver>()
+    const pendingClaudeCapabilities = new Map<number, {
+      resolve(models: unknown[]): void
+      reject(error: Error): void
+    }>()
+    let resolveInitialConnectionList: ((status: 'connected' | 'disconnected') => void) | null = null
+    let claudeConnectionStatus = options.claudeInitialConnectionStatus || 'connected'
     const requestKey = (provider: string, projectPath: string, agentSessionId: string) =>
       `${provider}\u0000${projectPath}\u0000${agentSessionId}`
     const workspaceSnapshot = (activeProjectPath: string) => ({
@@ -153,6 +193,25 @@ const installClaudeWorkspaceHarness = async (
     bridgeWindow.__authCalls = []
     bridgeWindow.__agentJobCalls = []
     bridgeWindow.__terminalCalls = []
+    bridgeWindow.__claudeCapabilityReadCount = 0
+    bridgeWindow.__resolveClaudeCapabilityRead = (readIndex, models) => {
+      const pending = pendingClaudeCapabilities.get(readIndex)
+      if (!pending) throw new Error(`No pending Claude capability read ${readIndex}`)
+      pendingClaudeCapabilities.delete(readIndex)
+      pending.resolve(models)
+    }
+    bridgeWindow.__rejectClaudeCapabilityRead = (readIndex, message) => {
+      const pending = pendingClaudeCapabilities.get(readIndex)
+      if (!pending) throw new Error(`No pending Claude capability read ${readIndex}`)
+      pendingClaudeCapabilities.delete(readIndex)
+      pending.reject(new Error(message))
+    }
+    bridgeWindow.__resolveInitialConnectionList = (status) => {
+      if (!resolveInitialConnectionList) throw new Error('No pending initial connection list')
+      const resolve = resolveInitialConnectionList
+      resolveInitialConnectionList = null
+      resolve(status)
+    }
     bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = 1
     bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 10_000
     bridgeWindow.__GTUM_AGENT_FLEET_POLL_INTERVAL_MS__ = 10_000
@@ -206,10 +265,25 @@ const installClaudeWorkspaceHarness = async (
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
         if (command === 'list_agent_connections') {
-          return [connection('claude', 'disconnected'), connection('codex')]
+          if (options.deferInitialConnectionList) {
+            return new Promise((resolve) => {
+              resolveInitialConnectionList = (status) => {
+                claudeConnectionStatus = status
+                resolve([connection('claude', status), connection('codex')])
+              }
+            })
+          }
+          return [connection('claude', claudeConnectionStatus), connection('codex')]
         }
         if (command === 'begin_agent_login') {
-          return connection('claude')
+          const provider = String(args?.provider) as 'codex' | 'claude'
+          if (provider === 'claude') claudeConnectionStatus = 'connected'
+          return connection(provider)
+        }
+        if (command === 'disconnect_agent_provider') {
+          const provider = String(args?.provider) as 'codex' | 'claude'
+          if (provider === 'claude') claudeConnectionStatus = 'disconnected'
+          return connection(provider, 'disconnected')
         }
         throw new Error(`Unexpected auth command: ${command}`)
       },
@@ -220,21 +294,11 @@ const installClaudeWorkspaceHarness = async (
         bridgeWindow.__providerCalls.push({ command, args })
         if (command === 'read_agent_provider_capabilities') {
           const provider = String(args?.provider) as 'codex' | 'claude'
-          const availableModels = provider === 'claude'
-            ? claudeModelCatalog
-            : [
-                { providerId: 'codex', modelId: 'gpt-default', label: 'GPT default' },
-                { providerId: 'codex', modelId: 'gpt-5-codex', label: 'GPT-5 Codex' },
-                { providerId: 'codex', modelId: 'gpt-mini', label: 'GPT Mini' },
-              ]
-          const supportsModelSelection = provider === 'claude'
-            ? options.claudeSupportsModelSelection !== false
-            : true
-          return {
+          const capabilitySnapshot = (models: unknown[]) => ({
             provider,
-            supportsModelSelection,
-            currentModel: supportsModelSelection ? availableModels[0] : null,
-            availableModels: supportsModelSelection ? availableModels : [],
+            supportsModelSelection: models.length > 0,
+            currentModel: models[0] || null,
+            availableModels: models,
             reasoningLevels: options.includeAdvancedControls
               ? [
                   { level: 'low', label: 'Low', description: 'Fast, lighter reasoning' },
@@ -246,7 +310,32 @@ const installClaudeWorkspaceHarness = async (
             defaultReasoningLevel: options.includeAdvancedControls ? 'high' : null,
             supportsFastMode: options.includeAdvancedControls === true,
             attachments: [],
+          })
+          if (provider === 'claude' && options.claudeCapabilityFixtures?.length) {
+            const readIndex = ++bridgeWindow.__claudeCapabilityReadCount
+            const fixture = options.claudeCapabilityFixtures[readIndex - 1]
+              || options.claudeCapabilityFixtures[options.claudeCapabilityFixtures.length - 1]
+            if (fixture.deferred) {
+              return new Promise((resolve, reject) => {
+                pendingClaudeCapabilities.set(readIndex, {
+                  resolve: (models) => resolve(capabilitySnapshot(models)),
+                  reject,
+                })
+              })
+            }
+            return capabilitySnapshot([...fixture.models])
           }
+          const availableModels = provider === 'claude'
+            ? claudeModelCatalog
+            : [
+                { providerId: 'codex', modelId: 'gpt-default', label: 'GPT default' },
+                { providerId: 'codex', modelId: 'gpt-5-codex', label: 'GPT-5 Codex' },
+                { providerId: 'codex', modelId: 'gpt-mini', label: 'GPT Mini' },
+              ]
+          const supportsModelSelection = provider === 'claude'
+            ? options.claudeSupportsModelSelection !== false
+            : true
+          return capabilitySnapshot(supportsModelSelection ? [...availableModels] : [])
         }
         if (command === 'request_agent_suggestions') {
           const request = args?.request as {
@@ -327,6 +416,30 @@ const modelTrigger = (page: Page, provider: 'Codex' | 'Claude') =>
 const switchProvider = async (page: Page, provider: 'Codex' | 'Claude') => {
   await page.locator('.composer-provider-chip').click()
   await page.getByRole('option', { name: new RegExp(`^${provider}`) }).click()
+}
+
+const resizeAgentPanel = async (page: Page, targetWidth: number) => {
+  const agent = await page.locator('.agent').boundingBox()
+  const resizeHandle = await page.locator('.resize-handle.handle-right').boundingBox()
+  expect(agent).not.toBeNull()
+  expect(resizeHandle).not.toBeNull()
+  const dragDistance = agent!.width - targetWidth
+  const handleX = resizeHandle!.x + resizeHandle!.width / 2
+  const handleY = resizeHandle!.y + resizeHandle!.height / 2
+
+  await page.mouse.move(handleX, handleY)
+  await page.mouse.down()
+  await page.mouse.move(handleX + dragDistance, handleY, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => Math.abs(
+    ((await page.locator('.agent').boundingBox())?.width ?? 0) - targetWidth,
+  )).toBeLessThanOrEqual(1)
+}
+
+const flushBrowserLayout = async (page: Page) => {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
 }
 
 const installClaudeConnectionOrderingHarness = async (page: Page) => {
@@ -503,6 +616,198 @@ test('does not let stale discovery failure overwrite a completed Codex connect',
   ).__terminalCalls ?? [])).toEqual([])
 })
 
+test('refreshes after connected startup discovery and ignores the older catalog rejection', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    claudeInitialConnectionStatus: 'connected',
+    deferInitialConnectionList: true,
+    claudeCapabilityFixtures: [
+      { deferred: true, models: [] },
+      { models: claudeUpdatedPolicyCatalog },
+    ],
+  })
+  await page.goto('/')
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await page.evaluate(() => (
+    window as Window & {
+      __resolveInitialConnectionList(status: 'connected' | 'disconnected'): void
+    }
+  ).__resolveInitialConnectionList('connected'))
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(2)
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
+  )
+
+  await page.evaluate(() => (
+    window as Window & {
+      __rejectClaudeCapabilityRead(readIndex: number, message: string): void
+    }
+  ).__rejectClaudeCapabilityRead(1, 'stale startup catalog failure'))
+  await flushBrowserLayout(page)
+
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
+  )
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(claudeSettings).toContainText('Connected')
+  await expect(claudeSettings.getByRole('button', { name: 'Disconnect' })).toBeVisible()
+})
+
+test('clears startup capabilities after disconnected discovery and ignores the older success', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    claudeInitialConnectionStatus: 'disconnected',
+    deferInitialConnectionList: true,
+    claudeCapabilityFixtures: [
+      { deferred: true, models: claudePriorPolicyCatalog },
+    ],
+  })
+  await page.goto('/')
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  await page.evaluate(() => (
+    window as Window & {
+      __resolveInitialConnectionList(status: 'connected' | 'disconnected'): void
+    }
+  ).__resolveInitialConnectionList('disconnected'))
+  await page.evaluate(({ models }) => (
+    window as Window & {
+      __resolveClaudeCapabilityRead(readIndex: number, values: unknown[]): void
+    }
+  ).__resolveClaudeCapabilityRead(1, models), { models: [...claudePriorPolicyCatalog] })
+  await flushBrowserLayout(page)
+
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+})
+
+test('refreshes an active Claude catalog immediately after connecting without a provider switch', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    claudeInitialConnectionStatus: 'disconnected',
+    claudeCapabilityFixtures: [
+      { models: [] },
+      { models: claudeModelCatalog },
+    ],
+  })
+  await page.goto('/')
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(2)
+  const trigger = modelTrigger(page, 'Claude')
+  await expect(trigger).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeModelCatalog[0].label}`,
+  )
+  await trigger.click()
+  await expect(page.getByRole('listbox', { name: 'Claude models' }).getByRole('option'))
+    .toHaveCount(claudeModelCatalog.length)
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
+test('clears Claude capabilities across disconnects and ignores stale policy reads after reconnect', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    claudeInitialConnectionStatus: 'connected',
+    claudeCapabilityFixtures: [
+      { models: claudePriorPolicyCatalog },
+      { deferred: true, models: claudePriorPolicyCatalog },
+      { models: claudeUpdatedPolicyCatalog },
+    ],
+  })
+  await page.goto('/')
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudePriorPolicyCatalog[0].label}`,
+  )
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  let claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Disconnect' }).click()
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await claudeSettings.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(2)
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Disconnect' }).click()
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await claudeSettings.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(3)
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
+  )
+
+  await page.evaluate(({ models }) => (
+    window as Window & {
+      __resolveClaudeCapabilityRead(readIndex: number, values: unknown[]): void
+    }
+  ).__resolveClaudeCapabilityRead(2, models), { models: [...claudePriorPolicyCatalog] })
+  await flushBrowserLayout(page)
+
+  const updatedTrigger = modelTrigger(page, 'Claude')
+  await expect(updatedTrigger).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
+  )
+  await updatedTrigger.click()
+  const menu = page.getByRole('listbox', { name: 'Claude models' })
+  await expect(menu.getByRole('option', {
+    name: claudeUpdatedPolicyCatalog[0].label,
+    exact: true,
+  })).toHaveCount(1)
+  await expect(menu.getByRole('option', {
+    name: claudePriorPolicyCatalog[0].label,
+    exact: true,
+  })).toHaveCount(0)
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
 test('keeps the model popup within the Agent panel at 1280x720', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await installClaudeWorkspaceHarness(page, { sessionAProvider: 'claude' })
@@ -578,7 +883,6 @@ test('renders the live Claude catalog as one-line readable labels without raw id
     await expect(option.locator('code')).toHaveCount(0)
 
     const labelGeometry = await option.locator('span').evaluate((label) => {
-      const style = window.getComputedStyle(label)
       const range = document.createRange()
       range.selectNodeContents(label)
       const lineTops = new Set(
@@ -587,16 +891,70 @@ test('renders the live Claude catalog as one-line readable labels without raw id
           .map((rect) => Math.round(rect.top * 10) / 10),
       )
       return {
-        whiteSpace: style.whiteSpace,
         lineCount: lineTops.size,
         clientWidth: label.clientWidth,
         scrollWidth: label.scrollWidth,
+        menuWidth: label.closest('[role="listbox"]')?.getBoundingClientRect().width ?? 0,
       }
     })
-    expect(labelGeometry.whiteSpace).toBe('nowrap')
-    expect(labelGeometry.lineCount).toBe(1)
+    expect(labelGeometry.lineCount, `${model.modelId}: ${JSON.stringify(labelGeometry)}`).toBe(1)
     expect(labelGeometry.scrollWidth).toBeLessThanOrEqual(labelGeometry.clientWidth + 1)
   }
+})
+
+test('wraps a maximum-length account label at default width without clipping its exact name', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    claudeInitialConnectionStatus: 'connected',
+    claudeCapabilityFixtures: [{
+      models: [{
+        providerId: 'claude',
+        modelId: 'maximum-label-model',
+        label: claudeMaxHumanLabel,
+      }],
+    }],
+  })
+  await page.goto('/')
+
+  const trigger = modelTrigger(page, 'Claude')
+  await expect(trigger).toHaveAttribute('aria-label', `Claude model: ${claudeMaxHumanLabel}`)
+  await trigger.click()
+  const menu = page.getByRole('listbox', { name: 'Claude models' })
+  const option = menu.getByRole('option', { name: claudeMaxHumanLabel, exact: true })
+  await expect(option).toHaveText(claudeMaxHumanLabel)
+
+  const geometry = await option.locator('span').evaluate((label) => {
+    const option = label.closest('[role="option"]')
+    const listbox = label.closest('[role="listbox"]')
+    if (!(option instanceof HTMLElement) || !(listbox instanceof HTMLElement)) {
+      throw new Error('Model label lost its option/listbox')
+    }
+    const optionRect = option.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(label)
+    const lineRects = Array.from(range.getClientRects())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+    return {
+      text: label.textContent,
+      lineCount: new Set(lineRects.map((rect) => Math.round(rect.top * 10) / 10)).size,
+      clientWidth: label.clientWidth,
+      scrollWidth: label.scrollWidth,
+      menuClientWidth: listbox.clientWidth,
+      menuScrollWidth: listbox.scrollWidth,
+      fullyInsideOption: lineRects.every((rect) => (
+        rect.left >= optionRect.left - 0.5
+        && rect.right <= optionRect.right + 0.5
+        && rect.top >= optionRect.top - 0.5
+        && rect.bottom <= optionRect.bottom + 0.5
+      )),
+    }
+  })
+  expect(geometry.text).toBe(claudeMaxHumanLabel)
+  expect(geometry.lineCount).toBeGreaterThan(1)
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1)
+  expect(geometry.menuScrollWidth).toBeLessThanOrEqual(geometry.menuClientWidth + 1)
+  expect(geometry.fullyInsideOption).toBe(true)
 })
 
 test('keeps compact composer triggers on one line at default and narrow Agent widths', async ({ page }) => {
@@ -713,6 +1071,140 @@ test('keeps compact composer triggers on one line at default and narrow Agent wi
   }
 })
 
+test('contains every compact menu and fully reveals long model labels at 260px and 240px', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    includeAdvancedControls: true,
+  })
+  await page.goto('/')
+
+  const menuDefinitions = [
+    {
+      label: 'provider',
+      trigger: () => page.locator('.composer-provider-chip'),
+      menu: () => page.getByRole('listbox', { name: 'Agent provider' }),
+    },
+    {
+      label: 'model',
+      trigger: () => modelTrigger(page, 'Claude'),
+      menu: () => page.getByRole('listbox', { name: 'Claude models' }),
+    },
+    {
+      label: 'reasoning',
+      trigger: () => page.locator('.composer-reasoning-chip'),
+      menu: () => page.getByRole('listbox', { name: 'Reasoning levels' }),
+    },
+    {
+      label: 'fast',
+      trigger: () => page.locator('.fast-toggle'),
+      menu: () => page.getByRole('listbox', { name: 'Fast mode' }),
+    },
+  ]
+
+  for (const targetWidth of [260, 240]) {
+    await resizeAgentPanel(page, targetWidth)
+    const toolbarGeometry = await page.locator('.composer-foot').evaluate((row) => {
+      const centers = new Set(Array.from(row.children).map((child) => {
+        const rect = child.getBoundingClientRect()
+        return Math.round((rect.top + rect.height / 2) * 10) / 10
+      }))
+      return {
+        flexWrap: window.getComputedStyle(row).flexWrap,
+        lineCount: centers.size,
+        clientWidth: row.clientWidth,
+        scrollWidth: row.scrollWidth,
+      }
+    })
+    expect(toolbarGeometry.flexWrap).toBe('nowrap')
+    expect(toolbarGeometry.lineCount).toBe(1)
+    expect(toolbarGeometry.scrollWidth).toBeLessThanOrEqual(toolbarGeometry.clientWidth + 1)
+
+    for (const definition of menuDefinitions) {
+      await definition.trigger().click()
+      const menu = definition.menu()
+      await expect(menu).toBeVisible()
+      const geometry = await menu.evaluate((listbox) => {
+        const menuRect = listbox.getBoundingClientRect()
+        const agent = listbox.closest('.agent')
+        const composer = listbox.closest('.composer-input')
+        if (!(agent instanceof HTMLElement) || !(composer instanceof HTMLElement)) {
+          throw new Error('Compact menu lost its Agent/composer owner')
+        }
+        const agentRect = agent.getBoundingClientRect()
+        const composerRect = composer.getBoundingClientRect()
+        return {
+          menuLeft: menuRect.left,
+          menuRight: menuRect.right,
+          agentLeft: agentRect.left,
+          agentRight: agentRect.right,
+          composerLeft: composerRect.left,
+          composerRight: composerRect.right,
+          viewportWidth: window.innerWidth,
+          clientWidth: listbox.clientWidth,
+          scrollWidth: listbox.scrollWidth,
+        }
+      })
+      expect.soft(
+        geometry.menuLeft,
+        `${definition.label} left edge at ${targetWidth}px`,
+      ).toBeGreaterThanOrEqual(geometry.agentLeft - 0.5)
+      expect.soft(
+        geometry.menuRight,
+        `${definition.label} right edge at ${targetWidth}px`,
+      ).toBeLessThanOrEqual(geometry.agentRight + 0.5)
+      expect.soft(
+        geometry.menuLeft,
+        `${definition.label} composer left edge at ${targetWidth}px`,
+      ).toBeGreaterThanOrEqual(geometry.composerLeft - 0.5)
+      expect.soft(
+        geometry.menuRight,
+        `${definition.label} composer right edge at ${targetWidth}px`,
+      ).toBeLessThanOrEqual(geometry.composerRight + 0.5)
+      expect.soft(geometry.menuLeft).toBeGreaterThanOrEqual(0)
+      expect.soft(geometry.menuRight).toBeLessThanOrEqual(geometry.viewportWidth)
+      expect.soft(
+        geometry.scrollWidth,
+        `${definition.label} horizontal content at ${targetWidth}px`,
+      ).toBeLessThanOrEqual(geometry.clientWidth + 1)
+
+      if (definition.label === 'model') {
+        const option = menu.getByRole('option', {
+          name: claudeModelCatalog[0].label,
+          exact: true,
+        })
+        await expect(option).toHaveText(claudeModelCatalog[0].label)
+        const labelGeometry = await option.locator('span').evaluate((label) => {
+          const option = label.closest('[role="option"]')
+          if (!(option instanceof HTMLElement)) throw new Error('Model label lost its option')
+          const optionRect = option.getBoundingClientRect()
+          const range = document.createRange()
+          range.selectNodeContents(label)
+          const lineRects = Array.from(range.getClientRects())
+            .filter((rect) => rect.width > 0 && rect.height > 0)
+          return {
+            lineCount: new Set(lineRects.map((rect) => Math.round(rect.top * 10) / 10)).size,
+            clientWidth: label.clientWidth,
+            scrollWidth: label.scrollWidth,
+            fullyInsideOption: lineRects.every((rect) => (
+              rect.left >= optionRect.left - 0.5
+              && rect.right <= optionRect.right + 0.5
+              && rect.top >= optionRect.top - 0.5
+              && rect.bottom <= optionRect.bottom + 0.5
+            )),
+          }
+        })
+        expect.soft(labelGeometry.scrollWidth).toBeLessThanOrEqual(labelGeometry.clientWidth + 1)
+        expect.soft(labelGeometry.fullyInsideOption).toBe(true)
+        if (targetWidth === 240) expect.soft(labelGeometry.lineCount).toBeGreaterThan(1)
+      }
+
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveCount(0)
+    }
+  }
+})
+
 test('opens exact full-name compact composer menus and preserves selected request state', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await installClaudeWorkspaceHarness(page, {
@@ -724,15 +1216,15 @@ test('opens exact full-name compact composer menus and preserves selected reques
   const providerTrigger = page.locator('.composer-provider-chip')
   await expect(providerTrigger).toHaveAttribute(
     'aria-label',
-    'Provider: Claude · Connect provider',
+    'Provider: Claude · CLI session',
   )
   await expect(providerTrigger).toHaveAttribute(
     'title',
-    'Provider: Claude · Connect provider',
+    'Provider: Claude · CLI session',
   )
   await providerTrigger.click()
   const providerMenu = page.getByRole('listbox', { name: 'Agent provider' })
-  await expect(providerMenu.getByRole('option', { name: 'Claude Connect provider', exact: true }))
+  await expect(providerMenu.getByRole('option', { name: 'Claude CLI session', exact: true }))
     .toHaveCount(1)
   await expect(providerMenu.getByRole('option', { name: 'Codex CLI session', exact: true }))
     .toHaveCount(1)
@@ -797,10 +1289,6 @@ test('opens exact full-name compact composer menus and preserves selected reques
   await expect(reasoningMenu).toHaveCount(0)
   await expect(reasoningTrigger).toBeFocused()
 
-  await page.locator('.titlebar .pill.icon-only').click()
-  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
-  await claudeSettings.getByRole('button', { name: 'Connect' }).click()
-  await expect(page.locator('.settings-overlay')).toHaveCount(0)
   await expect(providerTrigger).toHaveAttribute('aria-label', 'Provider: Claude · CLI session')
 
   await sendRequest(page, 'Claude', 'compact control request')
@@ -843,7 +1331,9 @@ test('opens exact full-name compact composer menus and preserves selected reques
 })
 
 test('keeps provider-specific models accessible, persisted, and owned by their project sessions', async ({ page }) => {
-  await installClaudeWorkspaceHarness(page)
+  await installClaudeWorkspaceHarness(page, {
+    claudeInitialConnectionStatus: 'disconnected',
+  })
   await page.goto('/')
 
   await expect(page.locator('.agent')).toHaveAttribute('data-agent-project-path', projectA)
@@ -1047,10 +1537,6 @@ test('drops only a stale Claude model after its selectable catalog loads', async
     return directory[projectA]?.sessions?.[0]?.selectedModels
   }, { projectA })).toEqual({ codex: 'gpt-5-codex' })
 
-  await page.locator('.titlebar .pill.icon-only').click()
-  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
-  await claudeSettings.getByRole('button', { name: 'Connect' }).click()
-  await expect(page.locator('.settings-overlay')).toHaveCount(0)
   await sendRequest(page, 'Claude', 'request after stale model')
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __providerCalls?: RuntimeCall[] }

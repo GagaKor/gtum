@@ -4206,6 +4206,7 @@ function App() {
   }
   const sessionCloseInFlightRef = React.useRef(new Set());
   const providerConnectionGenerationsRef = React.useRef(new Map());
+  const providerCapabilityGenerationsRef = React.useRef(new Map());
   const committedAgentContextOwnersRef = React.useRef(null);
   const executing = null;
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
@@ -4270,6 +4271,7 @@ function App() {
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [providerCapabilities, setProviderCapabilities] = React.useState({});
+  const [providerCapabilityRefreshRevisions, setProviderCapabilityRefreshRevisions] = React.useState({});
   const activeAgentWorkspaceKey = agentWorkspaceKey(activeProject);
   const activeAgentWorkspace = agentSessionStore[activeAgentWorkspaceKey] || null;
   const activeAgentSession = activeAgentWorkspace?.sessions?.find(
@@ -4277,6 +4279,8 @@ function App() {
   ) || activeAgentWorkspace?.sessions?.[0] || null;
   const activeAgentSessionId = activeAgentSession?.id || null;
   const activeProviderId = activeAgentSession?.providerId || "codex";
+  const activeProviderCapabilityRefreshRevision =
+    providerCapabilityRefreshRevisions[activeProviderId] || 0;
   const messages = activeAgentSession?.messages || [];
   const activeAgentRequest = activeAgentSession?.request || createAgentRequestState();
   const isTyping = activeAgentRequest.phase === "running";
@@ -4645,17 +4649,45 @@ function App() {
     }
   }, []);
 
+  const invalidateProviderCapabilities = React.useCallback((providerId) => {
+    const generation = (providerCapabilityGenerationsRef.current.get(providerId) || 0) + 1;
+    providerCapabilityGenerationsRef.current.set(providerId, generation);
+    setProviderCapabilities((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, providerId)) return prev;
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
+    return generation;
+  }, []);
+  const refreshProviderCapabilities = React.useCallback((providerId) => {
+    invalidateProviderCapabilities(providerId);
+    setProviderCapabilityRefreshRevisions((prev) => ({
+      ...prev,
+      [providerId]: (prev[providerId] || 0) + 1,
+    }));
+  }, [invalidateProviderCapabilities]);
+  const reconcileProviderCapabilities = React.useCallback((connection) => {
+    if (connection.status === "connected") {
+      refreshProviderCapabilities(connection.provider);
+    } else {
+      invalidateProviderCapabilities(connection.provider);
+    }
+  }, [invalidateProviderCapabilities, refreshProviderCapabilities]);
   const applyProviderConnection = React.useCallback((connection) => {
     setProviders((prev) => mergeRuntimeProviderConnections(prev, [connection]));
-  }, []);
+    reconcileProviderCapabilities(connection);
+  }, [reconcileProviderCapabilities]);
   const markProviderError = React.useCallback((providerId, message) => {
+    invalidateProviderCapabilities(providerId);
     setProviders((prev) => prev.map((p) => p.id === providerId
       ? { ...p, state: "error", lastError: message, expiresInDays: null }
       : p));
-  }, []);
+  }, [invalidateProviderCapabilities]);
   const onDisconnect = async (providerId) => {
     const generation = (providerConnectionGenerationsRef.current.get(providerId) || 0) + 1;
     providerConnectionGenerationsRef.current.set(providerId, generation);
+    invalidateProviderCapabilities(providerId);
     const isCurrent = () => providerConnectionGenerationsRef.current.get(providerId) === generation;
     if (agentAuthRuntimeService.hasRuntime()) {
       try {
@@ -4697,6 +4729,7 @@ function App() {
         const currentConnections = connections.filter((connection) =>
           (providerConnectionGenerationsRef.current.get(connection.provider) || 0)
             === (generationsAtStart.get(connection.provider) || 0));
+        currentConnections.forEach(reconcileProviderCapabilities);
         setProviders((prev) => mergeRuntimeProviderConnections(prev, currentConnections));
       })
       .catch((error) => {
@@ -4723,29 +4756,39 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reconcileProviderCapabilities]);
   React.useEffect(() => {
     if (!agentSuggestionRuntimeService.hasRuntime()) return undefined;
 
     let cancelled = false;
-    agentSuggestionRuntimeService.readProviderCapabilities(activeProviderId)
+    const providerId = activeProviderId;
+    const capabilityGeneration =
+      (providerCapabilityGenerationsRef.current.get(providerId) || 0) + 1;
+    const connectionGeneration = providerConnectionGenerationsRef.current.get(providerId) || 0;
+    providerCapabilityGenerationsRef.current.set(providerId, capabilityGeneration);
+    const isCurrent = () => (
+      !cancelled
+      && providerCapabilityGenerationsRef.current.get(providerId) === capabilityGeneration
+      && (providerConnectionGenerationsRef.current.get(providerId) || 0) === connectionGeneration
+    );
+    agentSuggestionRuntimeService.readProviderCapabilities(providerId)
       .then((capabilities) => {
-        if (cancelled) return;
+        if (!isCurrent()) return;
         setProviderCapabilities((prev) => ({
           ...prev,
           [capabilities.provider]: capabilities,
         }));
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (!isCurrent()) return;
         const message = error instanceof Error ? error.message : String(error);
-        markProviderError(activeProviderId, message);
+        markProviderError(providerId, message);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeProviderId, markProviderError]);
+  }, [activeProviderCapabilityRefreshRevision, activeProviderId, markProviderError]);
   React.useEffect(() => {
     const capabilities = providerCapabilities[activeProviderId] || null;
     const storedModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
@@ -5805,6 +5848,7 @@ function App() {
     if (selectedProvider?.availability === "deferred" || selectedProvider?.state === "pending") return;
     const generation = (providerConnectionGenerationsRef.current.get(providerId) || 0) + 1;
     providerConnectionGenerationsRef.current.set(providerId, generation);
+    invalidateProviderCapabilities(providerId);
     const isCurrent = () => providerConnectionGenerationsRef.current.get(providerId) === generation;
 
     if (agentAuthRuntimeService.hasRuntime()) {

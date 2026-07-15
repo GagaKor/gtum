@@ -16,39 +16,39 @@ const runtimeSuggestion: RuntimeAgentSuggestionResponse = {
   error: null,
 }
 
-const validClaudeAliasCapabilities: RuntimeAgentProviderCapabilities = {
+const validClaudeAccountCapabilities: RuntimeAgentProviderCapabilities = {
   provider: 'claude',
   supportsModelSelection: true,
   currentModel: {
     providerId: 'claude',
     modelId: ' default ',
-    label: ' Claude default ',
+    label: ' Default (recommended) · Opus 4.8 with 1M context ',
   },
   availableModels: [
     {
       providerId: 'claude',
       modelId: ' default ',
-      label: ' Claude default ',
+      label: ' Default (recommended) · Opus 4.8 with 1M context ',
     },
     {
       providerId: 'claude',
-      modelId: 'best',
-      label: 'Best available',
+      modelId: 'opus[1m]',
+      label: 'Opus · Opus 4.8 with 1M context',
     },
     {
       providerId: 'claude',
       modelId: 'sonnet',
-      label: 'Sonnet',
+      label: 'Sonnet · Sonnet 5',
     },
     {
       providerId: 'claude',
-      modelId: 'opus',
-      label: 'Opus',
+      modelId: 'claude-fable-5[1m]',
+      label: 'Fable · Fable 5',
     },
     {
       providerId: 'claude',
       modelId: 'haiku',
-      label: 'Haiku',
+      label: 'Haiku · Haiku 4.5',
     },
   ],
   reasoningLevels: [
@@ -76,32 +76,32 @@ const createCapabilityService = (capabilities: RuntimeAgentProviderCapabilities)
     invokeRuntime: async () => capabilities,
   })
 
-test('accepts Claude model aliases and normalizes only model identifiers and labels', async () => {
+test('accepts Claude account catalog values and normalizes only model identifiers and labels', async () => {
   const capabilities = await createCapabilityService(
-    validClaudeAliasCapabilities,
+    validClaudeAccountCapabilities,
   ).readProviderCapabilities('claude')
 
   expect(capabilities).toEqual({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     currentModel: {
       providerId: 'claude',
       modelId: 'default',
-      label: 'Claude default',
+      label: 'Default (recommended) · Opus 4.8 with 1M context',
     },
     availableModels: [
       {
         providerId: 'claude',
         modelId: 'default',
-        label: 'Claude default',
+        label: 'Default (recommended) · Opus 4.8 with 1M context',
       },
-      ...validClaudeAliasCapabilities.availableModels.slice(1),
+      ...validClaudeAccountCapabilities.availableModels.slice(1),
     ],
   })
 })
 
-test('accepts a requested-provider current model outside the available model aliases', async () => {
+test('accepts a requested-provider current model outside the available account catalog', async () => {
   const capabilities = await createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     currentModel: {
       providerId: 'claude',
       modelId: 'configured-current',
@@ -114,7 +114,7 @@ test('accepts a requested-provider current model outside the available model ali
 
 test('rejects a top-level provider owner mismatch in Claude capabilities', async () => {
   const service = createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     provider: 'codex',
   })
 
@@ -125,7 +125,7 @@ test('rejects a top-level provider owner mismatch in Claude capabilities', async
 
 test('rejects a current model owned by another provider in Claude capabilities', async () => {
   const service = createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     currentModel: {
       providerId: 'codex',
       modelId: 'gpt-5-codex',
@@ -140,9 +140,9 @@ test('rejects a current model owned by another provider in Claude capabilities',
 
 test('rejects an available model owned by another provider in Claude capabilities', async () => {
   const service = createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     availableModels: [
-      ...validClaudeAliasCapabilities.availableModels,
+      ...validClaudeAccountCapabilities.availableModels,
       {
         providerId: 'codex',
         modelId: 'gpt-5-codex',
@@ -158,7 +158,7 @@ test('rejects an available model owned by another provider in Claude capabilitie
 
 test('rejects a blank model identifier in Claude capabilities', async () => {
   const service = createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     availableModels: [
       {
         providerId: 'claude',
@@ -175,7 +175,7 @@ test('rejects a blank model identifier in Claude capabilities', async () => {
 
 test('rejects a blank model label in Claude capabilities', async () => {
   const service = createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     availableModels: [
       {
         providerId: 'claude',
@@ -192,7 +192,7 @@ test('rejects a blank model label in Claude capabilities', async () => {
 
 test('rejects duplicate Claude model identifiers after trimming', async () => {
   const service = createCapabilityService({
-    ...validClaudeAliasCapabilities,
+    ...validClaudeAccountCapabilities,
     availableModels: [
       {
         providerId: 'claude',
@@ -202,7 +202,7 @@ test('rejects duplicate Claude model identifiers after trimming', async () => {
       {
         providerId: 'claude',
         modelId: ' sonnet ',
-        label: 'Sonnet alias duplicate',
+        label: 'Duplicate Sonnet entry',
       },
     ],
   })

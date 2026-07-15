@@ -2648,7 +2648,7 @@ body.resizing-h-left, body.resizing-h-right {
   flex: 0 0 auto;
 }
 .composer-provider-wrap {
-  position: relative;
+  position: static;
   min-width: 0;
   flex: 0 0 auto;
 }
@@ -2678,11 +2678,11 @@ body.resizing-h-left, body.resizing-h-right {
   left: auto;
   bottom: 32px;
   box-sizing: border-box;
-  width: min(352px, calc(100vw - 16px));
+  width: min(352px, 100%, calc(100vw - 16px));
   max-height: min(220px, calc(100vh - 64px));
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 5px;
+  padding: 3px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: var(--bg-deep);
@@ -2698,7 +2698,7 @@ body.resizing-h-left, body.resizing-h-right {
   background: transparent;
   color: var(--text-muted);
   border-radius: 6px;
-  padding: 7px 8px;
+  padding: 7px 6px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2715,15 +2715,16 @@ body.resizing-h-left, body.resizing-h-right {
 .composer-model-option > span {
   min-width: 0;
   flex: 1;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .composer-selection-menu .composer-model-option {
-  padding-right: 27px;
+  padding-right: 16px;
 }
 .composer-selection-menu .composer-model-option[aria-selected="true"]::after {
   content: "";
   position: absolute;
-  right: 10px;
+  right: 6px;
   width: 7px;
   height: 4px;
   border-bottom: 1.5px solid var(--accent);
@@ -2733,13 +2734,13 @@ body.resizing-h-left, body.resizing-h-right {
 .composer-provider-menu {
   right: auto;
   left: 0;
-  width: 190px;
+  width: min(190px, 100%);
 }
 .composer-reasoning-menu {
-  width: 190px;
+  width: min(190px, 100%);
 }
 .composer-fast-menu {
-  width: 142px;
+  width: min(142px, 100%);
 }
 .composer-provider-option {
   flex-direction: row;
