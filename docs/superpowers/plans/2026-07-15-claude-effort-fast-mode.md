@@ -182,7 +182,7 @@ Record fixture and prompt-free catalog coverage separately from live inference. 
 
 Review capability ownership, parser limits, exact argv/settings serialization, credential redaction, catalog-drift rejection, provider/session/project persistence, request snapshots, accessibility, narrow geometry, and center-terminal non-mutation. Resolve every critical and important finding, then re-review.
 
-- [ ] **Step 2: Commit the reviewed tree and identify the exact candidate SHA**
+- [x] **Step 2: Commit the reviewed tree and identify the exact candidate SHA**
 
 Stage only intended files, create the implementation commit, require `git status --short` to be empty, and durably pin it with `git update-ref refs/gtum/tested/claude-effort-fast "$(git rev-parse HEAD)"`. Resolve `TESTED_SHA` only from that private local ref in later steps. If any verification command later modifies the tree, commit the correction, repoint the private ref, and restart the complete gate.
 
