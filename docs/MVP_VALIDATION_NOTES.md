@@ -92,9 +92,9 @@ Before using web-preview results as evidence, the current sprint or release pass
 - Agent directory persistence stores trimmed `selectedModels.codex` and `selectedModels.claude` per project/session. A supported catalog that definitively removes a model clears only that provider key and sends `model: null`; unavailable or not-yet-loaded capability state preserves persistence until it can be validated.
 - Send snapshots the provider with only its validated explicit selection. Claude adds one separate `--model`, `opus` pair in fake-child coverage, leaves implicit default requests flag-free, and rejects blank, cross-provider, version-specific, leading-dash, and unknown values before spawning the child.
 - Focused evidence: the Claude Rust runtime module passes 44/44; `runtime-agent-suggestions-service.spec.ts` passes 24/24; and the provider model workspace/UI subset passes 5/5, including provider round trips, localStorage reload, stale cleanup, unavailable preservation, accessible picker state, request ownership, and zero center-terminal calls.
-- The touched slices pass lint, production build with only the existing greater-than-500-KB chunk warning, and Rust formatting checks. The complete post-change regression gate remains pending and is not claimed by these focused counts.
+- Complete post-change evidence: lint passes; the production build passes with only the existing greater-than-500-KB chunk warning; serial Playwright passes 210/210; Rust formatting and check pass; and the full Rust suite passes 149/149. Independent implementation and documentation reviews reported no critical, important, or minor findings.
 - No live `claude -p` inference was run for this slice. Model response quality, account-specific alias resolution, and billing behavior remain outside this evidence.
-- The [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md) tracks the remaining full verification and `dev` integration steps.
+- The [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md) records the completed verification and the remaining non-force `dev` push.
 
 ## 2026-07-15 Claude CLI Session Authentication Correction
 
@@ -200,7 +200,7 @@ This is bounded browser-driven evidence with injected runtime seams. Rust tests 
 
 ## Current MVP Assessment
 
-The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude provider and model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The provider-aware model slice has focused verification only; the complete post-change regression gate still remains before integration. The following gates remain before an MVP-complete claim:
+The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude provider and model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The provider-aware model slice has completed its local post-change regression gate. The following gates remain before an MVP-complete claim:
 
 - native Windows installed-app validation for folder picker, PTY commands, Codex reconnect/expiry behavior, isolated Agent-job execution, restart restore, and a first real suggestion
 - one explicitly user-approved live Claude request plus the full connect, command review, `Allow once`, isolated Agent-job, project-switch, and zero-center-terminal-mutation regression path

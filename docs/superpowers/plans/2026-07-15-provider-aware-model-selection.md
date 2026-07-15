@@ -170,18 +170,18 @@ Completed evidence: the provider-aware subset in `claude-provider-workspaces.spe
 
 State that Claude exposes a bounded alias capability list, selected models belong to `project + Agent session + provider`, invalid or stale IDs become the runtime default, and only validated Claude aliases become `--model` child arguments. State that organization policy and account entitlement remain authoritative and that direct Fable, exact-version, 1M, effort, and fast controls remain deferred until structured discovery exists.
 
-- [ ] **Step 2: Record verification evidence without claiming live inference**
+- [x] **Step 2: Record verification evidence without claiming live inference**
 
 Record focused/full Rust and Playwright counts, lint/build results, fake-child exact argv evidence, and that no paid Claude inference was used for this slice.
 
-Current evidence recorded: Rust Claude module 44/44, suggestion service Playwright 24/24, provider UI Playwright 5/5, touched-slice lint/build/fmt checks, and fake-child argv coverage. The complete post-change suite is intentionally still pending under Task 5, so this step remains open and no live-inference claim is made.
+Recorded evidence: Rust Claude module 44/44, suggestion service Playwright 24/24, provider UI Playwright 5/5, complete serial Playwright 210/210, full Rust 149/149, lint/build/fmt/check, and fake-child argv coverage. No live-inference claim is made.
 
 ### Task 5: Verify and integrate all Madrid work into `dev`
 
 **Files:**
 - Verify: all changed and untracked repository files in `/Users/kwon/conductor/workspaces/gtum/madrid`
 
-- [ ] **Step 1: Run the complete local gate**
+- [x] **Step 1: Run the complete local gate**
 
 ```bash
 npm run lint
@@ -193,13 +193,15 @@ cargo test --manifest-path src-tauri/Cargo.toml
 git diff --check
 ```
 
-- [ ] **Step 2: Obtain independent code review**
+- [x] **Step 2: Obtain independent code review**
 
 Review provider/model ownership, stale async responses, selected-model persistence, exact Claude child argv, auth isolation, and center-terminal non-mutation. Resolve all critical and important findings before integration.
 
-- [ ] **Step 3: Re-fetch and prove a fast-forward dev update**
+- [x] **Step 3: Re-fetch and prove a fast-forward dev update**
 
 Fetch `origin`, verify `origin/dev` is still an ancestor of the current branch plus working result, and do not touch the separate dirty `/Users/kwon/projects/gtum` worktree.
+
+Verified on 2026-07-15: `origin/dev` at `aecd288f989488478dc6e0c593e5718b6ce83c0e` is an ancestor of the tested Madrid commit, with `0` remote-only and `17` local-only commits. The separate dirty worktree was not touched.
 
 - [ ] **Step 4: Commit all intended Madrid work and push it to dev**
 

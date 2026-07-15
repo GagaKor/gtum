@@ -86,13 +86,14 @@ Delivered scope:
 - The model picker exposes provider-specific accessible naming, listbox semantics, one truthful selection, Escape close/focus behavior, and closes when the provider changes. These paths do not touch the user-owned center terminal.
 - Account entitlement and organization-managed policy remain authoritative. This slice does not infer direct Fable availability and did not run live `claude -p` inference.
 
-Current focused evidence and remaining gate:
+Verification evidence:
 
 - the Claude Rust runtime module passes 44/44, including fake-child exact argv and pre-spawn invalid-value rejection
 - `runtime-agent-suggestions-service.spec.ts` passes 24/24
 - the provider-aware subset in `claude-provider-workspaces.spec.ts` passes 5/5, including reload, stale/unavailable behavior, request ownership, accessibility state, and zero center-terminal calls
-- the touched slices pass lint, production build with only the existing greater-than-500-KB chunk warning, and Rust formatting checks
-- the complete post-change lint/build/serial Playwright/Rust check/test gate and `dev` integration remain pending; do not treat the focused counts as final integrated verification
+- the complete post-change gate passes lint, production build with only the existing greater-than-500-KB chunk warning, serial Playwright 210/210, Rust formatting/check, and the full Rust suite 149/149
+- an independent implementation review and a separate documentation review reported no critical, important, or minor findings
+- `origin/dev` was re-fetched and verified as an ancestor of the tested commit; the non-force `dev` push remains the only pending integration step
 
 ## Current Claude CLI Session Correction — 2026-07-15
 
