@@ -37,13 +37,6 @@ const CLAUDE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CLAUDE_MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(5);
 const CLAUDE_SCHEMA_VERSION: u64 = 1;
 const CLAUDE_MODEL_CATALOG_REQUEST_ID: &str = "gtum-claude-model-catalog-v1";
-const CLAUDE_MODEL_ALIASES: [(&str, &str); 5] = [
-    ("default", "Claude default"),
-    ("best", "Best available"),
-    ("sonnet", "Sonnet"),
-    ("opus", "Opus"),
-    ("haiku", "Haiku"),
-];
 
 const CLAUDE_ALWAYS_REMOVED_ENVIRONMENT: &[&str] = &[
     "DEBUG",
@@ -1254,23 +1247,49 @@ fn validated_claude_model(model: Option<&str>) -> Result<Option<&str>, String> {
     let Some(model) = model else {
         return Ok(None);
     };
-    let model = model.trim();
-    if CLAUDE_MODEL_ALIASES
-        .iter()
-        .any(|(model_id, _)| *model_id == model)
+    if model.trim().is_empty()
+        || invalid_claude_model_text(model, MAX_CLAUDE_MODEL_ID_BYTES)
+        || model.starts_with('-')
     {
-        Ok(Some(model))
-    } else {
-        Err("Claude request selected an unsupported model.".into())
+        return Err("Claude request selected an invalid model.".into());
     }
+    Ok(Some(model))
+}
+
+fn validated_claude_catalog_model<'a>(
+    model: Option<&'a str>,
+    catalog: &[AgentModelCapability],
+) -> Result<Option<&'a str>, String> {
+    let Some(model) = validated_claude_model(model)? else {
+        return Ok(None);
+    };
+    let is_returned_sanitized_value = catalog.iter().any(|capability| {
+        capability.provider_id == AgentProvider::Claude
+            && capability.model_id == model
+            && capability.model_id == capability.model_id.trim()
+            && validated_claude_model(Some(&capability.model_id)).is_ok()
+    });
+    if !is_returned_sanitized_value {
+        return Err("Claude request selected a model unavailable in the current catalog.".into());
+    }
+    Ok(Some(model))
 }
 
 fn claude_request_arguments_for_model(
     credential: Option<&ClaudeCredentialSelection>,
     schema: &str,
     model: Option<&str>,
+    catalog: Option<&[AgentModelCapability]>,
 ) -> Result<Vec<OsString>, String> {
-    let model = validated_claude_model(model)?;
+    let model = match model {
+        Some(_) => validated_claude_catalog_model(
+            model,
+            catalog.ok_or_else(|| {
+                "Claude request selected a model unavailable in the current catalog.".to_string()
+            })?,
+        )?,
+        None => validated_claude_model(None)?,
+    };
     let mut arguments = claude_request_arguments(credential, schema);
     if let Some(model) = model {
         arguments.push(OsString::from("--model"));
@@ -1443,9 +1462,32 @@ fn canonical_project_directory(project_path: &str) -> Result<PathBuf, String> {
 fn request_claude_suggestions_with(
     program: &Path,
     context: &ClaudeInvocationContext,
-    mut request: RequestAgentSuggestionsRequest,
+    request: RequestAgentSuggestionsRequest,
     timeout: Duration,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
+    request_claude_suggestions_with_catalog_probe(
+        program,
+        context,
+        request,
+        timeout,
+        discover_claude_model_catalog_with,
+    )
+}
+
+fn request_claude_suggestions_with_catalog_probe<F>(
+    program: &Path,
+    context: &ClaudeInvocationContext,
+    mut request: RequestAgentSuggestionsRequest,
+    timeout: Duration,
+    catalog_probe: F,
+) -> Result<Vec<AgentSuggestionResponse>, String>
+where
+    F: FnOnce(
+        &Path,
+        &ClaudeInvocationContext,
+        Duration,
+    ) -> Result<Vec<AgentModelCapability>, String>,
+{
     let credential = context.credential();
     if request.provider != AgentProvider::Claude {
         return Err("Claude adapter received a request for a different provider.".into());
@@ -1453,12 +1495,26 @@ fn request_claude_suggestions_with(
     if !request.attachments.is_empty() {
         return Err("Claude attachments are disabled for this provider path.".into());
     }
+    let requested_model = validated_claude_model(request.model.as_deref())?;
     let canonical_project = canonical_project_directory(&request.project_path)?;
     request.project_path = canonical_project.to_string_lossy().into_owned();
     let prompt = build_claude_prompt(&request)?;
     let schema = claude_suggestion_schema()?;
-    let arguments =
-        claude_request_arguments_for_model(credential, &schema, request.model.as_deref())?;
+    let catalog = if requested_model.is_some() {
+        Some(catalog_probe(
+            program,
+            context,
+            CLAUDE_MODEL_CATALOG_TIMEOUT,
+        )?)
+    } else {
+        None
+    };
+    let arguments = claude_request_arguments_for_model(
+        credential,
+        &schema,
+        requested_model,
+        catalog.as_deref(),
+    )?;
     let output = run_bounded_process(
         program,
         &arguments,
@@ -1825,31 +1881,61 @@ fn write_response(root: &std::path::Path) {
     stdout.flush().expect("flush fake response");
 }
 
+fn write_named_response(root: &std::path::Path, name: &str) {
+    let response = fs::read(root.join(name)).expect("read named fake response");
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&response).expect("write named fake response");
+    stdout.flush().expect("flush named fake response");
+}
+
 fn main() {
     let executable = env::current_exe().expect("resolve fake executable");
     let root = executable.parent().expect("resolve fake executable root");
-    let arguments = env::args_os()
+    let argument_values = env::args_os()
         .skip(1)
         .map(|argument| argument.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect::<Vec<_>>();
+    let arguments = argument_values.join("\n");
     let arguments = if arguments.is_empty() {
         arguments
     } else {
         format!("{arguments}\n")
     };
-    fs::write(root.join("argv"), arguments).expect("record fake argv");
+    fs::write(root.join("argv"), &arguments).expect("record fake argv");
 
     let mut stdin = Vec::new();
     io::stdin()
         .read_to_end(&mut stdin)
         .expect("read fake stdin to EOF");
-    fs::write(root.join("stdin"), stdin).expect("record fake stdin");
+    fs::write(root.join("stdin"), &stdin).expect("record fake stdin");
 
     let mode = fs::read_to_string(root.join("mode"))
         .expect("read fake mode")
         .trim()
         .to_string();
+    if mode == "catalog-then-inference" {
+        let is_catalog = argument_values
+            .windows(2)
+            .any(|pair| pair[0] == "--input-format" && pair[1] == "stream-json");
+        let is_inference = argument_values.iter().any(|argument| argument == "--print");
+        if is_catalog {
+            fs::write(root.join("catalog-argv"), &arguments).expect("record catalog argv");
+            fs::write(root.join("catalog-stdin"), &stdin).expect("record catalog stdin");
+            write_named_response(root, "catalog-response");
+            return;
+        }
+        if is_inference {
+            fs::write(root.join("inference-argv"), &arguments)
+                .expect("record inference argv");
+            fs::write(root.join("inference-stdin"), &stdin)
+                .expect("record inference stdin");
+            fs::write(root.join("inference-spawned"), b"1")
+                .expect("record inference spawn");
+            write_named_response(root, "inference-response");
+            return;
+        }
+        process::exit(11);
+    }
     if let Some(raw_count) = mode.strip_prefix("oversized:") {
         let byte_count = raw_count.parse::<usize>().expect("parse oversized byte count");
         io::stdout()
@@ -2123,6 +2209,58 @@ fn main() {
             "displayName": display_name.into(),
             "description": description.into()
         })
+    }
+
+    fn successful_inference_response(summary: &str) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "structured_output": {
+                "provider": "claude",
+                "schemaVersion": CLAUDE_SCHEMA_VERSION,
+                "summary": summary,
+                "command": "",
+                "preferredTarget": "current_tab",
+                "confidence": "high",
+                "error": null
+            }
+        }))
+        .unwrap()
+    }
+
+    fn request_lifecycle_fake(root: &TestRoot, models: Value) -> PathBuf {
+        let program = copy_catalog_test_executable(root, "fake-claude");
+        fs::write(root.path().join("mode"), "catalog-then-inference").unwrap();
+        fs::write(
+            root.path().join("catalog-response"),
+            model_catalog_response(models),
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("inference-response"),
+            successful_inference_response("Selected model result"),
+        )
+        .unwrap();
+        program
+    }
+
+    fn recorded_arguments(path: impl AsRef<Path>) -> Vec<String> {
+        fs::read_to_string(path)
+            .unwrap()
+            .split_terminator('\n')
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn expect_request_error(
+        result: Result<Vec<AgentSuggestionResponse>, String>,
+        message: &str,
+    ) -> String {
+        match result {
+            Ok(_) => panic!("{message}"),
+            Err(error) => error,
+        }
     }
 
     #[test]
@@ -2617,7 +2755,359 @@ fn main() {
     }
 
     #[test]
-    fn selected_model_is_a_single_validated_cli_argument() {
+    fn live_catalog_model_reaches_claude_as_one_argv_value() {
+        let root = TestRoot::new("request-live-model");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([account_model("claude-fable-5[1m]", "Fable", "Fable 5")]),
+        );
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some("claude-fable-5[1m]".into());
+
+        let suggestions =
+            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2))
+                .expect("live catalog model must reach the inference child");
+
+        assert_eq!(suggestions[0].summary, "Selected model result");
+        let arguments = recorded_arguments(root.path().join("inference-argv"));
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.as_str() == "--model")
+                .count(),
+            1
+        );
+        let model_flag = arguments
+            .iter()
+            .position(|argument| argument == "--model")
+            .unwrap();
+        assert_eq!(
+            arguments.get(model_flag + 1).map(String::as_str),
+            Some("claude-fable-5[1m]")
+        );
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.as_str() == "claude-fable-5[1m]")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn request_revalidates_selected_model_against_live_catalog_before_spawn() {
+        let root = TestRoot::new("request-removed-model");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([account_model("sonnet", "Sonnet", "Sonnet 5")]),
+        );
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some("opus".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2)),
+            "a removed model must not reach the inference child",
+        );
+
+        assert_eq!(
+            error,
+            "Claude request selected a model unavailable in the current catalog."
+        );
+        assert!(root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
+    }
+
+    #[test]
+    fn resolved_model_is_not_selectable_unless_returned_as_value() {
+        let root = TestRoot::new("request-resolved-model");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([{
+                "value": "claude-fable-5[1m]",
+                "resolvedModel": "claude-fable-5",
+                "displayName": "Fable",
+                "description": "Fable 5"
+            }]),
+        );
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some("claude-fable-5".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2)),
+            "resolvedModel must not be treated as a selectable value",
+        );
+
+        assert_eq!(
+            error,
+            "Claude request selected a model unavailable in the current catalog."
+        );
+        assert!(root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
+    }
+
+    #[test]
+    fn leading_dash_catalog_value_is_rejected_before_spawn() {
+        let root = TestRoot::new("request-leading-dash-model");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([account_model("--help", "Help", "Malformed model")]),
+        );
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some("--help".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2)),
+            "leading-dash model must fail local syntax validation",
+        );
+
+        assert_eq!(error, "Claude request selected an invalid model.");
+        assert!(!root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
+    }
+
+    #[test]
+    fn implicit_model_skips_catalog_probe_and_model_argument() {
+        let root = TestRoot::new("request-implicit-model");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([account_model("sonnet", "Sonnet", "Sonnet 5")]),
+        );
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+
+        request_claude_suggestions_with(
+            &program,
+            &context,
+            claude_request(&project),
+            Duration::from_secs(2),
+        )
+        .expect("implicit model must preserve the runtime-default inference path");
+
+        assert!(!root.path().join("catalog-argv").exists());
+        let arguments = recorded_arguments(root.path().join("inference-argv"));
+        assert!(!arguments.iter().any(|argument| argument == "--model"));
+    }
+
+    #[test]
+    fn request_catalog_probe_is_injected_only_for_explicit_model_with_real_deadline() {
+        use std::cell::Cell;
+
+        let root = TestRoot::new("request-catalog-seam");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let missing_program = root.path().join(if cfg!(windows) {
+            "missing-claude.exe"
+        } else {
+            "missing-claude"
+        });
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+
+        let implicit_error = expect_request_error(
+            request_claude_suggestions_with_catalog_probe(
+                &missing_program,
+                &context,
+                claude_request(&project),
+                Duration::from_secs(2),
+                |_, _, _| panic!("implicit model must not run a catalog probe"),
+            ),
+            "missing inference program must fail after the skipped catalog probe",
+        );
+        assert_eq!(implicit_error, "Failed to launch Claude Code CLI.");
+
+        let probe_calls = Cell::new(0);
+        let mut explicit_request = claude_request(&project);
+        explicit_request.model = Some("claude-fable-5[1m]".into());
+        let missing_model_error = expect_request_error(
+            request_claude_suggestions_with_catalog_probe(
+                &missing_program,
+                &context,
+                explicit_request,
+                Duration::from_secs(2),
+                |seen_program, seen_context, deadline| {
+                    probe_calls.set(probe_calls.get() + 1);
+                    assert_eq!(seen_program, missing_program);
+                    assert_eq!(seen_context, &context);
+                    assert_eq!(deadline, CLAUDE_MODEL_CATALOG_TIMEOUT);
+                    Ok(vec![AgentModelCapability {
+                        provider_id: AgentProvider::Claude,
+                        model_id: "sonnet".into(),
+                        label: "Sonnet · Sonnet 5".into(),
+                    }])
+                },
+            ),
+            "missing selected value must stop before the inference launch attempt",
+        );
+        assert_eq!(probe_calls.get(), 1);
+        assert_eq!(
+            missing_model_error,
+            "Claude request selected a model unavailable in the current catalog."
+        );
+    }
+
+    #[test]
+    fn request_catalog_membership_requires_the_claude_provider() {
+        let root = TestRoot::new("request-catalog-provider");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let missing_program = root.path().join(if cfg!(windows) {
+            "missing-claude.exe"
+        } else {
+            "missing-claude"
+        });
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some("claude-fable-5[1m]".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with_catalog_probe(
+                &missing_program,
+                &context,
+                request,
+                Duration::from_secs(2),
+                |_, _, _| {
+                    Ok(vec![AgentModelCapability {
+                        provider_id: AgentProvider::Codex,
+                        model_id: "claude-fable-5[1m]".into(),
+                        label: "Wrong provider".into(),
+                    }])
+                },
+            ),
+            "a non-Claude catalog entry must not reach inference",
+        );
+
+        assert_eq!(
+            error,
+            "Claude request selected a model unavailable in the current catalog."
+        );
+    }
+
+    #[test]
+    fn catalog_discovery_failure_rejects_request_before_inference_spawn() {
+        let root = TestRoot::new("request-catalog-failure");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program =
+            request_lifecycle_fake(&root, json!([account_model("opus", "Opus", "Opus 4.8")]));
+        fs::write(root.path().join("catalog-response"), b"not-json").unwrap();
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some("opus".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2)),
+            "catalog discovery failure must stop before inference",
+        );
+
+        assert_eq!(error, "Claude model catalog returned malformed JSON.");
+        assert!(root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
+    }
+
+    #[test]
+    fn request_model_matching_is_exact_and_does_not_trim() {
+        let root = TestRoot::new("request-exact-model");
+        let project = root.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+        let program = request_lifecycle_fake(
+            &root,
+            json!([account_model("claude-fable-5[1m]", "Fable", "Fable 5")]),
+        );
+        let context = invocation_context(Some(ClaudeCredentialSelection {
+            source: ClaudeCredentialSource::EnvironmentApiKey,
+            sanitized_settings: None,
+        }));
+        let mut request = claude_request(&project);
+        request.model = Some(" claude-fable-5[1m] ".into());
+
+        let error = expect_request_error(
+            request_claude_suggestions_with(&program, &context, request, Duration::from_secs(2)),
+            "request model must match a sanitized catalog value exactly",
+        );
+
+        assert_eq!(
+            error,
+            "Claude request selected a model unavailable in the current catalog."
+        );
+        assert!(root.path().join("catalog-argv").exists());
+        assert!(!root.path().join("inference-spawned").exists());
+    }
+
+    #[test]
+    fn locally_invalid_model_syntax_skips_catalog_and_inference() {
+        for (label, model) in [
+            ("blank", "   ".to_string()),
+            ("control", "son\nnet".to_string()),
+            ("oversized", "x".repeat(MAX_CLAUDE_MODEL_ID_BYTES + 1)),
+        ] {
+            let root = TestRoot::new(label);
+            let project = root.path().join("project");
+            fs::create_dir_all(&project).unwrap();
+            let program = request_lifecycle_fake(
+                &root,
+                json!([account_model("sonnet", "Sonnet", "Sonnet 5")]),
+            );
+            let context = invocation_context(Some(ClaudeCredentialSelection {
+                source: ClaudeCredentialSource::EnvironmentApiKey,
+                sanitized_settings: None,
+            }));
+            let mut request = claude_request(&project);
+            request.model = Some(model);
+
+            let error = expect_request_error(
+                request_claude_suggestions_with(
+                    &program,
+                    &context,
+                    request,
+                    Duration::from_secs(2),
+                ),
+                "invalid local model syntax must be rejected",
+            );
+
+            assert_eq!(error, "Claude request selected an invalid model.");
+            assert!(!root.path().join("catalog-argv").exists());
+            assert!(!root.path().join("inference-spawned").exists());
+        }
+    }
+
+    #[test]
+    fn catalog_validated_model_is_a_single_exact_cli_argument() {
         let credential = ClaudeCredentialSelection {
             source: ClaudeCredentialSource::EnvironmentApiKey,
             sanitized_settings: None,
@@ -2644,82 +3134,45 @@ fn main() {
         .map(OsString::from)
         .collect::<Vec<_>>();
         assert_eq!(
-            claude_request_arguments_for_model(Some(&credential), &schema, None).unwrap(),
+            claude_request_arguments_for_model(Some(&credential), &schema, None, None).unwrap(),
             base_arguments
         );
 
-        let mut expected_opus_arguments = base_arguments.clone();
-        expected_opus_arguments.extend([OsString::from("--model"), OsString::from("opus")]);
-        let opus_arguments =
-            claude_request_arguments_for_model(Some(&credential), &schema, Some("opus")).unwrap();
-        assert_eq!(opus_arguments, expected_opus_arguments);
+        let catalog = vec![AgentModelCapability {
+            provider_id: AgentProvider::Claude,
+            model_id: "claude-fable-5[1m]".into(),
+            label: "Fable · Fable 5".into(),
+        }];
+        let mut expected_model_arguments = base_arguments;
+        expected_model_arguments.extend([
+            OsString::from("--model"),
+            OsString::from("claude-fable-5[1m]"),
+        ]);
+        let model_arguments = claude_request_arguments_for_model(
+            Some(&credential),
+            &schema,
+            Some("claude-fable-5[1m]"),
+            Some(&catalog),
+        )
+        .unwrap();
+        assert_eq!(model_arguments, expected_model_arguments);
         assert_eq!(
-            opus_arguments
+            model_arguments
                 .iter()
                 .filter(|argument| *argument == OsStr::new("--model"))
                 .count(),
             1
         );
-
-        let mut expected_default_arguments = base_arguments.clone();
-        expected_default_arguments.extend([OsString::from("--model"), OsString::from("default")]);
         assert_eq!(
-            claude_request_arguments_for_model(Some(&credential), &schema, Some("default"))
-                .unwrap(),
-            expected_default_arguments
+            claude_request_arguments_for_model(
+                Some(&credential),
+                &schema,
+                Some("claude-fable-5[1m]"),
+                None,
+            )
+            .unwrap_err(),
+            "Claude request selected a model unavailable in the current catalog."
         );
-        assert_eq!(
-            claude_request_arguments_for_model(Some(&credential), &schema, Some("  opus  "))
-                .unwrap(),
-            expected_opus_arguments
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn invalid_models_are_rejected_before_child_spawn() {
-        let root = TestRoot::new("invalid-model-spawn");
-        let project = root.path().join("project");
-        fs::create_dir_all(&project).unwrap();
-        let program = root.path().join("fake-claude");
-        let spawned = PathBuf::from(format!("{}.spawned", program.display()));
-        write_test_executable(
-            &program,
-            concat!(
-                "printf ran > \"$0.spawned\"\n",
-                "/bin/cat >/dev/null\n",
-                "printf '%s' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"provider\":\"claude\",\"schemaVersion\":1,\"summary\":\"Unexpected spawn\",\"command\":\"\",\"preferredTarget\":\"current_tab\",\"confidence\":\"high\",\"error\":null}}'\n",
-            ),
-        );
-        let credential = ClaudeCredentialSelection {
-            source: ClaudeCredentialSource::EnvironmentApiKey,
-            sanitized_settings: None,
-        };
-        let context = invocation_context(Some(credential));
-
-        for (kind, model) in [
-            ("blank", "   "),
-            ("Codex", "gpt-5.2-codex"),
-            ("version-specific", "claude-opus-4-1-20250805"),
-            ("leading-dash", "--help"),
-            ("unknown", "fable"),
-        ] {
-            let mut request = claude_request(&project);
-            request.model = Some(model.into());
-            let result = request_claude_suggestions_with(
-                &program,
-                &context,
-                request,
-                Duration::from_secs(2),
-            );
-
-            assert!(
-                result.is_err(),
-                "{kind} model reached the fake child: {}",
-                spawned.exists()
-            );
-            assert!(!spawned.exists(), "{kind} model spawned the fake child");
-        }
     }
 
     #[test]
@@ -3124,7 +3577,7 @@ fn main() {
             concat!(
                 "#!/bin/sh\n",
                 "printf '%s\\n' \"$@\" > \"$0.argv\"\n",
-                "cat > \"$0.stdin\"\n",
+                "/bin/cat > \"$0.stdin\"\n",
                 "pwd > \"$0.cwd\"\n",
                 "printf '%s' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"provider\":\"claude\",\"schemaVersion\":1,\"summary\":\"Captured\",\"command\":\"\",\"preferredTarget\":\"current_tab\",\"confidence\":\"high\",\"error\":null}}'\n",
             ),
@@ -3144,7 +3597,7 @@ fn main() {
             &program,
             &context,
             claude_request(&project),
-            Duration::from_secs(2),
+            Duration::from_secs(5),
         )
         .unwrap();
 
@@ -4481,12 +4934,25 @@ fn main() {
             concat!(
                 "if [ \"$4\" = \"auth\" ]; then\n",
                 "  printf '%s\\n' \"$@\" > \"$0.status-argv\"\n",
+                "  printf 'status\\n' >> \"$0.order\"\n",
                 "  printf '%s' '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"apiProvider\":\"firstParty\",\"email\":\"ignored@example.invalid\",\"subscriptionType\":\"ignored\"}'\n",
+                "  exit 0\n",
+                "fi\n",
+                "is_catalog=0\n",
+                "for argument in \"$@\"; do\n",
+                "  if [ \"$argument\" = \"--input-format\" ]; then is_catalog=1; fi\n",
+                "done\n",
+                "if [ \"$is_catalog\" = \"1\" ]; then\n",
+                "  printf '%s\\n' \"$@\" > \"$0.catalog-argv\"\n",
+                "  /bin/cat > \"$0.catalog-stdin\"\n",
+                "  printf 'catalog\\n' >> \"$0.order\"\n",
+                "  printf '%s' '{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"gtum-claude-model-catalog-v1\",\"response\":{\"models\":[{\"value\":\"opus[1m]\",\"resolvedModel\":\"claude-opus-4-8[1m]\",\"displayName\":\"Opus\",\"description\":\"Opus 4.8 with 1M context\"}]}}}'\n",
                 "  exit 0\n",
                 "fi\n",
                 "printf '%s\\n' \"$@\" > \"$0.request-argv\"\n",
                 "/bin/cat > \"$0.stdin\"\n",
                 "pwd > \"$0.cwd\"\n",
+                "printf 'inference\\n' >> \"$0.order\"\n",
                 "printf '%s' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"provider\":\"claude\",\"schemaVersion\":1,\"summary\":\"CLI session result\",\"command\":\"\",\"preferredTarget\":\"current_tab\",\"confidence\":\"high\",\"error\":null}}'\n",
             ),
         );
@@ -4498,7 +4964,7 @@ fn main() {
         assert_eq!(current_claude_credential().unwrap(), None);
 
         let mut request = claude_request(&project);
-        request.model = Some("opus".into());
+        request.model = Some("opus[1m]".into());
         let attempt = request_claude_suggestion_attempt(request);
         let validation = attempt.validation.unwrap();
         assert_eq!(
@@ -4527,6 +4993,21 @@ fn main() {
             .collect::<Vec<_>>();
         assert_eq!(recorded_status, expected_status);
 
+        let expected_catalog = claude_model_catalog_arguments(None)
+            .into_iter()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let recorded_catalog = fs::read_to_string(format!("{}.catalog-argv", program.display()))
+            .unwrap()
+            .split_terminator('\n')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(recorded_catalog, expected_catalog);
+        assert_eq!(
+            fs::read(format!("{}.catalog-stdin", program.display())).unwrap(),
+            claude_model_catalog_initialize_request().unwrap()
+        );
+
         let schema = claude_suggestion_schema().unwrap();
         let expected_request = [
             "--safe-mode",
@@ -4546,7 +5027,7 @@ fn main() {
             "--json-schema",
             schema.as_str(),
             "--model",
-            "opus",
+            "opus[1m]",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -4557,6 +5038,10 @@ fn main() {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         assert_eq!(recorded_request, expected_request);
+        assert_eq!(
+            fs::read_to_string(format!("{}.order", program.display())).unwrap(),
+            "status\ncatalog\ninference\n"
+        );
         assert_no_argument_expansion(
             &recorded_request
                 .iter()
