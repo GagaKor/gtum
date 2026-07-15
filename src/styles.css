@@ -2608,13 +2608,12 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .composer-foot {
   position: relative;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 4px;
   font-size: 10.5px;
   font-family: var(--font-mono);
   color: var(--text-dim);
   min-width: 0;
-  flex-wrap: wrap;
-  row-gap: 6px;
+  flex-wrap: nowrap;
 }
 .composer-tool {
   appearance: none;
@@ -2642,39 +2641,36 @@ body.resizing-h-left, body.resizing-h-right {
   color: var(--text-muted);
   border-color: var(--border);
 }
-.composer-model-wrap {
+.composer-model-wrap,
+.composer-control-wrap {
   position: static;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 .composer-provider-wrap {
   position: relative;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
 }
 .composer-model-chip {
   appearance: none;
   border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
   background: color-mix(in oklab, var(--accent) 8%, var(--bg));
   color: var(--text);
+  width: 28px;
   height: 26px;
   border-radius: 7px;
-  padding: 0 7px 0 8px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 128px;
+  justify-content: center;
+  gap: 0;
   cursor: pointer;
   font: inherit;
   font-size: 10.5px;
 }
 .composer-model-chip:hover {
   border-color: var(--accent);
-}
-.composer-model-chip span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .composer-model-menu {
   position: absolute;
@@ -2721,10 +2717,10 @@ body.resizing-h-left, body.resizing-h-right {
   flex: 1;
   white-space: nowrap;
 }
-.composer-model-wrap .composer-model-option {
+.composer-selection-menu .composer-model-option {
   padding-right: 27px;
 }
-.composer-model-wrap .composer-model-option[aria-selected="true"]::after {
+.composer-selection-menu .composer-model-option[aria-selected="true"]::after {
   content: "";
   position: absolute;
   right: 10px;
@@ -2738,6 +2734,12 @@ body.resizing-h-left, body.resizing-h-right {
   right: auto;
   left: 0;
   width: 190px;
+}
+.composer-reasoning-menu {
+  width: 190px;
+}
+.composer-fast-menu {
+  width: 142px;
 }
 .composer-provider-option {
   flex-direction: row;
@@ -2753,14 +2755,14 @@ body.resizing-h-left, body.resizing-h-right {
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-muted);
+  width: 28px;
   height: 26px;
   border-radius: 7px;
-  padding: 0 8px 0 5px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 132px;
+  justify-content: center;
+  gap: 0;
   cursor: pointer;
   font: inherit;
   font-size: 10.5px;
@@ -2776,26 +2778,20 @@ body.resizing-h-left, body.resizing-h-right {
   font-size: 8px;
   flex: 0 0 auto;
 }
-.composer-provider-chip > span:not(.provider-mark) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.composer-provider-chip > svg {
-  flex: 0 0 auto;
-}
 .composer-reasoning-chip,
 .fast-toggle {
   appearance: none;
+  width: 28px;
   height: 26px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in oklab, var(--bg) 78%, transparent);
   color: var(--text-muted);
-  padding: 0 7px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 0;
   font: inherit;
   font-size: 10.5px;
   white-space: nowrap;
@@ -2833,17 +2829,6 @@ body.resizing-h-left, body.resizing-h-right {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 44%, var(--border));
   background: color-mix(in oklab, var(--accent) 8%, var(--bg));
-}
-.fast-toggle-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--text-faint);
-  flex: 0 0 auto;
-}
-.fast-toggle.active .fast-toggle-dot {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 12%, transparent);
 }
 .composer-foot .send {
   margin-left: auto;

@@ -844,6 +844,11 @@ const Icon = {
       <path d="M6 1.5 L6.9 5.1 L10.5 6 L6.9 6.9 L6 10.5 L5.1 6.9 L1.5 6 L5.1 5.1 Z" fill="currentColor" />
     </svg>
   ),
+  bolt: (props) => (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}>
+      <path d="M6.8 1.4 2.9 6.5h2.7l-.4 4.1 3.9-5.2H6.4z" fill="currentColor" stroke="currentColor" strokeWidth=".5" strokeLinejoin="round" />
+    </svg>
+  ),
   folder: (props) => (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}>
       <path d="M1.5 3.5 H4.5 L5.5 4.5 H10.5 V9.5 H1.5 Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
@@ -2601,15 +2606,6 @@ function normalizeReasoningLevel(providerCapabilities, selectedLevel) {
   return levels[0].level;
 }
 
-function nextReasoningLevel(providerCapabilities, selectedLevel) {
-  const levels = providerReasoningLevels(providerCapabilities);
-  if (levels.length === 0) return null;
-
-  const current = normalizeReasoningLevel(providerCapabilities, selectedLevel);
-  const currentIndex = levels.findIndex((level) => level.level === current);
-  return levels[(currentIndex + 1) % levels.length]?.level || levels[0].level;
-}
-
 const MAX_PERSISTED_AGENT_MODEL_ID_LENGTH = 128;
 
 function sanitizedAgentModelId(value) {
@@ -3459,17 +3455,23 @@ function composerReferenceGroup(value) {
 function Composer({
   lang, providers, activeProvider, onSelectProvider,
   providerCapabilities, selectedModelId, onSelectModel,
-  reasoningLevel, fastMode, onCycleReasoningLevel, onToggleFastMode,
+  reasoningLevel, fastMode, onSelectReasoningLevel, onSelectFastMode,
   attachments, onPickAttachment, onRemoveAttachment, onSend,
   draft, onDraftChange,
   busy = false, onStop,
 }) {
   const val = draft || "";
-  const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
-  const [providerMenuOpen, setProviderMenuOpen] = React.useState(false);
+  const [openMenu, setOpenMenu] = React.useState(null);
   const ref = React.useRef(null);
+  const providerTriggerRef = React.useRef(null);
   const modelTriggerRef = React.useRef(null);
+  const reasoningTriggerRef = React.useRef(null);
+  const fastTriggerRef = React.useRef(null);
   const modelMenuRef = React.useRef(null);
+  const providerMenuOpen = openMenu === "provider";
+  const modelMenuOpen = openMenu === "model";
+  const reasoningMenuOpen = openMenu === "reasoning";
+  const fastMenuOpen = openMenu === "fast";
   React.useLayoutEffect(() => {
     const textarea = ref.current;
     if (!textarea) return;
@@ -3477,22 +3479,29 @@ function Composer({
     textarea.style.height = Math.min(120, textarea.scrollHeight) + "px";
   }, [val]);
   React.useEffect(() => {
-    setModelMenuOpen(false);
+    setOpenMenu(null);
   }, [activeProvider?.id]);
   React.useEffect(() => {
-    if (!modelMenuOpen) return undefined;
+    if (!openMenu) return undefined;
 
     const closeOnEscape = (event) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      setModelMenuOpen(false);
-      window.requestAnimationFrame(() => modelTriggerRef.current?.focus());
+      const trigger = openMenu === "provider"
+        ? providerTriggerRef.current
+        : openMenu === "model"
+          ? modelTriggerRef.current
+          : openMenu === "reasoning"
+            ? reasoningTriggerRef.current
+            : fastTriggerRef.current;
+      setOpenMenu(null);
+      window.requestAnimationFrame(() => trigger?.focus());
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [modelMenuOpen]);
-  const providerChipLabel = activeProvider
-    ? `${activeProvider.label} ${providerSessionLabel(activeProvider)}`
+  }, [openMenu]);
+  const providerTriggerLabel = activeProvider
+    ? `Provider: ${activeProvider.label} · ${providerSessionLabel(activeProvider)}`
     : "No provider";
   const availableModels = providerSelectableModels(providerCapabilities, activeProvider?.id);
   const selectedModel = effectiveAgentModel(
@@ -3501,6 +3510,7 @@ function Composer({
     activeProvider?.id,
   );
   const effectiveModelId = selectedModel?.modelId || null;
+  const modelTriggerLabel = `${activeProvider?.label || "Provider"} model: ${selectedModel?.label || "Default model"}`;
   const showModelPicker = Boolean(providerCapabilities?.supportsModelSelection && availableModels.length > 0);
   React.useLayoutEffect(() => {
     if (!modelMenuOpen) return;
@@ -3519,8 +3529,11 @@ function Composer({
   const reasoningLabel = normalizedReasoningLevel
     ? reasoningLevelLabel(providerCapabilities, normalizedReasoningLevel)
     : "";
+  const reasoningTriggerLabel = `Reasoning level: ${reasoningLabel}`;
   const showReasoningControl = reasoningLevels.length > 0 && Boolean(normalizedReasoningLevel);
   const showFastMode = Boolean(providerCapabilities?.supportsFastMode);
+  const fastModeLabel = fastMode ? "Enabled" : "Disabled";
+  const fastModeTriggerLabel = `Fast mode: ${fastModeLabel}`;
   const referenceGroup = composerReferenceGroup(val);
   const submit = () => {
     if (busy) {
@@ -3608,22 +3621,19 @@ function Composer({
           <div className="composer-provider-wrap">
             <button
               className="composer-provider-chip"
-              title={providerSessionLabel(activeProvider)}
+              ref={providerTriggerRef}
+              title={providerTriggerLabel}
               type="button"
+              aria-label={providerTriggerLabel}
               aria-haspopup="listbox"
               aria-expanded={providerMenuOpen}
-              onClick={() => {
-                setProviderMenuOpen((open) => !open);
-                setModelMenuOpen(false);
-              }}
+              onClick={() => setOpenMenu((current) => current === "provider" ? null : "provider")}
             >
               {activeProvider && (
-                <span className={"provider-mark " + activeProvider.id}>
+                <span className={"provider-mark " + activeProvider.id} aria-hidden="true">
                   {activeProvider.abbr}
                 </span>
               )}
-              <span>{providerChipLabel}</span>
-              <Icon.chevronDown />
             </button>
             {providerMenuOpen && (
               <div className="composer-model-menu composer-provider-menu" role="listbox" aria-label="Agent provider">
@@ -3636,8 +3646,7 @@ function Composer({
                     aria-selected={provider.id === activeProvider?.id}
                     onClick={() => {
                       onSelectProvider(provider.id);
-                      setProviderMenuOpen(false);
-                      setModelMenuOpen(false);
+                      setOpenMenu(null);
                     }}
                   >
                     <span>{provider.label}</span>
@@ -3653,20 +3662,17 @@ function Composer({
                 className="composer-model-chip"
                 ref={modelTriggerRef}
                 type="button"
-                aria-label={`${activeProvider?.label || "Provider"} model: ${selectedModel?.label || "Default model"}`}
+                title={modelTriggerLabel}
+                aria-label={modelTriggerLabel}
                 aria-haspopup="listbox"
                 aria-expanded={modelMenuOpen}
-                onClick={() => {
-                  setModelMenuOpen((open) => !open);
-                  setProviderMenuOpen(false);
-                }}
+                onClick={() => setOpenMenu((current) => current === "model" ? null : "model")}
               >
-                <span>{selectedModel?.label || "Default model"}</span>
-                <Icon.chevronDown />
+                <Icon.spark aria-hidden="true" />
               </button>
               {modelMenuOpen && (
                 <div
-                  className="composer-model-menu"
+                  className="composer-model-menu composer-selection-menu"
                   ref={modelMenuRef}
                   role="listbox"
                   aria-label={`${activeProvider?.label || "Provider"} models`}
@@ -3682,7 +3688,7 @@ function Composer({
                       aria-selected={model.modelId === effectiveModelId}
                       onClick={() => {
                         onSelectModel(model.modelId);
-                        setModelMenuOpen(false);
+                        setOpenMenu(null);
                       }}
                     >
                       <span>{model.label}</span>
@@ -3693,34 +3699,95 @@ function Composer({
             </div>
           )}
           {showReasoningControl && (
-            <button
-              className="composer-reasoning-chip"
-              title="Reasoning level"
-              type="button"
-              onClick={onCycleReasoningLevel}
-            >
-              <span className="reasoning-bars" aria-hidden="true">
-                {reasoningLevels.map((level, index) => (
-                  <i
-                    className={index <= selectedReasoningIndex ? "active" : ""}
-                    key={level.level}
-                  />
-                ))}
-              </span>
-              <span>{reasoningLabel}</span>
-            </button>
+            <div className="composer-control-wrap composer-reasoning-wrap">
+              <button
+                className="composer-reasoning-chip"
+                ref={reasoningTriggerRef}
+                title={reasoningTriggerLabel}
+                type="button"
+                aria-label={reasoningTriggerLabel}
+                aria-haspopup="listbox"
+                aria-expanded={reasoningMenuOpen}
+                onClick={() => setOpenMenu((current) => current === "reasoning" ? null : "reasoning")}
+              >
+                <span className="reasoning-bars" aria-hidden="true">
+                  {reasoningLevels.map((level, index) => (
+                    <i
+                      className={index <= selectedReasoningIndex ? "active" : ""}
+                      key={level.level}
+                    />
+                  ))}
+                </span>
+              </button>
+              {reasoningMenuOpen && (
+                <div
+                  className="composer-model-menu composer-selection-menu composer-reasoning-menu"
+                  role="listbox"
+                  aria-label="Reasoning levels"
+                >
+                  {reasoningLevels.map((level) => (
+                    <button
+                      className={"composer-model-option" + (level.level === normalizedReasoningLevel ? " active" : "")}
+                      key={level.level}
+                      type="button"
+                      role="option"
+                      data-reasoning-level={level.level}
+                      title={level.description || level.label}
+                      aria-selected={level.level === normalizedReasoningLevel}
+                      onClick={() => {
+                        onSelectReasoningLevel(level.level);
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span>{level.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {showFastMode && (
-            <button
-              className={"fast-toggle" + (fastMode ? " active" : "")}
-              aria-pressed={fastMode}
-              title="Fast mode"
-              type="button"
-              onClick={onToggleFastMode}
-            >
-              <span className="fast-toggle-dot" />
-              <span>Fast mode</span>
-            </button>
+            <div className="composer-control-wrap composer-fast-wrap">
+              <button
+                className={"fast-toggle" + (fastMode ? " active" : "")}
+                ref={fastTriggerRef}
+                title={fastModeTriggerLabel}
+                type="button"
+                aria-label={fastModeTriggerLabel}
+                aria-haspopup="listbox"
+                aria-expanded={fastMenuOpen}
+                onClick={() => setOpenMenu((current) => current === "fast" ? null : "fast")}
+              >
+                <Icon.bolt aria-hidden="true" />
+              </button>
+              {fastMenuOpen && (
+                <div
+                  className="composer-model-menu composer-selection-menu composer-fast-menu"
+                  role="listbox"
+                  aria-label="Fast mode"
+                >
+                  {[
+                    { value: false, label: "Disabled" },
+                    { value: true, label: "Enabled" },
+                  ].map((option) => (
+                    <button
+                      className={"composer-model-option" + (option.value === fastMode ? " active" : "")}
+                      key={option.label}
+                      type="button"
+                      role="option"
+                      data-fast-mode={option.value ? "enabled" : "disabled"}
+                      aria-selected={option.value === fastMode}
+                      onClick={() => {
+                        onSelectFastMode(option.value);
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <button
             className={"send" + (busy ? " stopping" : "")}
@@ -3742,7 +3809,7 @@ function AgentPanel({
   onSend, providers, collapseAgent,
   activeProviderId, onSelectProvider, onOpenSettings, project,
   providerCapabilities, selectedModelId, onSelectModel,
-  reasoningLevel, fastMode, onCycleReasoningLevel, onToggleFastMode,
+  reasoningLevel, fastMode, onSelectReasoningLevel, onSelectFastMode,
   agentWorkspace, activeAgentSessionId, onSelectAgentSession,
   onNewAgentSession, onCloseAgentSession,
   attachments, onPickAttachment, onRemoveAttachment,
@@ -3841,8 +3908,8 @@ function AgentPanel({
         onSelectModel={onSelectModel}
         reasoningLevel={reasoningLevel}
         fastMode={fastMode}
-        onCycleReasoningLevel={onCycleReasoningLevel}
-        onToggleFastMode={onToggleFastMode}
+        onSelectReasoningLevel={onSelectReasoningLevel}
+        onSelectFastMode={onSelectFastMode}
         attachments={attachments}
         onPickAttachment={onPickAttachment}
         onRemoveAttachment={onRemoveAttachment}
@@ -4527,19 +4594,22 @@ function App() {
     }));
   }, [activeAgentSessionId, activeProject, updateAgentSession]);
 
-  const cycleAgentReasoningLevel = React.useCallback(() => {
+  const selectAgentReasoningLevel = React.useCallback((reasoningLevel) => {
+    const capability = reasoningLevelCapability(activeProviderCapabilities, reasoningLevel);
+    if (!capability) return;
+
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
-      reasoningLevel: nextReasoningLevel(activeProviderCapabilities, session.reasoningLevel),
+      reasoningLevel: capability.level,
     }));
   }, [activeAgentSessionId, activeProject, activeProviderCapabilities, updateAgentSession]);
 
-  const toggleAgentFastMode = React.useCallback(() => {
+  const selectAgentFastMode = React.useCallback((fastMode) => {
     if (!activeProviderCapabilities?.supportsFastMode) return;
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
-      fastMode: !session.fastMode,
+      fastMode: Boolean(fastMode),
     }));
   }, [activeAgentSessionId, activeProject, activeProviderCapabilities, updateAgentSession]);
 
@@ -5891,8 +5961,8 @@ function App() {
                   )}
                   reasoningLevel={agentReasoningLevel}
                   fastMode={agentFastMode}
-                  onCycleReasoningLevel={cycleAgentReasoningLevel}
-                  onToggleFastMode={toggleAgentFastMode}
+                  onSelectReasoningLevel={selectAgentReasoningLevel}
+                  onSelectFastMode={selectAgentFastMode}
                   agentWorkspace={activeAgentWorkspace}
                   activeAgentSessionId={activeAgentSessionId}
                   onSelectAgentSession={selectAgentSession}

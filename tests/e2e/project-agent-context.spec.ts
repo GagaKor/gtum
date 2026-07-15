@@ -508,7 +508,13 @@ test('returns a delayed attachment and request options only to their starting pr
   await page.locator('.composer-model-chip').click()
   await page.locator('.composer-model-option').filter({ hasText: 'GPT Project A' }).click()
   await page.locator('.composer-reasoning-chip').click()
+  const reasoningMenu = page.getByRole('listbox', { name: 'Reasoning levels' })
+  await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('High')
+  await reasoningMenu.getByRole('option', { name: 'Low', exact: true }).click()
   await page.locator('.fast-toggle').click()
+  const fastMenu = page.getByRole('listbox', { name: 'Fast mode' })
+  await expect(fastMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Disabled')
+  await fastMenu.getByRole('option', { name: 'Enabled', exact: true }).click()
   await page.locator('.composer-tool').click()
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __attachmentPickStarted?: boolean }
@@ -517,7 +523,7 @@ test('returns a delayed attachment and request options only to their starting pr
   await projectRow(page, projectB).click()
   await expect(page.getByPlaceholder('Ask Codex')).toHaveValue('')
   await expect(page.locator('.composer-attachment-chip')).toHaveCount(0)
-  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-label', 'Fast mode: Disabled')
   await page.evaluate(({ projectPath, sessionId }) => (
     window as Window & { __resolveAgentAttachment(projectPath: string, sessionId: string, path: string): void }
   ).__resolveAgentAttachment(projectPath, sessionId, '/tmp/project-a.png'), {
@@ -540,9 +546,11 @@ test('returns a delayed attachment and request options only to their starting pr
   await projectRow(page, projectA).click()
   await expect(page.getByPlaceholder('Ask Codex')).toHaveValue('A private draft')
   await expect(page.locator('.composer-attachment-chip')).toContainText('project-a.png')
-  await expect(page.locator('.composer-model-chip')).toContainText('GPT Project A')
-  await expect(page.locator('.composer-reasoning-chip')).toContainText('Low')
-  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.composer-model-chip'))
+    .toHaveAttribute('aria-label', 'Codex model: GPT Project A')
+  await expect(page.locator('.composer-reasoning-chip'))
+    .toHaveAttribute('aria-label', 'Reasoning level: Low')
+  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-label', 'Fast mode: Enabled')
 })
 
 test('dedupes permission decisions per owner and writes delayed job creation only to its origin', async ({ page }) => {

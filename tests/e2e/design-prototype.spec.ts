@@ -356,7 +356,8 @@ test('uses runtime provider capabilities for the composer model picker', async (
 
   await page.goto('/')
 
-  await expect(page.locator('.composer-model-chip')).toContainText('GPT-5.5')
+  await expect(page.locator('.composer-model-chip'))
+    .toHaveAttribute('aria-label', 'Codex model: GPT-5.5')
   await page.getByText('Open project folder').click()
   await expect
     .poll(async () =>
@@ -376,10 +377,19 @@ test('uses runtime provider capabilities for the composer model picker', async (
   await expect(page.locator('.composer-attachment-chip')).toContainText('screenshot.png')
   await page.locator('.composer-model-chip').click()
   await page.locator('.composer-model-option').filter({ hasText: 'GPT-5 Codex' }).click()
-  await expect(page.locator('.composer-model-chip')).toContainText('GPT-5 Codex')
-  await expect(page.locator('.composer-reasoning-chip')).toContainText('XHigh')
+  await expect(page.locator('.composer-model-chip'))
+    .toHaveAttribute('aria-label', 'Codex model: GPT-5 Codex')
+  await expect(page.locator('.composer-reasoning-chip'))
+    .toHaveAttribute('aria-label', 'Reasoning level: XHigh')
+  await page.locator('.composer-reasoning-chip').click()
+  const reasoningMenu = page.getByRole('listbox', { name: 'Reasoning levels' })
+  await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('XHigh')
+  await reasoningMenu.getByRole('option', { name: 'XHigh', exact: true }).click()
   await page.locator('.fast-toggle').click()
-  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-pressed', 'true')
+  const fastMenu = page.getByRole('listbox', { name: 'Fast mode' })
+  await expect(fastMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Disabled')
+  await fastMenu.getByRole('option', { name: 'Enabled', exact: true }).click()
+  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-label', 'Fast mode: Enabled')
 
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()
@@ -2436,7 +2446,8 @@ test('keeps a legacy session on Codex when Claude is connected globally', async 
   })
 
   await page.goto('/')
-  await expect(page.locator('.composer-provider-chip')).toContainText('Codex')
+  await expect(page.locator('.composer-provider-chip'))
+    .toHaveAttribute('aria-label', 'Provider: Codex · Connect provider')
   await page.locator('.titlebar .pill.icon-only').click()
   await expect(page.locator('.settings-provider').filter({ hasText: 'Claude' })).toContainText(
     'Connected',
@@ -2688,8 +2699,9 @@ test('keeps approved Codex command decisions in the agent panel without terminal
     .toBeLessThanOrEqual(2)
   await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
   await expect(page.locator('.sugg')).toHaveCount(0)
-  await expect(page.locator('.composer-provider-chip')).toContainText('Codex')
-  await expect(page.locator('.composer-provider-chip')).not.toContainText('gpt-5')
+  await expect(page.locator('.composer-provider-chip'))
+    .toHaveAttribute('aria-label', 'Provider: Codex · CLI session')
+  await expect(page.locator('.composer-provider-chip')).toHaveText('Cx')
   await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
   await expect(page.locator('.fast-toggle')).toHaveCount(0)
   await expect(page.locator('.composer-scope-chip')).toHaveCount(0)
