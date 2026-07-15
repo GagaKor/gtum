@@ -2610,10 +2610,59 @@ function nextReasoningLevel(providerCapabilities, selectedLevel) {
   return levels[(currentIndex + 1) % levels.length]?.level || levels[0].level;
 }
 
+const MAX_PERSISTED_AGENT_MODEL_ID_LENGTH = 128;
+
+function sanitizedAgentModelId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_PERSISTED_AGENT_MODEL_ID_LENGTH) return null;
+  return normalized;
+}
+
+function sanitizeSelectedAgentModels(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => {
+    const modelId = sanitizedAgentModelId(value[providerId]);
+    return modelId ? [[providerId, modelId]] : [];
+  }));
+}
+
+function providerSelectableModels(providerCapabilities, providerId) {
+  if (
+    !providerCapabilities?.supportsModelSelection ||
+    providerCapabilities.provider !== providerId
+  ) return [];
+  return (providerCapabilities.availableModels || []).filter((model) =>
+    model?.providerId === providerId && Boolean(sanitizedAgentModelId(model.modelId))
+  );
+}
+
+function storedAgentModel(providerCapabilities, selectedModelId, providerId) {
+  const storedModelId = sanitizedAgentModelId(selectedModelId);
+  if (!storedModelId) return null;
+
+  return providerSelectableModels(providerCapabilities, providerId)
+    .find((model) => model.modelId === storedModelId) || null;
+}
+
+function effectiveAgentModel(providerCapabilities, selectedModelId, providerId) {
+  const storedModel = storedAgentModel(providerCapabilities, selectedModelId, providerId);
+  if (storedModel) return storedModel;
+
+  const currentModelId = sanitizedAgentModelId(providerCapabilities?.currentModel?.modelId);
+  if (!currentModelId) return null;
+
+  return providerSelectableModels(providerCapabilities, providerId)
+    .find((model) => model.modelId === currentModelId) || null;
+}
+
+function validatedStoredAgentModelId(providerCapabilities, selectedModelId, providerId) {
+  return storedAgentModel(providerCapabilities, selectedModelId, providerId)?.modelId || null;
+}
+
 function selectedAgentModel(providerCapabilities, selectedModelId, activeProvider) {
-  const availableModels = providerCapabilities?.availableModels || [];
-  return availableModels.find((model) => model.modelId === selectedModelId)
-    || providerCapabilities?.currentModel
+  return effectiveAgentModel(providerCapabilities, selectedModelId, activeProvider?.id)
     || {
       modelId: null,
       label: activeProvider ? `${activeProvider.label} default` : "Default model",
@@ -2666,7 +2715,7 @@ function readAgentSessionDirectory(lang) {
           messages: CHAT_INIT(lang),
           draft: "",
           request: createAgentRequestState(),
-          selectedModels: {},
+          selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
           attachments: {},
           reasoningLevel: null,
           fastMode: false,
@@ -2705,6 +2754,7 @@ function writeAgentSessionDirectory(store) {
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         providerId: session.providerId === "claude" ? "claude" : "codex",
+        selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
       })),
     },
   ]));
@@ -3418,19 +3468,38 @@ function Composer({
   const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = React.useState(false);
   const ref = React.useRef(null);
+  const modelTriggerRef = React.useRef(null);
   React.useLayoutEffect(() => {
     const textarea = ref.current;
     if (!textarea) return;
     textarea.style.height = "auto";
     textarea.style.height = Math.min(120, textarea.scrollHeight) + "px";
   }, [val]);
+  React.useEffect(() => {
+    setModelMenuOpen(false);
+  }, [activeProvider?.id]);
+  React.useEffect(() => {
+    if (!modelMenuOpen) return undefined;
+
+    const closeOnEscape = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setModelMenuOpen(false);
+      window.requestAnimationFrame(() => modelTriggerRef.current?.focus());
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [modelMenuOpen]);
   const providerChipLabel = activeProvider
     ? `${activeProvider.label} ${providerSessionLabel(activeProvider)}`
     : "No provider";
-  const availableModels = providerCapabilities?.availableModels || [];
-  const selectedModel = availableModels.find((model) => model.modelId === selectedModelId)
-    || providerCapabilities?.currentModel
-    || null;
+  const availableModels = providerSelectableModels(providerCapabilities, activeProvider?.id);
+  const selectedModel = effectiveAgentModel(
+    providerCapabilities,
+    selectedModelId,
+    activeProvider?.id,
+  );
+  const effectiveModelId = selectedModel?.modelId || null;
   const showModelPicker = Boolean(providerCapabilities?.supportsModelSelection && availableModels.length > 0);
   const enabledAttachments = (providerCapabilities?.attachments || []).filter((attachment) => attachment.enabled);
   const attachmentTitle = enabledAttachments.length > 0
@@ -3558,6 +3627,7 @@ function Composer({
                     onClick={() => {
                       onSelectProvider(provider.id);
                       setProviderMenuOpen(false);
+                      setModelMenuOpen(false);
                     }}
                   >
                     <span>{provider.label}</span>
@@ -3571,7 +3641,10 @@ function Composer({
             <div className="composer-model-wrap">
               <button
                 className="composer-model-chip"
+                ref={modelTriggerRef}
                 type="button"
+                aria-label={`${activeProvider?.label || "Provider"} model: ${selectedModel?.label || "Default model"}`}
+                aria-haspopup="listbox"
                 aria-expanded={modelMenuOpen}
                 onClick={() => setModelMenuOpen((open) => !open)}
               >
@@ -3579,14 +3652,18 @@ function Composer({
                 <Icon.chevronDown />
               </button>
               {modelMenuOpen && (
-                <div className="composer-model-menu" role="listbox" aria-label="Agent model">
+                <div
+                  className="composer-model-menu"
+                  role="listbox"
+                  aria-label={`${activeProvider?.label || "Provider"} models`}
+                >
                   {availableModels.map((model) => (
                     <button
-                      className={"composer-model-option" + (model.modelId === selectedModelId ? " active" : "")}
+                      className={"composer-model-option" + (model.modelId === effectiveModelId ? " active" : "")}
                       key={model.modelId}
                       type="button"
                       role="option"
-                      aria-selected={model.modelId === selectedModelId}
+                      aria-selected={model.modelId === effectiveModelId}
                       onClick={() => {
                         onSelectModel(model.modelId);
                         setModelMenuOpen(false);
@@ -4585,6 +4662,41 @@ function App() {
     };
   }, [activeProviderId, markProviderError]);
   React.useEffect(() => {
+    const capabilities = providerCapabilities[activeProviderId] || null;
+    const storedModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
+    if (
+      !activeAgentSessionId ||
+      !capabilities?.supportsModelSelection ||
+      !sanitizedAgentModelId(storedModelId) ||
+      storedAgentModel(capabilities, storedModelId, activeProviderId)
+    ) return;
+
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    updateAgentSession(originProject, originSessionId, (session) => {
+      const selectedModels = sanitizeSelectedAgentModels(session.selectedModels);
+      const currentStoredModelId = selectedModels[activeProviderId];
+      if (
+        !currentStoredModelId ||
+        storedAgentModel(capabilities, currentStoredModelId, activeProviderId)
+      ) return session;
+
+      const nextSelectedModels = { ...selectedModels };
+      delete nextSelectedModels[activeProviderId];
+      return {
+        ...session,
+        selectedModels: nextSelectedModels,
+      };
+    });
+  }, [
+    activeAgentSession?.selectedModels,
+    activeAgentSessionId,
+    activeProject,
+    activeProviderId,
+    providerCapabilities,
+    updateAgentSession,
+  ]);
+  React.useEffect(() => {
     if (!terminalRuntimeService.hasRuntime()) return undefined;
 
     let cancelled = false;
@@ -4830,20 +4942,25 @@ function App() {
     }
   };
 
-  const requestRuntimeAgentSuggestions = React.useCallback(async (text, messageId, active, requestToken) => {
+  const requestRuntimeAgentSuggestions = React.useCallback(async (
+    text,
+    messageId,
+    active,
+    requestToken,
+    originProviderId,
+    selectedModelId,
+  ) => {
     const originProject = { ...activeProject };
     const originSessionId = requestToken.sessionId;
     const originTab = active
       ? { ...active, lines: Array.isArray(active.lines) ? [...active.lines] : active.lines }
       : null;
-    const originProviderId = activeAgentSession?.providerId || "codex";
     const originProviderLabel = providerDisplayName(originProviderId);
     const turnId = messageId + "-agent-turn";
     const isCurrentRequest = () =>
       agentContextCoordinatorRef.current.isRequestCurrent(requestToken);
     const startedAtMs = Date.now();
     const attachments = [...(activeAgentSession?.attachments?.[originProviderId] || [])];
-    const selectedModelId = activeAgentSession?.selectedModels?.[originProviderId] || null;
     const reasoningLevel = agentReasoningLevel;
     const fastMode = agentFastMode;
     const reasoningLabel = reasoningLevel
@@ -5415,6 +5532,11 @@ function App() {
     const originSessionId = activeAgentSessionId;
     if (!originSessionId) return false;
     const originProviderId = activeAgentSession?.providerId || "codex";
+    const originSelectedModelId = validatedStoredAgentModelId(
+      providerCapabilities[originProviderId] || null,
+      activeAgentSession?.selectedModels?.[originProviderId],
+      originProviderId,
+    );
     const originProvider = providers.find((provider) => provider.id === originProviderId);
     const requestOwner = agentSuggestionRuntimeService.hasRuntime()
       && originProvider?.availability !== "deferred"
@@ -5449,7 +5571,14 @@ function App() {
         return true;
       }
 
-      void requestRuntimeAgentSuggestions(text, id, attachedTab, requestToken);
+      void requestRuntimeAgentSuggestions(
+        text,
+        id,
+        attachedTab,
+        requestToken,
+        originProviderId,
+        originSelectedModelId,
+      );
       return true;
     }
 

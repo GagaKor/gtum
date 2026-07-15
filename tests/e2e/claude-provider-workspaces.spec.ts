@@ -5,8 +5,17 @@ const projectB = '/workspace/codex-b'
 const sessionA = 'claude-session-a'
 const sessionB = 'codex-session-b'
 
-const installClaudeWorkspaceHarness = async (page: Page) => {
-  await page.addInitScript(({ projectA, projectB, sessionA, sessionB }) => {
+type ClaudeWorkspaceHarnessOptions = {
+  sessionAProvider?: 'codex' | 'claude'
+  sessionASelectedModels?: Record<string, unknown>
+  claudeSupportsModelSelection?: boolean
+}
+
+const installClaudeWorkspaceHarness = async (
+  page: Page,
+  options: ClaudeWorkspaceHarnessOptions = {},
+) => {
+  await page.addInitScript(({ projectA, projectB, sessionA, sessionB, options }) => {
     type RuntimeCall = { command: string; args?: Record<string, unknown> }
     type SuggestionResolver = (value: unknown[]) => void
     type TestWindow = Window & {
@@ -76,29 +85,33 @@ const installClaudeWorkspaceHarness = async (page: Page) => {
       lastError: null,
     })
 
-    localStorage.setItem('gtum.agent-session-directory.v1', JSON.stringify({
-      [projectA]: {
-        workspaceTitle: 'claude-a',
-        activeSessionId: sessionA,
-        sessions: [{
-          id: sessionA,
-          title: 'Claude A',
-          createdAt: '10:00',
-          updatedAt: '10:00',
-        }],
-      },
-      [projectB]: {
-        workspaceTitle: 'codex-b',
-        activeSessionId: sessionB,
-        sessions: [{
-          id: sessionB,
-          title: 'Codex B',
-          providerId: 'codex',
-          createdAt: '10:00',
-          updatedAt: '10:00',
-        }],
-      },
-    }))
+    if (!localStorage.getItem('gtum.agent-session-directory.v1')) {
+      localStorage.setItem('gtum.agent-session-directory.v1', JSON.stringify({
+        [projectA]: {
+          workspaceTitle: 'claude-a',
+          activeSessionId: sessionA,
+          sessions: [{
+            id: sessionA,
+            title: 'Claude A',
+            providerId: options.sessionAProvider || 'codex',
+            selectedModels: options.sessionASelectedModels || {},
+            createdAt: '10:00',
+            updatedAt: '10:00',
+          }],
+        },
+        [projectB]: {
+          workspaceTitle: 'codex-b',
+          activeSessionId: sessionB,
+          sessions: [{
+            id: sessionB,
+            title: 'Codex B',
+            providerId: 'codex',
+            createdAt: '10:00',
+            updatedAt: '10:00',
+          }],
+        },
+      }))
+    }
 
     bridgeWindow.__providerCalls = []
     bridgeWindow.__authCalls = []
@@ -171,11 +184,27 @@ const installClaudeWorkspaceHarness = async (page: Page) => {
         bridgeWindow.__providerCalls.push({ command, args })
         if (command === 'read_agent_provider_capabilities') {
           const provider = String(args?.provider) as 'codex' | 'claude'
+          const availableModels = provider === 'claude'
+            ? [
+                { providerId: 'claude', modelId: 'default', label: 'Claude default' },
+                { providerId: 'claude', modelId: 'best', label: 'Best available' },
+                { providerId: 'claude', modelId: 'sonnet', label: 'Sonnet' },
+                { providerId: 'claude', modelId: 'opus', label: 'Opus' },
+                { providerId: 'claude', modelId: 'haiku', label: 'Haiku' },
+              ]
+            : [
+                { providerId: 'codex', modelId: 'gpt-default', label: 'GPT default' },
+                { providerId: 'codex', modelId: 'gpt-5-codex', label: 'GPT-5 Codex' },
+                { providerId: 'codex', modelId: 'gpt-mini', label: 'GPT Mini' },
+              ]
+          const supportsModelSelection = provider === 'claude'
+            ? options.claudeSupportsModelSelection !== false
+            : true
           return {
             provider,
-            supportsModelSelection: false,
-            currentModel: null,
-            availableModels: [],
+            supportsModelSelection,
+            currentModel: supportsModelSelection ? availableModels[0] : null,
+            availableModels: supportsModelSelection ? availableModels : [],
             reasoningLevels: [],
             defaultReasoningLevel: null,
             supportsFastMode: false,
@@ -244,7 +273,7 @@ const installClaudeWorkspaceHarness = async (page: Page) => {
         throw new Error(`Provider work must not touch the center terminal: ${command}`)
       },
     }
-  }, { projectA, projectB, sessionA, sessionB })
+  }, { projectA, projectB, sessionA, sessionB, options })
 }
 
 const projectRow = (page: Page, path: string) =>
@@ -253,6 +282,14 @@ const projectRow = (page: Page, path: string) =>
 const sendRequest = async (page: Page, provider: string, text: string) => {
   await page.getByPlaceholder(`Ask ${provider}`).fill(text)
   await page.locator('.composer-input .send').click()
+}
+
+const modelTrigger = (page: Page, provider: 'Codex' | 'Claude') =>
+  page.getByRole('button', { name: new RegExp(`^${provider} model:`) })
+
+const switchProvider = async (page: Page, provider: 'Codex' | 'Claude') => {
+  await page.locator('.composer-provider-chip').click()
+  await page.getByRole('option', { name: new RegExp(`^${provider}`) }).click()
 }
 
 const installClaudeConnectionOrderingHarness = async (page: Page) => {
@@ -429,12 +466,27 @@ test('does not let stale discovery failure overwrite a completed Codex connect',
   ).__terminalCalls ?? [])).toEqual([])
 })
 
-test('keeps Claude and Codex selections and delayed results in their project sessions', async ({ page }) => {
+test('keeps provider-specific models accessible, persisted, and owned by their project sessions', async ({ page }) => {
   await installClaudeWorkspaceHarness(page)
   await page.goto('/')
 
   await expect(page.locator('.agent')).toHaveAttribute('data-agent-project-path', projectA)
   await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'codex')
+  const initialCodexTrigger = modelTrigger(page, 'Codex')
+  await expect(initialCodexTrigger).toHaveAttribute('aria-haspopup', 'listbox')
+  await expect(initialCodexTrigger).toContainText('GPT default')
+  await initialCodexTrigger.click()
+  const initialCodexModels = page.getByRole('listbox', { name: 'Codex models' })
+  await expect(initialCodexModels.getByRole('option')).toHaveCount(3)
+  await expect(initialCodexModels.locator('[role="option"][aria-selected="true"]')).toHaveCount(1)
+  await expect(initialCodexModels.locator('[role="option"][aria-selected="true"]')).toContainText('GPT default')
+  await page.keyboard.press('Escape')
+  await expect(initialCodexModels).toHaveCount(0)
+  await expect(initialCodexTrigger).toBeFocused()
+  await initialCodexTrigger.click()
+  await initialCodexModels.getByRole('option', { name: /GPT-5 Codex/ }).click()
+  await expect(modelTrigger(page, 'Codex')).toContainText('GPT-5 Codex')
+
   await page.locator('.titlebar .pill.icon-only').click()
   const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
   await expect(claudeSettings.getByRole('button', { name: 'Connect' })).toBeVisible()
@@ -443,11 +495,23 @@ test('keeps Claude and Codex selections and delayed results in their project ses
   await expect(page.locator('.msg.assistant').last()).toContainText(
     'Claude connected through the local Claude CLI session.',
   )
-  await page.locator('.composer-provider-chip').click()
-  await page.getByRole('option', { name: /Claude/ }).click()
+  await modelTrigger(page, 'Codex').click()
+  await switchProvider(page, 'Claude')
   await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'claude')
   await expect(page.getByPlaceholder('Ask Claude')).toBeVisible()
   await expect(page.locator('.composer-provider-chip')).toContainText('Claude CLI session')
+  const claudeTrigger = modelTrigger(page, 'Claude')
+  await expect(claudeTrigger).toHaveAttribute('aria-haspopup', 'listbox')
+  await expect(claudeTrigger).toContainText('Claude default')
+  await expect(page.getByRole('listbox', { name: 'Claude models' })).toHaveCount(0)
+  await claudeTrigger.click()
+  const claudeModels = page.getByRole('listbox', { name: 'Claude models' })
+  await expect(claudeModels.getByRole('option')).toHaveCount(5)
+  await expect(claudeModels.getByRole('option', { name: /gpt/i })).toHaveCount(0)
+  await expect(claudeModels.locator('[role="option"][aria-selected="true"]')).toHaveCount(1)
+  await expect(claudeModels.locator('[role="option"][aria-selected="true"]')).toContainText('Claude default')
+  await claudeModels.getByRole('option', { name: /^Opus/ }).click()
+  await expect(modelTrigger(page, 'Claude')).toContainText('Opus')
 
   await sendRequest(page, 'Claude', 'request from A')
   await expect.poll(() => page.evaluate(() => (
@@ -456,6 +520,10 @@ test('keeps Claude and Codex selections and delayed results in their project ses
   await projectRow(page, projectB).click()
   await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'codex')
   await expect(page.getByPlaceholder('Ask Codex')).toBeVisible()
+  await modelTrigger(page, 'Codex').click()
+  await page.getByRole('listbox', { name: 'Codex models' })
+    .getByRole('option', { name: /GPT-5 Codex/ })
+    .click()
   await sendRequest(page, 'Codex', 'request from B')
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __providerCalls?: RuntimeCall[] }
@@ -516,11 +584,13 @@ test('keeps Claude and Codex selections and delayed results in their project ses
   expect(requests.map((call) => call.args?.request)).toEqual([
     expect.objectContaining({
       provider: 'claude',
+      model: 'opus',
       projectPath: projectA,
       agentSessionId: sessionA,
     }),
     expect.objectContaining({
       provider: 'codex',
+      model: 'gpt-5-codex',
       projectPath: projectB,
       agentSessionId: sessionB,
     }),
@@ -544,8 +614,105 @@ test('keeps Claude and Codex selections and delayed results in their project ses
   ).__terminalCalls ?? [])).toEqual([])
   await expect.poll(() => page.evaluate(({ projectA }) => {
     const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
-    return directory[projectA]?.sessions?.[0]?.providerId
-  }, { projectA })).toBe('claude')
+    return directory[projectA]?.sessions?.[0]
+  }, { projectA })).toEqual(expect.objectContaining({
+    providerId: 'claude',
+    selectedModels: {
+      codex: 'gpt-5-codex',
+      claude: 'opus',
+    },
+  }))
+
+  await expect(modelTrigger(page, 'Claude')).toContainText('Opus')
+  await switchProvider(page, 'Codex')
+  await expect(modelTrigger(page, 'Codex')).toContainText('GPT-5 Codex')
+  await switchProvider(page, 'Claude')
+  await expect(modelTrigger(page, 'Claude')).toContainText('Opus')
+
+  await page.reload()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'claude')
+  await expect(modelTrigger(page, 'Claude')).toContainText('Opus')
+  await switchProvider(page, 'Codex')
+  await expect(modelTrigger(page, 'Codex')).toContainText('GPT-5 Codex')
+  await switchProvider(page, 'Claude')
+  await expect(modelTrigger(page, 'Claude')).toContainText('Opus')
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
+test('drops only a stale Claude model after its selectable catalog loads', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    sessionASelectedModels: {
+      codex: ' gpt-5-codex ',
+      claude: 'retired-claude-model',
+      unknown: 'must-not-persist',
+    },
+  })
+  await page.goto('/')
+
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'claude')
+  await expect(modelTrigger(page, 'Claude')).toContainText('Claude default')
+  await expect.poll(() => page.evaluate(({ projectA }) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
+    return directory[projectA]?.sessions?.[0]?.selectedModels
+  }, { projectA })).toEqual({ codex: 'gpt-5-codex' })
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Connect' }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+  await sendRequest(page, 'Claude', 'request after stale model')
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0)).toBe(1)
+  const request = await page.evaluate(() => (
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.find((call) => call.command === 'request_agent_suggestions')?.args?.request)
+  expect(request).toEqual(expect.objectContaining({
+    provider: 'claude',
+    model: null,
+  }))
+  await page.evaluate(({ projectA, sessionA }) => (
+    window as Window & {
+      __resolveProviderRequest(
+        provider: string,
+        projectPath: string,
+        agentSessionId: string,
+        summary: string,
+      ): void
+    }
+  ).__resolveProviderRequest('claude', projectA, sessionA, 'Claude default completed'), {
+    projectA,
+    sessionA,
+  })
+  await expect(page.locator('.agent')).toContainText('Claude default completed')
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
+test('keeps a saved Claude model while selection support is temporarily unavailable', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    sessionASelectedModels: {
+      codex: 'gpt-5-codex',
+      claude: 'opus',
+    },
+    claudeSupportsModelSelection: false,
+  })
+  await page.goto('/')
+
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'claude')
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(({ projectA }) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
+    return directory[projectA]?.sessions?.[0]?.selectedModels
+  }, { projectA })).toEqual({
+    codex: 'gpt-5-codex',
+    claude: 'opus',
+  })
 })
 
 type RuntimeCall = { command: string; args?: Record<string, unknown> }
