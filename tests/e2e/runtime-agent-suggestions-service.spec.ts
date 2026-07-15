@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import {
   createAgentSuggestionRuntimeService,
+  type RuntimeAgentProviderCapabilities,
   type RuntimeAgentSuggestionResponse,
 } from '../../src/shared/api/runtimeAgentSuggestions'
 
@@ -14,6 +15,202 @@ const runtimeSuggestion: RuntimeAgentSuggestionResponse = {
   confidence: 'high',
   error: null,
 }
+
+const validClaudeAliasCapabilities: RuntimeAgentProviderCapabilities = {
+  provider: 'claude',
+  supportsModelSelection: true,
+  currentModel: {
+    providerId: 'claude',
+    modelId: ' default ',
+    label: ' Claude default ',
+  },
+  availableModels: [
+    {
+      providerId: 'claude',
+      modelId: ' default ',
+      label: ' Claude default ',
+    },
+    {
+      providerId: 'claude',
+      modelId: 'best',
+      label: 'Best available',
+    },
+    {
+      providerId: 'claude',
+      modelId: 'sonnet',
+      label: 'Sonnet',
+    },
+    {
+      providerId: 'claude',
+      modelId: 'opus',
+      label: 'Opus',
+    },
+    {
+      providerId: 'claude',
+      modelId: 'haiku',
+      label: 'Haiku',
+    },
+  ],
+  reasoningLevels: [
+    {
+      level: 'high',
+      label: 'High',
+      description: 'Greater reasoning depth',
+    },
+  ],
+  defaultReasoningLevel: 'high',
+  supportsFastMode: true,
+  attachments: [
+    {
+      kind: 'file',
+      label: 'File',
+      enabled: true,
+      invocationFlag: '--file',
+    },
+  ],
+}
+
+const createCapabilityService = (capabilities: RuntimeAgentProviderCapabilities) =>
+  createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => capabilities,
+  })
+
+test('accepts Claude model aliases and normalizes only model identifiers and labels', async () => {
+  const capabilities = await createCapabilityService(
+    validClaudeAliasCapabilities,
+  ).readProviderCapabilities('claude')
+
+  expect(capabilities).toEqual({
+    ...validClaudeAliasCapabilities,
+    currentModel: {
+      providerId: 'claude',
+      modelId: 'default',
+      label: 'Claude default',
+    },
+    availableModels: [
+      {
+        providerId: 'claude',
+        modelId: 'default',
+        label: 'Claude default',
+      },
+      ...validClaudeAliasCapabilities.availableModels.slice(1),
+    ],
+  })
+})
+
+test('accepts a requested-provider current model outside the available model aliases', async () => {
+  const capabilities = await createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    currentModel: {
+      providerId: 'claude',
+      modelId: 'configured-current',
+      label: 'Configured current model',
+    },
+  }).readProviderCapabilities('claude')
+
+  expect(capabilities.currentModel?.modelId).toBe('configured-current')
+})
+
+test('rejects a top-level provider owner mismatch in Claude capabilities', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    provider: 'codex',
+  })
+
+  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
+    /Provider capability owner mismatch.*claude.*codex/,
+  )
+})
+
+test('rejects a current model owned by another provider in Claude capabilities', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    currentModel: {
+      providerId: 'codex',
+      modelId: 'gpt-5-codex',
+      label: 'GPT-5 Codex',
+    },
+  })
+
+  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
+    /Provider capability owner mismatch.*currentModel.*claude.*codex/,
+  )
+})
+
+test('rejects an available model owned by another provider in Claude capabilities', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    availableModels: [
+      ...validClaudeAliasCapabilities.availableModels,
+      {
+        providerId: 'codex',
+        modelId: 'gpt-5-codex',
+        label: 'GPT-5 Codex',
+      },
+    ],
+  })
+
+  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
+    /Provider capability owner mismatch.*availableModels\[5\].*claude.*codex/,
+  )
+})
+
+test('rejects a blank model identifier in Claude capabilities', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    availableModels: [
+      {
+        providerId: 'claude',
+        modelId: '   ',
+        label: 'Sonnet',
+      },
+    ],
+  })
+
+  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
+    /availableModels\[0\]\.modelId.*non-empty/,
+  )
+})
+
+test('rejects a blank model label in Claude capabilities', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    availableModels: [
+      {
+        providerId: 'claude',
+        modelId: 'sonnet',
+        label: '\t ',
+      },
+    ],
+  })
+
+  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
+    /availableModels\[0\]\.label.*non-empty/,
+  )
+})
+
+test('rejects duplicate Claude model identifiers after trimming', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAliasCapabilities,
+    availableModels: [
+      {
+        providerId: 'claude',
+        modelId: 'sonnet',
+        label: 'Sonnet',
+      },
+      {
+        providerId: 'claude',
+        modelId: ' sonnet ',
+        label: 'Sonnet alias duplicate',
+      },
+    ],
+  })
+
+  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
+    /duplicate available model ID.*sonnet/i,
+  )
+})
 
 test('requests Codex suggestions with the documented agent envelope', async () => {
   const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []

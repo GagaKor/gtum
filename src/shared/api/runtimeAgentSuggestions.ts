@@ -287,6 +287,71 @@ const validateResponseProviders = (
   )
 }
 
+const normalizeCapabilityModelText = (value: unknown, field: string): string => {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  if (normalized.length > 0) return normalized
+
+  throw new Error(`Provider capability ${field} must be a non-empty string.`)
+}
+
+const normalizeCapabilityModel = (
+  model: AgentModelRef,
+  requestedProvider: AgentProviderId,
+  field: string,
+): AgentModelRef => {
+  if (model.providerId !== requestedProvider) {
+    throw new Error(
+      `Provider capability owner mismatch at ${field}: expected ${requestedProvider} but received ${model.providerId}.`,
+    )
+  }
+
+  return {
+    ...model,
+    modelId: normalizeCapabilityModelText(model.modelId, `${field}.modelId`),
+    label: normalizeCapabilityModelText(model.label, `${field}.label`),
+  }
+}
+
+const normalizeProviderCapabilities = (
+  capabilities: RuntimeAgentProviderCapabilities,
+  requestedProvider: AgentProviderId,
+): RuntimeAgentProviderCapabilities => {
+  if (capabilities.provider !== requestedProvider) {
+    throw new Error(
+      `Provider capability owner mismatch: requested ${requestedProvider} but received ${capabilities.provider}.`,
+    )
+  }
+
+  const availableModelIds = new Set<string>()
+  const availableModels = capabilities.availableModels.map((model, index) => {
+    const normalized = normalizeCapabilityModel(
+      model,
+      requestedProvider,
+      `availableModels[${index}]`,
+    )
+    if (availableModelIds.has(normalized.modelId)) {
+      throw new Error(
+        `Provider capabilities contain duplicate available model ID "${normalized.modelId}".`,
+      )
+    }
+    availableModelIds.add(normalized.modelId)
+    return normalized
+  })
+
+  return {
+    ...capabilities,
+    currentModel:
+      capabilities.currentModel == null
+        ? capabilities.currentModel
+        : normalizeCapabilityModel(
+            capabilities.currentModel,
+            requestedProvider,
+            'currentModel',
+          ),
+    availableModels,
+  }
+}
+
 const fallbackDiagnostics = (provider: AgentProviderId): RuntimeAgentProviderDiagnostics => ({
   provider,
   setupState: 'deferred',
@@ -328,9 +393,11 @@ export const createAgentSuggestionRuntimeService = (
     async readProviderCapabilities(provider) {
       if (!hasRuntime()) return fallbackCapabilities(provider)
 
-      return invokeRuntime<RuntimeAgentProviderCapabilities>('read_agent_provider_capabilities', {
-        provider,
-      })
+      const capabilities = await invokeRuntime<RuntimeAgentProviderCapabilities>(
+        'read_agent_provider_capabilities',
+        { provider },
+      )
+      return normalizeProviderCapabilities(capabilities, provider)
     },
     async requestSuggestions(input) {
       validateAgentSessionOwner(input)
