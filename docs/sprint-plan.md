@@ -85,7 +85,8 @@ Current scope:
 - Historical versions, Fable, and extended-context variants are selectable only when the current account/policy response returns their exact `value`. `resolvedModel` never grants a second selectable identifier.
 - Failed or unavailable discovery exposes no selectable catalog and preserves the stored per-project/session/provider value for a later valid read. A successful supported catalog may remove a definitively absent value.
 - An explicit request refreshes the authenticated catalog before inference spawn and requires exact returned-value membership. It adds exactly one separate `--model <value>` pair only after validation. `model: null` skips the extra catalog probe and keeps the CLI runtime default.
-- Closed composer provider/model/reasoning/fast controls use compact non-wrapping icons or marks. Exact names and current state appear inside the opened lists, while exact accessible labels remain on the controls. The model popup stays within the Agent panel and viewport, shows each human label on one line without a raw-ID subtitle, scrolls internally, and brings the selected row into view when reopened. Listbox semantics, one truthful selection, Escape focus restoration, provider-change close, persistence, and zero center-terminal mutation remain required.
+- Closed composer provider/model/reasoning/fast controls use compact non-wrapping icons or marks. Exact names and current state appear inside the opened lists, while exact accessible labels remain on the controls. Every popup stays within the Agent panel and viewport at the default, 260 px, and 240 px Agent widths. Current account labels remain one line at the default width; longer valid labels wrap inside their option without clipping or horizontal overflow. The model list scrolls internally and brings the selected row into view when reopened. Listbox semantics, one truthful selection, Escape focus restoration, provider-change close, persistence, and zero center-terminal mutation remain required.
+- Provider capability state is generation-owned. Each successfully returned startup connection and every connect, disconnect, reconnect, provider-action error, or capability-read error invalidates the old provider catalog synchronously; a connected active provider schedules a fresh read, and a late success or rejection cannot overwrite a newer connection or catalog state.
 
 Current-account investigation (environment evidence, not a product-owned list):
 
@@ -95,8 +96,10 @@ Current-account investigation (environment evidence, not a product-owned list):
 
 Verification status:
 
-- parser/protocol, exact-argv, request-time validation, async capability ownership, picker geometry, persistence, and center-terminal isolation are part of the current gate
-- final focused counts, full lint/build/serial Playwright/Rust counts, production-path no-prompt compatibility smoke, independent review result, and non-force `dev` integration evidence are pending and must be recorded only after the final gate runs
+- parser/protocol, exact-argv, request-time validation, async capability ownership, picker geometry, persistence, and center-terminal isolation pass the current focused and full gates
+- focused evidence passes Claude runtime 62/62, Claude workspace UI 16/16, and runtime suggestion service 24/24; the fresh complete gate passes lint, production build, serial Playwright 221/221, Rust formatting/check, and Rust 169 passed / 1 ignored
+- the ignored production discovery smoke passes explicitly against the authenticated installed CLI and returns the five sanitized current-account model pairs without a prompt or inference turn; independent runtime/UI reviews report no critical, important, or minor findings
+- macOS-to-Windows cross-target checking remains blocked before GTUM crate compilation by Tauri `tauri-winres` because `llvm-rc` is unavailable; native Windows validation and non-force `dev` integration remain pending
 - the active execution record is [Claude Account Model Catalog and Picker Repair Implementation Plan](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
 
 ## Provider-Aware Model Selection Slice — 2026-07-15 (Historical Baseline, Superseded)
@@ -2117,4 +2120,4 @@ Sprint 17 initial backlog:
 
 ## Recommended Next Action
 
-First complete the Claude account-catalog parser/request/picker gate, the bounded production-path no-prompt compatibility smoke, independent review, and the full lint/build/serial Playwright/Rust gate, then integrate the verified result into `dev`. Do not run live `claude -p` inference without explicit user approval. Then resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Auto-approval remains out of scope.
+Integrate the verified Claude account-catalog parser/request/picker result into `dev` without force-pushing. Do not run live `claude -p` inference without explicit user approval. Then resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Auto-approval remains out of scope.

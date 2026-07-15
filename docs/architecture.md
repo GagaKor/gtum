@@ -157,6 +157,7 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - owns the frontend command seam for `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`
   - validates top-level and per-model provider ownership plus nonblank, unique model metadata
   - forwards a stored provider model ID only while it remains in the active provider's supported runtime catalog; a definitively stale value becomes `null`, while unavailable or not-yet-loaded capability state does not erase persistence
+  - renderer orchestration owns provider-scoped capability generations: each successfully returned startup connection plus connect, disconnect, reconnect, provider-action error, and capability-read error reconciliation invalidates older reads; a connected active provider receives a fresh read, and late success or rejection cannot replace the current catalog or connection presentation
 - [`src/shared/api/runtimeAgentJobs.ts`](../src/shared/api/runtimeAgentJobs.ts)
   - validates and maps project-scoped Agent-job create/list/read/cancel payloads
   - never invokes a terminal command and returns explicit unavailable state for non-runtime projects
