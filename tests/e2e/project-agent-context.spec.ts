@@ -134,7 +134,12 @@ test('refuses a project-close lease while its request or permission work is in f
   expect(coordinator.tryBeginProjectClose(projectA)).not.toBeNull()
 })
 
-type SessionFixture = { id: string; title: string }
+type SessionFixture = {
+  id: string
+  title: string
+  selectedReasoningLevels?: Partial<Record<'codex' | 'claude', string>>
+  fastModes?: Partial<Record<'codex' | 'claude', boolean>>
+}
 type ProjectAgentHarnessOptions = {
   includeClaude?: boolean
   progressStageDelayMs?: number
@@ -237,27 +242,29 @@ const installProjectAgentHarness = async (
       lastEvent: 'running',
     })
 
-    localStorage.setItem('gtum.agent-session-directory.v1', JSON.stringify({
-      [projectA]: {
-        workspaceTitle: 'project-a',
-        activeSessionId: activeProjectASessionId,
-        sessions: projectASessions.map((session) => ({
-          ...session,
-          createdAt: '10:00',
-          updatedAt: '10:00',
-        })),
-      },
-      [projectB]: {
-        workspaceTitle: 'project-b',
-        activeSessionId: sharedSessionId,
-        sessions: [{
-          id: sharedSessionId,
-          title: 'B Agent',
-          createdAt: '10:00',
-          updatedAt: '10:00',
-        }],
-      },
-    }))
+    if (!localStorage.getItem('gtum.agent-session-directory.v1')) {
+      localStorage.setItem('gtum.agent-session-directory.v1', JSON.stringify({
+        [projectA]: {
+          workspaceTitle: 'project-a',
+          activeSessionId: activeProjectASessionId,
+          sessions: projectASessions.map((session) => ({
+            ...session,
+            createdAt: '10:00',
+            updatedAt: '10:00',
+          })),
+        },
+        [projectB]: {
+          workspaceTitle: 'project-b',
+          activeSessionId: sharedSessionId,
+          sessions: [{
+            id: sharedSessionId,
+            title: 'B Agent',
+            createdAt: '10:00',
+            updatedAt: '10:00',
+          }],
+        },
+      }))
+    }
     bridgeWindow.__agentCalls = []
     bridgeWindow.__agentJobCalls = []
     bridgeWindow.__terminalCalls = []
@@ -739,6 +746,107 @@ test('keeps session selection and close actions as sibling buttons', async ({ pa
   expect(closeMetrics.width).toBeGreaterThanOrEqual(24)
   expect(closeMetrics.height).toBeGreaterThanOrEqual(24)
   expect(closeMetrics.cursor).toBe('pointer')
+})
+
+test('same-project Agent session A/B execution preferences stay isolated across reload', async ({ page }) => {
+  await installProjectAgentHarness(page, [
+    {
+      id: sameProjectSessionA,
+      title: 'Session A',
+      selectedReasoningLevels: { codex: 'low' },
+      fastModes: { codex: false },
+    },
+    {
+      id: sameProjectSessionB,
+      title: 'Session B',
+      selectedReasoningLevels: { codex: 'high' },
+      fastModes: { codex: true },
+    },
+  ], sameProjectSessionA)
+  await page.goto('/')
+
+  const reasoningTrigger = page.locator('.composer-reasoning-chip')
+  const fastTrigger = page.locator('.fast-toggle')
+  const sessionTab = (sessionId: string) =>
+    page.locator(`.agent-session-tab[data-agent-session-id="${sessionId}"]`)
+  const expectExecution = async (reasoning: 'Low' | 'High', fast: 'Disabled' | 'Enabled') => {
+    await expect(reasoningTrigger).toHaveAttribute('aria-label', `Reasoning level: ${reasoning}`)
+    await expect(fastTrigger).toHaveAttribute('aria-label', `Fast mode: ${fast}`)
+  }
+  const chooseReasoning = async (reasoning: 'Low' | 'High') => {
+    await reasoningTrigger.click()
+    await page.getByRole('listbox', { name: 'Reasoning levels' })
+      .getByRole('option', { name: reasoning, exact: true })
+      .click()
+  }
+  const chooseFast = async (fast: 'Disabled' | 'Enabled') => {
+    await fastTrigger.click()
+    await page.getByRole('listbox', { name: 'Fast mode' })
+      .getByRole('option', { name: fast, exact: true })
+      .click()
+  }
+  const storedPreferencesBySession = () => page.evaluate((projectPath) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
+    return Object.fromEntries((directory[projectPath]?.sessions || []).map((session: {
+      id: string
+      selectedReasoningLevels?: Record<string, unknown>
+      fastModes?: Record<string, unknown>
+      reasoningLevel?: unknown
+      fastMode?: unknown
+    }) => [session.id, session]))
+  }, projectA)
+
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sameProjectSessionA)
+  await expectExecution('Low', 'Disabled')
+  await chooseReasoning('High')
+  await chooseFast('Enabled')
+  await expectExecution('High', 'Enabled')
+
+  await sessionTab(sameProjectSessionB).click()
+  await expectExecution('High', 'Enabled')
+  await chooseReasoning('Low')
+  await chooseFast('Disabled')
+  await expectExecution('Low', 'Disabled')
+
+  await sessionTab(sameProjectSessionA).click()
+  await expectExecution('High', 'Enabled')
+  await sessionTab(sameProjectSessionB).click()
+  await expectExecution('Low', 'Disabled')
+
+  await expect.poll(storedPreferencesBySession).toEqual(expect.objectContaining({
+    [sameProjectSessionA]: expect.objectContaining({
+      selectedReasoningLevels: { codex: 'high' },
+      fastModes: { codex: true },
+    }),
+    [sameProjectSessionB]: expect.objectContaining({
+      selectedReasoningLevels: { codex: 'low' },
+      fastModes: { codex: false },
+    }),
+  }))
+
+  await page.reload()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sameProjectSessionB)
+  await expectExecution('Low', 'Disabled')
+  await sessionTab(sameProjectSessionA).click()
+  await expectExecution('High', 'Enabled')
+  await sessionTab(sameProjectSessionB).click()
+  await expectExecution('Low', 'Disabled')
+
+  const persisted = await storedPreferencesBySession()
+  for (const [sessionId, reasoningLevel, fastMode] of [
+    [sameProjectSessionA, 'high', true],
+    [sameProjectSessionB, 'low', false],
+  ] as const) {
+    expect(persisted[sessionId]).toEqual(expect.objectContaining({
+      selectedReasoningLevels: { codex: reasoningLevel },
+      fastModes: { codex: fastMode },
+    }))
+    expect(persisted[sessionId]).not.toHaveProperty('reasoningLevel')
+    expect(persisted[sessionId]).not.toHaveProperty('fastMode')
+  }
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: unknown[] }
+  ).__terminalCalls ?? [])).toEqual([])
 })
 
 test('keeps same-project background request and attachment updates in session A while B stays selected', async ({ page }) => {
