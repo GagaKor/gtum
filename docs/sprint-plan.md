@@ -99,7 +99,8 @@ Verification status:
 - parser/protocol, exact-argv, request-time validation, async capability ownership, picker geometry, persistence, and center-terminal isolation pass the current focused and full gates
 - focused evidence passes Claude runtime 62/62, Claude workspace UI 16/16, and runtime suggestion service 24/24; the fresh complete gate passes lint, production build, serial Playwright 221/221, Rust formatting/check, and Rust 169 passed / 1 ignored
 - the ignored production discovery smoke passes explicitly against the authenticated installed CLI and returns the five sanitized current-account model pairs without a prompt or inference turn; independent runtime/UI reviews report no critical, important, or minor findings
-- macOS-to-Windows cross-target checking remains blocked before GTUM crate compilation by Tauri `tauri-winres` because `llvm-rc` is unavailable; native Windows validation and non-force `dev` integration remain pending
+- macOS-to-Windows cross-target checking remains blocked before GTUM crate compilation by Tauri `tauri-winres` because `llvm-rc` is unavailable; native Windows validation remains pending
+- after a final fetch and ancestor proof, the verified slice advanced `origin/dev` from `5ff3fd2` to `fa56cbe` through a non-force `HEAD:dev` push without renaming the working branch
 - the active execution record is [Claude Account Model Catalog and Picker Repair Implementation Plan](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
 
 ## Provider-Aware Model Selection Slice — 2026-07-15 (Historical Baseline, Superseded)
@@ -2120,4 +2121,4 @@ Sprint 17 initial backlog:
 
 ## Recommended Next Action
 
-Integrate the verified Claude account-catalog parser/request/picker result into `dev` without force-pushing. Do not run live `claude -p` inference without explicit user approval. Then resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Auto-approval remains out of scope.
+Resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Do not run live `claude -p` inference without explicit user approval. Auto-approval remains out of scope.

@@ -235,7 +235,7 @@ Against the currently installed and authenticated Claude CLI, run only the produ
 
 Review parser limits, credential isolation, zero-prompt discovery, request-time exact-value validation, async ownership, stale persistence, popup geometry, and center-terminal non-mutation. Resolve every critical and important finding.
 
-- [ ] **Step 4: Re-fetch and prove a non-force update**
+- [x] **Step 4: Re-fetch and prove a non-force update**
 
 ```bash
 git fetch origin dev
@@ -243,10 +243,12 @@ git merge-base --is-ancestor origin/dev HEAD
 git status --short
 ```
 
-- [ ] **Step 5: Push without renaming the current branch**
+- [x] **Step 5: Push without renaming the current branch**
 
 ```bash
 git push origin HEAD:dev
 ```
 
 Do not force-push and do not touch `/Users/kwon/projects/gtum`.
+
+Integration result: after fetching `origin/dev`, the ancestor proof and clean-worktree check passed. The non-force `HEAD:dev` push advanced `origin/dev` from `5ff3fd2` to `fa56cbe` while the working branch remained `audit-claude-codex-link`. This plan-status commit is the closure-only follow-up record.
