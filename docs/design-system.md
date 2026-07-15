@@ -214,6 +214,14 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - Mirror the active project's agent workspace sessions in the left `Projects` tree. A workspace row must expose provider identity, branch context, changed-file count, and one of `Waiting`, `Working`, `Review needed`, or `Done` so parallel agent work is visible before the right panel is opened.
 - `composer-reasoning-chip`, `fast-toggle`
   - Live in the composer toolbar beside attachment/model controls only when `read_agent_provider_capabilities` reports supported values. Reasoning levels are not frontend constants; they are provider/model-supported `level` values with labels and are forwarded through the runtime suggestion envelope as `reasoningLevel`. `fastMode` is forwarded only when the provider capability reports `supportsFastMode`.
+  - The persistent toolbar trigger is a compact icon or provider-defined mark, never a long reasoning/fast label and never wrapped text. Exact option names and the current state belong inside the opened list; the compact trigger still retains an exact accessible name and expanded/selected semantics.
+- `composer-provider-picker`
+  - Uses a compact provider mark/icon trigger in the closed composer toolbar. Provider name, connection/readiness state, and the current selection are visible in the opened list, not repeated as long closed-trigger text. Preserve exact accessible naming, listbox/option ownership, and the selected indicator.
+- `composer-model-picker`
+  - Renders only a validated runtime capability catalog for the active provider. A model row shows its human label on one visual line; the exact provider value stays in `data-model-id`, `title`, selection state, and the request payload rather than appearing as a second raw-ID line.
+  - The closed composer trigger is a compact model mark/icon with a chevron or equivalent affordance. It must not render or wrap the full current model name. The opened list owns the exact model names and visible current selection, while the trigger's `aria-label` retains the provider and current model name for assistive technology.
+  - The model popup is right-aligned to its composer anchor, bounded by the Agent panel and viewport, and internally scrollable at its maximum height. Opening or reopening it scrolls the one `aria-selected` row into view, including a selected final row. The provider popup keeps its independent left-aligned geometry.
+  - Preserve listbox/option semantics, exact accessible names, one truthful selected check, Escape close with trigger-focus restoration, and provider-change close behavior. Catalog failure hides selection without deleting the session's stored value.
 - `composer-reference-menu`
   - Opens inline from the composer for `@`, `#`, and `/` triggers. `+` remains the attachment control for provider-supported images/files, while textual references start from the input itself.
 - `agent-turn`
@@ -248,3 +256,4 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
 - Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.
+- Composer popups must remain readable inside the clipped desktop shell: they may scroll internally, but their horizontal bounds, selected option, and one-line label must remain visible at the default desktop viewport. Closed provider/model/reasoning/fast triggers stay compact and non-wrapping; opened lists carry exact names and current state. A provider-supplied model ID may be available as metadata or a tooltip, never as a layout-breaking second text row.

@@ -73,7 +73,8 @@ This document exceeds 200 lines. Read only the matching route first.
 - `src/prototype.jsx` persists the Agent session directory metadata needed to keep durable ownership addressable across reload, including the session `providerId` and trimmed `selectedModels` keyed by `codex` or `claude`. Conversation content remains outside that directory, and neither provider nor model selection is global.
 - `src-tauri/src/runtime/agent_jobs.rs` owns durable Agent jobs and `agent-jobs.json`; the PTY manager remains a separate user-terminal subsystem.
 - `src-tauri/src/runtime/auth/mod.rs` exposes `Codex` and `Claude` as available, real providers. Both gate connect/request completion through stored-connection revision leases so stale work cannot change auth state or publish a response. Claude validates an explicit API key, then a strict helper, then an installed user-owned CLI session; availability still does not imply a connected credential or a live-inference-validated state.
-- `src-tauri/src/runtime/claude.rs` owns the bounded Claude capability aliases `default`, `best`, `sonnet`, `opus`, and `haiku`. It validates explicit selections before spawn, adds exactly one separate `--model <alias>` pair, and leaves implicit default requests without a model flag. Direct Fable, exact-version, 1M-context, effort, and fast-mode selection remain deferred; account entitlement and organization-managed policy remain authoritative.
+- `src-tauri/src/runtime/claude.rs` owns bounded Claude model discovery and exact-value request validation. It runs the authenticated CLI with one prompt-free SDK `initialize` control request, accepts only the sanitized `value` fields from one matching successful response, builds labels from `displayName` plus the leading description segment, and discards identity/subscription data. A malformed, excessive, timed-out, or version-incompatible response fails closed with no static or historical fallback. Explicit requests refresh the catalog before spawn and add one separate `--model <value>` pair only after exact membership validation; implicit default requests add no model flag.
+- `src-tauri/src/lib.rs` exposes capability reads as async Tauri commands and moves the blocking CLI discovery work to `spawn_blocking`, keeping the IPC executor responsive during the bounded probe.
 
 As of the 2026-05-28 frontend reset, the implemented system is best read as three active layers:
 
@@ -218,7 +219,10 @@ The frontend reset intentionally removes the old frontend contract layer from th
   - uses source precedence `ANTHROPIC_API_KEY -> apiKeyHelper -> claude_cli_session`; the helper must be one canonical absolute regular executable path, while a CLI session is read only by the installed CLI after the user authenticates externally with `claude auth login`
   - executes the Claude CLI and helper by canonical absolute path, accepts a custom config root only when it is an existing canonical directory under the current-user home, pins/revalidates that context across validation and request, supplies an absolute-only child `PATH`, removes competing credentials plus inherited provider/debug/telemetry/process-wrapper controls, explicitly disables nonessential traffic and official-marketplace auto-install, and bounds stdin/stdout/stderr plus child completion under one deadline while discarding stderr
   - uses `--safe-mode --setting-sources ""` for CLI-session status/requests and retains `--bare` for API-key/helper requests; model tools, MCP, slash commands, Chrome integration, and session persistence are disabled
-  - advertises only `default`, `best`, `sonnet`, `opus`, and `haiku`; validates any explicit model before child spawn, adds one `--model <alias>` pair, and adds no flag for the implicit default
+  - discovers the current account/policy model catalog through one bounded SDK initialization control request with no user prompt or inference turn; only a matching successful response can produce selectable models
+  - retains sanitized returned `value` IDs and human labels only, rejects the entire catalog on malformed or excessive data, and does not retain account identity, email, organization, or subscription fields
+  - refreshes the catalog for an explicit request, requires exact returned-value membership before inference spawn, adds one `--model <value>` pair, and adds no flag or extra catalog probe for the implicit default
+  - treats the raw initialization envelope as version-coupled and fails closed without static, cached, historical, or entitlement-inferred model fallbacks; a failed read leaves persisted selection available for a later valid read but cannot forward it
   - excludes user/project customizations but cannot override organization-managed policy hooks, status-line commands, or file-suggestion commands; no absolute process-level no-hooks claim is made
   - persists only non-secret source metadata and scopes, never raw keys, helper output, identity, tokens, or subscription metadata; no live `claude -p` inference was run without explicit user approval
 - [`src-tauri/src/runtime/workspace.rs`](../src-tauri/src/runtime/workspace.rs)
@@ -274,6 +278,8 @@ The current commands group into these domains:
   - `queue_telegram_remote_command`
   - `resolve_telegram_remote_command`
 
+`read_agent_provider_capabilities` is an async command boundary. Provider-specific synchronous discovery executes on a blocking worker; join failure becomes a typed command error rather than blocking or panicking the IPC executor.
+
 ## State And Persistence
 
 Current persistence is split like this:
@@ -322,5 +328,6 @@ Restore is split into two layers:
 - the real `Claude` path must pass explicit first-party API-key, strict user-level `apiKeyHelper`, or installed first-party CLI-session validation. GTUM never performs Claude.ai OAuth or reads the credential store; provider availability is distinct from connection readiness, and implemented revision leases fail stale completion closed before any UI result is accepted
 - every provider request is owned by `projectPath + agentSessionId + providerId`, and a session switch or delayed completion must not move results into another owner
 - model selection is additionally owned by the provider inside that project/session. Only a supported provider-owned catalog can validate it; a definitively removed model falls back to `null`/runtime default without deleting another provider's selection
+- Claude model availability is account/policy response data rather than a repository-owned list. Only exact sanitized returned `value` fields are selectable, and failed discovery preserves but does not authorize a stored value
 - `Windows` is the first daily-use validation baseline, and path/shell differences should be absorbed in the `platform` layer
 - a `WORKLOG` is only a temporary in-sprint trace, not a source of truth; once the sprint closes, structural changes should be absorbed into this doc or into [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), and [`technical-design.md`](./technical-design.md), and then the `WORKLOG` should be deleted

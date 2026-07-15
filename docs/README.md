@@ -21,7 +21,8 @@
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
 - [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
-- [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
+- [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
+- [Provider-Aware Model Selection Implementation Plan (Historical Baseline, Superseded)](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
 - [Claude API Provider Integration Plan (Historical, Superseded)](./superpowers/plans/2026-07-14-claude-api-provider.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
@@ -90,8 +91,10 @@
   - Codex login, real suggestion, approval, PTY execution, restore, and installable-app smoke를 mock fallback 없이 완성할 때 읽는다.
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
   - Read this for the active Claude credential-source correction, external CLI login flow, safe-mode isolation contract, validation evidence, and public-distribution compliance gate. It supersedes the 2026-07-14 API-only plan.
-- [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
-  - Read this for the active provider capability catalog, per-session provider/model persistence, stale-model fallback, and validated Claude `--model` alias contract.
+- [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
+  - Read this for the active bounded prompt-free Claude CLI catalog, exact returned-value request validation, fail-closed persistence rules, and contained one-line model picker.
+- [Provider-Aware Model Selection Implementation Plan (Historical Baseline, Superseded)](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
+  - Read this only for the earlier static-alias model-selection baseline and its historical verification evidence. Its Claude alias table is not the current catalog contract.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
@@ -159,6 +162,8 @@
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
 - 에이전트 제공자는 우선 `Codex + Claude`이며, 첫 실사용 `Codex` 경로의 source of truth는 `OAuth/session login`이다
 - The active Claude contract selects an explicit API key, then a strict helper, then an already authenticated user-owned local CLI session. GTUM performs no Claude.ai OAuth/token capture, and public CLI-session distribution is blocked pending Anthropic approval/contract review.
+- Claude model availability comes from one bounded prompt-free initialization response from the authenticated installed CLI. Only sanitized returned `value` IDs are selectable and request-valid; protocol or discovery failure fails closed without a static or historical fallback, preserves stored selection for later validation, and retains no account identity data.
+- Closed composer provider/model/reasoning/fast controls use compact non-wrapping marks, with exact names/current state in opened lists and exact accessible labels retained. The Claude model picker keeps provider-supplied human labels on one visible line, remains contained inside the Agent panel and viewport, and scrolls the selected row into view when reopened. Final current-slice gate counts and non-force `dev` integration evidence remain pending until the active repair plan closes.
 - 현재 저장소의 `OPENAI_API_KEY` 기반 bridge는 개발용 임시 브리지로만 취급하며, 최종 사용자 기본 경로로 간주하지 않는다
 - 현재 Sprint 5 기준의 task history, workspace restore, aging test 흐름은 이후 Sprint 17 UI reset과 runtime contract 정리로 재검증 대상이다
 - Sprint 7에서는 폴더 선택기 중심 프로젝트 열기, UI 정보 구조 재배치, provider auth mock/prototype/real 구분이 반영되어 있다

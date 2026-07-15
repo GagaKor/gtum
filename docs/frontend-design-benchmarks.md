@@ -225,7 +225,10 @@ For the current active slice, the frontend should follow these rules:
 - the agent board should read like an `agent work window` where users assign work, read replies, and approve actions
 - runtime agent work should appear as a live conversational assistant turn: progress and final answer stay in the thread, while command-bearing results stay lightweight as execution-suggestion activity rows and open the detailed permission request directly above the composer
 - composer controls should keep attachment and runtime-backed model selection inside the input toolbar, show project scope through the active workspace/session rather than a current-tab context chip, and render reasoning/fast controls only from provider capabilities
+- closed provider, model, reasoning, and fast controls in the composer should use compact icons or provider/model marks with no long visible names or wrapped text; exact names and current state belong inside the opened list, while exact accessible labels and expanded/selected semantics remain available to assistive technology
 - the top of the right agent workspace should expose the current provider and session/readiness state through a compact row; composer-level model picking and reasoning labels must come from `read_agent_provider_capabilities`, and execution modes must not appear as fixed values without runtime policy
+- provider-backed model popups must remain inside the Agent panel and viewport at the default desktop size, use internal vertical scrolling, and scroll the selected row into view on reopen
+- model options must show the complete provider-supplied human label on one visual line; keep the exact provider value in accessible metadata and the request payload instead of rendering a clipped raw-ID subtitle
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - remove the default bottom panel from the primary layout and solve needed details through panes or overlays
 - the approval rail should show which file, line anchor, and logs produced a suggestion without pushing the editor and agent board away
@@ -431,6 +434,8 @@ For the current active slice, the frontend should follow these rules:
 - AI conversation dominating while code viewing and test inspection are squeezed into a sidebar or bottom panel
 - layouts that lack an editor-like surface when users need to trace code flow
 - layouts where prior work paths and failure evidence are scattered badly enough that users must reconstruct them manually
+- provider/model popups that are clipped by the Agent shell, hide the selected final row, or add a raw model-ID line that reduces label readability
+- composer provider/model/reasoning/fast triggers that repeat long current names, wrap onto another line, or hide their exact accessible names behind icon-only rendering
 
 ## 프론트엔드 작업 체크리스트 / Frontend Review Checklist
 
@@ -457,3 +462,5 @@ Before shipping frontend work, check:
 5. can debug or mock details be pushed one level further back
 6. does the user still have an editor-like surface for reading code and tracing flow apart from the agent conversation
 7. can the user distinguish current pending actions from finished decisions and diagnose recurring problems through task history or trace
+8. do provider-backed model labels, popup bounds, and the selected row remain fully readable at the default desktop viewport
+9. do closed composer capability controls stay compact and non-wrapping while opened lists and accessible names retain the exact provider/model/reasoning/fast state
