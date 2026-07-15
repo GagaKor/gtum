@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::runtime::{
@@ -37,7 +37,6 @@ const CLAUDE_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CLAUDE_MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(5);
 const CLAUDE_SCHEMA_VERSION: u64 = 1;
 const CLAUDE_MODEL_CATALOG_REQUEST_ID: &str = "gtum-claude-model-catalog-v1";
-const CLAUDE_MODEL_CATALOG_INITIALIZE_REQUEST: &[u8] = b"{\"request_id\":\"gtum-claude-model-catalog-v1\",\"type\":\"control_request\",\"request\":{\"subtype\":\"initialize\"}}\n";
 const CLAUDE_MODEL_ALIASES: [(&str, &str); 5] = [
     ("default", "Claude default"),
     ("best", "Best available"),
@@ -1175,10 +1174,7 @@ fn claude_suggestion_schema() -> Result<String, String> {
     .map_err(|_| "Could not build the Claude structured-output schema.".to_string())
 }
 
-fn claude_request_arguments(
-    credential: Option<&ClaudeCredentialSelection>,
-    schema: &str,
-) -> Vec<OsString> {
+fn claude_isolated_arguments(credential: Option<&ClaudeCredentialSelection>) -> Vec<OsString> {
     let mut arguments = if credential.is_some() {
         ["--bare", "--safe-mode"]
             .into_iter()
@@ -1200,6 +1196,30 @@ fn claude_request_arguments(
             "dontAsk",
             "--tools",
             "",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    );
+    arguments
+}
+
+fn append_claude_sanitized_settings(
+    arguments: &mut Vec<OsString>,
+    credential: Option<&ClaudeCredentialSelection>,
+) {
+    if let Some(settings) = credential.and_then(|value| value.sanitized_settings.as_deref()) {
+        arguments.push(OsString::from("--settings"));
+        arguments.push(OsString::from(settings));
+    }
+}
+
+fn claude_request_arguments(
+    credential: Option<&ClaudeCredentialSelection>,
+    schema: &str,
+) -> Vec<OsString> {
+    let mut arguments = claude_isolated_arguments(credential);
+    arguments.extend(
+        [
             "--print",
             "--output-format",
             "json",
@@ -1209,35 +1229,14 @@ fn claude_request_arguments(
         .into_iter()
         .map(OsString::from),
     );
-    if let Some(settings) = credential.and_then(|value| value.sanitized_settings.as_deref()) {
-        arguments.push(OsString::from("--settings"));
-        arguments.push(OsString::from(settings));
-    }
+    append_claude_sanitized_settings(&mut arguments, credential);
     arguments
 }
 
 fn claude_model_catalog_arguments(credential: Option<&ClaudeCredentialSelection>) -> Vec<OsString> {
-    let mut arguments = if credential.is_some() {
-        ["--bare", "--safe-mode"]
-            .into_iter()
-            .map(OsString::from)
-            .collect::<Vec<_>>()
-    } else {
-        ["--safe-mode", "--setting-sources", ""]
-            .into_iter()
-            .map(OsString::from)
-            .collect::<Vec<_>>()
-    };
+    let mut arguments = claude_isolated_arguments(credential);
     arguments.extend(
         [
-            "--strict-mcp-config",
-            "--disable-slash-commands",
-            "--no-chrome",
-            "--no-session-persistence",
-            "--permission-mode",
-            "dontAsk",
-            "--tools",
-            "",
             "--output-format",
             "stream-json",
             "--verbose",
@@ -1247,10 +1246,7 @@ fn claude_model_catalog_arguments(credential: Option<&ClaudeCredentialSelection>
         .into_iter()
         .map(OsString::from),
     );
-    if let Some(settings) = credential.and_then(|value| value.sanitized_settings.as_deref()) {
-        arguments.push(OsString::from("--settings"));
-        arguments.push(OsString::from(settings));
-    }
+    append_claude_sanitized_settings(&mut arguments, credential);
     arguments
 }
 
@@ -1561,6 +1557,32 @@ struct ClaudeSdkModelInfo {
     description: String,
 }
 
+#[derive(Serialize)]
+struct ClaudeModelCatalogInitializeEnvelope<'a> {
+    request_id: &'a str,
+    #[serde(rename = "type")]
+    message_type: &'static str,
+    request: ClaudeModelCatalogInitializePayload,
+}
+
+#[derive(Serialize)]
+struct ClaudeModelCatalogInitializePayload {
+    subtype: &'static str,
+}
+
+fn claude_model_catalog_initialize_request() -> Result<Vec<u8>, String> {
+    let mut request = serde_json::to_vec(&ClaudeModelCatalogInitializeEnvelope {
+        request_id: CLAUDE_MODEL_CATALOG_REQUEST_ID,
+        message_type: "control_request",
+        request: ClaudeModelCatalogInitializePayload {
+            subtype: "initialize",
+        },
+    })
+    .map_err(|_| "Could not serialize the Claude model catalog request.".to_string())?;
+    request.push(b'\n');
+    Ok(request)
+}
+
 fn invalid_claude_model_text(value: &str, max_bytes: usize) -> bool {
     value.len() > max_bytes || value.chars().any(char::is_control)
 }
@@ -1640,11 +1662,12 @@ fn discover_claude_model_catalog_with(
 ) -> Result<Vec<AgentModelCapability>, String> {
     // This intentionally mirrors the Agent SDK initialize handshake. The private wire is
     // version-coupled, so any response drift is rejected and model selection fails closed.
+    let initialize_request = claude_model_catalog_initialize_request()?;
     let output = run_bounded_process(
         program,
         &claude_model_catalog_arguments(context.credential()),
         None,
-        Some(CLAUDE_MODEL_CATALOG_INITIALIZE_REQUEST),
+        Some(&initialize_request),
         context,
         timeout,
         MAX_CLAUDE_MODEL_CATALOG_BYTES,
@@ -1766,6 +1789,92 @@ mod tests {
             permissions.set_mode(0o700);
             fs::set_permissions(path, permissions).unwrap();
         }
+    }
+
+    fn compile_catalog_test_executable(root: &TestRoot, name: &str) -> PathBuf {
+        let source_path = root.path().join(format!("{name}.rs"));
+        let executable_path = root.path().join(if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        });
+        fs::write(
+            &source_path,
+            r#"
+use std::{
+    env, fs,
+    io::{self, Read, Write},
+    process, thread,
+    time::Duration,
+};
+
+fn write_response(root: &std::path::Path) {
+    let response = fs::read(root.join("response")).expect("read fake response");
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&response).expect("write fake response");
+    stdout.flush().expect("flush fake response");
+}
+
+fn main() {
+    let executable = env::current_exe().expect("resolve fake executable");
+    let root = executable.parent().expect("resolve fake executable root");
+    let arguments = env::args_os()
+        .skip(1)
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let arguments = if arguments.is_empty() {
+        arguments
+    } else {
+        format!("{arguments}\n")
+    };
+    fs::write(root.join("argv"), arguments).expect("record fake argv");
+
+    let mut stdin = Vec::new();
+    io::stdin()
+        .read_to_end(&mut stdin)
+        .expect("read fake stdin to EOF");
+    fs::write(root.join("stdin"), stdin).expect("record fake stdin");
+
+    match fs::read_to_string(root.join("mode"))
+        .expect("read fake mode")
+        .trim()
+    {
+        "success" => write_response(root),
+        "nonzero" => {
+            write_response(root);
+            process::exit(7);
+        }
+        "timeout" => thread::sleep(Duration::from_secs(1)),
+        "oversized" => {
+            io::stdout()
+                .lock()
+                .write_all(&vec![b' '; 64 * 1024 + 1])
+                .expect("write oversized fake response");
+        }
+        _ => process::exit(9),
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let output = Command::new("rustc")
+            .arg("--edition=2021")
+            .arg("-C")
+            .arg("debuginfo=0")
+            .arg(&source_path)
+            .arg("-o")
+            .arg(&executable_path)
+            .output()
+            .expect("launch rustc for catalog fake executable");
+        assert!(
+            output.status.success(),
+            "catalog fake executable failed to compile\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        executable_path
     }
 
     fn assert_no_argument_expansion(arguments: &[OsString]) {
@@ -2127,6 +2236,57 @@ mod tests {
     }
 
     #[test]
+    fn sdk_initialize_catalog_requires_one_whole_buffer_control_response() {
+        let response =
+            model_catalog_response(json!([account_model("sonnet", "Sonnet", "Sonnet 5")]));
+        let extra_lines = [
+            (
+                "assistant",
+                br#"{"type":"assistant","message":{"content":[]}}"#.as_slice(),
+            ),
+            (
+                "result",
+                br#"{"type":"result","subtype":"success","is_error":false}"#.as_slice(),
+            ),
+            ("malformed", b"not-json".as_slice()),
+        ];
+
+        for (label, extra_line) in extra_lines {
+            let mut raw = response.clone();
+            raw.push(b'\n');
+            raw.extend_from_slice(extra_line);
+            assert!(
+                parse_claude_model_catalog(&raw).is_err(),
+                "{label} line after a valid response must fail closed"
+            );
+        }
+
+        let mut duplicate = response.clone();
+        duplicate.push(b'\n');
+        duplicate.extend_from_slice(&response);
+        assert!(
+            parse_claude_model_catalog(&duplicate).is_err(),
+            "duplicate matching response must fail closed"
+        );
+    }
+
+    #[test]
+    fn catalog_initialize_request_serializes_the_single_request_id_constant() {
+        let request = claude_model_catalog_initialize_request().unwrap();
+
+        assert_eq!(
+            request,
+            br#"{"request_id":"gtum-claude-model-catalog-v1","type":"control_request","request":{"subtype":"initialize"}}
+"#
+        );
+        let envelope: Value = serde_json::from_slice(&request).unwrap();
+        assert_eq!(
+            envelope.get("request_id").and_then(Value::as_str),
+            Some(CLAUDE_MODEL_CATALOG_REQUEST_ID)
+        );
+    }
+
+    #[test]
     fn catalog_argv_reuses_source_specific_isolation_without_request_surfaces() {
         let environment = ClaudeCredentialSelection {
             source: ClaudeCredentialSource::EnvironmentApiKey,
@@ -2221,29 +2381,23 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn catalog_discovery_writes_one_initialize_request_then_eof() {
         let root = TestRoot::new("model-catalog-wire");
-        let program = root.path().join("fake-claude");
-        write_test_executable(
-            &program,
-            &format!(
-                concat!(
-                    "printf '%s\\n' \"$@\" > \"$0.argv\"\n",
-                    "cat > \"$0.stdin\"\n",
-                    "printf '%s' '{}'\n",
-                ),
-                String::from_utf8(model_catalog_response(expected_account_models())).unwrap()
-            ),
-        );
+        let program = compile_catalog_test_executable(&root, "fake-claude");
+        fs::write(root.path().join("mode"), "success").unwrap();
+        fs::write(
+            root.path().join("response"),
+            model_catalog_response(expected_account_models()),
+        )
+        .unwrap();
         let context = invocation_context(None);
 
         let models =
             discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).unwrap();
 
         assert_eq!(models.len(), 5);
-        let recorded_arguments = fs::read_to_string(format!("{}.argv", program.display()))
+        let recorded_arguments = fs::read_to_string(root.path().join("argv"))
             .unwrap()
             .split_terminator('\n')
             .map(str::to_owned)
@@ -2256,57 +2410,46 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(
-            fs::read(format!("{}.stdin", program.display())).unwrap(),
-            CLAUDE_MODEL_CATALOG_INITIALIZE_REQUEST
+            fs::read(root.path().join("stdin")).unwrap(),
+            claude_model_catalog_initialize_request().unwrap()
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn catalog_discovery_rejects_nonzero_timeout_spawn_and_oversized_output() {
         let root = TestRoot::new("model-catalog-failures");
         let context = invocation_context(None);
-        let valid_response = String::from_utf8(model_catalog_response(json!([{
+        let valid_response = model_catalog_response(json!([{
             "value": "sonnet",
             "displayName": "Sonnet",
             "description": "Sonnet 5"
-        }])))
-        .unwrap();
+        }]));
+        let program = compile_catalog_test_executable(&root, "fake-claude");
+        fs::write(root.path().join("response"), valid_response).unwrap();
 
-        let nonzero = root.path().join("nonzero");
-        write_test_executable(
-            &nonzero,
-            &format!("cat >/dev/null\nprintf '%s' '{valid_response}'\nexit 7"),
-        );
+        fs::write(root.path().join("mode"), "nonzero").unwrap();
         assert!(
-            discover_claude_model_catalog_with(&nonzero, &context, Duration::from_secs(2)).is_err()
+            discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).is_err()
         );
 
-        let timeout = root.path().join("timeout");
-        write_test_executable(&timeout, "cat >/dev/null\nsleep 1");
+        fs::write(root.path().join("mode"), "timeout").unwrap();
         assert!(
-            discover_claude_model_catalog_with(&timeout, &context, Duration::from_millis(20))
+            discover_claude_model_catalog_with(&program, &context, Duration::from_millis(20))
                 .is_err()
         );
 
-        assert!(discover_claude_model_catalog_with(
-            &root.path().join("missing"),
-            &context,
-            Duration::from_secs(2)
-        )
-        .is_err());
-
-        let oversized = root.path().join("oversized");
-        write_test_executable(
-            &oversized,
-            &format!(
-                "cat >/dev/null\nprintf '%*s' {} ''",
-                MAX_CLAUDE_MODEL_CATALOG_BYTES + 1
-            ),
-        );
+        let missing = root.path().join(if cfg!(windows) {
+            "missing.exe"
+        } else {
+            "missing"
+        });
         assert!(
-            discover_claude_model_catalog_with(&oversized, &context, Duration::from_secs(2))
-                .is_err()
+            discover_claude_model_catalog_with(&missing, &context, Duration::from_secs(2)).is_err()
+        );
+
+        fs::write(root.path().join("mode"), "oversized").unwrap();
+        assert!(
+            discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).is_err()
         );
     }
 

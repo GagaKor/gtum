@@ -368,11 +368,24 @@ fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiag
 }
 
 #[tauri::command]
-fn read_agent_provider_capabilities(provider: AgentProvider) -> AgentProviderCapabilities {
-    match provider {
+async fn read_agent_provider_capabilities(
+    provider: AgentProvider,
+) -> Result<AgentProviderCapabilities, String> {
+    run_blocking_agent_provider_capability_read(move || match provider {
         AgentProvider::Codex => runtime::codex::read_codex_capabilities(),
         AgentProvider::Claude => runtime::claude::read_claude_capabilities(),
-    }
+    })
+    .await
+}
+
+async fn run_blocking_agent_provider_capability_read<T, F>(read: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(read)
+        .await
+        .map_err(|error| format!("failed to join agent provider capability read: {error}"))
 }
 
 #[tauri::command]
@@ -763,6 +776,29 @@ mod tests {
         )
         .expect_err("current auth failure should be returned");
         assert_eq!(failure, "provider credential expired");
+    }
+
+    #[test]
+    fn provider_capability_read_runs_on_a_blocking_worker() {
+        let caller_thread = std::thread::current().id();
+
+        let worker_thread =
+            tauri::async_runtime::block_on(run_blocking_agent_provider_capability_read(|| {
+                std::thread::current().id()
+            }))
+            .unwrap();
+
+        assert_ne!(worker_thread, caller_thread);
+    }
+
+    #[test]
+    fn provider_capability_blocking_join_failure_is_typed_for_ipc() {
+        let error = tauri::async_runtime::block_on(run_blocking_agent_provider_capability_read(
+            || -> () { panic!("expected provider capability worker panic") },
+        ))
+        .expect_err("blocking worker panic must become an IPC error");
+
+        assert!(error.contains("failed to join agent provider capability read"));
     }
 
     #[test]
