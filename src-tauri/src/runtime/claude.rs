@@ -2694,6 +2694,22 @@ fn main() {
     }
 
     #[test]
+    #[ignore = "requires an installed authenticated Claude CLI; sends initialization only"]
+    fn live_catalog_compatibility_smoke_is_prompt_free() {
+        let program = discover_claude_cli().expect("authenticated Claude CLI must be installed");
+        let context = current_claude_invocation_context()
+            .expect("Claude invocation context must be available");
+        let models =
+            discover_claude_model_catalog_with(&program, &context, CLAUDE_MODEL_CATALOG_TIMEOUT)
+                .expect("prompt-free Claude model catalog initialization must succeed");
+
+        assert!(!models.is_empty(), "live Claude catalog must not be empty");
+        for model in models {
+            println!("{}\t{}", model.model_id, model.label);
+        }
+    }
+
+    #[test]
     fn request_argv_is_exact_inert_surface_with_optional_sanitized_helper_only() {
         let environment = ClaudeCredentialSelection {
             source: ClaudeCredentialSource::EnvironmentApiKey,
