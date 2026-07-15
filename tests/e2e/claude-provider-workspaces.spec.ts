@@ -108,6 +108,8 @@ type ClaudeCapabilityFixture = {
 type ClaudeWorkspaceHarnessOptions = {
   sessionAProvider?: 'codex' | 'claude'
   sessionASelectedModels?: Record<string, unknown>
+  sessionAPreferences?: Record<string, unknown>
+  sessionBPreferences?: Record<string, unknown>
   claudeSupportsModelSelection?: boolean
   includeAdvancedControls?: boolean
   claudeInitialConnectionStatus?: 'connected' | 'disconnected'
@@ -216,6 +218,7 @@ const installClaudeWorkspaceHarness = async (
             title: 'Claude A',
             providerId: options.sessionAProvider || 'codex',
             selectedModels: options.sessionASelectedModels || {},
+            ...(options.sessionAPreferences || {}),
             createdAt: '10:00',
             updatedAt: '10:00',
           }],
@@ -227,6 +230,7 @@ const installClaudeWorkspaceHarness = async (
             id: sessionB,
             title: 'Codex B',
             providerId: 'codex',
+            ...(options.sessionBPreferences || {}),
             createdAt: '10:00',
             updatedAt: '10:00',
           }],
@@ -1116,6 +1120,184 @@ test('Claude effort and Fast controls follow selected-model metadata without ali
     sessionA,
   })
   await expect(page.locator('.agent')).toContainText('Metadata controls completed')
+})
+
+test('provider-owned effort and Fast preferences stay isolated across providers, projects, sessions, and reload', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    includeAdvancedControls: true,
+    claudeCapabilityFixtures: [{ models: claudeExecutionMetadataCatalog }],
+    sessionAPreferences: {
+      selectedReasoningLevels: {
+        codex: ' medium ',
+        claude: '🚀🚀🚀🚀🚀',
+        unknown: 'low',
+      },
+      fastModes: {
+        codex: false,
+        claude: 'true',
+        unknown: true,
+      },
+    },
+    sessionBPreferences: {
+      reasoningLevel: 'low',
+      fastMode: true,
+    },
+  })
+  await page.goto('/')
+
+  const reasoningTrigger = () => page.locator('.composer-reasoning-chip')
+  const fastTrigger = () => page.locator('.fast-toggle')
+  const chooseReasoning = async (label: string) => {
+    await reasoningTrigger().click()
+    await page.getByRole('listbox', { name: 'Reasoning levels' })
+      .getByRole('option', { name: label, exact: true })
+      .click()
+  }
+  const chooseFast = async (label: 'Disabled' | 'Enabled') => {
+    await fastTrigger().click()
+    await page.getByRole('listbox', { name: 'Fast mode' })
+      .getByRole('option', { name: label, exact: true })
+      .click()
+  }
+  const chooseClaudeModel = async (model: typeof claudeExecutionMetadataCatalog[number]) => {
+    await modelTrigger(page, 'Claude').click()
+    await page.getByRole('listbox', { name: 'Claude models' })
+      .getByRole('option', { name: model.label, exact: true })
+      .click()
+  }
+  const expectExecution = async (reasoning: string, fast: string) => {
+    await expect(reasoningTrigger()).toHaveAttribute('aria-label', `Reasoning level: ${reasoning}`)
+    await expect(fastTrigger()).toHaveAttribute('aria-label', `Fast mode: ${fast}`)
+  }
+  const storedSession = (path: string) => page.evaluate((projectPath) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
+    return directory[projectPath]?.sessions?.[0]
+  }, path)
+
+  await expect.poll(() => storedSession(projectA)).toEqual(expect.objectContaining({
+    selectedReasoningLevels: { codex: 'medium' },
+    fastModes: { codex: false },
+  }))
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute('aria-label', 'Claude model: Metadata A')
+  await expectExecution('Default', 'Disabled')
+  await switchProvider(page, 'Codex')
+  await expectExecution('Medium', 'Disabled')
+  await chooseReasoning('XHigh')
+  await chooseFast('Disabled')
+
+  await switchProvider(page, 'Claude')
+  await chooseReasoning('Low')
+  await chooseFast('Enabled')
+  await expectExecution('Low', 'Enabled')
+  await switchProvider(page, 'Codex')
+  await expectExecution('XHigh', 'Disabled')
+  await switchProvider(page, 'Claude')
+  await expectExecution('Low', 'Enabled')
+
+  await chooseReasoning('Default')
+  await expect.poll(() => storedSession(projectA)).toEqual(expect.objectContaining({
+    selectedReasoningLevels: { codex: 'xhigh' },
+    fastModes: { codex: false, claude: true },
+  }))
+  await chooseReasoning('Low')
+  await chooseClaudeModel(claudeExecutionMetadataCatalog[2])
+  await expect(reasoningTrigger()).toHaveCount(0)
+  await expect(fastTrigger()).toHaveCount(0)
+
+  await sendRequest(page, 'Claude', 'unsupported model uses safe execution defaults')
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0)).toBe(1)
+  const unsupportedRequest = await page.evaluate(() => (
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.find((call) => call.command === 'request_agent_suggestions')?.args?.request)
+  expect(unsupportedRequest).toEqual(expect.objectContaining({
+    provider: 'claude',
+    model: 'metadata-c',
+    reasoningLevel: null,
+    fastMode: false,
+  }))
+  await expect.poll(() => storedSession(projectA)).toEqual(expect.objectContaining({
+    selectedReasoningLevels: { codex: 'xhigh', claude: 'low' },
+    fastModes: { codex: false, claude: true },
+  }))
+  await page.evaluate(({ projectA, sessionA }) => (
+    window as Window & {
+      __resolveProviderRequest(
+        provider: string,
+        projectPath: string,
+        agentSessionId: string,
+        summary: string,
+      ): void
+    }
+  ).__resolveProviderRequest('claude', projectA, sessionA, 'Safe defaults completed'), {
+    projectA,
+    sessionA,
+  })
+  await expect(page.locator('.agent')).toContainText('Safe defaults completed')
+  await chooseClaudeModel(claudeExecutionMetadataCatalog[0])
+  await expectExecution('Low', 'Enabled')
+
+  await projectRow(page, projectB).click()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sessionB)
+  await expectExecution('High', 'Disabled')
+  await expect.poll(() => storedSession(projectB)).toEqual(expect.objectContaining({
+    selectedReasoningLevels: {},
+    fastModes: {},
+  }))
+  await chooseReasoning('Low')
+  await chooseFast('Enabled')
+  await switchProvider(page, 'Claude')
+  await expectExecution('Default', 'Disabled')
+  await chooseReasoning('High')
+  await chooseFast('Disabled')
+  await switchProvider(page, 'Codex')
+  await expectExecution('Low', 'Enabled')
+
+  await projectRow(page, projectA).click()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sessionA)
+  await expectExecution('Low', 'Enabled')
+  await switchProvider(page, 'Codex')
+  await expectExecution('XHigh', 'Disabled')
+
+  await page.reload()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-project-path', projectA)
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sessionA)
+  await expectExecution('XHigh', 'Disabled')
+  await switchProvider(page, 'Claude')
+  await expectExecution('Low', 'Enabled')
+  await projectRow(page, projectB).click()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sessionB)
+  await expectExecution('Low', 'Enabled')
+  await switchProvider(page, 'Claude')
+  await expectExecution('High', 'Disabled')
+
+  const persisted = await page.evaluate(({ projectA, projectB }) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
+    return {
+      a: directory[projectA]?.sessions?.[0],
+      b: directory[projectB]?.sessions?.[0],
+    }
+  }, { projectA, projectB })
+  expect(persisted.a).toEqual(expect.objectContaining({
+    selectedReasoningLevels: { codex: 'xhigh', claude: 'low' },
+    fastModes: { codex: false, claude: true },
+  }))
+  expect(persisted.b).toEqual(expect.objectContaining({
+    selectedReasoningLevels: { codex: 'low', claude: 'high' },
+    fastModes: { codex: true, claude: false },
+  }))
+  for (const session of [persisted.a, persisted.b]) {
+    expect(Object.keys(session.selectedReasoningLevels).sort()).toEqual(['claude', 'codex'])
+    expect(Object.keys(session.fastModes).sort()).toEqual(['claude', 'codex'])
+    expect(Object.values(session.fastModes).every((value) => typeof value === 'boolean')).toBe(true)
+    expect(session).not.toHaveProperty('reasoningLevel')
+    expect(session).not.toHaveProperty('fastMode')
+  }
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
 })
 
 test('keeps compact composer triggers on one line at default and narrow Agent widths', async ({ page }) => {

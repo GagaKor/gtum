@@ -135,11 +135,16 @@ test('refuses a project-close lease while its request or permission work is in f
 })
 
 type SessionFixture = { id: string; title: string }
+type ProjectAgentHarnessOptions = {
+  includeClaude?: boolean
+  progressStageDelayMs?: number
+}
 
 const installProjectAgentHarness = async (
   page: Page,
   projectASessions: SessionFixture[] = [{ id: sharedSessionId, title: 'A Agent' }],
   activeProjectASessionId = projectASessions[0]?.id ?? sharedSessionId,
+  options: ProjectAgentHarnessOptions = {},
 ) => {
   await page.addInitScript(({
     projectA,
@@ -147,6 +152,7 @@ const installProjectAgentHarness = async (
     sharedSessionId,
     projectASessions,
     activeProjectASessionId,
+    options,
   }) => {
     type RuntimeCall = { command: string; args?: Record<string, unknown> }
     type SuggestionResolver = (value: unknown[]) => void
@@ -257,7 +263,7 @@ const installProjectAgentHarness = async (
     bridgeWindow.__terminalCalls = []
     bridgeWindow.__attachmentPickStarted = false
     bridgeWindow.__delaySessionCloseLists = false
-    bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = 1
+    bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = options.progressStageDelayMs ?? 1
     bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 10_000
     bridgeWindow.__resolveAgentRequest = (projectPath, sessionId, summary, command = '') => {
       const key = contextKey(projectPath, sessionId)
@@ -340,7 +346,18 @@ const installProjectAgentHarness = async (
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
-        if (command === 'list_agent_connections') return [connection]
+        if (command === 'list_agent_connections') {
+          return options.includeClaude
+            ? [{
+                ...connection,
+                provider: 'claude',
+                displayName: 'Claude',
+                accountLabel: null,
+                credentialSource: 'claude_cli_session',
+                requiredScopes: ['provider:request', 'credential:cli_session'],
+              }, connection]
+            : [connection]
+        }
         if (command === 'disconnect_agent_provider') {
           return {
             ...connection,
@@ -362,14 +379,19 @@ const installProjectAgentHarness = async (
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
         if (command === 'read_agent_provider_capabilities') {
+          const provider = String(args?.provider || 'codex')
           return {
-            provider: 'codex',
+            provider,
             supportsModelSelection: true,
-            currentModel: { providerId: 'codex', modelId: 'gpt-default', label: 'GPT Default' },
-            availableModels: [
-              { providerId: 'codex', modelId: 'gpt-default', label: 'GPT Default' },
-              { providerId: 'codex', modelId: 'gpt-project-a', label: 'GPT Project A' },
-            ],
+            currentModel: provider === 'claude'
+              ? { providerId: 'claude', modelId: 'claude-default', label: 'Claude Default' }
+              : { providerId: 'codex', modelId: 'gpt-default', label: 'GPT Default' },
+            availableModels: provider === 'claude'
+              ? [{ providerId: 'claude', modelId: 'claude-default', label: 'Claude Default' }]
+              : [
+                  { providerId: 'codex', modelId: 'gpt-default', label: 'GPT Default' },
+                  { providerId: 'codex', modelId: 'gpt-project-a', label: 'GPT Project A' },
+                ],
             reasoningLevels: [
               { level: 'low', label: 'Low' },
               { level: 'high', label: 'High' },
@@ -380,10 +402,9 @@ const installProjectAgentHarness = async (
           }
         }
         if (command === 'request_agent_suggestions') {
-          const request = args?.request as { projectPath?: string }
+          const request = args?.request as { projectPath?: string; agentSessionId?: string }
           const path = String(request?.projectPath)
-          const sessionId = document.querySelector<HTMLElement>('.agent')
-            ?.dataset.agentSessionId || ''
+          const sessionId = String(request?.agentSessionId || '')
           return new Promise<unknown[]>((resolve) =>
             requestResolvers.set(contextKey(path, sessionId), resolve))
         }
@@ -429,6 +450,7 @@ const installProjectAgentHarness = async (
     sharedSessionId,
     projectASessions,
     activeProjectASessionId,
+    options,
   })
 }
 
@@ -551,6 +573,81 @@ test('returns a delayed attachment and request options only to their starting pr
   await expect(page.locator('.composer-reasoning-chip'))
     .toHaveAttribute('aria-label', 'Reasoning level: Low')
   await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-label', 'Fast mode: Enabled')
+})
+
+test('request option snapshot keeps the send-time provider model attachments reasoning and Fast owner', async ({ page }) => {
+  await installProjectAgentHarness(page, [
+    { id: sameProjectSessionA, title: 'Session A' },
+    { id: sameProjectSessionB, title: 'Session B' },
+  ], sameProjectSessionA, {
+    includeClaude: true,
+    progressStageDelayMs: 2_000,
+  })
+  await page.goto('/')
+
+  await page.locator('.composer-model-chip').click()
+  await page.locator('.composer-model-option').filter({ hasText: 'GPT Project A' }).click()
+  await page.locator('.composer-reasoning-chip').click()
+  await page.getByRole('listbox', { name: 'Reasoning levels' })
+    .getByRole('option', { name: 'Low', exact: true })
+    .click()
+  await page.locator('.fast-toggle').click()
+  await page.getByRole('listbox', { name: 'Fast mode' })
+    .getByRole('option', { name: 'Enabled', exact: true })
+    .click()
+  await page.locator('.composer-tool').click()
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __attachmentPickStarted?: boolean }
+  ).__attachmentPickStarted ?? false)).toBe(true)
+  await page.evaluate(({ projectPath, sessionId }) => (
+    window as Window & {
+      __resolveAgentAttachment(projectPath: string, sessionId: string, path: string): void
+    }
+  ).__resolveAgentAttachment(projectPath, sessionId, '/tmp/request-snapshot.png'), {
+    projectPath: projectA,
+    sessionId: sameProjectSessionA,
+  })
+  await expect(page.locator('.composer-attachment-chip')).toContainText('request-snapshot.png')
+
+  await sendRequest(page, 'capture every send-time option')
+  expect(await requestCalls(page)).toHaveLength(0)
+  await page.locator('.composer-provider-chip').click()
+  await page.getByRole('option', { name: /^Claude/ }).click()
+  await page.locator(`.agent-session-tab[data-agent-session-id="${sameProjectSessionB}"]`).click()
+  await projectRow(page, projectB).click()
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-project-path', projectB)
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-session-id', sharedSessionId)
+
+  await expect.poll(() => requestCalls(page).then((calls) => calls.length)).toBe(1)
+  const request = (await requestCalls(page))[0]?.args?.request
+  expect(request).toEqual(expect.objectContaining({
+    provider: 'codex',
+    projectPath: projectA,
+    agentSessionId: sameProjectSessionA,
+    model: 'gpt-project-a',
+    attachments: [{
+      kind: 'image',
+      path: '/tmp/request-snapshot.png',
+      label: 'request-snapshot.png',
+    }],
+    reasoningLevel: 'low',
+    fastMode: true,
+  }))
+
+  await page.evaluate(({ projectPath, sessionId }) => (
+    window as Window & {
+      __resolveAgentRequest(projectPath: string, sessionId: string, summary: string): void
+    }
+  ).__resolveAgentRequest(projectPath, sessionId, 'snapshot request completed'), {
+    projectPath: projectA,
+    sessionId: sameProjectSessionA,
+  })
+  await projectRow(page, projectA).click()
+  await page.locator(`.agent-session-tab[data-agent-session-id="${sameProjectSessionA}"]`).click()
+  await expect(page.locator('.agent')).toContainText('snapshot request completed')
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: unknown[] }
+  ).__terminalCalls ?? [])).toEqual([])
 })
 
 test('dedupes permission decisions per owner and writes delayed job creation only to its origin', async ({ page }) => {

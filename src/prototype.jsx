@@ -2585,7 +2585,9 @@ const MODEL_REASONING_LEVEL_RANK = Object.freeze({
 
 function providerReasoningLevels(providerCapabilities) {
   return (providerCapabilities?.reasoningLevels || [])
-    .filter((level) => String(level?.level || "").trim().length > 0);
+    .filter((level) => (
+      sanitizedAgentReasoningLevel(level?.level) === level?.level
+    ));
 }
 
 function reasoningLevelCapability(providerCapabilities, selectedLevel) {
@@ -2630,6 +2632,37 @@ function sanitizeSelectedAgentModels(value) {
     const modelId = sanitizedAgentModelId(value[providerId]);
     return modelId ? [[providerId, modelId]] : [];
   }));
+}
+
+const MAX_PERSISTED_AGENT_REASONING_LEVEL_BYTES = 16;
+
+function sanitizedAgentReasoningLevel(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (new TextEncoder().encode(normalized).byteLength > MAX_PERSISTED_AGENT_REASONING_LEVEL_BYTES) {
+    return null;
+  }
+  return normalized;
+}
+
+function sanitizeSelectedAgentReasoningLevels(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => {
+    const reasoningLevel = sanitizedAgentReasoningLevel(value[providerId]);
+    return reasoningLevel ? [[providerId, reasoningLevel]] : [];
+  }));
+}
+
+function sanitizeAgentFastModes(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => (
+    typeof value[providerId] === "boolean"
+      ? [[providerId, value[providerId]]]
+      : []
+  )));
 }
 
 function providerSelectableModels(providerCapabilities, providerId) {
@@ -2677,11 +2710,14 @@ function effectiveAgentExecutionCapabilities(providerCapabilities, selectedModel
 }
 
 function normalizeAgentReasoningLevel(executionCapabilities, selectedLevel) {
-  if (!executionCapabilities?.usesModelExecutionOptions) {
-    return normalizeReasoningLevel(executionCapabilities, selectedLevel);
+  const storedLevel = sanitizedAgentReasoningLevel(selectedLevel);
+  if (!storedLevel) {
+    return executionCapabilities?.usesModelExecutionOptions
+      ? null
+      : normalizeReasoningLevel(executionCapabilities, null);
   }
 
-  return reasoningLevelCapability(executionCapabilities, selectedLevel)?.level || null;
+  return reasoningLevelCapability(executionCapabilities, storedLevel)?.level || null;
 }
 
 function validatedStoredAgentModelId(providerCapabilities, selectedModelId, providerId) {
@@ -2743,9 +2779,11 @@ function readAgentSessionDirectory(lang) {
           draft: "",
           request: createAgentRequestState(),
           selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
+          selectedReasoningLevels: sanitizeSelectedAgentReasoningLevels(
+            session.selectedReasoningLevels,
+          ),
+          fastModes: sanitizeAgentFastModes(session.fastModes),
           attachments: {},
-          reasoningLevel: null,
-          fastMode: false,
         }];
       });
       if (sessions.length === 0) return [];
@@ -2782,6 +2820,10 @@ function writeAgentSessionDirectory(store) {
         updatedAt: session.updatedAt,
         providerId: session.providerId === "claude" ? "claude" : "codex",
         selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
+        selectedReasoningLevels: sanitizeSelectedAgentReasoningLevels(
+          session.selectedReasoningLevels,
+        ),
+        fastModes: sanitizeAgentFastModes(session.fastModes),
       })),
     },
   ]));
@@ -2810,9 +2852,9 @@ function makeAgentSession(project, lang, index) {
     draft: "",
     request: createAgentRequestState(),
     selectedModels: {},
+    selectedReasoningLevels: {},
+    fastModes: {},
     attachments: {},
-    reasoningLevel: null,
-    fastMode: false,
   };
 }
 
@@ -4352,10 +4394,11 @@ function App() {
   );
   const agentReasoningLevel = normalizeAgentReasoningLevel(
     activeAgentExecutionCapabilities,
-    activeAgentSession?.reasoningLevel,
+    activeAgentSession?.selectedReasoningLevels?.[activeProviderId],
   );
   const agentFastMode = Boolean(
-    activeAgentSession?.fastMode && activeAgentExecutionCapabilities?.supportsFastMode,
+    activeAgentSession?.fastModes?.[activeProviderId]
+    && activeAgentExecutionCapabilities?.supportsFastMode,
   );
   const {
     jobs: agentJobs,
@@ -4667,10 +4710,17 @@ function App() {
       reasoningLevel == null
       && activeAgentExecutionCapabilities?.usesModelExecutionOptions
     ) {
-      updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
-        ...session,
-        reasoningLevel: null,
-      }));
+      updateAgentSession(activeProject, activeAgentSessionId, (session) => {
+        const selectedReasoningLevels = sanitizeSelectedAgentReasoningLevels(
+          session.selectedReasoningLevels,
+        );
+        const nextSelectedReasoningLevels = { ...selectedReasoningLevels };
+        delete nextSelectedReasoningLevels[activeProviderId];
+        return {
+          ...session,
+          selectedReasoningLevels: nextSelectedReasoningLevels,
+        };
+      });
       return;
     }
 
@@ -4682,18 +4732,24 @@ function App() {
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
-      reasoningLevel: capability.level,
+      selectedReasoningLevels: {
+        ...sanitizeSelectedAgentReasoningLevels(session.selectedReasoningLevels),
+        [activeProviderId]: capability.level,
+      },
     }));
-  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, updateAgentSession]);
+  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
 
   const selectAgentFastMode = React.useCallback((fastMode) => {
     if (!activeAgentExecutionCapabilities?.supportsFastMode) return;
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
-      fastMode: Boolean(fastMode),
+      fastModes: {
+        ...sanitizeAgentFastModes(session.fastModes),
+        [activeProviderId]: Boolean(fastMode),
+      },
     }));
-  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, updateAgentSession]);
+  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
 
   const selectAgentProvider = React.useCallback((providerId) => {
     if (!providers.some((provider) => provider.id === providerId)) return;
@@ -5151,26 +5207,29 @@ function App() {
   const requestRuntimeAgentSuggestions = React.useCallback(async (
     text,
     messageId,
-    active,
     requestToken,
-    originProviderId,
-    selectedModelId,
+    requestOwnerSnapshot,
+    requestOptionsSnapshot,
   ) => {
-    const originProject = { ...activeProject };
-    const originSessionId = requestToken.sessionId;
-    const originTab = active
-      ? { ...active, lines: Array.isArray(active.lines) ? [...active.lines] : active.lines }
-      : null;
+    const {
+      project: originProject,
+      sessionId: originSessionId,
+      activeTab: originTab,
+    } = requestOwnerSnapshot;
+    const {
+      provider: originProviderId,
+      model: selectedModelId,
+      attachments,
+      reasoningLevel,
+      fastMode,
+    } = requestOptionsSnapshot;
     const originProviderLabel = providerDisplayName(originProviderId);
     const turnId = messageId + "-agent-turn";
     const isCurrentRequest = () =>
       agentContextCoordinatorRef.current.isRequestCurrent(requestToken);
     const startedAtMs = Date.now();
-    const attachments = [...(activeAgentSession?.attachments?.[originProviderId] || [])];
-    const reasoningLevel = agentReasoningLevel;
-    const fastMode = agentFastMode;
     const reasoningLabel = reasoningLevel
-      ? reasoningLevelLabel(activeAgentExecutionCapabilities, reasoningLevel)
+      ? formatReasoningLevelLabel(reasoningLevel)
       : "runtime default";
     const runningSteps = makeAgentProgressSteps({
       project: originProject,
@@ -5409,15 +5468,7 @@ function App() {
       }
     }
   }, [
-    activeProject,
-    activeAgentSession,
-    activeAgentSessionId,
-    activeProviderId,
-    activeAgentExecutionCapabilities,
-    agentFastMode,
-    agentReasoningLevel,
     applyProviderConnection,
-    lang,
     markProviderError,
     updateAgentSession,
     updateAgentSessionMessages,
@@ -5732,9 +5783,6 @@ function App() {
   const activeTab = activeTabOf(workspace);
 
   const onSend = (text) => {
-    const id = "u" + Date.now();
-    const attachedTab = activeTab;
-    const originProject = { ...activeProject };
     const originSessionId = activeAgentSessionId;
     if (!originSessionId) return false;
     const originProviderId = activeAgentSession?.providerId || "codex";
@@ -5743,11 +5791,37 @@ function App() {
       activeAgentSession?.selectedModels?.[originProviderId],
       originProviderId,
     );
+    const originProject = Object.freeze({ ...activeProject });
+    const originTabLines = Array.isArray(activeTab?.lines)
+      ? Object.freeze(activeTab.lines.map((line) => (
+          line && typeof line === "object" ? Object.freeze({ ...line }) : line
+        )))
+      : activeTab?.lines;
+    const originTab = activeTab
+      ? Object.freeze({ ...activeTab, lines: originTabLines })
+      : null;
+    const attachments = Object.freeze(
+      (activeAgentSession?.attachments?.[originProviderId] || [])
+        .map((attachment) => Object.freeze({ ...attachment })),
+    );
+    const requestOptionsSnapshot = Object.freeze({
+      provider: originProviderId,
+      model: originSelectedModelId,
+      attachments,
+      reasoningLevel: agentReasoningLevel,
+      fastMode: agentFastMode,
+    });
+    const requestOwnerSnapshot = Object.freeze({
+      project: originProject,
+      sessionId: originSessionId,
+      activeTab: originTab,
+    });
+    const id = "u" + Date.now();
     const originProvider = providers.find((provider) => provider.id === originProviderId);
     const requestOwner = agentSuggestionRuntimeService.hasRuntime()
       && originProvider?.availability !== "deferred"
       && originProvider?.state === "connected"
-      && activeProject.runtimeBacked
+      && originProject.runtimeBacked
       ? agentContextOwner(originProject, originSessionId)
       : null;
     const requestToken = requestOwner
@@ -5759,7 +5833,7 @@ function App() {
       draft: "",
       messages: [...session.messages, {
         id, role: "user", at: nowHm(), content: text,
-        contextAttached: attachedTab?.id ? [attachedTab.id] : [],
+        contextAttached: originTab?.id ? [originTab.id] : [],
       }],
     }));
 
@@ -5772,7 +5846,7 @@ function App() {
         appendProviderConnectionRequiredMessage(originProviderId, id);
         return true;
       }
-      if (!activeProject.runtimeBacked) {
+      if (!originProject.runtimeBacked) {
         appendRuntimeProjectRequiredMessage(originProviderId, id);
         return true;
       }
@@ -5780,10 +5854,9 @@ function App() {
       void requestRuntimeAgentSuggestions(
         text,
         id,
-        attachedTab,
         requestToken,
-        originProviderId,
-        originSelectedModelId,
+        requestOwnerSnapshot,
+        requestOptionsSnapshot,
       );
       return true;
     }
