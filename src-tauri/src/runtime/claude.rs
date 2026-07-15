@@ -1749,8 +1749,8 @@ mod tests {
 
     static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
     static CATALOG_TEST_EXECUTABLE_COMPILE_COUNT: AtomicU64 = AtomicU64::new(0);
-    static CATALOG_TEST_EXECUTABLE: OnceLock<Result<SharedCatalogTestExecutable, String>> =
-        OnceLock::new();
+    static CATALOG_TEST_EXECUTABLE: OnceLock<Result<Vec<u8>, String>> = OnceLock::new();
+    static CATALOG_TEST_EXECUTABLE_COMPILE_ROOT: OnceLock<PathBuf> = OnceLock::new();
     const ISOLATED_TEST_TIMEOUT: Duration = Duration::from_secs(10);
     const MAX_ISOLATED_TEST_OUTPUT_BYTES: usize = 64 * 1024;
 
@@ -1797,13 +1797,11 @@ mod tests {
         }
     }
 
-    struct SharedCatalogTestExecutable {
-        _root: TestRoot,
-        executable_path: PathBuf,
-    }
-
-    fn compile_shared_catalog_test_executable() -> Result<SharedCatalogTestExecutable, String> {
+    fn compile_shared_catalog_test_executable() -> Result<Vec<u8>, String> {
         let root = TestRoot::new("model-catalog-shared-executable");
+        CATALOG_TEST_EXECUTABLE_COMPILE_ROOT
+            .set(root.path().to_path_buf())
+            .map_err(|_| "catalog fake executable compile root was already set".to_string())?;
         let source_path = root.path().join("fake-claude.rs");
         let executable_path = root.path().join(if cfg!(windows) {
             "fake-claude.exe"
@@ -1891,10 +1889,8 @@ fn main() {
                 String::from_utf8_lossy(&output.stderr),
             ));
         }
-        Ok(SharedCatalogTestExecutable {
-            _root: root,
-            executable_path,
-        })
+        fs::read(executable_path)
+            .map_err(|_| "could not read compiled catalog fake executable".to_string())
     }
 
     fn copy_catalog_test_executable(root: &TestRoot, name: &str) -> PathBuf {
@@ -1907,8 +1903,13 @@ fn main() {
         } else {
             name.to_string()
         });
-        fs::copy(&shared.executable_path, &destination)
-            .expect("copy shared catalog fake executable");
+        fs::write(&destination, shared).expect("write shared catalog fake executable copy");
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&destination).unwrap().permissions();
+            permissions.set_mode(0o700);
+            fs::set_permissions(&destination, permissions).unwrap();
+        }
         destination
     }
 
@@ -2336,6 +2337,20 @@ fn main() {
         assert_ne!(first.parent(), second.parent());
         assert_eq!(fs::read(first).unwrap(), fs::read(second).unwrap());
         assert_eq!(catalog_test_executable_compile_count(), 1);
+    }
+
+    #[test]
+    fn catalog_shared_compile_root_is_removed_after_initialization() {
+        let isolated_root = TestRoot::new("model-catalog-cleanup-proof");
+        let _copy = copy_catalog_test_executable(&isolated_root, "fake-claude");
+        let compile_root = CATALOG_TEST_EXECUTABLE_COMPILE_ROOT
+            .get()
+            .expect("shared catalog compile root must be recorded");
+
+        assert!(
+            !compile_root.exists(),
+            "shared catalog compile root must be removed after initialization"
+        );
     }
 
     #[test]
