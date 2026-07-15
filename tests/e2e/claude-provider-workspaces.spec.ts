@@ -1122,6 +1122,67 @@ test('Claude effort and Fast controls follow selected-model metadata without ali
   await expect(page.locator('.agent')).toContainText('Metadata controls completed')
 })
 
+test('recovers a stale provider reasoning preference through the valid Codex default after reload', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'codex',
+    includeAdvancedControls: true,
+    sessionAPreferences: {
+      selectedReasoningLevels: { codex: 'obsolete' },
+      fastModes: { codex: false },
+    },
+  })
+  await page.goto('/')
+
+  const reasoningTrigger = page.locator('.composer-reasoning-chip')
+  const assertDefaultRemainsSelectable = async () => {
+    await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: High')
+    await reasoningTrigger.click()
+    const menu = page.getByRole('listbox', { name: 'Reasoning levels' })
+    const defaultOption = menu.getByRole('option', { name: 'High', exact: true })
+    await expect(defaultOption).toBeEnabled()
+    await expect(defaultOption).toHaveAttribute('aria-selected', 'true')
+    await page.keyboard.press('Escape')
+  }
+
+  await assertDefaultRemainsSelectable()
+  await page.reload()
+  await assertDefaultRemainsSelectable()
+  await expect.poll(() => page.evaluate(({ projectA }) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
+    return directory[projectA]?.sessions?.[0]?.selectedReasoningLevels
+  }, { projectA })).toEqual({ codex: 'obsolete' })
+
+  await sendRequest(page, 'Codex', 'use the valid provider reasoning default')
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0)).toBe(1)
+  const request = await page.evaluate(() => (
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.find((call) => call.command === 'request_agent_suggestions')?.args?.request)
+  expect(request).toEqual(expect.objectContaining({
+    provider: 'codex',
+    reasoningLevel: 'high',
+    fastMode: false,
+  }))
+  await page.evaluate(({ projectA, sessionA }) => (
+    window as Window & {
+      __resolveProviderRequest(
+        provider: string,
+        projectPath: string,
+        agentSessionId: string,
+        summary: string,
+      ): void
+    }
+  ).__resolveProviderRequest('codex', projectA, sessionA, 'Codex default completed'), {
+    projectA,
+    sessionA,
+  })
+  await expect(page.locator('.agent')).toContainText('Codex default completed')
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
 test('provider-owned effort and Fast preferences stay isolated across providers, projects, sessions, and reload', async ({ page }) => {
   await installClaudeWorkspaceHarness(page, {
     sessionAProvider: 'claude',

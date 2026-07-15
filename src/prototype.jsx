@@ -2717,7 +2717,12 @@ function normalizeAgentReasoningLevel(executionCapabilities, selectedLevel) {
       : normalizeReasoningLevel(executionCapabilities, null);
   }
 
-  return reasoningLevelCapability(executionCapabilities, storedLevel)?.level || null;
+  const storedCapability = reasoningLevelCapability(executionCapabilities, storedLevel);
+  if (storedCapability) return storedCapability.level;
+
+  return executionCapabilities?.usesModelExecutionOptions
+    ? null
+    : normalizeReasoningLevel(executionCapabilities, null);
 }
 
 function validatedStoredAgentModelId(providerCapabilities, selectedModelId, providerId) {
