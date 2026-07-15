@@ -1738,13 +1738,19 @@ fn unix_timestamp_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{
+        atomic::{AtomicU64, Ordering},
+        OnceLock,
+    };
     use std::time::Instant;
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     static NEXT_TEST_ROOT: AtomicU64 = AtomicU64::new(0);
+    static CATALOG_TEST_EXECUTABLE_COMPILE_COUNT: AtomicU64 = AtomicU64::new(0);
+    static CATALOG_TEST_EXECUTABLE: OnceLock<Result<SharedCatalogTestExecutable, String>> =
+        OnceLock::new();
     const ISOLATED_TEST_TIMEOUT: Duration = Duration::from_secs(10);
     const MAX_ISOLATED_TEST_OUTPUT_BYTES: usize = 64 * 1024;
 
@@ -1791,12 +1797,18 @@ mod tests {
         }
     }
 
-    fn compile_catalog_test_executable(root: &TestRoot, name: &str) -> PathBuf {
-        let source_path = root.path().join(format!("{name}.rs"));
+    struct SharedCatalogTestExecutable {
+        _root: TestRoot,
+        executable_path: PathBuf,
+    }
+
+    fn compile_shared_catalog_test_executable() -> Result<SharedCatalogTestExecutable, String> {
+        let root = TestRoot::new("model-catalog-shared-executable");
+        let source_path = root.path().join("fake-claude.rs");
         let executable_path = root.path().join(if cfg!(windows) {
-            format!("{name}.exe")
+            "fake-claude.exe"
         } else {
-            name.to_string()
+            "fake-claude"
         });
         fs::write(
             &source_path,
@@ -1836,29 +1848,33 @@ fn main() {
         .expect("read fake stdin to EOF");
     fs::write(root.join("stdin"), stdin).expect("record fake stdin");
 
-    match fs::read_to_string(root.join("mode"))
+    let mode = fs::read_to_string(root.join("mode"))
         .expect("read fake mode")
         .trim()
-    {
+        .to_string();
+    if let Some(raw_count) = mode.strip_prefix("oversized:") {
+        let byte_count = raw_count.parse::<usize>().expect("parse oversized byte count");
+        io::stdout()
+            .lock()
+            .write_all(&vec![b' '; byte_count])
+            .expect("write oversized fake response");
+        return;
+    }
+    match mode.as_str() {
         "success" => write_response(root),
         "nonzero" => {
             write_response(root);
             process::exit(7);
         }
         "timeout" => thread::sleep(Duration::from_secs(1)),
-        "oversized" => {
-            io::stdout()
-                .lock()
-                .write_all(&vec![b' '; 64 * 1024 + 1])
-                .expect("write oversized fake response");
-        }
         _ => process::exit(9),
     }
 }
 "#,
         )
-        .unwrap();
+        .map_err(|_| "could not write catalog fake executable source".to_string())?;
 
+        CATALOG_TEST_EXECUTABLE_COMPILE_COUNT.fetch_add(1, Ordering::SeqCst);
         let output = Command::new("rustc")
             .arg("--edition=2021")
             .arg("-C")
@@ -1867,14 +1883,37 @@ fn main() {
             .arg("-o")
             .arg(&executable_path)
             .output()
-            .expect("launch rustc for catalog fake executable");
-        assert!(
-            output.status.success(),
-            "catalog fake executable failed to compile\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        executable_path
+            .map_err(|_| "could not launch rustc for catalog fake executable".to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "catalog fake executable failed to compile\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            ));
+        }
+        Ok(SharedCatalogTestExecutable {
+            _root: root,
+            executable_path,
+        })
+    }
+
+    fn copy_catalog_test_executable(root: &TestRoot, name: &str) -> PathBuf {
+        let shared = CATALOG_TEST_EXECUTABLE
+            .get_or_init(compile_shared_catalog_test_executable)
+            .as_ref()
+            .unwrap_or_else(|error| panic!("{error}"));
+        let destination = root.path().join(if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        });
+        fs::copy(&shared.executable_path, &destination)
+            .expect("copy shared catalog fake executable");
+        destination
+    }
+
+    fn catalog_test_executable_compile_count() -> u64 {
+        CATALOG_TEST_EXECUTABLE_COMPILE_COUNT.load(Ordering::SeqCst)
     }
 
     fn assert_no_argument_expansion(arguments: &[OsString]) {
@@ -2287,6 +2326,19 @@ fn main() {
     }
 
     #[test]
+    fn catalog_fake_executable_compiles_once_for_isolated_test_roots() {
+        let first_root = TestRoot::new("model-catalog-shared-fixture-a");
+        let second_root = TestRoot::new("model-catalog-shared-fixture-b");
+
+        let first = copy_catalog_test_executable(&first_root, "fake-claude");
+        let second = copy_catalog_test_executable(&second_root, "fake-claude");
+
+        assert_ne!(first.parent(), second.parent());
+        assert_eq!(fs::read(first).unwrap(), fs::read(second).unwrap());
+        assert_eq!(catalog_test_executable_compile_count(), 1);
+    }
+
+    #[test]
     fn catalog_argv_reuses_source_specific_isolation_without_request_surfaces() {
         let environment = ClaudeCredentialSelection {
             source: ClaudeCredentialSource::EnvironmentApiKey,
@@ -2384,7 +2436,7 @@ fn main() {
     #[test]
     fn catalog_discovery_writes_one_initialize_request_then_eof() {
         let root = TestRoot::new("model-catalog-wire");
-        let program = compile_catalog_test_executable(&root, "fake-claude");
+        let program = copy_catalog_test_executable(&root, "fake-claude");
         fs::write(root.path().join("mode"), "success").unwrap();
         fs::write(
             root.path().join("response"),
@@ -2394,7 +2446,8 @@ fn main() {
         let context = invocation_context(None);
 
         let models =
-            discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).unwrap();
+            discover_claude_model_catalog_with(&program, &context, CLAUDE_MODEL_CATALOG_TIMEOUT)
+                .unwrap();
 
         assert_eq!(models.len(), 5);
         let recorded_arguments = fs::read_to_string(root.path().join("argv"))
@@ -2424,18 +2477,33 @@ fn main() {
             "displayName": "Sonnet",
             "description": "Sonnet 5"
         }]));
-        let program = compile_catalog_test_executable(&root, "fake-claude");
+        let program = copy_catalog_test_executable(&root, "fake-claude");
         fs::write(root.path().join("response"), valid_response).unwrap();
 
         fs::write(root.path().join("mode"), "nonzero").unwrap();
-        assert!(
-            discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).is_err()
+        let nonzero_error = match discover_claude_model_catalog_with(
+            &program,
+            &context,
+            CLAUDE_MODEL_CATALOG_TIMEOUT,
+        ) {
+            Ok(_) => panic!("nonzero catalog process must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            nonzero_error,
+            "Claude model catalog discovery failed. Child diagnostics were discarded."
         );
 
         fs::write(root.path().join("mode"), "timeout").unwrap();
-        assert!(
-            discover_claude_model_catalog_with(&program, &context, Duration::from_millis(20))
-                .is_err()
+        let timeout_error =
+            match discover_claude_model_catalog_with(&program, &context, Duration::from_millis(20))
+            {
+                Ok(_) => panic!("timed-out catalog process must fail"),
+                Err(error) => error,
+            };
+        assert_eq!(
+            timeout_error,
+            "Claude Code CLI timed out after 0.02 seconds."
         );
 
         let missing = root.path().join(if cfg!(windows) {
@@ -2443,13 +2511,32 @@ fn main() {
         } else {
             "missing"
         });
-        assert!(
-            discover_claude_model_catalog_with(&missing, &context, Duration::from_secs(2)).is_err()
-        );
+        let spawn_error = match discover_claude_model_catalog_with(
+            &missing,
+            &context,
+            CLAUDE_MODEL_CATALOG_TIMEOUT,
+        ) {
+            Ok(_) => panic!("missing catalog process must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(spawn_error, "Failed to launch Claude Code CLI.");
 
-        fs::write(root.path().join("mode"), "oversized").unwrap();
-        assert!(
-            discover_claude_model_catalog_with(&program, &context, Duration::from_secs(2)).is_err()
+        fs::write(
+            root.path().join("mode"),
+            format!("oversized:{}", MAX_CLAUDE_MODEL_CATALOG_BYTES + 1),
+        )
+        .unwrap();
+        let oversized_error = match discover_claude_model_catalog_with(
+            &program,
+            &context,
+            CLAUDE_MODEL_CATALOG_TIMEOUT,
+        ) {
+            Ok(_) => panic!("oversized catalog process must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            oversized_error,
+            "Claude model catalog exceeded the output limit."
         );
     }
 
