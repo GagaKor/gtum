@@ -5,6 +5,17 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
+const nonSelectableCodexCapabilities = {
+  provider: 'codex',
+  supportsModelSelection: false,
+  currentModel: null,
+  availableModels: [],
+  reasoningLevels: [],
+  defaultReasoningLevel: null,
+  supportsFastMode: false,
+  attachments: [],
+}
+
 const installConnectedCodexAuth = async (page: Page) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
@@ -456,7 +467,7 @@ test('shows project workspaces in the sidebar and switches agent sessions from t
 
 test('lets users stop a running agent request from the composer', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __GTUM_AGENT_RUNTIME__: unknown
       __GTUM_PROJECT_RUNTIME__: unknown
@@ -486,6 +497,10 @@ test('lets users stop a running agent request from the composer', async ({ page 
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         if (command === 'request_agent_suggestions') {
           await new Promise((resolve) => window.setTimeout(resolve, 5000))
           return [
@@ -513,7 +528,7 @@ test('lets users stop a running agent request from the composer', async ({ page 
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -1574,7 +1589,7 @@ test('keeps project A terminal alive and hidden after switching to project B', a
 
 test('routes agent requests through the Codex suggestion runtime bridge', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1614,6 +1629,10 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         if (command === 'request_agent_suggestions') {
           return [
             {
@@ -1640,7 +1659,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -1703,7 +1722,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
 
 test('shows live Codex activity while waiting for runtime suggestions', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1746,6 +1765,10 @@ test('shows live Codex activity while waiting for runtime suggestions', async ({
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         if (command === 'request_agent_suggestions') {
           await new Promise<void>((resolve) => {
             bridgeWindow.__resolveCodexRequest = resolve
@@ -1776,7 +1799,7 @@ test('shows live Codex activity while waiting for runtime suggestions', async ({
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -1830,7 +1853,7 @@ test('shows live Codex activity while waiting for runtime suggestions', async ({
 
 test('surfaces Codex runtime failures without canned replies or approval cards', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1870,6 +1893,10 @@ test('surfaces Codex runtime failures without canned replies or approval cards',
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         if (command === 'request_agent_suggestions') {
           throw new Error('Codex CLI exited with status 1.')
         }
@@ -1886,7 +1913,7 @@ test('surfaces Codex runtime failures without canned replies or approval cards',
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -1917,7 +1944,7 @@ test('surfaces Codex runtime failures without canned replies or approval cards',
 
 test('renders Codex error-only suggestions as messages without approval', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -1957,6 +1984,10 @@ test('renders Codex error-only suggestions as messages without approval', async 
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         if (command === 'request_agent_suggestions') {
           return [
             {
@@ -1983,7 +2014,7 @@ test('renders Codex error-only suggestions as messages without approval', async 
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -2014,7 +2045,7 @@ test('renders Codex error-only suggestions as messages without approval', async 
 
 test('renders Codex reply-only responses without review cards', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2054,6 +2085,10 @@ test('renders Codex reply-only responses without review cards', async ({ page })
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         if (command === 'request_agent_suggestions') {
           return [
             {
@@ -2080,7 +2115,7 @@ test('renders Codex reply-only responses without review cards', async ({ page })
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -2111,7 +2146,7 @@ test('renders Codex reply-only responses without review cards', async ({ page })
 
 test('renders numbered Codex choices as selectable event cards', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __projectCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2150,6 +2185,10 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
 
         if (command === 'request_agent_suggestions') {
           const request = args?.request as { userTask?: string } | undefined
@@ -2194,7 +2233,7 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
         }
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -2249,7 +2288,7 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
 
 test('requires a runtime-backed project before desktop Codex requests', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_RUNTIME__: unknown
@@ -2262,6 +2301,10 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
         return []
       },
     }
@@ -2271,7 +2314,7 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
         throw new Error('project runtime should not be invoked before a real project is opened')
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await expect
@@ -2425,7 +2468,7 @@ test('keeps a legacy session on Codex when Claude is connected globally', async 
 
 test('keeps approved Codex command decisions in the agent panel without terminal execution', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2472,6 +2515,10 @@ test('keeps approved Codex command decisions in the agent panel without terminal
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
+
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
 
         return [
           {
@@ -2584,7 +2631,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
         return []
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.setViewportSize({ width: 1280, height: 520 })
   await page.goto('/')
@@ -3041,7 +3088,7 @@ test('shows truthful isolated execution settings without auto-approval controls'
 
 test('shows cancellable agent job output without mutating the center workbench', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -3096,17 +3143,23 @@ test('shows cancellable agent job output without mutating the center workbench',
     }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async () => [
-        {
-          id: 'cancellable-job',
-          provider: 'codex',
-          summary: 'Run a cancellable job',
-          command: 'pnpm test:funnel',
-          preferredTarget: 'current_tab',
-          confidence: 'low',
-          error: null,
-        },
-      ],
+      invokeRuntime: async (command: string) => {
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
+        return [
+          {
+            id: 'cancellable-job',
+            provider: 'codex',
+            summary: 'Run a cancellable job',
+            command: 'pnpm test:funnel',
+            preferredTarget: 'current_tab',
+            confidence: 'low',
+            error: null,
+          },
+        ]
+      },
     }
     bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
       hasRuntime: () => true,
@@ -3159,7 +3212,7 @@ test('shows cancellable agent job output without mutating the center workbench',
         throw new Error('agent jobs must not invoke the terminal runtime')
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/')
@@ -3498,7 +3551,7 @@ test('keeps agent job history and stale reads scoped to the starting session', a
 
 test('renders completed and failed agent job outcomes and stops after final logs', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     const bridgeWindow = window as Window & {
       __agentJobCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -3594,17 +3647,23 @@ test('renders completed and failed agent job outcomes and stops after final logs
     }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async () => [
-        {
-          id: 'completed-job',
-          provider: 'codex',
-          summary: 'Run the completion probe',
-          command: 'npm run completion-probe',
-          preferredTarget: 'current_tab',
-          confidence: 'low',
-          error: null,
-        },
-      ],
+      invokeRuntime: async (command: string) => {
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
+        return [
+          {
+            id: 'completed-job',
+            provider: 'codex',
+            summary: 'Run the completion probe',
+            command: 'npm run completion-probe',
+            preferredTarget: 'current_tab',
+            confidence: 'low',
+            error: null,
+          },
+        ]
+      },
     }
     bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
       hasRuntime: () => true,
@@ -3663,7 +3722,7 @@ test('renders completed and failed agent job outcomes and stops after final logs
         throw new Error('job outcomes must not touch the center terminal')
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -3895,7 +3954,7 @@ test('restores interrupted agent job history after a real page reload', async ({
 
 test('keeps a newly created agent job when delayed hydration returns an empty history', async ({ page }) => {
   await installConnectedCodexAuth(page)
-  await page.addInitScript(() => {
+  await page.addInitScript((codexCapabilities) => {
     type Resolver = (jobs: unknown[]) => void
     const bridgeWindow = window as Window & {
       __resolveDelayedJobHistory: () => void
@@ -3930,17 +3989,23 @@ test('keeps a newly created agent job when delayed hydration returns an empty hi
     }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async () => [
-        {
-          id: 'create-race',
-          provider: 'codex',
-          summary: 'Create while hydration is pending',
-          command: 'npm run race',
-          preferredTarget: 'current_tab',
-          confidence: 'low',
-          error: null,
-        },
-      ],
+      invokeRuntime: async (command: string) => {
+        if (command === 'read_agent_provider_capabilities') {
+          return codexCapabilities
+        }
+
+        return [
+          {
+            id: 'create-race',
+            provider: 'codex',
+            summary: 'Create while hydration is pending',
+            command: 'npm run race',
+            preferredTarget: 'current_tab',
+            confidence: 'low',
+            error: null,
+          },
+        ]
+      },
     }
     bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
       hasRuntime: () => true,
@@ -3990,7 +4055,7 @@ test('keeps a newly created agent job when delayed hydration returns an empty hi
         throw new Error('create/hydration races must not use terminal commands')
       },
     }
-  })
+  }, nonSelectableCodexCapabilities)
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
