@@ -93,7 +93,7 @@ Verification evidence:
 - the provider-aware subset in `claude-provider-workspaces.spec.ts` passes 5/5, including reload, stale/unavailable behavior, request ownership, accessibility state, and zero center-terminal calls
 - the complete post-change gate passes lint, production build with only the existing greater-than-500-KB chunk warning, serial Playwright 210/210, Rust formatting/check, and the full Rust suite 149/149
 - an independent implementation review and a separate documentation review reported no critical, important, or minor findings
-- `origin/dev` was re-fetched and verified as an ancestor of the tested commit; the non-force `dev` push remains the only pending integration step
+- `origin/dev` was re-fetched, verified as an ancestor, and advanced without force to tested evidence commit `8de8518`; the current branch name and the separate dirty worktree were left unchanged
 
 ## Current Claude CLI Session Correction — 2026-07-15
 

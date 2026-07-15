@@ -203,6 +203,8 @@ Fetch `origin`, verify `origin/dev` is still an ancestor of the current branch p
 
 Verified on 2026-07-15: `origin/dev` at `aecd288f989488478dc6e0c593e5718b6ce83c0e` is an ancestor of the tested Madrid commit, with `0` remote-only and `17` local-only commits. The separate dirty worktree was not touched.
 
-- [ ] **Step 4: Commit all intended Madrid work and push it to dev**
+- [x] **Step 4: Commit all intended Madrid work and push it to dev**
 
 Stage the complete Madrid repository delta after excluding generated caches and unrelated machine-local files. Commit with a summary that covers the integrated runtime/UI slices, then push the verified current commit to `origin/dev` without renaming the current branch or force-pushing.
+
+Completed on 2026-07-15: the tested Madrid implementation and verification evidence through `8de8518` were pushed without force from the unchanged `audit-claude-codex-link` branch to `origin/dev`. The separate dirty worktree was not touched; this final closure update changes documentation only.

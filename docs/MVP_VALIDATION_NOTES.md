@@ -94,7 +94,7 @@ Before using web-preview results as evidence, the current sprint or release pass
 - Focused evidence: the Claude Rust runtime module passes 44/44; `runtime-agent-suggestions-service.spec.ts` passes 24/24; and the provider model workspace/UI subset passes 5/5, including provider round trips, localStorage reload, stale cleanup, unavailable preservation, accessible picker state, request ownership, and zero center-terminal calls.
 - Complete post-change evidence: lint passes; the production build passes with only the existing greater-than-500-KB chunk warning; serial Playwright passes 210/210; Rust formatting and check pass; and the full Rust suite passes 149/149. Independent implementation and documentation reviews reported no critical, important, or minor findings.
 - No live `claude -p` inference was run for this slice. Model response quality, account-specific alias resolution, and billing behavior remain outside this evidence.
-- The [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md) records the completed verification and the remaining non-force `dev` push.
+- The [Provider-Aware Model Selection Implementation Plan](./superpowers/plans/2026-07-15-provider-aware-model-selection.md) records the completed verification and non-force `dev` integration.
 
 ## 2026-07-15 Claude CLI Session Authentication Correction
 
