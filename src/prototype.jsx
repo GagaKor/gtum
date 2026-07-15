@@ -2653,6 +2653,29 @@ function effectiveAgentModel(providerCapabilities, selectedModelId, providerId) 
     .find((model) => model.modelId === currentModelId) || null;
 }
 
+function effectiveAgentExecutionCapabilities(providerCapabilities, selectedModelId, providerId) {
+  const model = effectiveAgentModel(providerCapabilities, selectedModelId, providerId);
+  if (!model || !Object.prototype.hasOwnProperty.call(model, "executionOptions")) {
+    return providerCapabilities;
+  }
+
+  return {
+    ...providerCapabilities,
+    reasoningLevels: model.executionOptions.reasoningLevels,
+    defaultReasoningLevel: null,
+    supportsFastMode: model.executionOptions.supportsFastMode,
+    usesModelExecutionOptions: true,
+  };
+}
+
+function normalizeAgentReasoningLevel(executionCapabilities, selectedLevel) {
+  if (!executionCapabilities?.usesModelExecutionOptions) {
+    return normalizeReasoningLevel(executionCapabilities, selectedLevel);
+  }
+
+  return reasoningLevelCapability(executionCapabilities, selectedLevel)?.level || null;
+}
+
 function validatedStoredAgentModelId(providerCapabilities, selectedModelId, providerId) {
   return storedAgentModel(providerCapabilities, selectedModelId, providerId)?.modelId || null;
 }
@@ -3523,15 +3546,35 @@ function Composer({
     ? `Attach ${enabledAttachments.map((attachment) => attachment.label).join(", ")}`
     : t(lang, "attach");
   const canAttach = enabledAttachments.length > 0;
-  const reasoningLevels = providerReasoningLevels(providerCapabilities);
-  const normalizedReasoningLevel = normalizeReasoningLevel(providerCapabilities, reasoningLevel);
+  const executionCapabilities = effectiveAgentExecutionCapabilities(
+    providerCapabilities,
+    selectedModelId,
+    activeProvider?.id,
+  );
+  const usesModelExecutionOptions = Boolean(executionCapabilities?.usesModelExecutionOptions);
+  const reasoningLevels = providerReasoningLevels(executionCapabilities);
+  const reasoningOptions = usesModelExecutionOptions
+    ? [
+        {
+          level: null,
+          label: "Default",
+          description: "Use the runtime default effort",
+        },
+        ...reasoningLevels,
+      ]
+    : reasoningLevels;
+  const normalizedReasoningLevel = normalizeAgentReasoningLevel(
+    executionCapabilities,
+    reasoningLevel,
+  );
   const selectedReasoningIndex = reasoningLevels.findIndex((level) => level.level === normalizedReasoningLevel);
   const reasoningLabel = normalizedReasoningLevel
-    ? reasoningLevelLabel(providerCapabilities, normalizedReasoningLevel)
-    : "";
+    ? reasoningLevelLabel(executionCapabilities, normalizedReasoningLevel)
+    : usesModelExecutionOptions ? "Default" : "";
   const reasoningTriggerLabel = `Reasoning level: ${reasoningLabel}`;
-  const showReasoningControl = reasoningLevels.length > 0 && Boolean(normalizedReasoningLevel);
-  const showFastMode = Boolean(providerCapabilities?.supportsFastMode);
+  const showReasoningControl = reasoningLevels.length > 0
+    && (usesModelExecutionOptions || Boolean(normalizedReasoningLevel));
+  const showFastMode = Boolean(executionCapabilities?.supportsFastMode);
   const fastModeLabel = fastMode ? "Enabled" : "Disabled";
   const fastModeTriggerLabel = `Fast mode: ${fastModeLabel}`;
   const referenceGroup = composerReferenceGroup(val);
@@ -3725,13 +3768,13 @@ function Composer({
                   role="listbox"
                   aria-label="Reasoning levels"
                 >
-                  {reasoningLevels.map((level) => (
+                  {reasoningOptions.map((level) => (
                     <button
                       className={"composer-model-option" + (level.level === normalizedReasoningLevel ? " active" : "")}
-                      key={level.level}
+                      key={level.level || "runtime-default"}
                       type="button"
                       role="option"
-                      data-reasoning-level={level.level}
+                      data-reasoning-level={level.level || "default"}
                       title={level.description || level.label}
                       aria-selected={level.level === normalizedReasoningLevel}
                       onClick={() => {
@@ -4288,11 +4331,18 @@ function App() {
   const activeProviderCapabilities = providerCapabilities[activeProviderId] || null;
   const selectedAgentModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
   const activeAgentAttachments = activeAgentSession?.attachments?.[activeProviderId] || [];
-  const agentReasoningLevel = normalizeReasoningLevel(
+  const activeAgentExecutionCapabilities = effectiveAgentExecutionCapabilities(
     activeProviderCapabilities,
+    selectedAgentModelId,
+    activeProviderId,
+  );
+  const agentReasoningLevel = normalizeAgentReasoningLevel(
+    activeAgentExecutionCapabilities,
     activeAgentSession?.reasoningLevel,
   );
-  const agentFastMode = Boolean(activeAgentSession?.fastMode && activeProviderCapabilities?.supportsFastMode);
+  const agentFastMode = Boolean(
+    activeAgentSession?.fastMode && activeAgentExecutionCapabilities?.supportsFastMode,
+  );
   const {
     jobs: agentJobs,
     registerJobs: registerAgentJobs,
@@ -4599,23 +4649,37 @@ function App() {
   }, [activeAgentSessionId, activeProject, updateAgentSession]);
 
   const selectAgentReasoningLevel = React.useCallback((reasoningLevel) => {
-    const capability = reasoningLevelCapability(activeProviderCapabilities, reasoningLevel);
+    if (
+      reasoningLevel == null
+      && activeAgentExecutionCapabilities?.usesModelExecutionOptions
+    ) {
+      updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+        ...session,
+        reasoningLevel: null,
+      }));
+      return;
+    }
+
+    const capability = reasoningLevelCapability(
+      activeAgentExecutionCapabilities,
+      reasoningLevel,
+    );
     if (!capability) return;
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
       reasoningLevel: capability.level,
     }));
-  }, [activeAgentSessionId, activeProject, activeProviderCapabilities, updateAgentSession]);
+  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, updateAgentSession]);
 
   const selectAgentFastMode = React.useCallback((fastMode) => {
-    if (!activeProviderCapabilities?.supportsFastMode) return;
+    if (!activeAgentExecutionCapabilities?.supportsFastMode) return;
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
       fastMode: Boolean(fastMode),
     }));
-  }, [activeAgentSessionId, activeProject, activeProviderCapabilities, updateAgentSession]);
+  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, updateAgentSession]);
 
   const selectAgentProvider = React.useCallback((providerId) => {
     if (!providers.some((provider) => provider.id === providerId)) return;
@@ -5092,7 +5156,7 @@ function App() {
     const reasoningLevel = agentReasoningLevel;
     const fastMode = agentFastMode;
     const reasoningLabel = reasoningLevel
-      ? reasoningLevelLabel(activeProviderCapabilities, reasoningLevel)
+      ? reasoningLevelLabel(activeAgentExecutionCapabilities, reasoningLevel)
       : "runtime default";
     const runningSteps = makeAgentProgressSteps({
       project: originProject,
@@ -5335,7 +5399,7 @@ function App() {
     activeAgentSession,
     activeAgentSessionId,
     activeProviderId,
-    activeProviderCapabilities,
+    activeAgentExecutionCapabilities,
     agentFastMode,
     agentReasoningLevel,
     applyProviderConnection,

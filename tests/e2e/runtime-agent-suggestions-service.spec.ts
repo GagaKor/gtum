@@ -76,6 +76,203 @@ const createCapabilityService = (capabilities: RuntimeAgentProviderCapabilities)
     invokeRuntime: async () => capabilities,
   })
 
+const claudeCapabilitiesWithModelExecutionOptions = (
+  executionOptions: unknown,
+  overrides: Record<string, unknown> = {},
+): RuntimeAgentProviderCapabilities => ({
+  ...validClaudeAccountCapabilities,
+  availableModels: [
+    {
+      providerId: 'claude',
+      modelId: 'metadata-model',
+      label: 'Metadata model',
+      executionOptions,
+      ...overrides,
+    },
+  ],
+} as RuntimeAgentProviderCapabilities)
+
+test.describe('model execution options', () => {
+  test('normalizes valid nested fields and preserves returned reasoning order', async () => {
+    const capabilities = await createCapabilityService({
+      ...validClaudeAccountCapabilities,
+      availableModels: [
+        {
+          providerId: 'claude',
+          modelId: ' metadata-a ',
+          label: ' Metadata A ',
+          executionOptions: {
+            reasoningLevels: [
+              {
+                level: 'high',
+                label: ' High ',
+                description: ' Greater reasoning depth ',
+                ignored: 'must not cross the runtime boundary',
+              },
+              {
+                level: 'low',
+                label: 'Low',
+                description: null,
+              },
+              {
+                level: 'max',
+                label: 'é'.repeat(32),
+              },
+            ],
+            supportsFastMode: true,
+            ignored: true,
+          },
+        },
+        {
+          providerId: 'claude',
+          modelId: 'metadata-b',
+          label: 'Metadata B',
+          executionOptions: {
+            reasoningLevels: [],
+            supportsFastMode: false,
+          },
+        },
+      ],
+    } as RuntimeAgentProviderCapabilities).readProviderCapabilities('claude')
+
+    expect(capabilities.availableModels).toEqual([
+      {
+        providerId: 'claude',
+        modelId: 'metadata-a',
+        label: 'Metadata A',
+        executionOptions: {
+          reasoningLevels: [
+            {
+              level: 'high',
+              label: 'High',
+              description: 'Greater reasoning depth',
+            },
+            {
+              level: 'low',
+              label: 'Low',
+              description: null,
+            },
+            {
+              level: 'max',
+              label: 'é'.repeat(32),
+            },
+          ],
+          supportsFastMode: true,
+        },
+      },
+      {
+        providerId: 'claude',
+        modelId: 'metadata-b',
+        label: 'Metadata B',
+        executionOptions: {
+          reasoningLevels: [],
+          supportsFastMode: false,
+        },
+      },
+    ])
+  })
+
+  test('rejects null and non-object option envelopes', async () => {
+    for (const invalid of [null, 'invalid', 1, true, []]) {
+      await expect(
+        createCapabilityService(
+          claudeCapabilitiesWithModelExecutionOptions(invalid),
+        ).readProviderCapabilities('claude'),
+      ).rejects.toThrow(/executionOptions/)
+    }
+  })
+
+  test('rejects non-array and excessive reasoning level collections', async () => {
+    for (const reasoningLevels of [
+      null,
+      {},
+      'high',
+      ['low', 'medium', 'high', 'xhigh', 'max', 'low'].map((level) => ({
+        level,
+        label: level,
+      })),
+    ]) {
+      await expect(
+        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
+          reasoningLevels,
+          supportsFastMode: false,
+        })).readProviderCapabilities('claude'),
+      ).rejects.toThrow(/executionOptions\.reasoningLevels/)
+    }
+  })
+
+  test('rejects blank, oversized, duplicate, unknown, and nonexact reasoning levels', async () => {
+    const invalidLevels = [
+      [''],
+      [' '.repeat(17)],
+      ['low', 'low'],
+      ['ultra'],
+      [' high '],
+      ['HIGH'],
+    ]
+
+    for (const levels of invalidLevels) {
+      await expect(
+        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
+          reasoningLevels: levels.map((level) => ({ level, label: 'Valid label' })),
+          supportsFastMode: false,
+        })).readProviderCapabilities('claude'),
+      ).rejects.toThrow(/executionOptions\.reasoningLevels/)
+    }
+  })
+
+  test('rejects blank or oversized reasoning labels and descriptions', async () => {
+    const invalidCapabilities = [
+      { level: 'low', label: '' },
+      { level: 'low', label: 'é'.repeat(33) },
+      { level: 'low', label: 'Low', description: '   ' },
+      { level: 'low', label: 'Low', description: 'é'.repeat(81) },
+      { level: 'low', label: 'Low', description: 42 },
+    ]
+
+    for (const capability of invalidCapabilities) {
+      await expect(
+        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
+          reasoningLevels: [capability],
+          supportsFastMode: false,
+        })).readProviderCapabilities('claude'),
+      ).rejects.toThrow(/executionOptions\.reasoningLevels\[0\]/)
+    }
+  })
+
+  test('rejects missing and nonboolean Fast support', async () => {
+    for (const supportsFastMode of [undefined, null, 0, 1, 'false']) {
+      await expect(
+        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
+          reasoningLevels: [],
+          ...(supportsFastMode === undefined ? {} : { supportsFastMode }),
+        })).readProviderCapabilities('claude'),
+      ).rejects.toThrow(/executionOptions\.supportsFastMode/)
+    }
+  })
+
+  test('rejects provider and model ownership drift before publishing metadata', async () => {
+    await expect(createCapabilityService({
+      ...claudeCapabilitiesWithModelExecutionOptions({
+        reasoningLevels: [],
+        supportsFastMode: false,
+      }),
+      provider: 'codex',
+    }).readProviderCapabilities('claude')).rejects.toThrow(
+      /Provider capability owner mismatch.*claude.*codex/,
+    )
+
+    await expect(createCapabilityService(
+      claudeCapabilitiesWithModelExecutionOptions({
+        reasoningLevels: [],
+        supportsFastMode: false,
+      }, { providerId: 'codex' }),
+    ).readProviderCapabilities('claude')).rejects.toThrow(
+      /Provider capability owner mismatch.*availableModels\[0\].*claude.*codex/,
+    )
+  })
+})
+
 test('accepts Claude account catalog values and normalizes only model identifiers and labels', async () => {
   const capabilities = await createCapabilityService(
     validClaudeAccountCapabilities,

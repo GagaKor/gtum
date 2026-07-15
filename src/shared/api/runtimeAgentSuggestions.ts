@@ -66,11 +66,20 @@ export type RuntimeAgentReasoningLevelCapability = {
   description?: string | null
 }
 
+export type RuntimeAgentModelExecutionOptions = {
+  reasoningLevels: RuntimeAgentReasoningLevelCapability[]
+  supportsFastMode: boolean
+}
+
+export type RuntimeAgentModelCapability = AgentModelRef & {
+  executionOptions?: RuntimeAgentModelExecutionOptions
+}
+
 export type RuntimeAgentProviderCapabilities = {
   provider: AgentProviderId
   supportsModelSelection: boolean
-  currentModel?: AgentModelRef | null
-  availableModels: AgentModelRef[]
+  currentModel?: RuntimeAgentModelCapability | null
+  availableModels: RuntimeAgentModelCapability[]
   reasoningLevels: RuntimeAgentReasoningLevelCapability[]
   defaultReasoningLevel?: RuntimeAgentReasoningLevel | null
   supportsFastMode: boolean
@@ -294,22 +303,140 @@ const normalizeCapabilityModelText = (value: unknown, field: string): string => 
   throw new Error(`Provider capability ${field} must be a non-empty string.`)
 }
 
+const MODEL_EXECUTION_REASONING_LEVELS = new Set([
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+])
+const MAX_MODEL_EXECUTION_REASONING_LEVELS = 5
+const MAX_MODEL_EXECUTION_REASONING_LEVEL_BYTES = 16
+const MAX_MODEL_EXECUTION_REASONING_LABEL_BYTES = 64
+const MAX_MODEL_EXECUTION_REASONING_DESCRIPTION_BYTES = 160
+
+const utf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength
+
+const normalizeModelExecutionText = (
+  value: unknown,
+  field: string,
+  maxBytes: number,
+): string => {
+  const normalized = typeof value === 'string' ? value.trim() : ''
+  if (normalized.length > 0 && utf8ByteLength(normalized) <= maxBytes) return normalized
+
+  throw new Error(
+    `Provider capability ${field} must be a non-empty string no longer than ${maxBytes} bytes.`,
+  )
+}
+
+const normalizeModelExecutionReasoningLevel = (
+  value: unknown,
+  field: string,
+): RuntimeAgentReasoningLevelCapability => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error(`Provider capability ${field} must be an object.`)
+  }
+
+  const capability = value as Record<string, unknown>
+  const level = capability.level
+  if (
+    typeof level !== 'string' ||
+    utf8ByteLength(level) > MAX_MODEL_EXECUTION_REASONING_LEVEL_BYTES ||
+    !MODEL_EXECUTION_REASONING_LEVELS.has(level)
+  ) {
+    throw new Error(
+      `Provider capability ${field}.level must be an exact supported reasoning level no longer than ${MAX_MODEL_EXECUTION_REASONING_LEVEL_BYTES} bytes.`,
+    )
+  }
+
+  const normalized: RuntimeAgentReasoningLevelCapability = {
+    level,
+    label: normalizeModelExecutionText(
+      capability.label,
+      `${field}.label`,
+      MAX_MODEL_EXECUTION_REASONING_LABEL_BYTES,
+    ),
+  }
+  if (capability.description === null) {
+    normalized.description = null
+  } else if (capability.description !== undefined) {
+    normalized.description = normalizeModelExecutionText(
+      capability.description,
+      `${field}.description`,
+      MAX_MODEL_EXECUTION_REASONING_DESCRIPTION_BYTES,
+    )
+  }
+
+  return normalized
+}
+
+const normalizeModelExecutionOptions = (
+  value: unknown,
+  field: string,
+): RuntimeAgentModelExecutionOptions => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error(`Provider capability ${field} must be an object.`)
+  }
+
+  const options = value as Record<string, unknown>
+  if (!Array.isArray(options.reasoningLevels)) {
+    throw new Error(`Provider capability ${field}.reasoningLevels must be an array.`)
+  }
+  if (options.reasoningLevels.length > MAX_MODEL_EXECUTION_REASONING_LEVELS) {
+    throw new Error(
+      `Provider capability ${field}.reasoningLevels must contain at most ${MAX_MODEL_EXECUTION_REASONING_LEVELS} entries.`,
+    )
+  }
+  if (typeof options.supportsFastMode !== 'boolean') {
+    throw new Error(`Provider capability ${field}.supportsFastMode must be a boolean.`)
+  }
+
+  const seenLevels = new Set<string>()
+  const reasoningLevels = options.reasoningLevels.map((level, index) => {
+    const normalized = normalizeModelExecutionReasoningLevel(
+      level,
+      `${field}.reasoningLevels[${index}]`,
+    )
+    if (seenLevels.has(normalized.level)) {
+      throw new Error(
+        `Provider capability ${field}.reasoningLevels contains duplicate level "${normalized.level}".`,
+      )
+    }
+    seenLevels.add(normalized.level)
+    return normalized
+  })
+
+  return {
+    reasoningLevels,
+    supportsFastMode: options.supportsFastMode,
+  }
+}
+
 const normalizeCapabilityModel = (
-  model: AgentModelRef,
+  model: RuntimeAgentModelCapability,
   requestedProvider: AgentProviderId,
   field: string,
-): AgentModelRef => {
+): RuntimeAgentModelCapability => {
   if (model.providerId !== requestedProvider) {
     throw new Error(
       `Provider capability owner mismatch at ${field}: expected ${requestedProvider} but received ${model.providerId}.`,
     )
   }
 
-  return {
+  const normalized: RuntimeAgentModelCapability = {
     ...model,
     modelId: normalizeCapabilityModelText(model.modelId, `${field}.modelId`),
     label: normalizeCapabilityModelText(model.label, `${field}.label`),
   }
+  if (Object.prototype.hasOwnProperty.call(model, 'executionOptions')) {
+    normalized.executionOptions = normalizeModelExecutionOptions(
+      model.executionOptions,
+      `${field}.executionOptions`,
+    )
+  }
+
+  return normalized
 }
 
 const normalizeProviderCapabilities = (

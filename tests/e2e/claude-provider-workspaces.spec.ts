@@ -49,6 +49,43 @@ const claudeUpdatedPolicyCatalog = [
   },
 ] as const
 
+const claudeExecutionMetadataCatalog = [
+  {
+    providerId: 'claude',
+    modelId: 'metadata-a',
+    label: 'Metadata A',
+    executionOptions: {
+      reasoningLevels: [
+        { level: 'high', label: 'High', description: 'Greater reasoning depth' },
+        { level: 'low', label: 'Low', description: 'Fast, lighter reasoning' },
+        { level: 'max', label: 'Max' },
+      ],
+      supportsFastMode: true,
+    },
+  },
+  {
+    providerId: 'claude',
+    modelId: 'metadata-b',
+    label: 'Metadata B',
+    executionOptions: {
+      reasoningLevels: [
+        { level: 'medium', label: 'Medium' },
+        { level: 'xhigh', label: 'XHigh' },
+      ],
+      supportsFastMode: false,
+    },
+  },
+  {
+    providerId: 'claude',
+    modelId: 'metadata-c',
+    label: 'Metadata C',
+    executionOptions: {
+      reasoningLevels: [],
+      supportsFastMode: false,
+    },
+  },
+] as const
+
 const claudeMaxHumanLabel = `Maximum catalog label · ${'W'.repeat(132)}`
 
 type ClaudeCapabilityFixture = {
@@ -57,6 +94,14 @@ type ClaudeCapabilityFixture = {
     providerId: 'claude'
     modelId: string
     label: string
+    executionOptions?: {
+      reasoningLevels: ReadonlyArray<{
+        level: string
+        label: string
+        description?: string | null
+      }>
+      supportsFastMode: boolean
+    }
   }>
 }
 
@@ -955,6 +1000,116 @@ test('wraps a maximum-length account label at default width without clipping its
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1)
   expect(geometry.menuScrollWidth).toBeLessThanOrEqual(geometry.menuClientWidth + 1)
   expect(geometry.fullyInsideOption).toBe(true)
+})
+
+test('Claude effort and Fast controls follow selected-model metadata without alias assumptions', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    includeAdvancedControls: true,
+    claudeCapabilityFixtures: [{ models: claudeExecutionMetadataCatalog }],
+  })
+  await page.goto('/')
+
+  const reasoningTrigger = page.locator('.composer-reasoning-chip')
+  const fastTrigger = page.locator('.fast-toggle')
+  const chooseModel = async (model: typeof claudeExecutionMetadataCatalog[number]) => {
+    await modelTrigger(page, 'Claude').click()
+    await page.getByRole('listbox', { name: 'Claude models' })
+      .getByRole('option', { name: model.label, exact: true })
+      .click()
+    await expect(modelTrigger(page, 'Claude'))
+      .toHaveAttribute('aria-label', `Claude model: ${model.label}`)
+  }
+  const openReasoningMenu = async () => {
+    await reasoningTrigger.click()
+    const menu = page.getByRole('listbox', { name: 'Reasoning levels' })
+    await expect(menu).toBeVisible()
+    return menu
+  }
+
+  await expect(modelTrigger(page, 'Claude'))
+    .toHaveAttribute('aria-label', 'Claude model: Metadata A')
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Default')
+  await expect(fastTrigger).toHaveAttribute('aria-label', 'Fast mode: Disabled')
+
+  let reasoningMenu = await openReasoningMenu()
+  await expect(reasoningMenu.getByRole('option')).toHaveText(['Default', 'High', 'Low', 'Max'])
+  await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveCount(1)
+  await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Default')
+  await reasoningMenu.getByRole('option', { name: 'Low', exact: true }).click()
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Low')
+
+  await fastTrigger.click()
+  await page.getByRole('listbox', { name: 'Fast mode' })
+    .getByRole('option', { name: 'Enabled', exact: true })
+    .click()
+  await expect(fastTrigger).toHaveAttribute('aria-label', 'Fast mode: Enabled')
+
+  await chooseModel(claudeExecutionMetadataCatalog[1])
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Default')
+  await expect(fastTrigger).toHaveCount(0)
+  reasoningMenu = await openReasoningMenu()
+  await expect(reasoningMenu.getByRole('option')).toHaveText(['Default', 'Medium', 'XHigh'])
+  await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Default')
+  await page.keyboard.press('Escape')
+
+  await chooseModel(claudeExecutionMetadataCatalog[0])
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Low')
+  await expect(fastTrigger).toHaveAttribute('aria-label', 'Fast mode: Enabled')
+
+  await chooseModel(claudeExecutionMetadataCatalog[1])
+  reasoningMenu = await openReasoningMenu()
+  await reasoningMenu.getByRole('option', { name: 'XHigh', exact: true }).click()
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: XHigh')
+
+  await chooseModel(claudeExecutionMetadataCatalog[2])
+  await expect(reasoningTrigger).toHaveCount(0)
+  await expect(fastTrigger).toHaveCount(0)
+
+  await chooseModel(claudeExecutionMetadataCatalog[1])
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: XHigh')
+  reasoningMenu = await openReasoningMenu()
+  await reasoningMenu.getByRole('option', { name: 'Default', exact: true }).click()
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Default')
+
+  await chooseModel(claudeExecutionMetadataCatalog[2])
+  await chooseModel(claudeExecutionMetadataCatalog[1])
+  await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Default')
+
+  await sendRequest(page, 'Claude', 'use runtime-default effort')
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __providerCalls?: Array<{ command: string }> }
+  ).__providerCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0)).toBe(1)
+  const request = await page.evaluate(() => (
+    window as Window & {
+      __providerCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+    }
+  ).__providerCalls?.find((call) => call.command === 'request_agent_suggestions')?.args?.request)
+  expect(request).toEqual(expect.objectContaining({
+    provider: 'claude',
+    model: 'metadata-b',
+    reasoningLevel: null,
+    fastMode: false,
+  }))
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: unknown[] }
+  ).__terminalCalls ?? [])).toEqual([])
+
+  await page.evaluate(({ projectA, sessionA }) => (
+    window as Window & {
+      __resolveProviderRequest(
+        provider: string,
+        projectPath: string,
+        agentSessionId: string,
+        summary: string,
+      ): void
+    }
+  ).__resolveProviderRequest('claude', projectA, sessionA, 'Metadata controls completed'), {
+    projectA,
+    sessionA,
+  })
+  await expect(page.locator('.agent')).toContainText('Metadata controls completed')
 })
 
 test('keeps compact composer triggers on one line at default and narrow Agent widths', async ({ page }) => {
