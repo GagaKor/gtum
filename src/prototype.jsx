@@ -3469,6 +3469,7 @@ function Composer({
   const [providerMenuOpen, setProviderMenuOpen] = React.useState(false);
   const ref = React.useRef(null);
   const modelTriggerRef = React.useRef(null);
+  const modelMenuRef = React.useRef(null);
   React.useLayoutEffect(() => {
     const textarea = ref.current;
     if (!textarea) return;
@@ -3501,6 +3502,12 @@ function Composer({
   );
   const effectiveModelId = selectedModel?.modelId || null;
   const showModelPicker = Boolean(providerCapabilities?.supportsModelSelection && availableModels.length > 0);
+  React.useLayoutEffect(() => {
+    if (!modelMenuOpen) return;
+    const selectedOption = modelMenuRef.current
+      ?.querySelector('[role="option"][aria-selected="true"]');
+    selectedOption?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [modelMenuOpen, effectiveModelId]);
   const enabledAttachments = (providerCapabilities?.attachments || []).filter((attachment) => attachment.enabled);
   const attachmentTitle = enabledAttachments.length > 0
     ? `Attach ${enabledAttachments.map((attachment) => attachment.label).join(", ")}`
@@ -3605,7 +3612,10 @@ function Composer({
               type="button"
               aria-haspopup="listbox"
               aria-expanded={providerMenuOpen}
-              onClick={() => setProviderMenuOpen((open) => !open)}
+              onClick={() => {
+                setProviderMenuOpen((open) => !open);
+                setModelMenuOpen(false);
+              }}
             >
               {activeProvider && (
                 <span className={"provider-mark " + activeProvider.id}>
@@ -3646,7 +3656,10 @@ function Composer({
                 aria-label={`${activeProvider?.label || "Provider"} model: ${selectedModel?.label || "Default model"}`}
                 aria-haspopup="listbox"
                 aria-expanded={modelMenuOpen}
-                onClick={() => setModelMenuOpen((open) => !open)}
+                onClick={() => {
+                  setModelMenuOpen((open) => !open);
+                  setProviderMenuOpen(false);
+                }}
               >
                 <span>{selectedModel?.label || "Default model"}</span>
                 <Icon.chevronDown />
@@ -3654,6 +3667,7 @@ function Composer({
               {modelMenuOpen && (
                 <div
                   className="composer-model-menu"
+                  ref={modelMenuRef}
                   role="listbox"
                   aria-label={`${activeProvider?.label || "Provider"} models`}
                 >
@@ -3663,6 +3677,8 @@ function Composer({
                       key={model.modelId}
                       type="button"
                       role="option"
+                      data-model-id={model.modelId}
+                      title={model.modelId}
                       aria-selected={model.modelId === effectiveModelId}
                       onClick={() => {
                         onSelectModel(model.modelId);
@@ -3670,7 +3686,6 @@ function Composer({
                       }}
                     >
                       <span>{model.label}</span>
-                      <code>{model.modelId}</code>
                     </button>
                   ))}
                 </div>

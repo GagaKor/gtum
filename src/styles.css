@@ -2607,6 +2607,7 @@ body.resizing-h-left, body.resizing-h-right {
   white-space: nowrap;
 }
 .composer-foot {
+  position: relative;
   display: flex; align-items: center; gap: 8px;
   font-size: 10.5px;
   font-family: var(--font-mono);
@@ -2642,7 +2643,7 @@ body.resizing-h-left, body.resizing-h-right {
   border-color: var(--border);
 }
 .composer-model-wrap {
-  position: relative;
+  position: static;
   min-width: 0;
   flex: 0 1 auto;
 }
@@ -2677,11 +2678,14 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .composer-model-menu {
   position: absolute;
-  left: 0;
+  right: 0;
+  left: auto;
   bottom: 32px;
-  width: 210px;
-  max-height: 220px;
-  overflow: auto;
+  box-sizing: border-box;
+  width: min(352px, calc(100vw - 16px));
+  max-height: min(220px, calc(100vh - 64px));
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
@@ -2691,34 +2695,48 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .composer-model-option {
   appearance: none;
+  position: relative;
   border: 0;
   width: 100%;
+  min-height: 30px;
   background: transparent;
   color: var(--text-muted);
   border-radius: 6px;
   padding: 7px 8px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
   text-align: left;
   cursor: pointer;
+  font: inherit;
+  line-height: 1.35;
 }
 .composer-model-option:hover,
 .composer-model-option.active {
   background: var(--surface-1);
   color: var(--text);
 }
-.composer-model-option code {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.composer-model-option > span {
+  min-width: 0;
+  flex: 1;
   white-space: nowrap;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 10px;
+}
+.composer-model-wrap .composer-model-option {
+  padding-right: 27px;
+}
+.composer-model-wrap .composer-model-option[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  width: 7px;
+  height: 4px;
+  border-bottom: 1.5px solid var(--accent);
+  border-left: 1.5px solid var(--accent);
+  transform: translateY(-1px) rotate(-45deg);
 }
 .composer-provider-menu {
+  right: auto;
+  left: 0;
   width: 190px;
 }
 .composer-provider-option {
