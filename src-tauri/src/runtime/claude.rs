@@ -3226,7 +3226,7 @@ fn main() {
         );
         let mut request = claude_request(&project);
         request.model = Some("opus".into());
-        request.reasoning_level = Some("high".into());
+        request.reasoning_level = Some("max".into());
         request.fast_mode = Some(true);
 
         request_claude_suggestions_with(
@@ -3252,7 +3252,7 @@ fn main() {
             .unwrap();
         assert_eq!(
             arguments.get(effort_index + 1).map(String::as_str),
-            Some("high")
+            Some("max")
         );
         assert_eq!(settings_overlay(&arguments), json!({ "fastMode": true }));
         assert!(arguments.iter().any(|argument| argument == "--safe-mode"));
