@@ -1037,7 +1037,13 @@ test('Claude effort and Fast controls follow selected-model metadata without ali
   await expect(reasoningMenu.getByRole('option')).toHaveText(['Default', 'High', 'Low', 'Max'])
   await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveCount(1)
   await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Default')
+  await expect(page.locator('.reasoning-bars i.active')).toHaveCount(0)
+  await reasoningMenu.getByRole('option', { name: 'High', exact: true }).click()
+  const highActiveBarCount = await page.locator('.reasoning-bars i.active').count()
+  reasoningMenu = await openReasoningMenu()
   await reasoningMenu.getByRole('option', { name: 'Low', exact: true }).click()
+  const lowActiveBarCount = await page.locator('.reasoning-bars i.active').count()
+  expect(highActiveBarCount).toBeGreaterThan(lowActiveBarCount)
   await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Low')
 
   await fastTrigger.click()

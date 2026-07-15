@@ -2575,6 +2575,14 @@ function formatReasoningLevelLabel(level) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+const MODEL_REASONING_LEVEL_RANK = Object.freeze({
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 4,
+});
+
 function providerReasoningLevels(providerCapabilities) {
   return (providerCapabilities?.reasoningLevels || [])
     .filter((level) => String(level?.level || "").trim().length > 0);
@@ -3563,11 +3571,17 @@ function Composer({
         ...reasoningLevels,
       ]
     : reasoningLevels;
+  const reasoningIndicatorLevels = usesModelExecutionOptions
+    ? [...reasoningLevels].sort((left, right) => (
+        MODEL_REASONING_LEVEL_RANK[left.level] - MODEL_REASONING_LEVEL_RANK[right.level]
+      ))
+    : reasoningLevels;
   const normalizedReasoningLevel = normalizeAgentReasoningLevel(
     executionCapabilities,
     reasoningLevel,
   );
-  const selectedReasoningIndex = reasoningLevels.findIndex((level) => level.level === normalizedReasoningLevel);
+  const selectedReasoningIndex = reasoningIndicatorLevels
+    .findIndex((level) => level.level === normalizedReasoningLevel);
   const reasoningLabel = normalizedReasoningLevel
     ? reasoningLevelLabel(executionCapabilities, normalizedReasoningLevel)
     : usesModelExecutionOptions ? "Default" : "";
@@ -3754,7 +3768,7 @@ function Composer({
                 onClick={() => setOpenMenu((current) => current === "reasoning" ? null : "reasoning")}
               >
                 <span className="reasoning-bars" aria-hidden="true">
-                  {reasoningLevels.map((level, index) => (
+                  {reasoningIndicatorLevels.map((level, index) => (
                     <i
                       className={index <= selectedReasoningIndex ? "active" : ""}
                       key={level.level}
