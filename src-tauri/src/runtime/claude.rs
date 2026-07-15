@@ -1587,10 +1587,13 @@ fn parse_claude_model_catalog(raw: &[u8]) -> Result<Vec<AgentModelCapability>, S
 
     let mut models = Vec::with_capacity(payload.models.len());
     for model in payload.models {
-        let model_id = model.value.trim();
+        let raw_model_id = model.value.as_str();
+        if invalid_claude_model_text(raw_model_id, MAX_CLAUDE_MODEL_ID_BYTES) {
+            return Err("Claude model catalog returned an invalid model identifier.".into());
+        }
+        let model_id = raw_model_id.trim();
         if model_id.is_empty()
             || model_id.starts_with('-')
-            || invalid_claude_model_text(model_id, MAX_CLAUDE_MODEL_ID_BYTES)
             || models
                 .iter()
                 .any(|existing: &AgentModelCapability| existing.model_id == model_id)
@@ -2048,6 +2051,10 @@ mod tests {
             (
                 "control id",
                 model_catalog_response(json!([account_model("son\u{0}net", "Sonnet", "Sonnet 5")])),
+            ),
+            (
+                "leading and trailing control id",
+                model_catalog_response(json!([account_model("\nsonnet\t", "Sonnet", "Sonnet 5")])),
             ),
             (
                 "leading dash id",
