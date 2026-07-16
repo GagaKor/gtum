@@ -90,7 +90,7 @@ Verification state:
 
 - focused auth coverage passes 25/25, focused Claude workspace E2E passes 21/21, lint passes, and independent final review approved the corrected code/test slice
 - the exact-candidate clean-tree gate passes lint, build, serial Playwright 235/235, Rust formatting/check, and Rust 186 / 1 ignored; the bounded prompt-free Claude compatibility smoke passes 1/1, and the rebuilt native macOS app repopulates the selected Claude model/reasoning/Fast controls after current CLI validation
-- Task 5 now requires only verified non-force `dev` integration and its final documentation closure
+- exact tested commit `4ce5b172f2a902c0b9e0ec25ea735eb97131e147` was pushed non-forced to `dev`; Task 5 and its documentation closure are complete
 - catalog discovery remains distinct from user-prompt inference. No live Claude inference, paid request, billing eligibility, or response-quality result is claimed
 - the active execution record is [Claude Startup Capability Recovery Implementation Plan](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
 

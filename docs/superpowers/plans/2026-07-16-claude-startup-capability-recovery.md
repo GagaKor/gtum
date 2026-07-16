@@ -186,7 +186,7 @@ cargo test --manifest-path src-tauri/Cargo.toml runtime::claude::tests::live_cat
 
 Do not send a user prompt or run paid inference.
 
-- [ ] **Step 5: Push the exact verified SHA to `dev`**
+- [x] **Step 5: Push the exact verified SHA to `dev`**
 
 ```bash
 TESTED_SHA=$(git rev-parse refs/gtum/tested/claude-startup-recovery)
@@ -203,3 +203,5 @@ git update-ref -d refs/gtum/tested/claude-startup-recovery
 ```
 
 Do not force-push or rename the working branch. If `origin/dev` moved incompatibly or any correction changes the candidate SHA, repin and restart the complete gate.
+
+Result: exact tested commit `4ce5b172f2a902c0b9e0ec25ea735eb97131e147` was pushed non-forced to `dev` after the remote base, ancestry, clean tree, and tested ref were revalidated. The remote branch SHA was then verified to match.
