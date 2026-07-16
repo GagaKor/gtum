@@ -126,7 +126,7 @@ impl AgentAuthManager {
 
         if storage_path.exists() {
             match fs::read_to_string(&storage_path) {
-                Ok(contents) => match serde_json::from_str::<AgentAuthStore>(&contents) {
+                Ok(contents) => match parse_auth_store(&contents) {
                     Ok(mut loaded_store) => {
                         self.normalize_store(&mut loaded_store);
                         *self.store.lock().unwrap() = loaded_store;
@@ -409,6 +409,14 @@ impl AgentAuthManager {
     }
 
     pub fn disconnect(&self, provider: AgentProvider) -> Result<AgentConnectionSnapshot, String> {
+        self.disconnect_with_parent_sync(provider, sync_auth_store_parent)
+    }
+
+    fn disconnect_with_parent_sync(
+        &self,
+        provider: AgentProvider,
+        sync_parent: impl FnOnce(&Path) -> Result<(), String>,
+    ) -> Result<AgentConnectionSnapshot, String> {
         let mut store = self.store.lock().unwrap();
         let mut candidate = store.clone();
         let next_revision = store
@@ -421,7 +429,7 @@ impl AgentAuthManager {
         candidate
             .connections
             .insert(provider.as_key().into(), snapshot.clone());
-        self.persist_locked(&candidate)
+        self.persist_locked_with_parent_sync(&candidate, sync_parent)
             .map_err(|error| format!("failed to persist auth state after disconnect: {error}"))?;
         *store = candidate;
         Ok(snapshot)
@@ -680,6 +688,14 @@ impl AgentAuthManager {
     }
 
     fn persist_locked(&self, store: &AgentAuthStore) -> Result<(), String> {
+        self.persist_locked_with_parent_sync(store, sync_auth_store_parent)
+    }
+
+    fn persist_locked_with_parent_sync(
+        &self,
+        store: &AgentAuthStore,
+        sync_parent: impl FnOnce(&Path) -> Result<(), String>,
+    ) -> Result<(), String> {
         let path = self
             .storage_path
             .lock()
@@ -691,11 +707,50 @@ impl AgentAuthManager {
         snapshot.last_synced_at = unix_timestamp_ms();
         let serialized = serde_json::to_string_pretty(&snapshot)
             .map_err(|error| format!("failed to serialize auth state: {error}"))?;
-        write_auth_store_atomically(&path, serialized.as_bytes())
+        write_auth_store_atomically_with_parent_sync(&path, serialized.as_bytes(), sync_parent)
     }
 }
 
-fn write_auth_store_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn parse_auth_store(contents: &str) -> Result<AgentAuthStore, String> {
+    let mut raw_store = serde_json::from_str::<serde_json::Value>(contents)
+        .map_err(|error| format!("invalid auth state JSON: {error}"))?;
+    let root = raw_store
+        .as_object_mut()
+        .ok_or_else(|| "auth state must be a top-level object".to_string())?;
+    let raw_connections = root
+        .get("connections")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "auth state connections must be an object".to_string())?;
+    let mut sanitized_connections = serde_json::Map::new();
+
+    for provider in [AgentProvider::Codex, AgentProvider::Claude] {
+        let Some(raw_snapshot) = raw_connections.get(provider.as_key()) else {
+            continue;
+        };
+        let Ok(snapshot) = serde_json::from_value::<AgentConnectionSnapshot>(raw_snapshot.clone())
+        else {
+            continue;
+        };
+        if snapshot.provider != provider {
+            continue;
+        }
+        let sanitized_snapshot = serde_json::to_value(snapshot)
+            .map_err(|error| format!("failed to sanitize auth connection: {error}"))?;
+        sanitized_connections.insert(provider.as_key().to_string(), sanitized_snapshot);
+    }
+
+    root.insert(
+        "connections".to_string(),
+        serde_json::Value::Object(sanitized_connections),
+    );
+    serde_json::from_value(raw_store).map_err(|error| format!("invalid auth state shape: {error}"))
+}
+
+fn write_auth_store_atomically_with_parent_sync(
+    path: &Path,
+    bytes: &[u8],
+    sync_parent: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("auth storage path has no parent: {}", path.display()))?;
@@ -742,7 +797,13 @@ fn write_auth_store_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> 
         let _ = fs::remove_file(&temporary);
         return Err(error);
     }
-    sync_auth_store_parent(parent)?;
+
+    // Atomic destination replacement is the commit point: the synced candidate is now the
+    // authoritative store. Directory sync can strengthen crash durability, but a failure here
+    // cannot roll back the replacement and therefore must not become a false operation failure.
+    if let Err(error) = sync_parent(parent) {
+        log::warn!("auth state was committed but parent directory sync failed: {error}");
+    }
     Ok(())
 }
 
@@ -812,6 +873,8 @@ fn sync_auth_store_parent(parent: &Path) -> Result<(), String> {
 
 #[cfg(not(unix))]
 fn sync_auth_store_parent(_parent: &Path) -> Result<(), String> {
+    // Windows commits through a synced temporary file plus ReplaceFileW. Rust exposes no
+    // portable parent-directory fsync there, so this best-effort hardening step is a no-op.
     Ok(())
 }
 
@@ -1394,6 +1457,56 @@ mod tests {
     }
 
     #[test]
+    fn migration_drops_malformed_noncanonical_connection_before_typed_deserialization() {
+        let dir = unique_temp_dir("malformed-noncanonical-connection");
+        let storage_path = dir.join("agent-auth.json");
+        let malformed_secret = "malformed-extra-credential-secret";
+        let legacy_store = serde_json::json!({
+            "connections": {
+                "codex": serde_json::to_value(AgentConnectionSnapshot::disconnected(
+                    AgentProvider::Codex,
+                ))
+                .unwrap(),
+                "claude": serde_json::to_value(AgentConnectionSnapshot::disconnected(
+                    AgentProvider::Claude,
+                ))
+                .unwrap(),
+                "claude-malformed-copy": malformed_secret
+            },
+            "pendingLogins": {},
+            "nextLoginId": 1,
+            "lastSyncedAt": 1_000
+        });
+        fs::write(
+            &storage_path,
+            serde_json::to_string_pretty(&legacy_store).unwrap(),
+        )
+        .unwrap();
+
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+
+        let runtime = manager.runtime_snapshot();
+        let persisted = fs::read_to_string(&storage_path).unwrap();
+        let persisted_json: serde_json::Value = serde_json::from_str(&persisted).unwrap();
+        let mut connection_keys = persisted_json["connections"]
+            .as_object()
+            .expect("connections should remain an object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        connection_keys.sort();
+        assert_eq!(connection_keys, vec!["claude", "codex"]);
+        assert_eq!(runtime.connections.len(), 2);
+        assert!(!persisted.contains(malformed_secret));
+        assert!(!serde_json::to_string(&runtime)
+            .unwrap()
+            .contains(malformed_secret));
+
+        remove_dir(&dir);
+    }
+
+    #[test]
     fn begin_login_connects_claude_with_non_secret_credential_metadata_only() {
         let dir = unique_temp_dir("begin-claude");
         let storage_path = dir.join("agent-auth.json");
@@ -1622,6 +1735,54 @@ mod tests {
         assert!(reloaded
             .provider_refresh_lease(AgentProvider::Claude)
             .is_some());
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn post_replace_parent_sync_failure_does_not_split_memory_disk_or_restart_state() {
+        let dir = unique_temp_dir("disconnect-parent-sync-failure");
+        let storage_path = dir.join("agent-auth.json");
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        manager
+            .begin_login_with_validation(AgentProvider::Claude, None, || {
+                Err("Claude validation failed before explicit disconnect".into())
+            })
+            .unwrap();
+        let sync_attempted = std::cell::Cell::new(false);
+
+        let disconnected = manager
+            .disconnect_with_parent_sync(AgentProvider::Claude, |parent| {
+                assert_eq!(parent, storage_path.parent().unwrap());
+                sync_attempted.set(true);
+                Err("simulated parent directory sync failure".into())
+            })
+            .expect("atomic replacement is the disconnect commit point");
+
+        assert!(sync_attempted.get());
+        assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
+        assert_eq!(
+            claude_connection(&manager).status,
+            AgentConnectionStatus::Disconnected
+        );
+        assert!(manager
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_none());
+        let persisted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&storage_path).unwrap()).unwrap();
+        assert_eq!(persisted["connections"]["claude"]["status"], "disconnected");
+        drop(manager);
+
+        let reloaded = AgentAuthManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        assert_eq!(
+            claude_connection(&reloaded).status,
+            AgentConnectionStatus::Disconnected
+        );
+        assert!(reloaded
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_none());
 
         remove_dir(&dir);
     }
