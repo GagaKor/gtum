@@ -155,7 +155,7 @@ test -z "$(git status --short)"
 
 Review error-only recovery, explicit-disconnect preservation, stale revision protection, startup read ordering, credential redaction, and center-terminal isolation.
 
-- [ ] **Step 2: Pin the already-committed clean reviewed candidate**
+- [x] **Step 2: Pin the already-committed clean reviewed candidate**
 
 ```bash
 test -z "$(git status --short)"
@@ -163,7 +163,7 @@ git update-ref refs/gtum/tested/claude-startup-recovery "$(git rev-parse HEAD)"
 test "$(git rev-parse HEAD)" = "$(git rev-parse refs/gtum/tested/claude-startup-recovery)"
 ```
 
-- [ ] **Step 3: Run the complete fresh gate**
+- [x] **Step 3: Run the complete fresh gate**
 
 ```bash
 TESTED_SHA=$(git rev-parse refs/gtum/tested/claude-startup-recovery)
@@ -178,7 +178,7 @@ test -z "$(git status --short)"
 test "$(git rev-parse HEAD)" = "$TESTED_SHA"
 ```
 
-- [ ] **Step 4: Run the bounded prompt-free Claude compatibility smoke**
+- [x] **Step 4: Run the bounded prompt-free Claude compatibility smoke**
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml runtime::claude::tests::live_catalog_compatibility_smoke_is_prompt_free -- --ignored --exact --nocapture
