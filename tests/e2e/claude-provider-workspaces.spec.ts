@@ -865,6 +865,89 @@ test('clears Claude capabilities across disconnects and ignores stale policy rea
   ).__terminalCalls ?? [])).toEqual([])
 })
 
+test('ignores a stale Claude catalog rejection after a newer reconnect succeeds', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    claudeInitialConnectionStatus: 'connected',
+    claudeCapabilityFixtures: [
+      { models: claudePriorPolicyCatalog },
+      { deferred: true, models: claudePriorPolicyCatalog },
+      { models: claudeUpdatedPolicyCatalog },
+    ],
+  })
+  await page.goto('/')
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudePriorPolicyCatalog[0].label}`,
+  )
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  let claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Disconnect' }).click()
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await claudeSettings.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(2)
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Disconnect' }).click()
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
+  await claudeSettings.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(page.locator('.settings-overlay')).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(3)
+  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
+  )
+
+  await page.evaluate(() => (
+    window as Window & {
+      __rejectClaudeCapabilityRead(readIndex: number, message: string): void
+    }
+  ).__rejectClaudeCapabilityRead(2, 'stale reconnect catalog failure'))
+  await flushBrowserLayout(page)
+
+  const updatedTrigger = modelTrigger(page, 'Claude')
+  await expect(updatedTrigger).toHaveAttribute(
+    'aria-label',
+    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
+  )
+  await updatedTrigger.click()
+  const menu = page.getByRole('listbox', { name: 'Claude models' })
+  await expect(menu.getByRole('option', {
+    name: claudeUpdatedPolicyCatalog[0].label,
+    exact: true,
+  })).toHaveCount(1)
+  await expect(menu.getByRole('option', {
+    name: claudePriorPolicyCatalog[0].label,
+    exact: true,
+  })).toHaveCount(0)
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(claudeSettings).toContainText('Connected')
+  await expect(claudeSettings.getByRole('button', { name: 'Disconnect' })).toBeVisible()
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0)
+  await expect(claudeSettings).not.toContainText('stale reconnect catalog failure')
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
 test('keeps the model popup within the Agent panel at 1280x720', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
   await installClaudeWorkspaceHarness(page, { sessionAProvider: 'claude' })
