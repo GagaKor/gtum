@@ -12,6 +12,7 @@ const PROVIDER_REVALIDATION_REQUIRED: &str =
     "The provider connection must be revalidated before making a request.";
 const STALE_PROVIDER_RESULT: &str =
     "The provider connection changed while the operation was running. Retry the operation.";
+const CLAUDE_VALIDATION_FAILURE: &str = "Claude authentication could not be validated. Check Claude credentials or run `claude auth login` in your own terminal, then reconnect Claude.";
 
 #[derive(Default)]
 pub struct AgentAuthManager {
@@ -20,7 +21,7 @@ pub struct AgentAuthManager {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ConnectedProviderLease {
+pub(crate) struct ProviderValidationLease {
     provider: AgentProvider,
     revision: u64,
 }
@@ -212,7 +213,7 @@ impl AgentAuthManager {
             snapshot.last_error = None;
             snapshot.runtime_validated = false;
             snapshot.bump_runtime_revision();
-            let lease = ConnectedProviderLease {
+            let lease = ProviderValidationLease {
                 provider,
                 revision: snapshot.runtime_revision,
             };
@@ -228,7 +229,7 @@ impl AgentAuthManager {
 
     fn finish_login_if_current(
         &self,
-        lease: &ConnectedProviderLease,
+        lease: &ProviderValidationLease,
         validation: Result<AgentProviderValidation, String>,
     ) -> Result<AgentConnectionSnapshot, String> {
         let mut store = self.store.lock().unwrap();
@@ -283,7 +284,8 @@ impl AgentAuthManager {
                 if lease.provider == AgentProvider::Claude {
                     snapshot.required_scopes = lease.provider.required_scopes();
                 }
-                snapshot.last_error = Some(error);
+                snapshot.last_error =
+                    Some(provider_validation_failure_message(lease.provider, &error));
                 snapshot.runtime_validated = false;
             }
         }
@@ -442,7 +444,7 @@ impl AgentAuthManager {
     pub(crate) fn require_stored_connected_provider(
         &self,
         provider: AgentProvider,
-    ) -> Result<ConnectedProviderLease, String> {
+    ) -> Result<ProviderValidationLease, String> {
         let store = self.store.lock().unwrap();
         let snapshot = store
             .connections
@@ -460,20 +462,20 @@ impl AgentAuthManager {
             return Err(PROVIDER_REVALIDATION_REQUIRED.into());
         }
 
-        Ok(ConnectedProviderLease {
+        Ok(ProviderValidationLease {
             provider,
             revision: snapshot.runtime_revision,
         })
     }
 
-    fn provider_refresh_lease(&self, provider: AgentProvider) -> Option<ConnectedProviderLease> {
+    fn provider_refresh_lease(&self, provider: AgentProvider) -> Option<ProviderValidationLease> {
         let store = self.store.lock().unwrap();
         let snapshot = store.connections.get(provider.as_key())?;
         ((snapshot.status == AgentConnectionStatus::Connected
             || (provider == AgentProvider::Claude
                 && snapshot.status == AgentConnectionStatus::Error))
             && snapshot.connection_kind == AgentConnectionKind::Real)
-            .then_some(ConnectedProviderLease {
+            .then_some(ProviderValidationLease {
                 provider,
                 revision: snapshot.runtime_revision,
             })
@@ -481,7 +483,7 @@ impl AgentAuthManager {
 
     pub(crate) fn apply_validation_if_current(
         &self,
-        lease: &ConnectedProviderLease,
+        lease: &ProviderValidationLease,
         validation: &Result<String, String>,
     ) -> bool {
         let validation = validation
@@ -493,7 +495,7 @@ impl AgentAuthManager {
 
     pub(crate) fn apply_claude_validation_if_current(
         &self,
-        lease: &ConnectedProviderLease,
+        lease: &ProviderValidationLease,
         validation: &Result<crate::runtime::claude::ClaudeConnectionValidation, String>,
     ) -> bool {
         let validation = validation
@@ -505,7 +507,7 @@ impl AgentAuthManager {
 
     fn apply_provider_validation_if_current(
         &self,
-        lease: &ConnectedProviderLease,
+        lease: &ProviderValidationLease,
         validation: &Result<AgentProviderValidation, String>,
     ) -> bool {
         let mut store = self.store.lock().unwrap();
@@ -579,7 +581,8 @@ impl AgentAuthManager {
                     snapshot.required_scopes = lease.provider.required_scopes();
                 }
                 snapshot.connected_at = None;
-                snapshot.last_error = Some(error.clone());
+                snapshot.last_error =
+                    Some(provider_validation_failure_message(lease.provider, error));
                 snapshot.runtime_validated = false;
             }
         }
@@ -605,9 +608,13 @@ impl AgentAuthManager {
                 .as_deref()
                 .and_then(ClaudeCredentialMetadata::from_persistence_label);
             if provider == AgentProvider::Claude
-                && snapshot.status == AgentConnectionStatus::Connected
+                && matches!(
+                    snapshot.status,
+                    AgentConnectionStatus::Connected | AgentConnectionStatus::Error
+                )
                 && (stored_connection_kind != AgentConnectionKind::Real
-                    || recognized_claude_credential.is_none())
+                    || (snapshot.status == AgentConnectionStatus::Connected
+                        && recognized_claude_credential.is_none()))
             {
                 snapshot.normalize_untrusted_claude(now);
                 continue;
@@ -620,10 +627,7 @@ impl AgentAuthManager {
             snapshot.runtime_validated = false;
             if provider == AgentProvider::Claude {
                 let safe_last_error = match snapshot.status {
-                    AgentConnectionStatus::Error => Some(
-                        "Claude connection requires fresh Claude CLI validation before retrying."
-                            .to_string(),
-                    ),
+                    AgentConnectionStatus::Error => Some(CLAUDE_VALIDATION_FAILURE.to_string()),
                     AgentConnectionStatus::Pending => {
                         snapshot.status = AgentConnectionStatus::Disconnected;
                         Some("Reconnect Claude to start a fresh Claude CLI validation.".to_string())
@@ -892,6 +896,13 @@ fn validate_provider_connection(
         }
         AgentProvider::Claude => crate::runtime::claude::validate_claude_connection()
             .map(AgentProviderValidation::claude),
+    }
+}
+
+fn provider_validation_failure_message(provider: AgentProvider, error: &str) -> String {
+    match provider {
+        AgentProvider::Claude => CLAUDE_VALIDATION_FAILURE.to_string(),
+        AgentProvider::Codex => error.to_string(),
     }
 }
 
@@ -1246,6 +1257,9 @@ mod tests {
         assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
         assert_eq!(disconnected.required_scopes, vec!["provider:request"]);
         assert_eq!(disconnected.credential_source, None);
+        assert!(manager
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_none());
 
         let failed = manager
             .begin_login_with_validation(AgentProvider::Claude, None, || {
@@ -1264,6 +1278,9 @@ mod tests {
         assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
         assert_eq!(disconnected.required_scopes, vec!["provider:request"]);
         assert_eq!(disconnected.credential_source, None);
+        assert!(manager
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_none());
     }
 
     #[test]
@@ -1404,6 +1421,57 @@ mod tests {
     }
 
     #[test]
+    fn failed_claude_begin_login_redacts_validation_error_immediately() {
+        let dir = unique_temp_dir("failed-claude-begin-login-redaction");
+        let storage_path = dir.join("agent-auth.json");
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+
+        let failed = manager
+            .begin_login_with_validation(AgentProvider::Claude, None, || {
+                Err(
+                    "Claude validation failed for private@example.com: raw-validation-secret"
+                        .into(),
+                )
+            })
+            .unwrap();
+        let runtime = claude_connection(&manager);
+        let serialized_runtime = serde_json::to_string(&runtime).unwrap();
+        let persisted = fs::read_to_string(storage_path).unwrap();
+        let persisted_json: serde_json::Value = serde_json::from_str(&persisted).unwrap();
+
+        assert_eq!(failed.status, AgentConnectionStatus::Error);
+        assert_eq!(runtime.status, AgentConnectionStatus::Error);
+        assert_eq!(
+            failed.last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
+        );
+        assert_eq!(
+            runtime.last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
+        );
+        assert_eq!(
+            persisted_json["connections"]["claude"]["lastError"],
+            CLAUDE_VALIDATION_FAILURE
+        );
+        assert!(manager
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_some());
+        for forbidden in ["private@example.com", "raw-validation-secret"] {
+            assert!(
+                !serialized_runtime.contains(forbidden),
+                "runtime leaked synthetic validation data"
+            );
+            assert!(
+                !persisted.contains(forbidden),
+                "store leaked synthetic validation data"
+            );
+        }
+
+        remove_dir(&dir);
+    }
+
+    #[test]
     fn startup_refresh_recovers_persisted_claude_error() {
         let dir = unique_temp_dir("startup-claude-error-recovery");
         let storage_path = dir.join("agent-auth.json");
@@ -1423,22 +1491,72 @@ mod tests {
         let validation_failure =
             Err("Claude validation failed for private@example.com: raw-validation-secret".into());
         assert!(manager.apply_claude_validation_if_current(&connected_lease, &validation_failure,));
+        let failed = claude_connection(&manager);
+        let serialized_runtime_error = serde_json::to_string(&failed).unwrap();
+        let persisted_error = fs::read_to_string(&storage_path).unwrap();
+        let persisted_error_json: serde_json::Value =
+            serde_json::from_str(&persisted_error).unwrap();
+        assert_eq!(failed.status, AgentConnectionStatus::Error);
+        assert_eq!(failed.account_label, None);
+        assert_eq!(failed.account_email, None);
         assert_eq!(
-            claude_connection(&manager).status,
-            AgentConnectionStatus::Error
+            failed.last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
         );
-        let persisted_error: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(&storage_path).unwrap()).unwrap();
-        assert_eq!(persisted_error["connections"]["claude"]["status"], "error");
+        assert_eq!(
+            persisted_error_json["connections"]["claude"]["status"],
+            "error"
+        );
+        assert_eq!(
+            persisted_error_json["connections"]["claude"]["lastError"],
+            CLAUDE_VALIDATION_FAILURE
+        );
+        for forbidden in ["private@example.com", "raw-validation-secret"] {
+            assert!(
+                !serialized_runtime_error.contains(forbidden),
+                "runtime leaked synthetic validation data before reload"
+            );
+            assert!(
+                !persisted_error.contains(forbidden),
+                "store leaked synthetic validation data before reload"
+            );
+        }
         drop(manager);
 
         let reloaded = AgentAuthManager::new();
         reloaded.initialize_storage(storage_path.clone()).unwrap();
+        assert_eq!(
+            claude_connection(&reloaded).last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
+        );
         let startup_lease = reloaded
             .provider_refresh_lease(AgentProvider::Claude)
             .expect("a persisted real Claude error should be eligible for startup refresh");
+        let repeated_failure =
+            Err("Claude validation failed for second@example.com: second-raw-secret".into());
+        assert!(reloaded.apply_claude_validation_if_current(&startup_lease, &repeated_failure,));
+        let refreshed_error = claude_connection(&reloaded);
+        assert_eq!(refreshed_error.status, AgentConnectionStatus::Error);
+        assert_eq!(
+            refreshed_error.last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
+        );
+        assert!(!refreshed_error.runtime_validated);
+        assert_eq!(refreshed_error.credential_source, None);
+        assert_eq!(refreshed_error.required_scopes, vec!["provider:request"]);
+        assert_eq!(refreshed_error.connected_at, None);
+        let repeated_persisted_error = fs::read_to_string(&storage_path).unwrap();
+        for forbidden in ["second@example.com", "second-raw-secret"] {
+            assert!(
+                !repeated_persisted_error.contains(forbidden),
+                "refreshed error store leaked synthetic validation data"
+            );
+        }
+        let recovery_lease = reloaded
+            .provider_refresh_lease(AgentProvider::Claude)
+            .expect("a current real Claude error should remain eligible after a failed refresh");
         assert!(reloaded.apply_claude_validation_if_current(
-            &startup_lease,
+            &recovery_lease,
             &Ok(crate::runtime::claude::ClaudeConnectionValidation {
                 credential_source: crate::runtime::claude::ClaudeCredentialSource::CliSession,
             }),
@@ -1462,7 +1580,12 @@ mod tests {
         assert!(recovered.runtime_validated);
 
         let persisted = fs::read_to_string(storage_path).unwrap();
-        for forbidden in ["private@example.com", "raw-validation-secret"] {
+        for forbidden in [
+            "private@example.com",
+            "raw-validation-secret",
+            "second@example.com",
+            "second-raw-secret",
+        ] {
             assert!(
                 !persisted.contains(forbidden),
                 "recovered store leaked synthetic validation data"
@@ -1504,6 +1627,9 @@ mod tests {
         });
 
         reloaded.disconnect(AgentProvider::Claude);
+        assert!(reloaded
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_none());
         assert!(!reloaded.apply_claude_validation_if_current(&stale_startup_lease, &cli_session));
         let disconnected = claude_connection(&reloaded);
         assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
@@ -1856,8 +1982,9 @@ mod tests {
         let claude = claude_connection(&manager);
         let runtime = serde_json::to_string(&claude).unwrap();
         let persisted = fs::read_to_string(storage_path).unwrap();
+        let persisted_json: serde_json::Value = serde_json::from_str(&persisted).unwrap();
 
-        assert_eq!(claude.status, AgentConnectionStatus::Error);
+        assert_eq!(claude.status, AgentConnectionStatus::Disconnected);
         assert_eq!(claude.connection_kind, AgentConnectionKind::Real);
         assert_eq!(claude.account_label, None);
         assert_eq!(claude.account_email, None);
@@ -1865,8 +1992,15 @@ mod tests {
         assert!(claude
             .last_error
             .as_deref()
-            .is_some_and(|message| message.contains("fresh Claude CLI validation")));
+            .is_some_and(|message| message.contains("Reconnect Claude")));
         assert_eq!(claude.required_scopes, vec!["provider:request"]);
+        assert_eq!(
+            persisted_json["connections"]["claude"]["status"],
+            "disconnected"
+        );
+        assert!(manager
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_none());
         for forbidden in [
             "legacy-secret",
             "helper-command-secret",
