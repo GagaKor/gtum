@@ -25,15 +25,17 @@ Confirm the app store contains a redacted Claude `error` snapshot while the inst
 
 Confirm `list_connections()` refreshes only `connected` snapshots, the renderer starts one capability read before auth discovery resolves, and a later non-connected startup snapshot invalidates that read without scheduling another.
 
-- [x] **Step 3: Verify the working comparison path**
+- [x] **Step 3: Record the working comparison path and its current successor**
 
-Run:
+Historical baseline: before Task 3 changed startup ordering, the then-current `refreshes after connected startup discovery` regression passed and showed that a second, post-auth capability read could repopulate the composer. Task 3 replaced that test, so the old grep is evidence history rather than a current command.
+
+Current reproducible command:
 
 ```bash
-npx playwright test tests/e2e/claude-provider-workspaces.spec.ts --workers=1 --grep "refreshes after connected startup discovery"
+npx playwright test tests/e2e/claude-provider-workspaces.spec.ts --workers=1 --grep "waits for recovered startup auth before loading Claude execution information"
 ```
 
-Expected: PASS, proving that a connected startup result already repopulates the composer.
+Expected: PASS, proving the current auth-first contract performs no pre-auth capability read and one connected post-auth read that restores Claude model, reasoning, and Fast information.
 
 ### Task 2: Recover a stored Claude error through fresh startup validation
 
