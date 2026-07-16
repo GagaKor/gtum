@@ -147,7 +147,7 @@ impl AgentAuthManager {
 
     pub fn list_connections(&self) -> Vec<AgentConnectionSnapshot> {
         for provider in [AgentProvider::Codex, AgentProvider::Claude] {
-            let Some(lease) = self.connected_provider_refresh_lease(provider) else {
+            let Some(lease) = self.provider_refresh_lease(provider) else {
                 continue;
             };
             let validation = validate_provider_connection(provider);
@@ -466,13 +466,12 @@ impl AgentAuthManager {
         })
     }
 
-    fn connected_provider_refresh_lease(
-        &self,
-        provider: AgentProvider,
-    ) -> Option<ConnectedProviderLease> {
+    fn provider_refresh_lease(&self, provider: AgentProvider) -> Option<ConnectedProviderLease> {
         let store = self.store.lock().unwrap();
         let snapshot = store.connections.get(provider.as_key())?;
-        (snapshot.status == AgentConnectionStatus::Connected
+        ((snapshot.status == AgentConnectionStatus::Connected
+            || (provider == AgentProvider::Claude
+                && snapshot.status == AgentConnectionStatus::Error))
             && snapshot.connection_kind == AgentConnectionKind::Real)
             .then_some(ConnectedProviderLease {
                 provider,
@@ -513,13 +512,16 @@ impl AgentAuthManager {
         let Some(snapshot) = store.connections.get_mut(lease.provider.as_key()) else {
             return false;
         };
+        let refreshes_claude_error = lease.provider == AgentProvider::Claude
+            && snapshot.status == AgentConnectionStatus::Error;
         if snapshot.runtime_revision != lease.revision
-            || snapshot.status != AgentConnectionStatus::Connected
+            || (snapshot.status != AgentConnectionStatus::Connected && !refreshes_claude_error)
             || snapshot.connection_kind != AgentConnectionKind::Real
         {
             return false;
         }
 
+        let now = unix_timestamp_ms();
         match validation {
             Ok(validation) => {
                 let account_label = if lease.provider == AgentProvider::Claude {
@@ -556,10 +558,14 @@ impl AgentAuthManager {
                 {
                     return true;
                 } else {
+                    snapshot.status = AgentConnectionStatus::Connected;
                     snapshot.account_label = account_label;
                     snapshot.account_email = None;
                     snapshot.credential_source = credential_source;
                     snapshot.required_scopes = required_scopes;
+                    if refreshes_claude_error {
+                        snapshot.connected_at = Some(now);
+                    }
                     snapshot.last_error = None;
                     snapshot.runtime_validated = true;
                 }
@@ -577,7 +583,7 @@ impl AgentAuthManager {
                 snapshot.runtime_validated = false;
             }
         }
-        snapshot.updated_at = unix_timestamp_ms();
+        snapshot.updated_at = now;
         snapshot.bump_runtime_revision();
         if let Err(error) = self.persist_locked(&store) {
             log::warn!("failed to persist auth state after provider validation: {error}");
@@ -1393,6 +1399,136 @@ mod tests {
         ] {
             assert!(!repersisted.contains(forbidden), "store leaked {forbidden}");
         }
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn startup_refresh_recovers_persisted_claude_error() {
+        let dir = unique_temp_dir("startup-claude-error-recovery");
+        let storage_path = dir.join("agent-auth.json");
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        manager
+            .begin_login_with_validation(AgentProvider::Claude, None, || {
+                Ok(runtime_claude_validation(
+                    crate::runtime::claude::ClaudeCredentialSource::CliSession,
+                ))
+            })
+            .unwrap();
+
+        let connected_lease = manager
+            .require_stored_connected_provider(AgentProvider::Claude)
+            .unwrap();
+        let validation_failure =
+            Err("Claude validation failed for private@example.com: raw-validation-secret".into());
+        assert!(manager.apply_claude_validation_if_current(&connected_lease, &validation_failure,));
+        assert_eq!(
+            claude_connection(&manager).status,
+            AgentConnectionStatus::Error
+        );
+        let persisted_error: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&storage_path).unwrap()).unwrap();
+        assert_eq!(persisted_error["connections"]["claude"]["status"], "error");
+        drop(manager);
+
+        let reloaded = AgentAuthManager::new();
+        reloaded.initialize_storage(storage_path.clone()).unwrap();
+        let startup_lease = reloaded
+            .provider_refresh_lease(AgentProvider::Claude)
+            .expect("a persisted real Claude error should be eligible for startup refresh");
+        assert!(reloaded.apply_claude_validation_if_current(
+            &startup_lease,
+            &Ok(crate::runtime::claude::ClaudeConnectionValidation {
+                credential_source: crate::runtime::claude::ClaudeCredentialSource::CliSession,
+            }),
+        ));
+
+        let recovered = claude_connection(&reloaded);
+        assert_eq!(recovered.status, AgentConnectionStatus::Connected);
+        assert_eq!(recovered.connection_kind, AgentConnectionKind::Real);
+        assert_eq!(
+            recovered.credential_source.as_deref(),
+            Some("claude_cli_session")
+        );
+        assert_eq!(
+            recovered.required_scopes,
+            vec!["provider:request", "credential:cli_session"]
+        );
+        assert_eq!(recovered.account_label, None);
+        assert_eq!(recovered.account_email, None);
+        assert_eq!(recovered.last_error, None);
+        assert!(recovered.connected_at.is_some());
+        assert!(recovered.runtime_validated);
+
+        let persisted = fs::read_to_string(storage_path).unwrap();
+        for forbidden in ["private@example.com", "raw-validation-secret"] {
+            assert!(
+                !persisted.contains(forbidden),
+                "recovered store leaked synthetic validation data"
+            );
+        }
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn stale_startup_error_refresh_cannot_overwrite_disconnect_or_reconnect() {
+        let dir = unique_temp_dir("stale-startup-claude-error-refresh");
+        let storage_path = dir.join("agent-auth.json");
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        manager
+            .begin_login_with_validation(AgentProvider::Claude, None, || {
+                Ok(runtime_claude_validation(
+                    crate::runtime::claude::ClaudeCredentialSource::CliSession,
+                ))
+            })
+            .unwrap();
+        let connected_lease = manager
+            .require_stored_connected_provider(AgentProvider::Claude)
+            .unwrap();
+        assert!(manager.apply_claude_validation_if_current(
+            &connected_lease,
+            &Err("Claude CLI session needs refresh".into()),
+        ));
+        drop(manager);
+
+        let reloaded = AgentAuthManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        let stale_startup_lease = reloaded
+            .provider_refresh_lease(AgentProvider::Claude)
+            .expect("a persisted real Claude error should be eligible for startup refresh");
+        let cli_session = Ok(crate::runtime::claude::ClaudeConnectionValidation {
+            credential_source: crate::runtime::claude::ClaudeCredentialSource::CliSession,
+        });
+
+        reloaded.disconnect(AgentProvider::Claude);
+        assert!(!reloaded.apply_claude_validation_if_current(&stale_startup_lease, &cli_session));
+        let disconnected = claude_connection(&reloaded);
+        assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
+        assert_eq!(disconnected.credential_source, None);
+        assert_eq!(disconnected.required_scopes, vec!["provider:request"]);
+
+        reloaded
+            .begin_login_with_validation(AgentProvider::Claude, None, || {
+                Ok(runtime_claude_validation(
+                    crate::runtime::claude::ClaudeCredentialSource::EnvironmentApiKey,
+                ))
+            })
+            .unwrap();
+        assert!(!reloaded.apply_claude_validation_if_current(&stale_startup_lease, &cli_session));
+        let reconnected = claude_connection(&reloaded);
+        assert_eq!(reconnected.status, AgentConnectionStatus::Connected);
+        assert_eq!(
+            reconnected.credential_source.as_deref(),
+            Some("anthropic_api_key")
+        );
+        assert_eq!(
+            reconnected.required_scopes,
+            vec!["provider:request", "credential:api_key"]
+        );
+        assert!(reconnected.runtime_validated);
 
         remove_dir(&dir);
     }
