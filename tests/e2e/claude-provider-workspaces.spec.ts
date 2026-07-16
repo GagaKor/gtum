@@ -5,6 +5,13 @@ const projectB = '/workspace/codex-b'
 const sessionA = 'claude-session-a'
 const sessionB = 'codex-session-b'
 
+const claudeValidationFailureGuidance =
+  'Claude authentication could not be validated. Check Claude credentials or run `claude auth login` in your own terminal, then reconnect Claude.'
+const claudeSensitiveChildDiagnostic =
+  'Claude validation failed for private@example.com: raw-validation-secret'
+
+type ClaudeConnectionStatus = 'connected' | 'disconnected' | 'error'
+
 const claudeModelCatalog = [
   {
     providerId: 'claude',
@@ -112,7 +119,7 @@ type ClaudeWorkspaceHarnessOptions = {
   sessionBPreferences?: Record<string, unknown>
   claudeSupportsModelSelection?: boolean
   includeAdvancedControls?: boolean
-  claudeInitialConnectionStatus?: 'connected' | 'disconnected'
+  claudeInitialConnectionStatus?: ClaudeConnectionStatus
   claudeCapabilityFixtures?: ClaudeCapabilityFixture[]
   deferInitialConnectionList?: boolean
 }
@@ -128,6 +135,7 @@ const installClaudeWorkspaceHarness = async (
     sessionB,
     options,
     claudeModelCatalog,
+    claudeValidationFailureGuidance,
   }) => {
     type RuntimeCall = { command: string; args?: Record<string, unknown> }
     type SuggestionResolver = (value: unknown[]) => void
@@ -139,7 +147,7 @@ const installClaudeWorkspaceHarness = async (
       __claudeCapabilityReadCount: number
       __resolveClaudeCapabilityRead(readIndex: number, models: unknown[]): void
       __rejectClaudeCapabilityRead(readIndex: number, message: string): void
-      __resolveInitialConnectionList(status: 'connected' | 'disconnected'): void
+      __resolveInitialConnectionList(status: ClaudeConnectionStatus): void
       __resolveProviderRequest(
         provider: string,
         projectPath: string,
@@ -164,7 +172,7 @@ const installClaudeWorkspaceHarness = async (
       resolve(models: unknown[]): void
       reject(error: Error): void
     }>()
-    let resolveInitialConnectionList: ((status: 'connected' | 'disconnected') => void) | null = null
+    let resolveInitialConnectionList: ((status: ClaudeConnectionStatus) => void) | null = null
     let claudeConnectionStatus = options.claudeInitialConnectionStatus || 'connected'
     const requestKey = (provider: string, projectPath: string, agentSessionId: string) =>
       `${provider}\u0000${projectPath}\u0000${agentSessionId}`
@@ -178,7 +186,7 @@ const installClaudeWorkspaceHarness = async (
     })
     const connection = (
       provider: 'codex' | 'claude',
-      status: 'connected' | 'disconnected' = 'connected',
+      status: ClaudeConnectionStatus = 'connected',
     ) => ({
       provider,
       displayName: provider === 'codex' ? 'Codex' : 'Claude',
@@ -205,7 +213,9 @@ const installClaudeWorkspaceHarness = async (
       connectedAt: status === 'connected' ? 100 : null,
       lastLoginAttemptAt: 95,
       updatedAt: 120,
-      lastError: null,
+      lastError: provider === 'claude' && status === 'error'
+        ? claudeValidationFailureGuidance
+        : null,
     })
 
     if (!localStorage.getItem('gtum.agent-session-directory.v1')) {
@@ -448,7 +458,15 @@ const installClaudeWorkspaceHarness = async (
         throw new Error(`Provider work must not touch the center terminal: ${command}`)
       },
     }
-  }, { projectA, projectB, sessionA, sessionB, options, claudeModelCatalog })
+  }, {
+    projectA,
+    projectB,
+    sessionA,
+    sessionB,
+    options,
+    claudeModelCatalog,
+    claudeValidationFailureGuidance,
+  })
 }
 
 const projectRow = (page: Page, path: string) =>
@@ -745,6 +763,43 @@ test('keeps Claude execution information unloaded after disconnected startup dis
   await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
   await page.locator('.titlebar .pill.icon-only').click()
   const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
+test('keeps Claude execution information unloaded and diagnostics redacted after failed startup refresh', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    deferInitialConnectionList: true,
+    claudeCapabilityFixtures: [
+      { models: claudePriorPolicyCatalog },
+    ],
+  })
+  await page.goto('/')
+
+  await expect.poll(() => page.evaluate(() => (
+    window as Window & { __authCalls?: RuntimeCall[] }
+  ).__authCalls?.filter((call) => call.command === 'list_agent_connections').length ?? 0)).toBe(1)
+  await page.evaluate(() => (
+    window as Window & {
+      __resolveInitialConnectionList(status: ClaudeConnectionStatus): void
+    }
+  ).__resolveInitialConnectionList('error'))
+  await flushBrowserLayout(page)
+
+  expect(await page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(0)
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+  await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
+  await expect(page.locator('.fast-toggle')).toHaveCount(0)
+
+  await page.locator('.titlebar .pill.icon-only').click()
+  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await expect(claudeSettings).toContainText(claudeValidationFailureGuidance)
+  await expect(claudeSettings).not.toContainText(claudeSensitiveChildDiagnostic)
   await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
   expect(await page.evaluate(() => (
     window as Window & { __terminalCalls?: RuntimeCall[] }

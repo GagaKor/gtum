@@ -42,7 +42,9 @@ Expected: PASS, proving the current auth-first contract performs no pre-auth cap
 **Files:**
 - Modify: `src-tauri/src/runtime/auth/mod.rs:148-160`
 - Modify: `src-tauri/src/runtime/auth/mod.rs:469-575`
+- Modify: `src-tauri/src/lib.rs:271-320`
 - Test: `src-tauri/src/runtime/auth/mod.rs`
+- Test: `src-tauri/src/lib.rs`
 
 - [x] **Step 1: Write the failing Rust regression test**
 
@@ -138,19 +140,27 @@ Keep prompt-free catalog discovery separate from user-prompt inference and billi
 
 - [ ] **Step 1: Obtain independent spec and quality review**
 
-Review error-only recovery, explicit-disconnect preservation, stale revision protection, startup read ordering, credential redaction, and center-terminal isolation.
-
-- [ ] **Step 2: Commit and pin the reviewed candidate**
+Before requesting review, stage and commit the complete integration inventory:
 
 ```bash
-git add src-tauri/src/runtime/auth/mod.rs src/prototype.jsx tests/e2e/claude-provider-workspaces.spec.ts \
+git add src-tauri/src/runtime/auth/mod.rs src-tauri/src/lib.rs src/prototype.jsx \
+  tests/e2e/claude-provider-workspaces.spec.ts \
   docs/technical-design.md docs/architecture.md docs/message-flow.md \
   docs/sprint-plan.md docs/MVP_VALIDATION_NOTES.md docs/README.md \
   docs/DOCS_READING_ORDER.md \
   docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md
 git commit -m "fix(claude): recover startup execution information"
-git update-ref refs/gtum/tested/claude-startup-recovery "$(git rev-parse HEAD)"
 test -z "$(git status --short)"
+```
+
+Review error-only recovery, explicit-disconnect preservation, stale revision protection, startup read ordering, credential redaction, and center-terminal isolation.
+
+- [ ] **Step 2: Pin the already-committed clean reviewed candidate**
+
+```bash
+test -z "$(git status --short)"
+git update-ref refs/gtum/tested/claude-startup-recovery "$(git rev-parse HEAD)"
+test "$(git rev-parse HEAD)" = "$(git rev-parse refs/gtum/tested/claude-startup-recovery)"
 ```
 
 - [ ] **Step 3: Run the complete fresh gate**
