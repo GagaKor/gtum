@@ -138,7 +138,7 @@ Keep prompt-free catalog discovery separate from user-prompt inference and billi
 **Files:**
 - Verify: all changed files
 
-- [ ] **Step 1: Obtain independent spec and quality review**
+- [x] **Step 1: Obtain independent spec and quality review**
 
 Before requesting review, stage and commit the complete integration inventory:
 

@@ -81,14 +81,15 @@ Delivered implementation:
 - desktop startup makes provider auth discovery authoritative before any active-provider capability read
 - the auth manager retries a persisted real Claude `Error` only through fresh current CLI validation. Success becomes `Connected` with the validated credential source and scopes while clearing identity and error data
 - explicit Claude `Disconnected` state is never auto-connected; a non-real legacy Claude error normalizes to disconnected/untrusted state
+- disconnect is committed to memory only after a synchronized candidate atomically replaces the auth store; pre-commit failure is returned through IPC without changing the prior state/revision, and malformed or noncanonical legacy connection entries are discarded before typed deserialization
 - Claude validation failures are replaced with one actionable generic redacted message before runtime publication or persistence. Codex validation-error behavior is unchanged
 - the renderer reads capabilities only after the active provider is exactly `Connected`: connected startup reads once, disconnected startup reads zero times, and a successful Connect performs the first read
 - existing provider connection/capability generations suppress stale success and stale rejection, and all startup/auth/catalog activity leaves the user-owned center terminal untouched
 
 Verification state:
 
-- focused auth coverage passes 21/21, focused Claude workspace E2E passes 20/20, and lint passes
-- Task 5 is still pending: independent review, the final clean-tree full gate, a fresh bounded prompt-free Claude compatibility smoke, candidate pinning, and integration have not been completed for this recovery slice
+- focused auth coverage passes 25/25, focused Claude workspace E2E passes 21/21, lint passes, and independent final review approved the corrected code/test slice
+- Task 5 still requires the exact-candidate clean-tree full gate, a fresh bounded prompt-free Claude compatibility smoke, candidate pinning, and verified non-force `dev` integration
 - catalog discovery remains distinct from user-prompt inference. No live Claude inference, paid request, billing eligibility, or response-quality result is claimed
 - the active execution record is [Claude Startup Capability Recovery Implementation Plan](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
 
