@@ -899,7 +899,7 @@ fn validate_provider_connection(
     }
 }
 
-fn provider_validation_failure_message(provider: AgentProvider, error: &str) -> String {
+pub(crate) fn provider_validation_failure_message(provider: AgentProvider, error: &str) -> String {
     match provider {
         AgentProvider::Claude => CLAUDE_VALIDATION_FAILURE.to_string(),
         AgentProvider::Codex => error.to_string(),

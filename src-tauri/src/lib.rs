@@ -2,8 +2,8 @@ mod runtime;
 
 use runtime::agent_jobs::{AgentJobLogs, AgentJobManager, AgentJobSnapshot, CreateAgentJobRequest};
 use runtime::auth::{
-    AgentAuthManager, AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProvider,
-    CompleteAgentLoginRequest,
+    provider_validation_failure_message, AgentAuthManager, AgentAuthRuntimeSnapshot,
+    AgentConnectionSnapshot, AgentProvider, CompleteAgentLoginRequest,
 };
 use runtime::codex::{
     AgentProviderCapabilities, AgentProviderDiagnostics, AgentSuggestionResponse,
@@ -298,6 +298,7 @@ fn complete_agent_login(
 }
 
 fn resolve_provider_suggestion_attempt<T>(
+    provider: AgentProvider,
     validation_applied: bool,
     validation: Result<(), String>,
     suggestions: Option<Result<T, String>>,
@@ -308,7 +309,7 @@ fn resolve_provider_suggestion_attempt<T>(
                 .into(),
         );
     }
-    validation?;
+    validation.map_err(|error| provider_validation_failure_message(provider, &error))?;
     suggestions
         .ok_or_else(|| "The provider returned no suggestion result after validation.".to_string())?
 }
@@ -334,6 +335,7 @@ async fn request_agent_suggestions(
             let validation_applied =
                 auth_state.apply_validation_if_current(&lease, &attempt.validation);
             resolve_provider_suggestion_attempt(
+                AgentProvider::Codex,
                 validation_applied,
                 attempt.validation.map(|_| ()),
                 attempt.suggestions,
@@ -351,6 +353,7 @@ async fn request_agent_suggestions(
             let validation_applied =
                 auth_state.apply_claude_validation_if_current(&lease, &attempt.validation);
             resolve_provider_suggestion_attempt(
+                AgentProvider::Claude,
                 validation_applied,
                 attempt.validation.map(|_| ()),
                 attempt.suggestions,
@@ -748,6 +751,7 @@ mod tests {
     #[test]
     fn stale_successful_provider_result_is_rejected_instead_of_returned() {
         let result = resolve_provider_suggestion_attempt(
+            AgentProvider::Claude,
             false,
             Ok(()),
             Some(Ok::<_, String>(vec!["stale suggestion"])),
@@ -761,6 +765,7 @@ mod tests {
     fn current_provider_result_and_auth_failure_are_resolved_authoritatively() {
         assert_eq!(
             resolve_provider_suggestion_attempt(
+                AgentProvider::Codex,
                 true,
                 Ok(()),
                 Some(Ok::<_, String>(vec!["current suggestion"])),
@@ -769,13 +774,44 @@ mod tests {
             vec!["current suggestion"]
         );
 
+        let codex_provider = AgentProvider::Codex;
         let failure = resolve_provider_suggestion_attempt::<Vec<&str>>(
+            codex_provider,
             true,
             Err("provider credential expired".into()),
             None,
         )
         .expect_err("current auth failure should be returned");
-        assert_eq!(failure, "provider credential expired");
+        assert_eq!(
+            failure, "provider credential expired",
+            "{codex_provider:?} validation failures must remain verbatim"
+        );
+
+        let suggestion_failure = resolve_provider_suggestion_attempt::<Vec<&str>>(
+            AgentProvider::Claude,
+            true,
+            Ok(()),
+            Some(Err("provider suggestion failed".into())),
+        )
+        .expect_err("current suggestion failure should be returned");
+        assert_eq!(suggestion_failure, "provider suggestion failed");
+
+        let claude_provider = AgentProvider::Claude;
+        let failure = resolve_provider_suggestion_attempt::<Vec<&str>>(
+            claude_provider,
+            true,
+            Err("Claude validation failed for private@example.com: raw-validation-secret".into()),
+            None,
+        )
+        .expect_err("current Claude auth failure should be returned safely");
+        assert_eq!(
+            failure,
+            "Claude authentication could not be validated. Check Claude credentials or run `claude auth login` in your own terminal, then reconnect Claude.",
+            "{claude_provider:?} validation failures must be redacted"
+        );
+        for forbidden in ["private@example.com", "raw-validation-secret"] {
+            assert!(!failure.contains(forbidden));
+        }
     }
 
     #[test]
