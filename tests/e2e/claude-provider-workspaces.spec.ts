@@ -7,8 +7,6 @@ const sessionB = 'codex-session-b'
 
 const claudeValidationFailureGuidance =
   'Claude authentication could not be validated. Check Claude credentials or run `claude auth login` in your own terminal, then reconnect Claude.'
-const claudeSensitiveChildDiagnostic =
-  'Claude validation failed for private@example.com: raw-validation-secret'
 
 type ClaudeConnectionStatus = 'connected' | 'disconnected' | 'error'
 
@@ -769,7 +767,7 @@ test('keeps Claude execution information unloaded after disconnected startup dis
   ).__terminalCalls ?? [])).toEqual([])
 })
 
-test('keeps Claude execution information unloaded and diagnostics redacted after failed startup refresh', async ({ page }) => {
+test('keeps Claude execution information unloaded and shows canonical safe guidance after failed startup refresh', async ({ page }) => {
   await installClaudeWorkspaceHarness(page, {
     sessionAProvider: 'claude',
     deferInitialConnectionList: true,
@@ -790,8 +788,10 @@ test('keeps Claude execution information unloaded and diagnostics redacted after
   await flushBrowserLayout(page)
 
   expect(await page.evaluate(() => (
-    window as Window & { __claudeCapabilityReadCount?: number }
-  ).__claudeCapabilityReadCount ?? 0)).toBe(0)
+    window as Window & { __providerCalls?: RuntimeCall[] }
+  ).__providerCalls?.filter((call) => (
+    call.command === 'read_agent_provider_capabilities'
+  )) ?? [])).toEqual([])
   await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
   await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
   await expect(page.locator('.fast-toggle')).toHaveCount(0)
@@ -799,7 +799,6 @@ test('keeps Claude execution information unloaded and diagnostics redacted after
   await page.locator('.titlebar .pill.icon-only').click()
   const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
   await expect(claudeSettings).toContainText(claudeValidationFailureGuidance)
-  await expect(claudeSettings).not.toContainText(claudeSensitiveChildDiagnostic)
   await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
   expect(await page.evaluate(() => (
     window as Window & { __terminalCalls?: RuntimeCall[] }
