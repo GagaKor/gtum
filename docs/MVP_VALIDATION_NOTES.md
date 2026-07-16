@@ -86,6 +86,17 @@ Before using web-preview results as evidence, the current sprint or release pass
 - request Claude through the source-specific safe-mode or bare no-tools structured-output contract, reject stale connection/request completion, and prove the result remains in its captured project and Agent session without mutating the center terminal
 - discover Claude models through one bounded prompt-free CLI initialization request, show only exact sanitized returned `value` IDs with readable labels, revalidate an explicit value before inference spawn, and keep the model popup plus selected row fully visible inside the Agent panel
 
+## 2026-07-16 Claude Startup Capability Recovery
+
+- Desktop startup now resolves authoritative provider auth before capability discovery. A deferred or disconnected active-provider snapshot produces zero capability reads; a connected startup produces exactly one; and Connect produces the first read for a provider that started disconnected.
+- A persisted real Claude `Error` is eligible for startup retry only through fresh current CLI validation. Success recovers `Connected` with the validated credential source and source-specific scopes, clears identity/error data, and records a current connection timestamp. Explicit `Disconnected` Claude state is never auto-connected, and non-real legacy error state normalizes to disconnected/untrusted.
+- Claude validation failures are replaced before runtime publication or persistence with one actionable generic redacted message. Focused auth coverage also proves that synthetic identity/secret-bearing diagnostics do not survive in runtime snapshots or `agent-auth.json`. Codex error behavior remains unchanged.
+- Existing connection and capability generations reject an old startup refresh after disconnect/reconnect and suppress stale capability success or rejection. The focused workspace scenarios assert that startup, Connect, disconnect/reconnect, and restored execution-information flows make no center-terminal runtime calls.
+- Fresh focused evidence: `runtime::auth::tests` passes 21/21, `tests/e2e/claude-provider-workspaces.spec.ts` passes 20/20 with one worker, and `npm run lint` passes.
+- This is focused evidence only. Independent review, the final clean-tree full gate, and a fresh bounded prompt-free compatibility smoke remain pending; no exact integrated candidate or `dev` integration is claimed for this recovery slice.
+- The capability smoke is separate from user-prompt inference. No live Claude inference, paid request, billing eligibility, or response-quality validation is claimed.
+- The execution checklist is the [Claude Startup Capability Recovery Implementation Plan](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md).
+
 ## 2026-07-15 Claude Model-Specific Effort And Fast Mode
 
 - The prompt-free Claude catalog now preserves bounded per-model `executionOptions`. Selected-model options override provider-level compatibility fields even when effort is empty or Fast is false. The renderer adds only a UI-side `Default` effort row, which sends `reasoningLevel: null` rather than inventing a Claude default.
@@ -226,7 +237,7 @@ This is bounded browser-driven evidence with injected runtime seams. Rust tests 
 
 ## Current MVP Assessment
 
-The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude provider and model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The account-catalog/request/picker replacement has completed its parser, request, UI, no-prompt compatibility, full-regression, independent-review, and non-force `dev` integration gates. The following broader gates remain before an MVP-complete claim:
+The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude provider and model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The account-catalog/request/picker replacement has completed its parser, request, UI, no-prompt compatibility, full-regression, independent-review, and non-force `dev` integration gates. The newer startup auth/capability recovery has focused auth, workspace, and lint evidence, but its final clean-tree full gate and fresh prompt-free compatibility smoke remain pending. The following broader gates remain before an MVP-complete claim:
 
 - native Windows installed-app validation for folder picker, PTY commands, Codex reconnect/expiry behavior, isolated Agent-job execution, restart restore, and a first real suggestion
 - one explicitly user-approved live Claude request plus the full connect, command review, `Allow once`, isolated Agent-job, project-switch, and zero-center-terminal-mutation regression path

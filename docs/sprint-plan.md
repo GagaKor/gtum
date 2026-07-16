@@ -72,6 +72,26 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
+## Current Claude Startup Capability Recovery — 2026-07-16
+
+Goal: recover Claude model, reasoning, and Fast controls on desktop startup only when current auth validation re-establishes a trusted connection, without overriding explicit disconnect or stale-generation ownership.
+
+Delivered implementation:
+
+- desktop startup makes provider auth discovery authoritative before any active-provider capability read
+- the auth manager retries a persisted real Claude `Error` only through fresh current CLI validation. Success becomes `Connected` with the validated credential source and scopes while clearing identity and error data
+- explicit Claude `Disconnected` state is never auto-connected; a non-real legacy Claude error normalizes to disconnected/untrusted state
+- Claude validation failures are replaced with one actionable generic redacted message before runtime publication or persistence. Codex validation-error behavior is unchanged
+- the renderer reads capabilities only after the active provider is exactly `Connected`: connected startup reads once, disconnected startup reads zero times, and a successful Connect performs the first read
+- existing provider connection/capability generations suppress stale success and stale rejection, and all startup/auth/catalog activity leaves the user-owned center terminal untouched
+
+Verification state:
+
+- focused auth coverage passes 21/21, focused Claude workspace E2E passes 20/20, and lint passes
+- Task 5 is still pending: independent review, the final clean-tree full gate, a fresh bounded prompt-free Claude compatibility smoke, candidate pinning, and integration have not been completed for this recovery slice
+- catalog discovery remains distinct from user-prompt inference. No live Claude inference, paid request, billing eligibility, or response-quality result is claimed
+- the active execution record is [Claude Startup Capability Recovery Implementation Plan](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
+
 ## Current Claude Model-Specific Effort And Fast Mode — 2026-07-15
 
 Goal: expose only the reasoning and Fast options returned for the effective Claude model, preserve independent Codex/Claude preferences, and reject stale or unsupported combinations before inference.

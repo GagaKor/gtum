@@ -20,6 +20,7 @@
 - [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
 - [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
+- [Claude Startup Capability Recovery](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
 - [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
 - [Claude Model-Specific Effort and Fast Mode](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
@@ -41,6 +42,7 @@
   - [제품 기획서 / Product Plan](./product-plan.md)
 - 아키텍처, 런타임 책임, 플랫폼 전략, auth와 contract
   - [기술 설계서 / Technical Design](./technical-design.md)
+  - [Claude Startup Capability Recovery](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md) for authoritative startup auth, Claude error recovery, and connected-only capability loading
 - 현재 구현 구조, 모듈 책임, 상태 저장 경계
   - [아키텍처 / Architecture](./architecture.md)
 - request payload, approval, restore, 주요 사용자 흐름
@@ -90,6 +92,8 @@
   - TSX/FSD 컴포넌트 추출, terminal/provider/approval/restore backend 연결, legacy prototype retirement를 순서대로 진행할 때 읽는다.
 - [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
   - Codex login, real suggestion, approval, PTY execution, restore, and installable-app smoke를 mock fallback 없이 완성할 때 읽는다.
+- [Claude Startup Capability Recovery](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
+  - Read this for the current desktop startup ordering, fresh validation of a persisted real Claude error, explicit-disconnect preservation, connected-only capability reads, and the pending final recovery gate.
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
   - Read this for the active Claude credential-source correction, external CLI login flow, safe-mode isolation contract, validation evidence, and public-distribution compliance gate. It supersedes the 2026-07-14 API-only plan.
 - [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
@@ -165,6 +169,7 @@
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
 - 에이전트 제공자는 우선 `Codex + Claude`이며, 첫 실사용 `Codex` 경로의 source of truth는 `OAuth/session login`이다
 - The active Claude contract selects an explicit API key, then a strict helper, then an already authenticated user-owned local CLI session. GTUM performs no Claude.ai OAuth/token capture, and public CLI-session distribution is blocked pending Anthropic approval/contract review.
+- Desktop startup now treats auth discovery as authoritative before capabilities. Only a fresh current validation may recover a persisted real Claude error; explicit disconnect and untrusted legacy errors remain disconnected. The renderer reads capabilities only for an exactly connected active provider, while existing generations suppress stale success/rejection and the center terminal remains untouched. Focused auth 21/21, Claude workspace 20/20, and lint evidence exists, but the recovery slice's final clean-tree full gate and fresh prompt-free smoke remain pending; no live inference or billing validation is claimed.
 - Claude model availability comes from one bounded prompt-free initialization response from the authenticated installed CLI. Only sanitized returned `value` IDs are selectable and request-valid; protocol or discovery failure fails closed without a static or historical fallback, preserves stored selection for later validation, and retains no account identity data.
 - Claude reasoning and Fast availability comes from each returned model's bounded `executionOptions`, not a provider-wide alias assumption. The selected model overrides compatibility fields, the UI-only `Default` choice sends `reasoningLevel: null`, and provider-scoped preferences survive project/session/provider switching without making unsupported options effective. Request-time catalog validation maps an exact supported effort to `--effort <level>` and emits exactly one sanitized `--settings` JSON object with explicit `fastMode` and optional `apiKeyHelper`; `CLAUDE_CODE_EFFORT_LEVEL` is removed and `CLAUDE_CODE_DISABLE_FAST_MODE=1` blocks enabled Fast before inference. Fast can require organization enablement and usage credits, and this slice claims prompt-free catalog validation only, not live paid inference or billing verification.
 - The completed account-catalog slice established compact non-wrapping provider/model/reasoning/fast marks, exact names/current state in opened lists, exact accessible labels, popup containment at the default, 260 px, and 240 px Agent widths, selected-row restoration, and provider-catalog generation invalidation. Its completed gate passed lint, production build, serial Playwright 221/221, and Rust 169 passed / 1 ignored. The completed model-specific effort/Fast extension separately passed lint, production build, serial Playwright 233/233, Rust 179 passed / 1 ignored, and the bounded initialize-only smoke 1/1 before its exact tested SHA was pushed non-forced to `dev`. Neither slice claims paid Claude inference or billing validation.

@@ -188,10 +188,13 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 2. `docs/architecture.md`
 3. `docs/message-flow.md` if needed
 4. `docs/product-plan.md` if needed
-5. `docs/superpowers/plans/2026-07-15-claude-cli-session-auth.md` for the active Claude CLI-session correction, safe-mode boundary, and public-distribution gate
-6. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` for model-specific effort/Fast capabilities, persistence, UI semantics, and request mapping
+5. `docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md` for authoritative startup auth, recovery of a persisted real Claude error, explicit-disconnect preservation, and connected-only capability discovery
+6. `docs/superpowers/plans/2026-07-15-claude-cli-session-auth.md` for the active Claude CLI-session correction, safe-mode boundary, and public-distribution gate
+7. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` for model-specific effort/Fast capabilities, persistence, UI semantics, and request mapping
 
 The 2026-07-15 plan supersedes `docs/superpowers/plans/2026-07-14-claude-api-provider.md` for current Claude authentication policy. Read the 2026-07-14 file only when historical API-only implementation context is needed.
+
+The 2026-07-16 recovery plan extends the current authentication and effort/Fast contracts; use it first when startup shows a previously connected Claude provider without model, reasoning, or Fast controls.
 
 For Claude execution options, the effort/Fast plan extends the account-catalog plan: the same prompt-free returned model catalog is authoritative for each model's `executionOptions`, and no static alias or entitlement inference is allowed.
 
@@ -199,6 +202,7 @@ For Claude execution options, the effort/Fast plan extends the account-catalog p
 
 1. `docs/architecture.md`
 2. `docs/technical-design.md`
+3. `docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md` when tracing startup auth/capability ownership or persisted Claude error recovery
 
 ### When the issue is request payloads, approval, restore, or data flow
 
