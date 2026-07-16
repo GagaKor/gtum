@@ -72,6 +72,28 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
+## Current Selected Provider And Direct Fast Toggle — 2026-07-16
+
+Goal: make the current provider equally explicit for Codex and Claude, and make capability-backed Fast a direct boolean control without changing its existing ownership or request contract.
+
+Delivered contract:
+
+- the current Codex or Claude mark in both the Agent header and composer uses the same explicit selected treatment; provider identity styling and the provider listbox's single-selection semantics remain separate
+- supported Fast is a native on/off button with its exact state in the accessible name and `aria-pressed`; pointer, Enter, and Space activation toggle the existing boolean directly, and no Fast popup or listbox is created
+- Fast remains capability-gated. Existing project, Agent-session, and provider-scoped persistence plus the frozen request snapshot are unchanged, and the interaction does not create, focus, write to, or otherwise mutate the user-visible center terminal
+
+Verification state:
+
+- the exact focused TDD RED selection ran 11 tests: 9 failed as expected and 2 passed, exposing the missing current-provider class and the superseded Fast-popup semantics; the same exact focused selection then passed 11/11 at GREEN
+- `npm run lint` passes, and `npm run build` passes with only the existing greater-than-500-KB chunk warning
+- full serial Playwright passes 237/237 in 2.1 minutes
+- Rust formatting and compile checks pass through `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` and `cargo check --manifest-path src-tauri/Cargo.toml`; the full Rust suite passes 186 tests with 1 ignored and 0 failed
+- the ignored Rust test is the installed-authenticated-Claude initialize-only smoke; no live provider inference ran
+- `git diff --check` passes, and independent renderer/spec and QA reviews found no blocker
+- `npm run tauri:bundle -- --debug` rebuilt the native macOS artifact. In that exact package, both Codex and Claude showed the explicit current mark, Fast exposed a native off/on toggle with no selection list, and successive clicks changed `Disabled -> Enabled -> Disabled`; the inspected session was restored to Codex with Fast disabled and no provider prompt was sent
+- the exact committed-SHA second gate remains pending. This entry makes no commit, push, or completion claim
+- the active execution record is [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md)
+
 ## Current Claude Startup Capability Recovery — 2026-07-16
 
 Goal: recover Claude model, reasoning, and Fast controls on desktop startup only when current auth validation re-establishes a trusted connection, without overriding explicit disconnect or stale-generation ownership.

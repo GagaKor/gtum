@@ -48,6 +48,26 @@ const installConnectedCodexAuth = async (page: Page) => {
   })
 }
 
+const setFastMode = async (page: Page, enabled: boolean) => {
+  const trigger = page.locator('.fast-toggle')
+  const current = await trigger.getAttribute('aria-pressed')
+  expect(
+    ['true', 'false'],
+    'Fast must expose its current boolean through aria-pressed',
+  ).toContain(current)
+
+  if ((current === 'true') !== enabled) await trigger.click()
+
+  await expect(trigger).toHaveAttribute('aria-pressed', String(enabled))
+  await expect(trigger).toHaveAttribute(
+    'aria-label',
+    `Fast mode: ${enabled ? 'Enabled' : 'Disabled'}`,
+  )
+  expect(await trigger.getAttribute('aria-haspopup')).toBeNull()
+  expect(await trigger.getAttribute('aria-expanded')).toBeNull()
+  await expect(page.getByRole('listbox', { name: 'Fast mode' })).toHaveCount(0)
+}
+
 function tauriLaunchWindowSize() {
   const configPath = resolve(repoRoot, 'src-tauri/tauri.conf.json')
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
@@ -385,11 +405,7 @@ test('uses runtime provider capabilities for the composer model picker', async (
   const reasoningMenu = page.getByRole('listbox', { name: 'Reasoning levels' })
   await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('XHigh')
   await reasoningMenu.getByRole('option', { name: 'XHigh', exact: true }).click()
-  await page.locator('.fast-toggle').click()
-  const fastMenu = page.getByRole('listbox', { name: 'Fast mode' })
-  await expect(fastMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Disabled')
-  await fastMenu.getByRole('option', { name: 'Enabled', exact: true }).click()
-  await expect(page.locator('.fast-toggle')).toHaveAttribute('aria-label', 'Fast mode: Enabled')
+  await setFastMode(page, true)
 
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
   await page.locator('.composer-input .send').click()

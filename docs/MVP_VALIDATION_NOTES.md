@@ -86,6 +86,17 @@ Before using web-preview results as evidence, the current sprint or release pass
 - request Claude through the source-specific safe-mode or bare no-tools structured-output contract, reject stale connection/request completion, and prove the result remains in its captured project and Agent session without mutating the center terminal
 - discover Claude models through one bounded prompt-free CLI initialization request, show only exact sanitized returned `value` IDs with readable labels, revalidate an explicit value before inference spawn, and keep the model popup plus selected row fully visible inside the Agent panel
 
+## 2026-07-16 Selected Provider And Direct Fast Toggle
+
+- The current Codex and Claude marks now share one explicit selected treatment in both the Agent header and composer. Supported Fast is a native direct on/off button whose accessible name and `aria-pressed` expose the exact state; it creates no popup or listbox. Capability gating, provider/project/Agent-session persistence, the frozen request snapshot, and center-terminal isolation remain unchanged.
+- The exact focused TDD RED selection ran 11 tests: 9 failed as expected and 2 passed because the current-provider class was missing and the old Fast-popup semantics were still present. The same exact focused selection then passed 11/11 at GREEN.
+- Fresh complete automation passes `npm run lint`; `npm run build` with only the existing greater-than-500-KB chunk warning; full serial Playwright 237/237 in 2.1 minutes; Rust formatting and compile checks; and the full Rust suite with 186 passed, 1 ignored, and 0 failed. `git diff --check` also passes.
+- The ignored Rust test is the installed-authenticated-Claude initialize-only smoke. No live provider inference ran.
+- Independent renderer/spec and QA reviews found no blocker.
+- `npm run tauri:bundle -- --debug` rebuilt the native macOS artifact. The packaged app showed the explicit current mark for both Codex and Claude, exposed Fast as a native off/on toggle with no selection list, and changed `Disabled -> Enabled -> Disabled` on successive clicks. The inspected session was restored to Codex with Fast disabled, and no provider prompt was sent.
+- The exact committed-SHA second gate remains pending. No push or completed-slice claim is made here.
+- The execution checklist is the [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md).
+
 ## 2026-07-16 Claude Startup Capability Recovery
 
 - Desktop startup now resolves authoritative provider auth before capability discovery. A deferred or disconnected active-provider snapshot produces zero capability reads; a connected startup produces exactly one; and Connect produces the first read for a provider that started disconnected.

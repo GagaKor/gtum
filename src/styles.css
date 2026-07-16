@@ -1012,6 +1012,11 @@ body.resizing-h-left, body.resizing-h-right {
   border: 1px dashed var(--border-strong);
   color: var(--text-dim);
 }
+.provider-mark.current {
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface-2));
+  border: 1px solid color-mix(in oklab, var(--accent) 44%, var(--border));
+  color: var(--accent);
+}
 .provider-row .lbl { flex: 1; font-size: 12px; }
 .provider-row .lbl .nm { color: var(--text); font-weight: 500; }
 .provider-row .lbl .st { color: var(--text-dim); font-size: 10.5px; font-family: var(--font-mono); }
@@ -2738,9 +2743,6 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .composer-reasoning-menu {
   width: min(190px, 100%);
-}
-.composer-fast-menu {
-  width: min(142px, 100%);
 }
 .composer-provider-option {
   flex-direction: row;

@@ -2891,7 +2891,7 @@ function AgentHeader({
 
   return (
     <div className="agent-header">
-      <div className={"provider-mark " + activeProvider.id}>
+      <div className={"provider-mark " + activeProvider.id + " current"}>
         {activeProvider.abbr}
       </div>
       <div className="agent-model-main">
@@ -3544,12 +3544,10 @@ function Composer({
   const providerTriggerRef = React.useRef(null);
   const modelTriggerRef = React.useRef(null);
   const reasoningTriggerRef = React.useRef(null);
-  const fastTriggerRef = React.useRef(null);
   const modelMenuRef = React.useRef(null);
   const providerMenuOpen = openMenu === "provider";
   const modelMenuOpen = openMenu === "model";
   const reasoningMenuOpen = openMenu === "reasoning";
-  const fastMenuOpen = openMenu === "fast";
   React.useLayoutEffect(() => {
     const textarea = ref.current;
     if (!textarea) return;
@@ -3569,9 +3567,7 @@ function Composer({
         ? providerTriggerRef.current
         : openMenu === "model"
           ? modelTriggerRef.current
-          : openMenu === "reasoning"
-            ? reasoningTriggerRef.current
-            : fastTriggerRef.current;
+          : reasoningTriggerRef.current;
       setOpenMenu(null);
       window.requestAnimationFrame(() => trigger?.focus());
     };
@@ -3734,7 +3730,7 @@ function Composer({
               onClick={() => setOpenMenu((current) => current === "provider" ? null : "provider")}
             >
               {activeProvider && (
-                <span className={"provider-mark " + activeProvider.id} aria-hidden="true">
+                <span className={"provider-mark " + activeProvider.id + " current"} aria-hidden="true">
                   {activeProvider.abbr}
                 </span>
               )}
@@ -3854,43 +3850,17 @@ function Composer({
             <div className="composer-control-wrap composer-fast-wrap">
               <button
                 className={"fast-toggle" + (fastMode ? " active" : "")}
-                ref={fastTriggerRef}
                 title={fastModeTriggerLabel}
                 type="button"
                 aria-label={fastModeTriggerLabel}
-                aria-haspopup="listbox"
-                aria-expanded={fastMenuOpen}
-                onClick={() => setOpenMenu((current) => current === "fast" ? null : "fast")}
+                aria-pressed={fastMode}
+                onClick={() => {
+                  setOpenMenu(null);
+                  onSelectFastMode(!fastMode);
+                }}
               >
                 <Icon.bolt aria-hidden="true" />
               </button>
-              {fastMenuOpen && (
-                <div
-                  className="composer-model-menu composer-selection-menu composer-fast-menu"
-                  role="listbox"
-                  aria-label="Fast mode"
-                >
-                  {[
-                    { value: false, label: "Disabled" },
-                    { value: true, label: "Enabled" },
-                  ].map((option) => (
-                    <button
-                      className={"composer-model-option" + (option.value === fastMode ? " active" : "")}
-                      key={option.label}
-                      type="button"
-                      role="option"
-                      data-fast-mode={option.value ? "enabled" : "disabled"}
-                      aria-selected={option.value === fastMode}
-                      onClick={() => {
-                        onSelectFastMode(option.value);
-                        setOpenMenu(null);
-                      }}
-                    >
-                      <span>{option.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
           <button

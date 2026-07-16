@@ -24,6 +24,7 @@
 - [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
 - [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
 - [Claude Model-Specific Effort and Fast Mode](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
+- [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md)
 - [Provider-Aware Model Selection Implementation Plan (Historical Baseline, Superseded)](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
 - [Claude API Provider Integration Plan (Historical, Superseded)](./superpowers/plans/2026-07-14-claude-api-provider.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
@@ -58,6 +59,7 @@
 - UI 참고 기준
   - [디자인 시스템 / Design System](./design-system.md)
   - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
+  - [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md) for the current selected-provider marks and direct Fast-button interaction
   - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
   - [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
 - 로고, 아이콘, favicon, 브랜드 사용 원칙
@@ -100,6 +102,8 @@
   - Read this for the active bounded prompt-free Claude CLI catalog, exact returned-value request validation, fail-closed persistence rules, provider capability lifecycle, and contained exact-label model picker.
 - [Claude Model-Specific Effort and Fast Mode](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
   - Read this for the active per-model `executionOptions` contract, provider-scoped reasoning/Fast persistence, request-time validation, and exact Claude CLI effort/settings mapping.
+- [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md)
+  - Read this for the current explicit selected-provider treatment and capability-gated direct Fast interaction; persistence, request ownership, and center-terminal isolation remain owned by the existing contracts.
 - [Provider-Aware Model Selection Implementation Plan (Historical Baseline, Superseded)](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
   - Read this only for the earlier static-alias model-selection baseline and its historical verification evidence. Its Claude alias table is not the current catalog contract.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)

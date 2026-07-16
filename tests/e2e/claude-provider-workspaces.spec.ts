@@ -483,6 +483,26 @@ const switchProvider = async (page: Page, provider: 'Codex' | 'Claude') => {
   await page.getByRole('option', { name: new RegExp(`^${provider}`) }).click()
 }
 
+const setFastMode = async (page: Page, enabled: boolean) => {
+  const trigger = page.locator('.fast-toggle')
+  const current = await trigger.getAttribute('aria-pressed')
+  expect(
+    ['true', 'false'],
+    'Fast must expose its current boolean through aria-pressed',
+  ).toContain(current)
+
+  if ((current === 'true') !== enabled) await trigger.click()
+
+  await expect(trigger).toHaveAttribute('aria-pressed', String(enabled))
+  await expect(trigger).toHaveAttribute(
+    'aria-label',
+    `Fast mode: ${enabled ? 'Enabled' : 'Disabled'}`,
+  )
+  expect(await trigger.getAttribute('aria-haspopup')).toBeNull()
+  expect(await trigger.getAttribute('aria-expanded')).toBeNull()
+  await expect(page.getByRole('listbox', { name: 'Fast mode' })).toHaveCount(0)
+}
+
 const resizeAgentPanel = async (page: Page, targetWidth: number) => {
   const agent = await page.locator('.agent').boundingBox()
   const resizeHandle = await page.locator('.resize-handle.handle-right').boundingBox()
@@ -611,6 +631,111 @@ const installClaudeConnectionOrderingHarness = async (page: Page) => {
     }
   })
 }
+
+test('selected provider marks stay explicitly current for Codex and Claude', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page)
+  await page.goto('/')
+
+  const expectCurrentProviderMarks = async (provider: 'codex' | 'claude') => {
+    const marks = [
+      page.locator('.agent-header > .provider-mark'),
+      page.locator('.composer-provider-chip .provider-mark'),
+    ]
+
+    for (const mark of marks) {
+      await expect(mark).toHaveClass(new RegExp(`\\b${provider}\\b`))
+      await expect(mark).toHaveClass(/\bcurrent\b/)
+      const style = await mark.evaluate((element) => {
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--accent)'
+        document.body.appendChild(probe)
+        const accentColor = getComputedStyle(probe).color
+        probe.remove()
+        const computed = getComputedStyle(element)
+        return {
+          borderStyle: computed.borderStyle,
+          color: computed.color,
+          accentColor,
+        }
+      })
+      expect(style.borderStyle).toBe('solid')
+      expect(style.color).toBe(style.accentColor)
+    }
+  }
+  const expectOnlySelectedProvider = async (provider: 'Codex' | 'Claude') => {
+    const menu = page.getByRole('listbox', { name: 'Agent provider' })
+    const selected = menu.locator('[role="option"][aria-selected="true"]')
+    await expect(selected).toHaveCount(1)
+    await expect(selected).toContainText(provider)
+    return menu
+  }
+
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'codex')
+  await expectCurrentProviderMarks('codex')
+  await page.locator('.composer-provider-chip').click()
+  let providerMenu = await expectOnlySelectedProvider('Codex')
+  await providerMenu.getByRole('option', { name: /^Claude/ }).click()
+
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'claude')
+  await expectCurrentProviderMarks('claude')
+  await page.locator('.composer-provider-chip').click()
+  providerMenu = await expectOnlySelectedProvider('Claude')
+  await page.keyboard.press('Escape')
+  await expect(providerMenu).toHaveCount(0)
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: unknown[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
+
+test('toggles supported Fast mode directly with native activation and no terminal work', async ({ page }) => {
+  await installClaudeWorkspaceHarness(page, {
+    sessionAProvider: 'claude',
+    includeAdvancedControls: true,
+    claudeCapabilityFixtures: [{ models: claudeExecutionMetadataCatalog }],
+  })
+  await page.goto('/')
+
+  const fastTrigger = page.locator('.fast-toggle')
+  const fastMenu = page.getByRole('listbox', { name: 'Fast mode' })
+  const expectFast = async (enabled: boolean) => {
+    await expect(fastTrigger).toHaveAttribute('aria-pressed', String(enabled))
+    await expect(fastTrigger).toHaveAttribute(
+      'aria-label',
+      `Fast mode: ${enabled ? 'Enabled' : 'Disabled'}`,
+    )
+    await expect(fastTrigger).toHaveAttribute(
+      'title',
+      `Fast mode: ${enabled ? 'Enabled' : 'Disabled'}`,
+    )
+    await expect(fastMenu).toHaveCount(0)
+  }
+
+  await expectFast(false)
+  expect(await fastTrigger.getAttribute('aria-haspopup')).toBeNull()
+  expect(await fastTrigger.getAttribute('aria-expanded')).toBeNull()
+
+  await fastTrigger.click()
+  await expectFast(true)
+  await fastTrigger.click()
+  await expectFast(false)
+
+  const reasoningTrigger = page.locator('.composer-reasoning-chip')
+  await reasoningTrigger.click()
+  const reasoningMenu = page.getByRole('listbox', { name: 'Reasoning levels' })
+  await expect(reasoningMenu).toBeVisible()
+  await fastTrigger.click()
+  await expect(reasoningMenu).toHaveCount(0)
+  await expectFast(true)
+
+  await fastTrigger.press('Enter')
+  await expectFast(false)
+  await fastTrigger.press('Space')
+  await expectFast(true)
+
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: unknown[] }
+  ).__terminalCalls ?? [])).toEqual([])
+})
 
 test('keeps a completed Claude connect ahead of stale discovery and blocks repeat pending login', async ({ page }) => {
   await installClaudeConnectionOrderingHarness(page)
@@ -1195,11 +1320,7 @@ test('Claude effort and Fast controls follow selected-model metadata without ali
   expect(highActiveBarCount).toBeGreaterThan(lowActiveBarCount)
   await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Low')
 
-  await fastTrigger.click()
-  await page.getByRole('listbox', { name: 'Fast mode' })
-    .getByRole('option', { name: 'Enabled', exact: true })
-    .click()
-  await expect(fastTrigger).toHaveAttribute('aria-label', 'Fast mode: Enabled')
+  await setFastMode(page, true)
 
   await chooseModel(claudeExecutionMetadataCatalog[1])
   await expect(reasoningTrigger).toHaveAttribute('aria-label', 'Reasoning level: Default')
@@ -1361,10 +1482,7 @@ test('provider-owned effort and Fast preferences stay isolated across providers,
       .click()
   }
   const chooseFast = async (label: 'Disabled' | 'Enabled') => {
-    await fastTrigger().click()
-    await page.getByRole('listbox', { name: 'Fast mode' })
-      .getByRole('option', { name: label, exact: true })
-      .click()
+    await setFastMode(page, label === 'Enabled')
   }
   const chooseClaudeModel = async (model: typeof claudeExecutionMetadataCatalog[number]) => {
     await modelTrigger(page, 'Claude').click()
@@ -1457,6 +1575,7 @@ test('provider-owned effort and Fast preferences stay isolated across providers,
   await switchProvider(page, 'Claude')
   await expectExecution('Default', 'Disabled')
   await chooseReasoning('High')
+  await chooseFast('Enabled')
   await chooseFast('Disabled')
   await switchProvider(page, 'Codex')
   await expectExecution('Low', 'Enabled')
@@ -1644,11 +1763,6 @@ test('contains every compact menu and fully reveals long model labels at 260px a
       trigger: () => page.locator('.composer-reasoning-chip'),
       menu: () => page.getByRole('listbox', { name: 'Reasoning levels' }),
     },
-    {
-      label: 'fast',
-      trigger: () => page.locator('.fast-toggle'),
-      menu: () => page.getByRole('listbox', { name: 'Fast mode' }),
-    },
   ]
 
   for (const targetWidth of [260, 240]) {
@@ -1816,27 +1930,9 @@ test('opens exact full-name compact composer menus and preserves selected reques
 
   const fastTrigger = page.locator('.fast-toggle')
   await expect(fastTrigger).toHaveAttribute('aria-label', 'Fast mode: Disabled')
-  await fastTrigger.click()
-  const fastMenu = page.getByRole('listbox', { name: 'Fast mode' })
-  await expect(fastMenu.getByRole('option', { name: 'Disabled', exact: true })).toHaveCount(1)
-  await expect(fastMenu.getByRole('option', { name: 'Enabled', exact: true })).toHaveCount(1)
-  await expect(fastMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Disabled')
-  await fastMenu.getByRole('option', { name: 'Enabled', exact: true }).click()
+  await setFastMode(page, true)
   await expect(fastTrigger).toHaveAttribute('title', 'Fast mode: Enabled')
-
-  await fastTrigger.click()
-  await expect(fastMenu).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(fastMenu).toHaveCount(0)
-  await expect(fastTrigger).toBeFocused()
-
-  await fastTrigger.click()
-  await reasoningTrigger.click()
-  await expect(fastMenu).toHaveCount(0)
-  await expect(reasoningMenu).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(reasoningMenu).toHaveCount(0)
-  await expect(reasoningTrigger).toBeFocused()
+  await expect(page.getByRole('listbox', { name: 'Fast mode' })).toHaveCount(0)
 
   await expect(providerTrigger).toHaveAttribute('aria-label', 'Provider: Claude · CLI session')
 

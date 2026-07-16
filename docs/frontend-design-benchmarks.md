@@ -227,7 +227,9 @@ For the current active slice, the frontend should follow these rules:
 - composer controls should keep attachment and runtime-backed model selection inside the input toolbar, show project scope through the active workspace/session rather than a current-tab context chip, and render reasoning/fast controls only from provider capabilities
 - Claude reasoning/Fast visibility must follow the effective selected model's `executionOptions`, including empty/false overrides; Codex may use the provider-level compatibility fields only when model options are absent
 - the Claude reasoning menu may add one UI-only `Default` row that means `reasoningLevel: null`; do not invent a provider label or effort value for the CLI/model default
-- closed provider, model, reasoning, and fast controls in the composer should use compact icons or provider/model marks with no long visible names or wrapped text; exact names and current state belong inside the opened list, while exact accessible labels and expanded/selected semantics remain available to assistive technology
+- closed provider, model, and reasoning menu controls in the composer should use compact icons or provider/model marks with no long visible names or wrapped text; exact full names and current state belong inside their opened lists, while exact accessible labels and expanded/selected semantics remain available to assistive technology
+- the active provider mark in both the Agent header and closed composer control must use an explicit selected/current treatment for Codex and Claude alike; provider identity styling must remain neutral and must not imply that a provider is selected or ready
+- Fast must be a capability-gated direct boolean button rather than a menu: one native pointer, Enter, or Space activation inverts it exactly once, closes another open composer popup, and exposes exact `Fast mode: Enabled` or `Fast mode: Disabled` through `aria-label`, `title`, and matching `aria-pressed`; unsupported models hide it without erasing the saved provider preference
 - the top of the right agent workspace should expose the current provider and session/readiness state through a compact row; composer-level model picking and reasoning labels must come from `read_agent_provider_capabilities`, and execution modes must not appear as fixed values without runtime policy
 - provider-backed model popups must remain inside the Agent panel and viewport at the default desktop size, use internal vertical scrolling, and scroll the selected row into view on reopen
 - model options must show the complete provider-supplied human label: current account labels remain on one visual line at the default desktop width, while longer valid labels wrap inside the option without clipping or horizontal overflow; keep the exact provider value in accessible metadata and the request payload instead of rendering a raw-ID subtitle
@@ -437,7 +439,8 @@ For the current active slice, the frontend should follow these rules:
 - layouts that lack an editor-like surface when users need to trace code flow
 - layouts where prior work paths and failure evidence are scattered badly enough that users must reconstruct them manually
 - provider/model popups that are clipped by the Agent shell, hide the selected final row, or add a raw model-ID line that reduces label readability
-- composer provider/model/reasoning/fast triggers that repeat long current names, wrap onto another line, or hide their exact accessible names behind icon-only rendering
+- composer provider/model/reasoning menu triggers that repeat long current names, wrap onto another line, or hide their exact accessible names behind icon-only rendering
+- Fast controls that open a popup or listbox, require an intermediate option choice, omit exact `Fast mode: Enabled` / `Fast mode: Disabled` accessible state, or override native one-activation button behavior
 - reasoning/Fast controls that remain visible after switching to a model that does not return support, or that erase a saved provider preference merely because the current model cannot use it
 
 ## 프론트엔드 작업 체크리스트 / Frontend Review Checklist
@@ -466,5 +469,6 @@ Before shipping frontend work, check:
 6. does the user still have an editor-like surface for reading code and tracing flow apart from the agent conversation
 7. can the user distinguish current pending actions from finished decisions and diagnose recurring problems through task history or trace
 8. do provider-backed model labels, popup bounds, and the selected row remain fully readable at the default desktop viewport
-9. do closed composer capability controls stay compact and non-wrapping while opened lists and accessible names retain the exact provider/model/reasoning/fast state
-10. does switching project, Agent session, provider, or model restore the correct provider-owned preference and send only the currently supported effective value
+9. do the active Agent-header and closed-composer provider marks show an explicit current treatment for either real provider without confusing identity or readiness, while provider/model/reasoning menus retain exact full names and state in their opened lists
+10. does the supported Fast control toggle directly once for pointer, Enter, and Space with exact `Fast mode: Enabled` / `Fast mode: Disabled` accessible state and matching pressed state, no popup/listbox, and closure of another open composer popup
+11. does switching project, Agent session, provider, or model restore the correct provider-owned preference and send only the currently supported effective value

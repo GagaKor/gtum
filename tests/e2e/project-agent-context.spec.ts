@@ -469,6 +469,26 @@ const sendRequest = async (page: Page, text: string) => {
   await page.locator('.composer-input .send').click()
 }
 
+const setFastMode = async (page: Page, enabled: boolean) => {
+  const trigger = page.locator('.fast-toggle')
+  const current = await trigger.getAttribute('aria-pressed')
+  expect(
+    ['true', 'false'],
+    'Fast must expose its current boolean through aria-pressed',
+  ).toContain(current)
+
+  if ((current === 'true') !== enabled) await trigger.click()
+
+  await expect(trigger).toHaveAttribute('aria-pressed', String(enabled))
+  await expect(trigger).toHaveAttribute(
+    'aria-label',
+    `Fast mode: ${enabled ? 'Enabled' : 'Disabled'}`,
+  )
+  expect(await trigger.getAttribute('aria-haspopup')).toBeNull()
+  expect(await trigger.getAttribute('aria-expanded')).toBeNull()
+  await expect(page.getByRole('listbox', { name: 'Fast mode' })).toHaveCount(0)
+}
+
 const requestCalls = (page: Page) => page.evaluate(() => (
   window as Window & { __agentCalls?: Array<{ command: string; args?: Record<string, unknown> }> }
 ).__agentCalls?.filter((call) => call.command === 'request_agent_suggestions') ?? [])
@@ -540,10 +560,7 @@ test('returns a delayed attachment and request options only to their starting pr
   const reasoningMenu = page.getByRole('listbox', { name: 'Reasoning levels' })
   await expect(reasoningMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('High')
   await reasoningMenu.getByRole('option', { name: 'Low', exact: true }).click()
-  await page.locator('.fast-toggle').click()
-  const fastMenu = page.getByRole('listbox', { name: 'Fast mode' })
-  await expect(fastMenu.locator('[role="option"][aria-selected="true"]')).toHaveText('Disabled')
-  await fastMenu.getByRole('option', { name: 'Enabled', exact: true }).click()
+  await setFastMode(page, true)
   await page.locator('.composer-tool').click()
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __attachmentPickStarted?: boolean }
@@ -598,10 +615,7 @@ test('request option snapshot keeps the send-time provider model attachments rea
   await page.getByRole('listbox', { name: 'Reasoning levels' })
     .getByRole('option', { name: 'Low', exact: true })
     .click()
-  await page.locator('.fast-toggle').click()
-  await page.getByRole('listbox', { name: 'Fast mode' })
-    .getByRole('option', { name: 'Enabled', exact: true })
-    .click()
+  await setFastMode(page, true)
   await page.locator('.composer-tool').click()
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __attachmentPickStarted?: boolean }
@@ -780,10 +794,7 @@ test('same-project Agent session A/B execution preferences stay isolated across 
       .click()
   }
   const chooseFast = async (fast: 'Disabled' | 'Enabled') => {
-    await fastTrigger.click()
-    await page.getByRole('listbox', { name: 'Fast mode' })
-      .getByRole('option', { name: fast, exact: true })
-      .click()
+    await setFastMode(page, fast === 'Enabled')
   }
   const storedPreferencesBySession = () => page.evaluate((projectPath) => {
     const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v1') || '{}')
