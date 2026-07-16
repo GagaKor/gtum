@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
-    fs,
-    path::PathBuf,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -407,8 +408,9 @@ impl AgentAuthManager {
         Ok(result)
     }
 
-    pub fn disconnect(&self, provider: AgentProvider) -> AgentConnectionSnapshot {
+    pub fn disconnect(&self, provider: AgentProvider) -> Result<AgentConnectionSnapshot, String> {
         let mut store = self.store.lock().unwrap();
+        let mut candidate = store.clone();
         let next_revision = store
             .connections
             .get(provider.as_key())
@@ -416,13 +418,13 @@ impl AgentAuthManager {
             .unwrap_or(1);
         let mut snapshot = AgentConnectionSnapshot::disconnected(provider);
         snapshot.runtime_revision = next_revision;
-        store
+        candidate
             .connections
             .insert(provider.as_key().into(), snapshot.clone());
-        if let Err(error) = self.persist_locked(&store) {
-            log::warn!("failed to persist auth state after disconnect: {error}");
-        }
-        snapshot
+        self.persist_locked(&candidate)
+            .map_err(|error| format!("failed to persist auth state after disconnect: {error}"))?;
+        *store = candidate;
+        Ok(snapshot)
     }
 
     pub fn runtime_snapshot(&self) -> AgentAuthRuntimeSnapshot {
@@ -596,6 +598,18 @@ impl AgentAuthManager {
 
     fn normalize_store(&self, store: &mut AgentAuthStore) {
         let now = unix_timestamp_ms();
+        let mut loaded_connections = std::mem::take(&mut store.connections);
+        store.connections = [AgentProvider::Codex, AgentProvider::Claude]
+            .into_iter()
+            .map(|provider| {
+                let snapshot = loaded_connections
+                    .remove(provider.as_key())
+                    .filter(|snapshot| snapshot.provider == provider)
+                    .unwrap_or_else(|| AgentConnectionSnapshot::disconnected(provider));
+                (provider.as_key().to_string(), snapshot)
+            })
+            .collect();
+
         for provider in [AgentProvider::Codex, AgentProvider::Claude] {
             let snapshot = store
                 .connections
@@ -677,9 +691,128 @@ impl AgentAuthManager {
         snapshot.last_synced_at = unix_timestamp_ms();
         let serialized = serde_json::to_string_pretty(&snapshot)
             .map_err(|error| format!("failed to serialize auth state: {error}"))?;
-        fs::write(path, serialized)
-            .map_err(|error| format!("failed to persist auth state: {error}"))
+        write_auth_store_atomically(&path, serialized.as_bytes())
     }
+}
+
+fn write_auth_store_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("auth storage path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to prepare auth state directory: {error}"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("agent-auth.json");
+    let timestamp = unix_timestamp_ms();
+    let mut temporary_file = None;
+
+    for attempt in 0..100_u8 {
+        let temporary = parent.join(format!(
+            ".{file_name}.tmp-{}-{timestamp}-{attempt}",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+        {
+            Ok(file) => {
+                temporary_file = Some((temporary, file));
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(format!("failed to create auth state temp file: {error}"));
+            }
+        }
+    }
+
+    let (temporary, mut file) = temporary_file
+        .ok_or_else(|| "failed to allocate a unique auth state temp file".to_string())?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(&temporary);
+        return Err(format!("failed to write auth state temp file: {error}"));
+    }
+    drop(file);
+
+    if let Err(error) = replace_auth_store_file(&temporary, path) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    sync_auth_store_parent(parent)?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn replace_auth_store_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    fs::rename(temporary, destination)
+        .map_err(|error| format!("failed to replace auth state: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn replace_auth_store_file(temporary: &Path, destination: &Path) -> Result<(), String> {
+    use std::{os::windows::ffi::OsStrExt, ptr};
+
+    #[link(name = "Kernel32")]
+    extern "system" {
+        fn ReplaceFileW(
+            replaced_file_name: *const u16,
+            replacement_file_name: *const u16,
+            backup_file_name: *const u16,
+            replace_flags: u32,
+            exclude: *mut std::ffi::c_void,
+            reserved: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+
+    if !destination.exists() {
+        return fs::rename(temporary, destination)
+            .map_err(|error| format!("failed to install auth state: {error}"));
+    }
+
+    let destination_wide = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let temporary_wide = temporary
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let replaced = unsafe {
+        ReplaceFileW(
+            destination_wide.as_ptr(),
+            temporary_wide.as_ptr(),
+            ptr::null(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if replaced == 0 {
+        Err(format!(
+            "failed to atomically replace auth state: {}",
+            std::io::Error::last_os_error()
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn sync_auth_store_parent(parent: &Path) -> Result<(), String> {
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| format!("failed to sync auth state directory: {error}"))
+}
+
+#[cfg(not(unix))]
+fn sync_auth_store_parent(_parent: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -1112,6 +1245,155 @@ mod tests {
     }
 
     #[test]
+    fn migration_drops_noncanonical_connections_and_rejects_key_provider_mismatches() {
+        let dir = unique_temp_dir("legacy-connection-map-boundary");
+        let storage_path = dir.join("agent-auth.json");
+        let legacy_store = serde_json::json!({
+            "connections": {
+                "codex": {
+                    "provider": "claude",
+                    "displayName": "Mismatched Claude",
+                    "availability": "available",
+                    "status": "error",
+                    "connectionKind": "real",
+                    "accountLabel": "mismatch-account-secret",
+                    "accountEmail": "mismatch@example.com",
+                    "credentialSource": "api_key_helper",
+                    "requiredScopes": ["provider:request", "credential:api_key"],
+                    "expiresAt": null,
+                    "callbackUrl": "gtum://mismatch-secret",
+                    "authUrl": "https://mismatch-secret.invalid",
+                    "activeLoginId": "mismatch-login-secret",
+                    "activeLoginState": "mismatch-state-secret",
+                    "connectedAt": null,
+                    "lastLoginAttemptAt": 900,
+                    "updatedAt": 1_000,
+                    "lastError": "mismatch-error-secret"
+                },
+                "claude": {
+                    "provider": "claude",
+                    "displayName": "Claude",
+                    "availability": "available",
+                    "status": "disconnected",
+                    "connectionKind": "real",
+                    "accountLabel": null,
+                    "accountEmail": null,
+                    "credentialSource": null,
+                    "requiredScopes": ["provider:request"],
+                    "expiresAt": null,
+                    "callbackUrl": null,
+                    "authUrl": null,
+                    "activeLoginId": null,
+                    "activeLoginState": null,
+                    "connectedAt": null,
+                    "lastLoginAttemptAt": null,
+                    "updatedAt": 1_000,
+                    "lastError": null
+                },
+                "claude-old": {
+                    "provider": "claude",
+                    "displayName": "Duplicate Claude",
+                    "availability": "available",
+                    "status": "connected",
+                    "connectionKind": "real",
+                    "accountLabel": "duplicate-account-secret",
+                    "accountEmail": "duplicate@example.com",
+                    "credentialSource": "claude_cli_session",
+                    "requiredScopes": ["provider:request", "credential:cli_session"],
+                    "expiresAt": null,
+                    "callbackUrl": "gtum://duplicate-secret",
+                    "authUrl": "https://duplicate-secret.invalid",
+                    "activeLoginId": "duplicate-login-secret",
+                    "activeLoginState": "duplicate-state-secret",
+                    "connectedAt": 1_000,
+                    "lastLoginAttemptAt": 900,
+                    "updatedAt": 1_000,
+                    "lastError": "duplicate-error-secret"
+                },
+                "codex-copy": {
+                    "provider": "codex",
+                    "displayName": "Duplicate Codex",
+                    "availability": "available",
+                    "status": "connected",
+                    "connectionKind": "real",
+                    "accountLabel": "duplicate-codex-secret",
+                    "accountEmail": "duplicate-codex@example.com",
+                    "credentialSource": null,
+                    "requiredScopes": ["project:read", "terminal:read"],
+                    "expiresAt": null,
+                    "callbackUrl": null,
+                    "authUrl": null,
+                    "activeLoginId": null,
+                    "activeLoginState": null,
+                    "connectedAt": 1_000,
+                    "lastLoginAttemptAt": 900,
+                    "updatedAt": 1_000,
+                    "lastError": "duplicate-codex-error-secret"
+                }
+            },
+            "pendingLogins": {},
+            "nextLoginId": 1,
+            "lastSyncedAt": 1_000
+        });
+        fs::write(
+            &storage_path,
+            serde_json::to_string_pretty(&legacy_store).unwrap(),
+        )
+        .unwrap();
+
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+
+        let runtime = manager.runtime_snapshot();
+        let persisted = fs::read_to_string(&storage_path).unwrap();
+        let persisted_json: serde_json::Value = serde_json::from_str(&persisted).unwrap();
+        let mut connection_keys = persisted_json["connections"]
+            .as_object()
+            .expect("connections should remain an object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        connection_keys.sort();
+        assert_eq!(connection_keys, vec!["claude", "codex"]);
+        assert_eq!(runtime.connections.len(), 2);
+
+        let codex = runtime
+            .connections
+            .iter()
+            .find(|connection| connection.provider == AgentProvider::Codex)
+            .expect("canonical Codex connection should exist");
+        assert_eq!(codex.status, AgentConnectionStatus::Disconnected);
+        assert_eq!(codex.account_label, None);
+        assert_eq!(codex.account_email, None);
+        assert_eq!(codex.credential_source, None);
+        assert_eq!(codex.last_error, None);
+
+        let serialized_runtime = serde_json::to_string(&runtime).unwrap();
+        for forbidden in [
+            "mismatch-account-secret",
+            "mismatch@example.com",
+            "mismatch-error-secret",
+            "duplicate-account-secret",
+            "duplicate@example.com",
+            "duplicate-error-secret",
+            "duplicate-codex-secret",
+            "duplicate-codex@example.com",
+            "duplicate-codex-error-secret",
+        ] {
+            assert!(
+                !serialized_runtime.contains(forbidden),
+                "runtime exposed legacy connection data from an untrusted map entry"
+            );
+            assert!(
+                !persisted.contains(forbidden),
+                "migrated store retained legacy connection data from an untrusted map entry"
+            );
+        }
+
+        remove_dir(&dir);
+    }
+
+    #[test]
     fn begin_login_connects_claude_with_non_secret_credential_metadata_only() {
         let dir = unique_temp_dir("begin-claude");
         let storage_path = dir.join("agent-auth.json");
@@ -1251,7 +1533,11 @@ mod tests {
 
     #[test]
     fn unvalidated_claude_states_expose_only_source_neutral_scopes() {
+        let dir = unique_temp_dir("unvalidated-claude-scopes");
         let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(dir.join("agent-auth.json"))
+            .unwrap();
 
         let disconnected = claude_connection(&manager);
         assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
@@ -1274,13 +1560,70 @@ mod tests {
         assert_eq!(failed.required_scopes, vec!["provider:request"]);
         assert_eq!(failed.credential_source, None);
 
-        let disconnected = manager.disconnect(AgentProvider::Claude);
+        let disconnected = manager.disconnect(AgentProvider::Claude).unwrap();
         assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
         assert_eq!(disconnected.required_scopes, vec!["provider:request"]);
         assert_eq!(disconnected.credential_source, None);
         assert!(manager
             .provider_refresh_lease(AgentProvider::Claude)
             .is_none());
+
+        remove_dir(&dir);
+    }
+
+    #[test]
+    fn disconnect_failure_is_reported_without_publishing_or_losing_restart_state() {
+        let dir = unique_temp_dir("disconnect-persistence-failure");
+        let storage_dir = dir.join("state");
+        let retained_storage_dir = dir.join("retained-state");
+        let storage_path = storage_dir.join("agent-auth.json");
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path.clone()).unwrap();
+        let failed = manager
+            .begin_login_with_validation(AgentProvider::Claude, None, || {
+                Err("Claude validation failed for raw-disconnect-secret".into())
+            })
+            .unwrap();
+        assert_eq!(failed.status, AgentConnectionStatus::Error);
+        let persisted_error = fs::read_to_string(&storage_path).unwrap();
+
+        fs::rename(&storage_dir, &retained_storage_dir).unwrap();
+        fs::write(&storage_dir, "block the auth storage directory").unwrap();
+
+        let disconnect_error = manager
+            .disconnect(AgentProvider::Claude)
+            .err()
+            .expect("disconnect should report a persistence failure");
+        assert!(disconnect_error.contains("failed to persist auth state"));
+        assert!(!disconnect_error.contains("raw-disconnect-secret"));
+        let still_failed = claude_connection(&manager);
+        assert_eq!(still_failed.status, AgentConnectionStatus::Error);
+        assert_eq!(
+            still_failed.last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
+        );
+        assert!(manager
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_some());
+
+        fs::remove_file(&storage_dir).unwrap();
+        fs::rename(&retained_storage_dir, &storage_dir).unwrap();
+        assert_eq!(fs::read_to_string(&storage_path).unwrap(), persisted_error);
+        drop(manager);
+
+        let reloaded = AgentAuthManager::new();
+        reloaded.initialize_storage(storage_path).unwrap();
+        let restored = claude_connection(&reloaded);
+        assert_eq!(restored.status, AgentConnectionStatus::Error);
+        assert_eq!(
+            restored.last_error.as_deref(),
+            Some(CLAUDE_VALIDATION_FAILURE)
+        );
+        assert!(reloaded
+            .provider_refresh_lease(AgentProvider::Claude)
+            .is_some());
+
+        remove_dir(&dir);
     }
 
     #[test]
@@ -1626,7 +1969,7 @@ mod tests {
             credential_source: crate::runtime::claude::ClaudeCredentialSource::CliSession,
         });
 
-        reloaded.disconnect(AgentProvider::Claude);
+        reloaded.disconnect(AgentProvider::Claude).unwrap();
         assert!(reloaded
             .provider_refresh_lease(AgentProvider::Claude)
             .is_none());
@@ -1714,7 +2057,11 @@ mod tests {
 
     #[test]
     fn stale_cli_session_revalidation_cannot_overwrite_disconnect_or_reconnect() {
+        let dir = unique_temp_dir("stale-cli-session-revalidation");
         let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(dir.join("agent-auth.json"))
+            .unwrap();
         manager
             .begin_login_with_validation(AgentProvider::Claude, None, || {
                 Ok(runtime_claude_validation(
@@ -1729,7 +2076,7 @@ mod tests {
             credential_source: crate::runtime::claude::ClaudeCredentialSource::CliSession,
         });
 
-        manager.disconnect(AgentProvider::Claude);
+        manager.disconnect(AgentProvider::Claude).unwrap();
         assert!(!manager.apply_claude_validation_if_current(&stale_lease, &cli_session));
         let disconnected = claude_connection(&manager);
         assert_eq!(disconnected.status, AgentConnectionStatus::Disconnected);
@@ -1754,6 +2101,8 @@ mod tests {
             reconnected.required_scopes,
             vec!["provider:request", "credential:api_key"]
         );
+
+        remove_dir(&dir);
     }
 
     #[test]
@@ -1812,12 +2161,16 @@ mod tests {
 
     #[test]
     fn stale_validation_cannot_overwrite_disconnect() {
+        let dir = unique_temp_dir("stale-validation-disconnect");
         let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(dir.join("agent-auth.json"))
+            .unwrap();
         connect_codex_for_test(&manager);
         let lease = manager
             .require_stored_connected_provider(AgentProvider::Codex)
             .unwrap();
-        manager.disconnect(AgentProvider::Codex);
+        manager.disconnect(AgentProvider::Codex).unwrap();
 
         manager.apply_validation_if_current(&lease, &Ok("Stale Account".into()));
 
@@ -1829,16 +2182,22 @@ mod tests {
             .unwrap();
         assert_eq!(codex.status, AgentConnectionStatus::Disconnected);
         assert_eq!(codex.account_label, None);
+
+        remove_dir(&dir);
     }
 
     #[test]
     fn stale_validation_cannot_overwrite_reconnect() {
+        let dir = unique_temp_dir("stale-validation-reconnect");
         let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(dir.join("agent-auth.json"))
+            .unwrap();
         connect_codex_for_test(&manager);
         let stale_lease = manager
             .require_stored_connected_provider(AgentProvider::Codex)
             .unwrap();
-        manager.disconnect(AgentProvider::Codex);
+        manager.disconnect(AgentProvider::Codex).unwrap();
         let reconnected = connect_codex_for_test(&manager);
 
         manager.apply_validation_if_current(&stale_lease, &Err("stale failure".into()));
@@ -1852,14 +2211,20 @@ mod tests {
         assert_eq!(codex.status, AgentConnectionStatus::Connected);
         assert_eq!(codex.account_label, reconnected.account_label);
         assert_eq!(codex.last_error, None);
+
+        remove_dir(&dir);
     }
 
     #[test]
     fn delayed_connect_cannot_overwrite_disconnect() {
+        let dir = unique_temp_dir("delayed-connect-disconnect");
         let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(dir.join("agent-auth.json"))
+            .unwrap();
 
         let result = manager.begin_login_with_validation(AgentProvider::Claude, None, || {
-            manager.disconnect(AgentProvider::Claude);
+            manager.disconnect(AgentProvider::Claude).unwrap();
             Ok(claude_validation(
                 ClaudeCredentialMetadata::EnvironmentApiKey,
             ))
@@ -1873,14 +2238,20 @@ mod tests {
         let claude = claude_connection(&manager);
         assert_eq!(claude.status, AgentConnectionStatus::Disconnected);
         assert_eq!(claude.credential_source, None);
+
+        remove_dir(&dir);
     }
 
     #[test]
     fn delayed_connect_cannot_overwrite_newer_reconnect() {
+        let dir = unique_temp_dir("delayed-connect-reconnect");
         let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(dir.join("agent-auth.json"))
+            .unwrap();
 
         let result = manager.begin_login_with_validation(AgentProvider::Claude, None, || {
-            manager.disconnect(AgentProvider::Claude);
+            manager.disconnect(AgentProvider::Claude).unwrap();
             manager
                 .begin_login_with_validation(AgentProvider::Claude, None, || {
                     Ok(claude_validation(ClaudeCredentialMetadata::ApiKeyHelper))
@@ -1899,6 +2270,8 @@ mod tests {
         let claude = claude_connection(&manager);
         assert_eq!(claude.status, AgentConnectionStatus::Connected);
         assert_eq!(claude.credential_source.as_deref(), Some("api_key_helper"));
+
+        remove_dir(&dir);
     }
 
     #[test]

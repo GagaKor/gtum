@@ -395,7 +395,7 @@ where
 fn disconnect_agent_provider(
     state: tauri::State<'_, AgentAuthManager>,
     provider: AgentProvider,
-) -> AgentConnectionSnapshot {
+) -> Result<AgentConnectionSnapshot, String> {
     state.disconnect(provider)
 }
 
