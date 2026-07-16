@@ -6160,8 +6160,12 @@ fn main() {
 
         let context = current_claude_invocation_context().unwrap();
         assert_eq!(context.credential(), None);
-        let issue = match run_claude_status_probe(&program, &context, Duration::from_secs(2))
-            .unwrap_err()
+        let issue = match run_claude_status_probe(
+            &program,
+            &context,
+            SUCCESSFUL_CLAUDE_PROCESS_TEST_TIMEOUT,
+        )
+        .unwrap_err()
         {
             ClaudeProbeError::Status(issue) => issue,
             ClaudeProbeError::Command(message) => {
