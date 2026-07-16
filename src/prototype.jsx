@@ -4383,6 +4383,8 @@ function App() {
   ) || activeAgentWorkspace?.sessions?.[0] || null;
   const activeAgentSessionId = activeAgentSession?.id || null;
   const activeProviderId = activeAgentSession?.providerId || "codex";
+  const activeProviderConnectionState =
+    providers.find((provider) => provider.id === activeProviderId)?.state || "disconnected";
   const activeProviderCapabilityRefreshRevision =
     providerCapabilityRefreshRevisions[activeProviderId] || 0;
   const messages = activeAgentSession?.messages || [];
@@ -4897,7 +4899,10 @@ function App() {
     };
   }, [reconcileProviderCapabilities]);
   React.useEffect(() => {
-    if (!agentSuggestionRuntimeService.hasRuntime()) return undefined;
+    if (
+      !agentSuggestionRuntimeService.hasRuntime()
+      || activeProviderConnectionState !== "connected"
+    ) return undefined;
 
     let cancelled = false;
     const providerId = activeProviderId;
@@ -4927,7 +4932,12 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeProviderCapabilityRefreshRevision, activeProviderId, markProviderError]);
+  }, [
+    activeProviderCapabilityRefreshRevision,
+    activeProviderConnectionState,
+    activeProviderId,
+    markProviderError,
+  ]);
   React.useEffect(() => {
     const capabilities = providerCapabilities[activeProviderId] || null;
     const storedModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;

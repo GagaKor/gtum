@@ -665,22 +665,33 @@ test('does not let stale discovery failure overwrite a completed Codex connect',
   ).__terminalCalls ?? [])).toEqual([])
 })
 
-test('refreshes after connected startup discovery and ignores the older catalog rejection', async ({ page }) => {
+test('waits for recovered startup auth before loading Claude execution information', async ({ page }) => {
   await installClaudeWorkspaceHarness(page, {
     sessionAProvider: 'claude',
     claudeInitialConnectionStatus: 'connected',
     deferInitialConnectionList: true,
-    claudeCapabilityFixtures: [
-      { deferred: true, models: [] },
-      { models: claudeUpdatedPolicyCatalog },
-    ],
+    claudeCapabilityFixtures: [{ models: claudeExecutionMetadataCatalog }],
   })
   await page.goto('/')
 
   await expect.poll(() => page.evaluate(() => (
+    window as Window & { __authCalls?: RuntimeCall[] }
+  ).__authCalls?.filter((call) => call.command === 'list_agent_connections').length ?? 0)).toBe(1)
+  await flushBrowserLayout(page)
+
+  await expect(page.getByRole('button', {
+    name: 'Provider: Claude · Connect provider',
+    exact: true,
+  })).toBeVisible()
+  expect(await page.evaluate(() => (
     window as Window & { __claudeCapabilityReadCount?: number }
-  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  ).__claudeCapabilityReadCount ?? 0)).toBe(0)
   await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+  await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
+  await expect(page.locator('.fast-toggle')).toHaveCount(0)
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
 
   await page.evaluate(() => (
     window as Window & {
@@ -689,75 +700,72 @@ test('refreshes after connected startup discovery and ignores the older catalog 
   ).__resolveInitialConnectionList('connected'))
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __claudeCapabilityReadCount?: number }
-  ).__claudeCapabilityReadCount ?? 0)).toBe(2)
-  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
-    'aria-label',
-    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
-  )
-
-  await page.evaluate(() => (
-    window as Window & {
-      __rejectClaudeCapabilityRead(readIndex: number, message: string): void
-    }
-  ).__rejectClaudeCapabilityRead(1, 'stale startup catalog failure'))
-  await flushBrowserLayout(page)
-
-  await expect(modelTrigger(page, 'Claude')).toHaveAttribute(
-    'aria-label',
-    `Claude model: ${claudeUpdatedPolicyCatalog[0].label}`,
-  )
-  await page.locator('.titlebar .pill.icon-only').click()
-  const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
-  await expect(claudeSettings).toContainText('Connected')
-  await expect(claudeSettings.getByRole('button', { name: 'Disconnect' })).toBeVisible()
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  await expect(modelTrigger(page, 'Claude'))
+    .toHaveAttribute('aria-label', 'Claude model: Metadata A')
+  await expect(page.locator('.composer-reasoning-chip'))
+    .toHaveAttribute('aria-label', 'Reasoning level: Default')
+  await expect(page.locator('.fast-toggle'))
+    .toHaveAttribute('aria-label', 'Fast mode: Disabled')
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
 })
 
-test('clears startup capabilities after disconnected discovery and ignores the older success', async ({ page }) => {
+test('keeps Claude execution information unloaded after disconnected startup discovery', async ({ page }) => {
   await installClaudeWorkspaceHarness(page, {
     sessionAProvider: 'claude',
     claudeInitialConnectionStatus: 'disconnected',
     deferInitialConnectionList: true,
     claudeCapabilityFixtures: [
-      { deferred: true, models: claudePriorPolicyCatalog },
+      { models: claudePriorPolicyCatalog },
     ],
   })
   await page.goto('/')
 
   await expect.poll(() => page.evaluate(() => (
+    window as Window & { __authCalls?: RuntimeCall[] }
+  ).__authCalls?.filter((call) => call.command === 'list_agent_connections').length ?? 0)).toBe(1)
+  await flushBrowserLayout(page)
+  expect(await page.evaluate(() => (
     window as Window & { __claudeCapabilityReadCount?: number }
-  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  ).__claudeCapabilityReadCount ?? 0)).toBe(0)
+  await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
+
   await page.evaluate(() => (
     window as Window & {
       __resolveInitialConnectionList(status: 'connected' | 'disconnected'): void
     }
   ).__resolveInitialConnectionList('disconnected'))
-  await page.evaluate(({ models }) => (
-    window as Window & {
-      __resolveClaudeCapabilityRead(readIndex: number, values: unknown[]): void
-    }
-  ).__resolveClaudeCapabilityRead(1, models), { models: [...claudePriorPolicyCatalog] })
   await flushBrowserLayout(page)
 
+  expect(await page.evaluate(() => (
+    window as Window & { __claudeCapabilityReadCount?: number }
+  ).__claudeCapabilityReadCount ?? 0)).toBe(0)
   await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
   await page.locator('.titlebar .pill.icon-only').click()
   const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
   await expect(claudeSettings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls?: RuntimeCall[] }
+  ).__terminalCalls ?? [])).toEqual([])
 })
 
 test('refreshes an active Claude catalog immediately after connecting without a provider switch', async ({ page }) => {
   await installClaudeWorkspaceHarness(page, {
     sessionAProvider: 'claude',
     claudeInitialConnectionStatus: 'disconnected',
-    claudeCapabilityFixtures: [
-      { models: [] },
-      { models: claudeModelCatalog },
-    ],
+    claudeCapabilityFixtures: [{ models: claudeModelCatalog }],
   })
   await page.goto('/')
 
   await expect.poll(() => page.evaluate(() => (
+    window as Window & { __authCalls?: RuntimeCall[] }
+  ).__authCalls?.filter((call) => call.command === 'list_agent_connections').length ?? 0)).toBe(1)
+  await flushBrowserLayout(page)
+  expect(await page.evaluate(() => (
     window as Window & { __claudeCapabilityReadCount?: number }
-  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
+  ).__claudeCapabilityReadCount ?? 0)).toBe(0)
   await expect(modelTrigger(page, 'Claude')).toHaveCount(0)
 
   await page.locator('.titlebar .pill.icon-only').click()
@@ -767,7 +775,7 @@ test('refreshes an active Claude catalog immediately after connecting without a 
 
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __claudeCapabilityReadCount?: number }
-  ).__claudeCapabilityReadCount ?? 0)).toBe(2)
+  ).__claudeCapabilityReadCount ?? 0)).toBe(1)
   const trigger = modelTrigger(page, 'Claude')
   await expect(trigger).toHaveAttribute(
     'aria-label',
@@ -1736,7 +1744,7 @@ test('opens exact full-name compact composer menus and preserves selected reques
 
 test('keeps provider-specific models accessible, persisted, and owned by their project sessions', async ({ page }) => {
   await installClaudeWorkspaceHarness(page, {
-    claudeInitialConnectionStatus: 'disconnected',
+    claudeInitialConnectionStatus: 'connected',
   })
   await page.goto('/')
 
@@ -1759,6 +1767,7 @@ test('keeps provider-specific models accessible, persisted, and owned by their p
 
   await page.locator('.titlebar .pill.icon-only').click()
   const claudeSettings = page.locator('.settings-provider').filter({ hasText: 'Claude' })
+  await claudeSettings.getByRole('button', { name: 'Disconnect' }).click()
   await expect(claudeSettings.getByRole('button', { name: 'Connect' })).toBeVisible()
   await claudeSettings.getByRole('button', { name: 'Connect' }).click()
   await expect(page.locator('.settings-overlay')).toHaveCount(0)
