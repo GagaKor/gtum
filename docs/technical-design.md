@@ -91,6 +91,33 @@ This document defines technical direction and boundaries. Read these alongside i
 - [`development-guide.md`](./development-guide.md)
   - implementation rules, doc-absorption policy, and the `WORKLOG` lifecycle policy
 
+## Current Agent Runtime Contract (2026-07-16)
+
+- The center terminal runtime is exclusively user-owned. Agent requests, review, approval, job polling, cancellation, and restore must not invoke terminal creation, focus, input, close, rename, or split commands.
+- Approved commands use `AgentJobManager` and persist to `agent-jobs.json`. Create, list, read, and cancel all require canonical project ownership; session-filtered list requests also require the durable Agent session identifier.
+- Job history is bounded to 100 persisted records. UI hydration defaults to 25 rows, structured log tails are bounded, and terminal visibility requires both process exit and completed stdout/stderr reader drains.
+- Runtime states are `running`, `cancelling`, `completed`, `failed`, `cancelled`, and `interrupted`. On restart, persisted active states become `interrupted`; no process is resumed or relaunched.
+- The frontend owns project/session generations, deduplicated reads and cancels, stale-response rejection, final-log polling, and a bounded right-panel job map. Agent session identifiers, their selected `providerId`, and trimmed provider-keyed `selectedModels`, `selectedReasoningLevels`, and `fastModes` are persisted separately from conversation content so restored request, model, option, and job ownership remain addressable.
+- `Codex` is available only after local CLI-session validation. A request first obtains a stored-connection revision lease, then performs exactly one CLI validation and optional execution on a blocking worker. Validation results update auth state only while the lease is current, so late results cannot overwrite disconnect/reconnect. CLI discovery, login status, and catalog probes have bounded subprocess timeouts.
+- `Claude` is exposed as an available, real provider through the same typed frontend auth and suggestion seams. A session can select and persist Claude independently from every other session; the request includes `agentSessionId`, and the frontend rejects blank ownership or a response from a different provider before rendering.
+- Desktop startup treats auth discovery as authoritative before capability discovery. The auth manager may refresh a persisted real `Connected` provider or a persisted real Claude `Error`, but a Claude error can recover only through a fresh current CLI validation. Successful recovery publishes `Connected` with the validated credential source and source-specific scopes, a new connection timestamp, and no identity or error data. An explicit Claude `Disconnected` state is never eligible for automatic refresh, and a non-real or otherwise untrusted legacy Claude error normalizes to disconnected state instead of becoming trusted.
+- Explicit provider disconnect is persistence-authoritative. Rust serializes and synchronizes a candidate into a unique temporary file, atomically replaces `agent-auth.json`, and only then publishes the disconnected snapshot in memory. Any failure before replacement returns through the Tauri IPC `Result` and preserves the prior state and revision; parent-directory synchronization is best-effort hardening after the atomic commit point and cannot turn a committed replacement into a false failure. Startup migration parses only canonical `codex` and `claude` connection entries before typed deserialization, discarding malformed, duplicate, noncanonical, or key/provider-mismatched entries so they cannot survive into persistence or runtime snapshots.
+- Every Claude validation failure is replaced before runtime publication or persistence with one actionable generic message: ``Claude authentication could not be validated. Check Claude credentials or run `claude auth login` in your own terminal, then reconnect Claude.`` Raw validation diagnostics, identity-like values, and secrets cannot reach the snapshot or store. Codex validation-error behavior is unchanged.
+- `read_agent_provider_capabilities` is the model-catalog authority. The Tauri command is asynchronous and moves provider capability work onto a blocking worker so a five-second CLI probe cannot block the IPC executor. The frontend rejects top-level or per-model provider mismatches, blank IDs/labels, and duplicate IDs before a catalog can affect UI or request state. The renderer waits until the active provider snapshot is exactly `Connected`: a deferred or disconnected startup performs zero capability reads, a connected startup performs exactly one, and a later successful Connect performs the first read for an initially disconnected provider. Provider-scoped connection and capability generations synchronously invalidate older catalogs and ignore stale success or stale rejection across startup, connect, disconnect, reconnect, provider-action error, and capability-read error boundaries. A selection is stored by `project + Agent session + provider`; it is removed only after a supported catalog definitively omits it, while unavailable or not-yet-loaded capability state preserves it. An ineffective selection is sent as `null` so the runtime default applies. Auth discovery and capability reads remain Agent-owned and never create, focus, write to, or otherwise mutate the center terminal.
+- Claude capability discovery starts the authenticated installed CLI in isolated SDK stream mode, sends one serialized `control_request` with subtype `initialize`, closes stdin, and accepts only the matching successful `control_response.response.models`. The probe sends no user prompt, `--print`, assistant turn, or inference request. It is bounded to five seconds, 64 KiB of stdout, 32 models, 128-byte IDs, and 160-byte final labels.
+- Only each sanitized returned `value` is a selectable Claude model ID. Human labels combine trimmed `displayName` with the leading human segment of `description`; `resolvedModel` is parsed only for bounds and does not become an alternate selectable ID. Blank, leading-dash, duplicate, control-bearing, excessive, malformed, multi-document, error, timeout, or spawn-failure results reject the complete catalog. Account, email, organization, subscription, and all other identity fields are neither modeled nor retained.
+- Each returned Claude model also owns an `executionOptions` object. Its bounded returned effort IDs and `supportsFastMode` value are authoritative; the selected model overrides provider-level compatibility fields even when the object is empty/false. Claude never publishes a default effort. The renderer adds a UI-only `Default` row that resolves to `reasoningLevel: null`, while Codex continues to use provider-level reasoning defaults when model-owned options are absent.
+- The raw native initialization envelope is intentionally version-coupled to Claude Code even though the model subset matches the public Agent SDK `ModelInfo` contract. Protocol drift therefore fails closed to an empty unsupported catalog and preserves the stored selection for a later valid read. No static, cached, historical, or entitlement-inferred fallback is allowed; exact versions, Fable, or extended-context variants appear only when their exact `value` is returned by the active account/policy response.
+- A Claude request performs a fresh bounded catalog read after authentication and before inference whenever it carries an explicit model, an explicit effort, or enabled Fast. The exact selected/default model entry must still contain every requested option; discovery failure, drift, or unsupported values fail before the inference child starts. A validated model remains one separate `--model <value>` pair, and a validated effort becomes one separate `--effort <level>` pair. `model: null` adds no model flag, but advanced options still resolve against the returned `default` entry.
+- Every Claude inference request receives exactly one sanitized `--settings` JSON object containing explicit `fastMode: true` or `false`; helper mode merges only its validated canonical `apiKeyHelper` into that same object. The runtime removes `CLAUDE_CODE_EFFORT_LEVEL` from the child environment, honors `CLAUDE_CODE_DISABLE_FAST_MODE=1` as a pre-inference cost-control rejection for enabled Fast, and never emits `--fast`, `/fast`, or `/effort`. Fast can require organization enablement and usage credits, so discovered support is not proof of billing eligibility.
+- The Claude backend selects credentials in this order: a non-empty explicit `ANTHROPIC_API_KEY`, a valid top-level user `apiKeyHelper` containing one canonical absolute regular executable path, then an already authenticated session in the installed user-owned Claude Code CLI. The helper path accepts no arguments, whitespace, or shell syntax; callers that need arguments or secret lookup must provide a user-owned, cwd-independent executable wrapper. Bedrock, Vertex, Foundry, unknown providers, and credential-source mismatches fail closed.
+- For CLI-session mode, auth status and requests run with `--safe-mode --setting-sources ""` and without `--bare`; the API-key/helper modes retain bare operation. The request writes the prompt only to stdin, disables model tools, MCP, slash commands, Chrome integration, and session persistence, and accepts only schema-validated `structured_output`. Safe mode excludes user/project customizations, but organization-managed policy can still supply hooks, status-line commands, or file-suggestion commands, so this is not an absolute process-level no-hooks guarantee.
+- The adapter launches the validated Claude CLI by canonical absolute path, supplies an absolute-only child `PATH`, strips competing credentials, host-managed markers, custom headers, alternate hosts, cloud-provider modes, and inherited debug/telemetry/process-wrapper controls, then explicitly disables nonessential traffic and official-marketplace auto-install. An optional `CLAUDE_CONFIG_DIR` is accepted only as an existing canonical directory inside the canonical current-user home, pinned across validation/request, and revalidated before child launch. The adapter bounds process I/O under one deadline and discards stderr bytes after bounded draining. It never persists or exposes a key, helper output, identity, subscription metadata, token, or raw provider stderr.
+- GTUM does not implement Claude.ai OAuth or capture credentials. A missing local session returns typed guidance to run `claude auth login` in the user's own terminal and reconnect; the CLI alone reads its credential store. Connect and request completion remain protected by revision leases, and reloaded state requires fresh runtime validation.
+- The preceding Claude authentication correction has integrated evidence: Claude Code CLI 2.1.210 exact safe-mode status exits 0 with `loggedIn: true`, `authMethod: claude.ai`, `apiProvider: firstParty`, and zero stderr bytes; exact bare status exits 1 with `loggedIn: false`, `authMethod: none`, `apiProvider: firstParty`, and zero stderr bytes. That baseline passed lint, production build with only the existing greater-than-500-KB chunk warning, isolated serial Playwright 200/200, Rust formatting/check, focused Claude tests 42/42, and the full Rust suite 147/147.
+- The earlier provider-aware alias slice is historical baseline evidence only: its Claude runtime module passed 44/44, runtime suggestion service 24/24, provider workspace/model UI slice 5/5, serial Playwright 210/210, and full Rust suite 149/149. Its static-alias and `--model opus` assertions are superseded by the account-catalog contract above. The completed account-catalog evidence passed Claude runtime 62/62 with the live smoke ignored by default, runtime suggestion service 24/24, Claude workspace/model UI 16/16, serial Playwright 221/221, Rust formatting/check, and the full Rust suite 169 passed / 1 ignored; its ignored production discovery smoke also passed separately. The completed effort/Fast slice passed serial Playwright 233/233, the full Rust suite with 179 passed / 1 ignored, and its exact clean-candidate prompt-free smoke 1/1. For the 2026-07-16 startup recovery, focused auth tests pass 25/25, the focused Claude workspace E2E passes 21/21, independent review approved the corrected code/test slice, and the exact clean-tree gate passes lint, build, serial Playwright 235/235, Rust formatting/check, and Rust 186 / 1 ignored. The bounded prompt-free smoke passes 1/1, and the rebuilt native macOS app restores the selected Claude provider before automatically publishing model, reasoning, and Fast metadata after current CLI validation. Exact tested commit `4ce5b172f2a902c0b9e0ec25ea735eb97131e147` was pushed non-forced to `dev`. Catalog smokes send no user prompt and perform no paid inference. No live `claude -p` inference or billing verification is claimed, and Windows cross-target compilation remains blocked before crate compilation by missing `llvm-rc` on the macOS host.
+- Technical support for a local CLI session does not authorize public third-party Claude.ai login routing. A public build must either pass an Anthropic approval/contract review for this use or keep Claude on API-key/supported-cloud credentials.
+
 ## 설계 기준 / Design Constraints
 
 ### 한국어
@@ -122,6 +149,7 @@ This document assumes the following decisions:
 - initial agent providers: `Codex`, `Claude`
 - the source-of-truth first daily-use `Codex` path is `OAuth/session login`
 - any `OPENAI_API_KEY` bridge should be treated as a temporary development path only
+- prototype or browser-preview fallbacks must not be treated as desktop-runtime success; installed-app provider and terminal flows should either use real runtime contracts or surface explicit unavailable/deferred states
 
 ## 전체 아키텍처 / High-Level Architecture
 
@@ -350,6 +378,8 @@ The frontend should be organized by feature domain.
   - hold feature contracts such as workbench tab layout and approval policy logic.
 - `shared/api`
   - holds backend-facing service seams such as `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file-read commands with browser fallback.
+  - includes `src/shared/api/runtimeWindow.ts`, the browser-safe seam for Tauri native window controls (`minimize`, `close`, `toggleMaximize`, `startDragging`, and `startResizeDragging`) used by the custom frameless chrome.
+  - native maximize state is local UI state only. The frontend must not poll Tauri `isMaximized` or subscribe to resize-driven maximize synchronization because that path can trigger macOS `is_zoomed`/style-mask churn in installed builds.
 - `shared/lib`, `shared/types`
   - hold cross-feature helpers and compatibility types needed while the uploaded design moves from JSX to TSX.
 - `widgets/*/ui`
@@ -357,10 +387,11 @@ The frontend should be organized by feature domain.
 
 #### UI Verification Principles
 
+- validate the installable Tauri desktop app before treating web/Vite preview results as release evidence
 - validate core UI flows with an E2E automation tool such as `Playwright`
 - each sprint should leave behind at least one E2E scenario for the new user-facing flow it delivers
 - separate smoke tests from feature-specific scenarios, and aim to keep smoke tests green at the end of every sprint
-- separate Tauri desktop verification from web-frontend verification, but keep the user-flow naming aligned across both
+- separate Tauri desktop verification from web-frontend verification, keep the user-flow naming aligned across both, and treat web preview as secondary fallback/design coverage
 - review frontend layout and interaction quality against `docs/frontend-design-benchmarks.md`
 - review UI tokens, colors, radius, and component state representation against `docs/design-system.md`
 - check whether the UI still preserves the editor hierarchy of `VS Code`, the agent-workflow clarity of `conductor`, and the tabbed-terminal strength of `cmux`
@@ -557,7 +588,6 @@ The Rust runtime is responsible for:
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
-- `executionMode`
 
 `activeFileSnippet`은 선택 파일 전체가 아니라 preview용 excerpt일 수 있으며, terminal 로그와 같이 bounded size를 유지한다.
 line anchor가 있으면 snippet은 anchor 근처 excerpt를 우선 사용한다.
@@ -604,6 +634,8 @@ Selected-file state should be restorable at the workspace level, but should not 
 
 The initial request envelope for this slice includes:
 
+- `provider`
+- `agentSessionId`
 - `projectPath`
 - `projectName`
 - `activeTabId`
@@ -613,10 +645,10 @@ The initial request envelope for this slice includes:
 - `activeFileSnippet`
 - `lastNLogLines`
 - `userTask`
-- `executionMode`
 
 `activeFileSnippet` may be a bounded preview excerpt rather than the full file and should stay size-limited in the same spirit as attached terminal logs.
 When a line anchor exists, the snippet should prefer the anchored region rather than only the top of the file.
+The frontend captures `projectPath + agentSessionId + provider` before every async request boundary. `agentSessionId` is required and trimmed before IPC, and every returned suggestion must identify the requested provider before it can enter conversation or permission state.
 
 ## 터미널 세션 설계 / Terminal Session Design
 
@@ -691,6 +723,12 @@ The terminal should be treated as a long-lived session object, not just a text v
 - Ubuntu and macOS can share a common POSIX shell flow
 - Windows needs a dedicated shell strategy that abstracts `powershell`, `pwsh`, and `cmd`
 - detect default shells per OS and allow users to override them in settings
+- The active frontend terminal seam is `src/shared/api/runtimeTerminals.ts`; it wraps `create_terminal_session`, `create_terminal_session_with_command`, `read_terminal_session_logs`, `execute_terminal_session_command`, and `close_terminal_session`.
+- `src/prototype.jsx` now uses that seam only for user-owned terminal actions: creating terminal tabs, submitting user-typed terminal input, runtime log polling, and tab close termination. Agent approval decisions must not call this seam.
+- On Windows, user-created center terminal tabs use a hidden persistent shell process, preferring `powershell.exe -NoLogo -NoProfile -NoExit` before `pwsh.exe` and `cmd.exe` fallback. User input is written to that shell over stdin and stdout/stderr are streamed back into the center terminal, so shell builtins and aliases such as `dir`, `cd`, `ls`, and `clear` work without opening an external console window. `clear` and `cls` clear the runtime log buffer as well as being submitted to the shell.
+- The active frontend file-edit seam is `src/shared/api/runtimeProjects.ts`; it wraps `read_project_file`, `write_project_file`, and `apply_project_patch` so the center editor can save real files with a content-hash conflict guard and agent patch application can happen through an explicit file contract. Multi-file patch application must preflight every edit before writing any file, which prevents stale hashes or duplicate targets from producing partial writes.
+- The active frontend agent-owned execution seam is `src/shared/api/runtimeAgentJobs.ts`; it wraps project-scoped `create_agent_job`, `list_agent_jobs`, `read_agent_job_logs`, and `cancel_agent_job` so approved agent commands run as hidden background jobs instead of mutating center terminal tabs.
+- Browser preview remains deterministic through the same service fallback, while interactive terminal ownership and Windows shell sessions stay in `src-tauri/src/runtime/pty/mod.rs`.
 
 ## 크로스 플랫폼 전략 / Cross-Platform Strategy
 
@@ -739,6 +777,10 @@ The structural support scope still covers all three platforms, but the first dai
 - only normalized information should be exposed to the frontend
 - OS-specific exception handling should be designed into the infrastructure layer early
 - Windows path handling, shell behavior, folder-picker behavior, and newline differences should be validated first as part of the initial daily-use baseline
+- home-directory expansion for runtime paths must accept `HOME`, `USERPROFILE`, and `HOMEDRIVE` plus `HOMEPATH`, because installed Windows app launches may not provide `HOME`
+- runtime behavior should branch inside the Rust `platform` module with `cfg(target_os = "...")` rather than scattering OS checks through feature modules
+- build-time bundle differences should live in Tauri platform config files such as `tauri.windows.conf.json` and `tauri.macos.conf.json`; release artifacts should be produced on native OS runners instead of relying on cross-compilation for Windows/macOS
+- Windows user-created center terminal sessions prefer a hidden persistent PowerShell shell process, then `pwsh.exe`, then `cmd.exe /D /Q /K` through `ComSpec`. This user-owned shell path supports shell builtins and persistent cwd. Windows-approved agent commands must not use that center terminal shell path: they run as hidden shell-free process sessions, resolve only direct `.exe` or `.com` programs, capture stdout/stderr into runtime logs, and reject `cmd.exe`, `powershell.exe`, `.cmd`, `.bat`, shell syntax, and shell builtins into the app log.
 
 ## Git 워크플로우 설계 / Git Workflow Design
 
@@ -874,7 +916,6 @@ Project state should include at least the following Git metadata:
   - 작업 요청 전송
   - 응답 스트리밍 정규화
 - `ClaudeAdapter`
-  - Claude deferred path 상태 확인
   - 작업 요청 전송
   - 응답 스트리밍 정규화
 
@@ -906,9 +947,61 @@ The initial providers are `Codex` and `Claude`.
   - send task requests
   - normalize response streaming
 - `ClaudeAdapter`
-  - validate the Claude deferred-path state
-  - send task requests
-  - normalize response streaming
+  - discover the Claude CLI as a canonical absolute regular executable and select an explicit API key, then a strict user-level `apiKeyHelper` executable path, then a first-party authenticated local CLI session
+  - never initiate Claude.ai OAuth or read a Keychain/credential file; return external `claude auth login` guidance when the installed CLI has no valid first-party session
+  - reject third-party provider modes, unknown auth methods, and credential-source mismatches
+  - discover the current account/policy model catalog through one bounded, prompt-free SDK initialization control request on a blocking worker and discard all non-model identity data
+  - retain each returned model's bounded `executionOptions` as the sole authority for model-specific effort/Fast visibility and request validation
+  - run a no-model-tools, no-MCP, no-slash-commands, no-Chrome, non-persistent structured-output request without using the center terminal
+  - parse only schema-valid `structured_output`, discard bounded stderr, enforce one all-I/O deadline, and return the shared provider response format
+  - protect connect and request completion with the same fail-closed revision-lease semantics used at the application boundary
+  - expose only sanitized model `value` fields returned by the current catalog, then refresh and validate an explicit selection against those exact values before inference spawn
+
+The implemented Claude CLI-session status check is constrained to this shape:
+
+```text
+claude --safe-mode --setting-sources "" auth status --json
+```
+
+The CLI-session model-catalog probe uses the same isolation prefix, then this SDK stream shape:
+
+```text
+claude --safe-mode --setting-sources "" --strict-mcp-config
+       --disable-slash-commands --no-chrome --no-session-persistence
+       --permission-mode dontAsk --tools "" --output-format stream-json
+       --verbose --input-format stream-json
+stdin: one {"type":"control_request","request_id":"gtum-claude-model-catalog-v1",
+            "request":{"subtype":"initialize"}} line, then EOF
+```
+
+API-key/helper catalog probes use the same stream suffix after the isolated `--bare --safe-mode` prefix, and only helper mode may append its sanitized settings document. Catalog discovery never passes `--print`, a prompt, `--model`, a resume/session argument, a tool, MCP configuration, or a center-terminal path. The parser accepts one matching success envelope only. Because this native wire shape is version-coupled, any drift fails closed rather than presenting a remembered or fabricated catalog.
+
+The corresponding CLI-session request is constrained to this shape:
+
+```text
+claude --safe-mode --setting-sources "" --strict-mcp-config
+       --disable-slash-commands --no-chrome --no-session-persistence
+       --permission-mode dontAsk --tools "" --print
+       --output-format json --json-schema <compact-schema>
+```
+
+API-key and helper requests retain the isolated bare shape:
+
+```text
+claude --bare --safe-mode --strict-mcp-config --disable-slash-commands
+       --no-chrome --no-session-persistence --permission-mode dontAsk
+       --tools "" --print --output-format json --json-schema <compact-schema>
+```
+
+An implicit runtime-default request adds no `--model` or `--effort` flag. An explicit model, explicit effort, or enabled Fast first refreshes the authenticated catalog and validates the exact effective model entry. A valid model appends separate `--model`, `<value>` arguments; a valid effort appends separate `--effort`, `<level>` arguments. A `resolvedModel` string, historical version, Fable variant, extended-context value, effort, or Fast state is not selectable unless the current response returns support for it; Claude Code account entitlement and organization-managed policy remain authoritative.
+
+Every inference invocation appends exactly one sanitized `--settings <json>` pair. The JSON always contains explicit `fastMode: true` or `false`; helper mode adds only the validated `apiKeyHelper` key to the same object. The top-level `apiKeyHelper` value is not a command line: it must be a single absolute path that canonicalizes to a regular executable, with a Unix execute bit where applicable, and it may contain no arguments, whitespace, or shell syntax. A caller that needs arguments or a secret lookup must provide a user-owned, cwd-independent executable wrapper. On Windows, a local-drive extended prefix such as `\\?\C:\...` is normalized to its drive path; UNC, volume-GUID, whitespace-bearing, and shell-bearing forms fail closed. An optional custom Claude config root must canonicalize to an existing directory inside the canonical current-user home; the adapter pins that approved root for helper discovery and CLI-session child setup, then fails closed if the path changes before launch.
+
+The Claude CLI itself is also selected and launched only as a canonical absolute regular executable. The child receives only absolute `PATH` entries and a credential-specific environment: competing credentials, host-managed markers, custom headers, alternate Anthropic hosts, cloud modes, and inherited debug/telemetry/process-wrapper controls are removed. Nonessential traffic and official-marketplace auto-install are explicitly disabled. One deadline covers child completion plus stdin, stdout, and stderr workers; timeout kills the owned child, stdout remains bounded, and stderr is bounded-drained and discarded instead of being returned through diagnostics or errors.
+
+The prompt is written to stdin, the child cwd is the captured canonical project, and the adapter does not pass `--file`, `--add-dir`, MCP config, browser-enable flags, resume/session flags, or provider-side write/terminal tools. Credential precedence is explicit API key, valid helper, then CLI session. A CLI-session status payload with no login becomes typed `MissingCliSession` guidance to run `claude auth login` externally; malformed or mismatched status remains a redacted fail-closed error.
+
+`--safe-mode --setting-sources ""` prevents user/project customizations from loading while leaving official CLI authentication available. It does not override organization-managed policy. Policy-configured hooks, status-line commands, or file-suggestion commands may still apply, although model tools and MCP remain disabled by the request flags; this design therefore makes no absolute no-hooks claim.
 
 ## 로그인 및 세션 설계 / Login and Session Design
 
@@ -938,27 +1031,39 @@ The initial providers are `Codex` and `Claude`.
 
 ### English
 
-The target path for the first daily-use release is `OAuth/session login` for `Codex`. Any env/API-key bridge that remains in the repository should be treated as a temporary development path rather than the release design.
+The target `Codex` path is `OAuth/session login`. Claude selects an explicit first-party API credential, then a strict top-level user `apiKeyHelper`, then the already authenticated session of the installed user-owned CLI. GTUM does not start Claude.ai OAuth or capture its token. The local CLI-session path remains internal-use infrastructure until Anthropic approval/contract review authorizes third-party distribution. Any `OPENAI_API_KEY` bridge that remains in the repository is a temporary Codex development path rather than the release design.
 
 #### Goals
 
 - users should be able to connect provider accounts from within the app
-- prefer browser or desktop-session login over in-app token forms
+- use the provider-approved credential path without an in-app raw-token form
 - store connection state securely and detect expiry, cancellation, or missing-scope errors
 
 #### Recommended Flow
 
-1. the user clicks connect for `Codex` or `Claude`
-2. the app opens the provider-approved login path in the system browser or desktop flow
-3. the runtime handles the callback, deep link, or sign-in completion event
-4. the runtime stores connection state and baseline diagnostics
-5. the UI shows connection state, reconnect state, and granted scopes
+1. the user clicks Connect for the provider selected by the active Agent session
+2. Codex validates the local CLI ChatGPT session; Claude selects an explicit API key, then a valid helper, then validates the installed CLI's first-party session through safe mode
+3. if the Claude CLI session is missing, the runtime tells the user to run `claude auth login` in their own terminal. It never opens a login browser, captures a token, reads the credential store, or mutates the center terminal
+4. the runtime stores only non-secret connection state and baseline diagnostics
+5. the UI shows connection state, reconnect state, and non-secret credential readiness while the session keeps its own `providerId`
 
 #### Session Storage Rules
 
 - prefer OS-level secure storage when available
 - do not store sensitive credentials in plain-text config files
+- persist only the non-secret credential-source label and documented scopes; do not persist or render an Anthropic API key, helper output, email, organization, OAuth token, or subscription metadata
 - if the session expires or loses scope, show a clear reconnect state in the UI
+
+#### Current Implementation Notes
+
+- The active frontend auth seam is `src/shared/api/runtimeAgentAuth.ts`; it wraps `list_agent_connections`, `begin_agent_login`, `disconnect_agent_provider`, and `agent_auth_runtime_snapshot`.
+- In the desktop runtime path, clicking `Connect Codex` calls `begin_agent_login` so the Rust auth manager can validate the local ChatGPT-backed Codex CLI session. It does not open a terminal tab or run `codex login`; setup guidance stays in the right Agent panel and provider row.
+- Claude now survives frontend normalization as `available + real`; connect and disconnect use the same runtime IPC boundary instead of a local deferred shortcut. The Rust API-key/helper/CLI-session adapter and stale-completion rejection are implemented and Rust-verified. Frontend availability still must not be read as proof of a connected credential or a live inference request.
+- A successful CLI-session validation persists only `credentialSource: "claude_cli_session"` and the scopes `provider:request` plus `credential:cli_session`. API-key/helper connections retain `credential:api_key`; restored records are not trusted until fresh runtime validation.
+- Public distribution of the CLI-session path is blocked pending Anthropic approval/contract review. The fallback public-release contract is API-key or supported cloud-provider authentication.
+- The Rust Codex runtime resolves the CLI from `PATH` first and then known macOS `Codex.app` bundle locations. PTY shells also receive existing Codex app resource directories in `PATH`, which keeps user-owned terminal sessions and `codex exec` working when the installed app is launched from Finder with a limited environment.
+- The current Codex runtime scope contract is `project:read` and `terminal:read`; missing or expired session state maps to provider `error` and can be retried by reconnecting after the CLI login finishes.
+- Browser preview keeps only explicit no-runtime fallbacks. It does not load a bundled project fixture, fabricate provider answers, or treat simulated browser-only UI as desktop-runtime success.
 
 ## 외부 채널 연동 설계 / External Channel Integration Design
 
@@ -1096,7 +1201,7 @@ Multi-agent execution should be orchestrated in the application layer.
 - `Conductor`
   - decomposes user requests into task graphs
 - `Task Scheduler`
-  - decides worker count and priority based on execution mode
+  - will eventually decide worker count and priority based on runtime-backed scheduling policies
 - `Agent Worker`
   - execution unit connected to a provider
 - `Context Store`
@@ -1150,55 +1255,18 @@ Parallelism should be increased only when these ownership boundaries stay clear.
 - when UI behavior changes, verify whether the runtime contract or snapshot schema must change too
 - treat display semantics as a shared contract rather than separate frontend and backend interpretations
 
-## 실행 모드 정책 / Execution Mode Policy
+## Deferred Execution Policy
 
-### 한국어
+Fixed execution mode is a future scheduling-policy concept. Provider-backed `reasoningLevel` and `fastMode` are implemented UI, persistence, and request fields; they are model/provider request options, not `Fast`/`Balanced`/`Deep` scheduling policies.
 
-실행 모드는 UI 옵션이 아니라 스케줄링 정책이다.
+Current contract:
 
-#### Fast
-
-- 더 작은 모델 우선
-- 적은 파일과 짧은 로그 사용
-- 제한된 병렬 워커
-- 교차 리뷰 생략 가능
-
-#### Balanced
-
-- 기본 모드
-- 적절한 컨텍스트 범위
-- 제한적인 병렬 작업
-- 경량 검토 포함 가능
-
-#### Deep
-
-- 더 넓은 컨텍스트 사용
-- 더 많은 워커 사용 가능
-- 테스트, 리뷰, 교차 확인 포함
-
-### English
-
-Execution mode is a scheduling policy, not just a UI option.
-
-#### Fast
-
-- prefer smaller models
-- use fewer files and shorter logs
-- limited parallel workers
-- cross-review may be skipped
-
-#### Balanced
-
-- default mode
-- practical context scope
-- limited parallel work
-- lightweight review can be included
-
-#### Deep
-
-- broader context
-- more workers allowed
-- includes testing, review, and cross-checking
+- Only the fixed `Fast`, `Balanced`, and `Deep` scheduling presets are absent from the agent panel, settings modal, statusbar, workspace persistence, and `request_agent_suggestions` envelope. Capability-backed provider Fast is implemented as `fastMode` in the composer, provider-scoped session persistence, and request envelope.
+- Provider model selection is exposed only when `read_agent_provider_capabilities` returns a supported, provider-owned catalog. Codex models come from the local Codex CLI catalog/config path; Claude models are the sanitized exact `value` fields in the current authenticated CLI initialization response. The selected ID is persisted by project, Agent session, and provider, then forwarded only while it remains valid for that provider. A definitively stale value is removed and sent as `null`; unavailable or not-yet-loaded capability state does not erase it. Codex forwards an explicit ID as `codex exec --model <id>`, while Claude refreshes its catalog, validates exact membership, and appends one `--model <value>` pair. `model: null` omits only the model flag; an explicit effort or enabled Fast still refreshes the catalog and resolves the returned `default` entry. Attachment controls follow the same capability contract; Codex image attachments selected through the composer are forwarded as `codex exec --image <path>`.
+- Provider reasoning controls are capability-backed request options, not fixed frontend modes. Claude model rows carry optional `executionOptions`; when present, the effective selected model's effort list and Fast flag override provider-level compatibility fields even when empty/false. The composer prepends a UI-only `Default` effort row for model-owned options and sends it as `null`. Codex models omit `executionOptions` and continue to use provider-level `reasoningLevels`, `defaultReasoningLevel`, and `supportsFastMode`.
+- Codex reasoning levels come from the local Codex model catalog/config path. When the user selects one of those supported values, the runtime forwards it through `codex exec -c model_reasoning_effort="<level>"`. Fast mode remains capability-gated in the UI and request envelope, but the runtime must not invent an unchecked Codex CLI config override for it.
+- Reasoning/Fast persistence is keyed only by `codex` and `claude` inside each project Agent session. Explicitly selecting Claude's UI-only `Default` deletes that provider's `selectedReasoningLevels` entry. By contrast, temporarily selecting a model that cannot use the saved effort makes the effective request `null` without deleting the preference, so switching back can restore it. A stale Codex provider-level reasoning value recovers to the current provider default/first supported value; a stale Claude model-owned effort remains `null`/`Default` because no Claude default may be inferred. Send constructs one immutable provider/model/attachment/reasoning/Fast snapshot before state mutation or any asynchronous boundary.
+- Future execution policies must be backed by explicit runtime policy definitions and provider capability discovery before any UI control is reintroduced.
 
 ## 상태 모델 / State Model
 
@@ -1260,11 +1328,20 @@ Because `gtum` interacts with local files and shell execution, security boundari
 
 #### Principles
 
-- command execution always passes through an approval path
+- command execution in the center workbench terminal is exclusively user-owned. Agent-tab requests, permission cards, and approved agent work must never create, select, rename, split, focus, write into, close, or otherwise mutate user-visible center terminal tabs or panes.
+- approval in the right agent workspace only records a decision. If approved agent work needs execution, it must use an isolated agent-owned background job surface or hidden runtime record that is visible in the right agent workspace and task history. If that execution contract does not exist, the app must show an explicit unavailable/manual-run state instead of touching the center terminal.
 - file edits are allowed only through approval or explicit editing flows
 - login sessions and sensitive data must use secure storage
 - provider responses should be normalized into shared internal formats before being exposed to the UI
 - the first desktop `Codex` session-backed slice may reuse local `Codex CLI` login state and `codex exec` before deeper in-app callback handling is complete
+- The active frontend provider seam is `src/shared/api/runtimeAgentSuggestions.ts`; it wraps `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`, requires `agentSessionId`, rejects provider-mismatched responses and malformed/cross-provider model catalogs, and normalizes either provider into a reply-only assistant turn or a command-bearing turn that requires review.
+- `src/prototype.jsx` uses that seam only when the desktop runtime is available, the selected session provider is connected, and the project is runtime-backed. Pending requests render concrete operation progress sequentially in the owning Agent session, completed turns record answer-time metadata, numbered replies can become selectable decision event cards, and command-bearing responses become explicit permission event cards with direct `Allow once` and `Deny` actions. Browser preview must not keep a canned agent response path; it surfaces an explicit runtime-unavailable state instead.
+- The right Agent workspace owns provider conversation, command review, decision recording, and Agent-job activity. `Deny` keeps the refusal in the Agent panel. `Allow once` is guarded so one decision creates at most one job, and it must not dispatch work to user-visible center terminal tabs or panes. Existing interactive runtime tabs may receive command writes only from explicit user terminal actions, not from agent approval.
+- Agent-owned execution is modeled as a separate background contract through `src-tauri/src/runtime/agent_jobs.rs` and `src/shared/api/runtimeAgentJobs.ts`. It must not reuse `create_terminal_session`, `create_terminal_session_with_command`, `execute_terminal_session_command`, or a future equivalent when that command creates or mutates the center workbench terminal surface.
+- The Codex `command` response is a gtum permission-card preview until the user approves it. Provider-side approval or sandbox settings, including `approval_policy=never`, must not be treated as a reason to refuse harmless permission-card suggestions.
+- Desktop `request_agent_suggestions` runs Codex response generation in a blocking worker task rather than the command handler path. The `codex exec` child process has a 60-second timeout and is killed before returning a visible error if it hangs.
+- Windows `Codex` suggestion requests must avoid passing the full prompt as a `codex.cmd` batch-file argument. The runtime sends the prompt over stdin and, when the npm shim can be resolved, executes `node.exe <codex.js>` directly before falling back to `codex.cmd`. Windows runtime subprocesses must be launched with no console window so Codex probes, model catalog reads, `codex exec`, and Git metadata reads do not flash terminal windows over the desktop UI.
+- Claude subprocesses execute the CLI and optional helper only by validated canonical absolute executable paths. Helper command lines, arguments, whitespace, and shell syntax are rejected; Windows extended local-drive paths are normalized while UNC and volume paths fail closed. The child uses an absolute-only `PATH`, strips alternate provider/host/authentication environment variables, applies one deadline to all process I/O, and never exposes drained stderr.
 
 ## MVP 구현 순서 / MVP Implementation Order
 
@@ -1291,7 +1368,7 @@ Because `gtum` interacts with local files and shell execution, security boundari
 7. add a shared provider adapter interface
 8. implement read-only Git branch and dirty-state visibility
 9. implement a first multi-agent orchestration layer
-10. apply execution mode policies
+10. define runtime-backed scheduling policies before exposing execution-mode controls
 
 ## 오픈 질문 / Open Questions
 

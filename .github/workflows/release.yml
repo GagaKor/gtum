@@ -16,8 +16,38 @@ permissions:
   contents: write
 
 jobs:
+  guard:
+    name: Guard release tag
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref }}
+
+      - name: Fail if release tag already exists
+        shell: bash
+        run: |
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [ -z "$version" ] || [ "$version" = "undefined" ]; then
+            echo "Could not read version from src-tauri/tauri.conf.json." >&2
+            exit 1
+          fi
+
+          tag="v${version}"
+          echo "Resolved release tag: ${tag}"
+
+          if [ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ]; then
+            echo "Release tag ${tag} already exists on origin. Bump the version in src-tauri/tauri.conf.json (and package.json) before releasing." >&2
+            exit 1
+          fi
+
+          echo "Release tag ${tag} is available."
+
   publish-tauri:
     name: Build and Publish (${{ matrix.platform }})
+    needs: guard
     runs-on: ${{ matrix.platform }}
 
     strategy:
@@ -88,6 +118,38 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify Linux install artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          appimage_artifacts="$(find src-tauri/target -path '*/bundle/*' -name '*.AppImage' -print)"
+          deb_artifacts="$(find src-tauri/target -path '*/bundle/*' -name '*.deb' -print)"
+          rpm_artifacts="$(find src-tauri/target -path '*/bundle/*' -name '*.rpm' -print)"
+
+          if [ -z "$appimage_artifacts" ] && [ -z "$deb_artifacts" ] && [ -z "$rpm_artifacts" ]; then
+            echo "Expected at least one Linux AppImage, .deb, or .rpm artifact under src-tauri/target/*/bundle, but none were found." >&2
+            exit 1
+          fi
+
+          {
+            echo "### Linux install artifacts"
+            echo
+            if [ -n "$appimage_artifacts" ]; then
+              echo "#### AppImage"
+              printf '%s\n' "$appimage_artifacts"
+              echo
+            fi
+            if [ -n "$deb_artifacts" ]; then
+              echo "#### .deb"
+              printf '%s\n' "$deb_artifacts"
+              echo
+            fi
+            if [ -n "$rpm_artifacts" ]; then
+              echo "#### .rpm"
+              printf '%s\n' "$rpm_artifacts"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify Windows install artifacts
         if: matrix.platform == 'windows-latest'

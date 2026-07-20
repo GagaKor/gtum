@@ -72,6 +72,157 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
+## Current Selected Provider And Direct Fast Toggle — 2026-07-16
+
+Goal: make the current provider equally explicit for Codex and Claude, and make capability-backed Fast a direct boolean control without changing its existing ownership or request contract.
+
+Delivered contract:
+
+- the current Codex or Claude mark in both the Agent header and composer uses the same explicit selected treatment; provider identity styling and the provider listbox's single-selection semantics remain separate
+- supported Fast is a native on/off button with its exact state in the accessible name and `aria-pressed`; pointer, Enter, and Space activation toggle the existing boolean directly, and no Fast popup or listbox is created
+- Fast remains capability-gated. Existing project, Agent-session, and provider-scoped persistence plus the frozen request snapshot are unchanged, and the interaction does not create, focus, write to, or otherwise mutate the user-visible center terminal
+
+Verification state:
+
+- the exact focused TDD RED selection ran 11 tests: 9 failed as expected and 2 passed, exposing the missing current-provider class and the superseded Fast-popup semantics; the same exact focused selection then passed 11/11 at GREEN
+- `npm run lint` passes, and `npm run build` passes with only the existing greater-than-500-KB chunk warning
+- full serial Playwright passes 237/237 in 2.1 minutes
+- Rust formatting and compile checks pass through `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` and `cargo check --manifest-path src-tauri/Cargo.toml`; the full Rust suite passes 186 tests with 1 ignored and 0 failed
+- the ignored Rust test is the installed-authenticated-Claude initialize-only smoke; no live provider inference ran
+- `git diff --check` passes, and independent renderer/spec and QA reviews found no blocker
+- `npm run tauri:bundle -- --debug` rebuilt the native macOS artifact. In that exact package, both Codex and Claude showed the explicit current mark, Fast exposed a native off/on toggle with no selection list, and successive clicks changed `Disabled -> Enabled -> Disabled`; the inspected session was restored to Codex with Fast disabled and no provider prompt was sent
+- the exact committed-SHA second gate remains pending. This entry makes no commit, push, or completion claim
+- the active execution record is [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md)
+
+## Current Claude Startup Capability Recovery — 2026-07-16
+
+Goal: recover Claude model, reasoning, and Fast controls on desktop startup only when current auth validation re-establishes a trusted connection, without overriding explicit disconnect or stale-generation ownership.
+
+Delivered implementation:
+
+- desktop startup makes provider auth discovery authoritative before any active-provider capability read
+- the auth manager retries a persisted real Claude `Error` only through fresh current CLI validation. Success becomes `Connected` with the validated credential source and scopes while clearing identity and error data
+- explicit Claude `Disconnected` state is never auto-connected; a non-real legacy Claude error normalizes to disconnected/untrusted state
+- disconnect is committed to memory only after a synchronized candidate atomically replaces the auth store; pre-commit failure is returned through IPC without changing the prior state/revision, and malformed or noncanonical legacy connection entries are discarded before typed deserialization
+- Claude validation failures are replaced with one actionable generic redacted message before runtime publication or persistence. Codex validation-error behavior is unchanged
+- the renderer reads capabilities only after the active provider is exactly `Connected`: connected startup reads once, disconnected startup reads zero times, and a successful Connect performs the first read
+- existing provider connection/capability generations suppress stale success and stale rejection, and all startup/auth/catalog activity leaves the user-owned center terminal untouched
+
+Verification state:
+
+- focused auth coverage passes 25/25, focused Claude workspace E2E passes 21/21, lint passes, and independent final review approved the corrected code/test slice
+- the exact-candidate clean-tree gate passes lint, build, serial Playwright 235/235, Rust formatting/check, and Rust 186 / 1 ignored; the bounded prompt-free Claude compatibility smoke passes 1/1, and the rebuilt native macOS app repopulates the selected Claude model/reasoning/Fast controls after current CLI validation
+- exact tested commit `4ce5b172f2a902c0b9e0ec25ea735eb97131e147` was pushed non-forced to `dev`; Task 5 and its documentation closure are complete
+- catalog discovery remains distinct from user-prompt inference. No live Claude inference, paid request, billing eligibility, or response-quality result is claimed
+- the active execution record is [Claude Startup Capability Recovery Implementation Plan](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
+
+## Current Claude Model-Specific Effort And Fast Mode — 2026-07-15
+
+Goal: expose only the reasoning and Fast options returned for the effective Claude model, preserve independent Codex/Claude preferences, and reject stale or unsupported combinations before inference.
+
+Delivered contract:
+
+- each prompt-free Claude catalog model carries bounded `executionOptions`; selected-model data overrides provider-level compatibility fields, and no alias or entitlement is inferred
+- the compact composer renders only supported controls. Claude adds a UI-only `Default` effort row that sends `reasoningLevel: null`; unsupported models hide the controls without erasing saved provider preferences
+- each project Agent session persists `selectedReasoningLevels` and `fastModes` under `codex`/`claude`. Stale provider-level Codex effort recovers to the current supported default, while stale Claude model-owned effort remains null
+- send freezes provider, model, attachments, effort, and Fast with the original project/session owner before asynchronous work; Agent execution never mutates the user-visible center terminal
+- an explicit Claude model, explicit effort, or enabled Fast triggers a fresh catalog read and exact effective-model validation before inference. Supported effort maps to separate `--effort <level>` arguments
+- every inference request emits exactly one sanitized settings JSON with explicit `fastMode`; helper mode merges only `apiKeyHelper`. The child removes `CLAUDE_CODE_EFFORT_LEVEL`, and `CLAUDE_CODE_DISABLE_FAST_MODE=1` rejects enabled Fast before spawn
+
+Verification state:
+
+- malformed capability normalization, model switching, compact/narrow geometry, provider/project/session persistence, immutable request ownership, settings/argv mapping, policy-environment handling, and pre-spawn rejection have focused Rust and serial Playwright coverage. Final clean-candidate verification passed lint, production build, serial Playwright `233/233`, Rust formatting/check, and the full Rust suite with `179` passed and `1` ignored
+- catalog fixtures and the bounded prompt-free compatibility smoke are distinct from live inference. The exact clean-candidate initialize-only smoke passed `1/1` through `live_catalog_compatibility_smoke_is_prompt_free`. No user prompt, paid Claude inference, billing, or response-quality validation ran for this slice
+- Fast can require organization enablement and usage credits even when a model reports support; GTUM does not present discovered support as billing entitlement
+- exact tested SHA `0b472042a2930929bef8c541820c43bd959f6c19` was pushed non-forced to `origin/dev` after ancestor and clean-tree assertions, and the remote SHA was verified without renaming the working branch
+- the completed execution record is [Claude Effort and Fast Mode Implementation Plan](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
+
+## Completed Claude Account Model Catalog And Picker Repair — 2026-07-15
+
+Goal: replace the clipped static Claude alias menu with the bounded model catalog returned by the authenticated installed CLI, then preserve each exact selectable value through renderer state and request-time validation.
+
+Delivered scope:
+
+- `read_agent_provider_capabilities` remains the provider-owned catalog boundary and runs blocking provider discovery away from the Tauri IPC executor.
+- Claude starts the installed CLI in source-specific isolated SDK stream mode, sends exactly one serialized `initialize` control request, closes stdin, and parses only one bounded matching success response. Discovery sends no prompt, `--print`, assistant turn, or inference request.
+- The catalog keeps only sanitized returned `value` IDs and one-line labels formed from `displayName` plus the leading description segment. It discards identity, email, organization, subscription, and unrelated response fields.
+- The native control envelope is version-coupled to Claude Code. Wrong IDs, error or extra envelopes, malformed JSON, blank/control-bearing/leading-dash/duplicate/excessive fields, empty results, spawn failure, timeout, or oversized output reject the catalog atomically. There is no static, cached, historical, or inferred entitlement fallback.
+- Historical versions, Fable, and extended-context variants are selectable only when the current account/policy response returns their exact `value`. `resolvedModel` never grants a second selectable identifier.
+- Failed or unavailable discovery exposes no selectable catalog and preserves the stored per-project/session/provider value for a later valid read. A successful supported catalog may remove a definitively absent value.
+- In this completed catalog slice, an explicit model refreshes the authenticated catalog before inference spawn, requires exact returned-value membership, and adds exactly one separate `--model <value>` pair after validation. `model: null` omits the model flag. The newer effort/Fast contract still refreshes and resolves the returned `default` entry when an explicit effort or enabled Fast is requested with a null model.
+- Closed composer provider/model/reasoning/fast controls use compact non-wrapping icons or marks. Exact names and current state appear inside the opened lists, while exact accessible labels remain on the controls. Every popup stays within the Agent panel and viewport at the default, 260 px, and 240 px Agent widths. Current account labels remain one line at the default width; longer valid labels wrap inside their option without clipping or horizontal overflow. The model list scrolls internally and brings the selected row into view when reopened. Listbox semantics, one truthful selection, Escape focus restoration, provider-change close, persistence, and zero center-terminal mutation remain required.
+- Provider capability state is generation-owned. Each successfully returned startup connection and every connect, disconnect, reconnect, provider-action error, or capability-read error invalidates the old provider catalog synchronously; a connected active provider schedules a fresh read, and a late success or rejection cannot overwrite a newer connection or catalog state.
+
+Current-account investigation (environment evidence, not a product-owned list):
+
+- a prompt-free CLI initialization response exposed `default`, `opus[1m]`, `claude-fable-5[1m]`, `sonnet`, and `haiku`, with labels identifying Opus 4.8 1M, Fable 5, Sonnet 5, and Haiku 4.5
+- older Opus/Sonnet versions shown in external screenshots were not returned and therefore are not inferred as selectable entitlement
+- no live Claude inference, command response, billing, or response-quality validation ran
+
+Verification status:
+
+- parser/protocol, exact-argv, request-time validation, async capability ownership, picker geometry, persistence, and center-terminal isolation pass the current focused and full gates
+- focused evidence passes Claude runtime 62/62, Claude workspace UI 16/16, and runtime suggestion service 24/24; the fresh complete gate passes lint, production build, serial Playwright 221/221, Rust formatting/check, and Rust 169 passed / 1 ignored
+- the ignored production discovery smoke passes explicitly against the authenticated installed CLI and returns the five sanitized current-account model pairs without a prompt or inference turn; independent runtime/UI reviews report no critical, important, or minor findings
+- macOS-to-Windows cross-target checking remains blocked before GTUM crate compilation by Tauri `tauri-winres` because `llvm-rc` is unavailable; native Windows validation remains pending
+- after a final fetch and ancestor proof, the verified slice advanced `origin/dev` from `5ff3fd2` to `fa56cbe` through a non-force `HEAD:dev` push without renaming the working branch
+- the active execution record is [Claude Account Model Catalog and Picker Repair Implementation Plan](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
+
+## Provider-Aware Model Selection Slice — 2026-07-15 (Historical Baseline, Superseded)
+
+Goal: make model choices follow the selected provider, survive project/session/provider switching, and reach the isolated provider process only after runtime-backed ownership validation.
+
+Delivered scope:
+
+- `read_agent_provider_capabilities` remains the catalog authority. The frontend rejects a top-level provider mismatch, cross-provider current/available models, blank IDs or labels, and duplicate model IDs.
+- Claude exposes exactly `default`, `best`, `sonnet`, `opus`, and `haiku`. `best` delegates the entitlement-aware choice to Claude Code; direct Fable, exact-version, 1M-context, effort, and fast-mode controls remain deferred until structured entitlement discovery exists.
+- Each project/Agent-session record persists `selectedModels` independently for Codex and Claude. Provider switching restores the matching choice without leaking one provider's model into the other.
+- A supported catalog that definitively omits a stored model removes only that provider's value and sends `model: null`; unavailable or not-yet-loaded capability state preserves persistence but cannot forward the value until validation succeeds.
+- Send snapshots the provider and its validated explicit model together. Claude accepts only bounded aliases, adds exactly one separate `--model <alias>` pair for an explicit choice, adds no model flag for implicit default, and rejects invalid values before child spawn.
+- The model picker exposes provider-specific accessible naming, listbox semantics, one truthful selection, Escape close/focus behavior, and closes when the provider changes. These paths do not touch the user-owned center terminal.
+- Account entitlement and organization-managed policy remain authoritative. This slice does not infer direct Fable availability and did not run live `claude -p` inference.
+
+Verification evidence:
+
+- the Claude Rust runtime module passes 44/44, including fake-child exact argv and pre-spawn invalid-value rejection
+- `runtime-agent-suggestions-service.spec.ts` passes 24/24
+- the provider-aware subset in `claude-provider-workspaces.spec.ts` passes 5/5, including reload, stale/unavailable behavior, request ownership, accessibility state, and zero center-terminal calls
+- the complete post-change gate passes lint, production build with only the existing greater-than-500-KB chunk warning, serial Playwright 210/210, Rust formatting/check, and the full Rust suite 149/149
+- an independent implementation review and a separate documentation review reported no critical, important, or minor findings
+- `origin/dev` was re-fetched, verified as an ancestor, and advanced without force to tested evidence commit `8de8518`; the current branch name and the separate dirty worktree were left unchanged
+
+## Current Claude CLI Session Correction — 2026-07-15
+
+Goal: let GTUM validate an already authenticated, user-owned local Claude Code CLI session without reading or persisting its credentials, while retaining explicit API-key/helper support, fail-closed ownership, and the user-owned center-terminal boundary.
+
+Delivered scope:
+
+- approved commands create project- and Agent-session-scoped jobs in the isolated Agent runtime; `Always allow`, auto-approval, and terminal-target execution paths are removed
+- `agent-jobs.json` stores at most 100 jobs with bounded structured logs; restart converts stored nonterminal work to `interrupted` without relaunching it
+- the right Agent panel hydrates, polls, cancels, and renders job outcomes while prioritizing active work over terminal history
+- session close and approval creation are protected in both event orders, stale hydration/cancel responses cannot regress terminal state, and completed jobs stop polling
+- Codex requires a validated local CLI ChatGPT session; request validation runs once on a blocking worker and synchronizes through a revision lease so stale results cannot overwrite disconnect/reconnect
+- Claude is exposed as an available, real provider; the auth and suggestion services no longer coerce it to deferred or short-circuit Connect/Disconnect IPC
+- every Agent session persists its own `providerId`, and delayed provider requests are owned by captured `projectPath + agentSessionId + providerId`; blank ownership and provider-mismatched responses are rejected before rendering
+- Claude selects credentials in the order `ANTHROPIC_API_KEY`, strict top-level user `apiKeyHelper`, then the installed CLI's existing first-party session. Helper arguments, whitespace, shell syntax, third-party provider authentication, unknown methods, and source mismatches fail closed
+- GTUM never starts Claude.ai OAuth, captures a token, or reads the Keychain/credential store. Missing-login guidance tells the user to run `claude auth login` in their own terminal, then reconnect
+- CLI-session status and requests use `--safe-mode --setting-sources ""`; API-key/helper requests retain `--bare`. The runtime resolves canonical executables, uses an absolute-only child `PATH`, removes competing credential/provider modes, bounds all child I/O under one deadline, discards stderr, disables model tools, MCP, slash commands, Chrome integration, and session persistence, and accepts only schema-valid `structured_output`
+- safe mode excludes user/project customizations, but organization-managed policy hooks, status-line commands, or file-suggestion commands may still apply; this sprint does not claim an absolute process-level no-hooks boundary
+- auth persistence contains only non-secret credential-source labels and source-specific scopes. CLI sessions use `credential:cli_session`; API-key/helper sources use `credential:api_key`; restored state is revalidated before trust
+- connect and request results apply only while their captured revision lease is current; stale validation or completion cannot overwrite auth state, publish a reply, or create a permission card
+- the repeated-use E2E scenario covers 30 approve/run/complete-fail-cancel cycles across project switching, session reopen, and reload while proving the center workbench and terminal call log remain unchanged
+
+Current evidence and closing gates:
+
+- superseded pre-correction frontend baseline: the auth/suggestion services passed 22/22 tests, the Agent-session/provider workspace coverage passed 19/19, and the modified design regression selection passed 2/2. These counts are historical comparison only; the integrated 200/200 result below is authoritative
+- the focused Claude workspace path distinguishes CLI-session and API-credential labels and covers external missing-login guidance, stale discovery ordering, reverse-order request ownership, command review, `Allow once`, exactly one isolated Agent job, project switching, and a zero-call center-terminal assertion
+- final integrated automated evidence: lint passes; the production build passes with only the existing greater-than-500-KB chunk warning; isolated serial Playwright passes 200/200; Rust formatting and check pass; focused Claude tests pass 42/42; and the full Rust suite passes 147/147
+- non-billing local evidence with Claude Code CLI 2.1.210: exact safe-mode status exits 0 with `loggedIn: true`, `authMethod: claude.ai`, `apiProvider: firstParty`, and zero stderr bytes; exact bare status exits 1 with `loggedIn: false`, `authMethod: none`, `apiProvider: firstParty`, and zero stderr bytes. Only allowlisted classification fields were retained; no identity, raw status payload, Keychain data, or child stderr was recorded
+- no live `claude -p` inference was run because it consumes Agent SDK/subscription credit. Run one minimal structured request only after explicit user approval, then verify project/session ownership and zero center-terminal mutation
+- local technical support is not permission to ship third-party Claude.ai login routing. Public distribution is blocked until Anthropic approval/contract review confirms this use; otherwise the release provider must remain on API-key or supported cloud-provider credentials
+- retain Windows cross-compilation evidence, then complete the still-pending Windows installed-app sign-off for folder picker, PTY commands, Codex connection, isolated Agent jobs, restart restore, and a first real suggestion
+- run a longer manual soak; the bounded automated aging scenario is evidence of repeated-use stability, not a substitute for sustained native use
+
 ## 장문 문서 라우팅 / Long-Doc Routing
 
 ### 한국어
@@ -622,7 +773,7 @@ Scope:
 
 - task history and status display
 - basic workspace persistence and restore
-- initial `fast`, `balanced`, `deep` mode support
+- capability-backed model, reasoning, and fast request controls
 - Ubuntu, Windows, and macOS validation
 - documentation of known limitations
 - initial aging-test coverage
@@ -631,7 +782,7 @@ Acceptance Criteria:
 
 - users can inspect recent tasks and status
 - basic workspace state is restored
-- execution modes change context or worker policy
+- runtime-backed agent controls only expose options reported by provider capabilities
 - validation notes or known constraints are documented for all three platforms
 
 Risks:
@@ -643,8 +794,8 @@ Risks:
 Sprint 5 completion update:
 
 - task history and recent activity are now visible in the app
-- the workspace restores the last project path, selected provider, execution mode, and recorded task history
-- `Fast`, `Balanced`, and `Deep` modes are now visible and affect suggestion context handling
+- the workspace restores the last project path, selected provider, agent session state, and recorded task history
+- model, reasoning, and fast controls now come from runtime provider capabilities; unsupported reasoning/fast controls stay hidden
 - Playwright aging coverage now repeats the core flow across reloads
 - MVP validation notes are documented and the MVP can now be treated as complete
 
@@ -1827,18 +1978,26 @@ Current status:
 
 - Sprint 17 is active.
 - The detailed implementation plan is committed in [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md).
-- The first code slice now replaces the old `mission-header` with `Titlebar` and `StatusBar`, exposes `app-titlebar` and `app-statusbar`, and keeps the right `agent-model-row` visible.
+- The first code slice now replaces the old `mission-header` with `Titlebar` and `StatusBar`, exposes `app-titlebar` and `app-statusbar`, and the right Agent Bar now uses a compact model header plus workspace-scoped agent session strip instead of the retired `agent-model-row`.
 - The left project panel now uses independent `Projects` and `Files` accordion sections with `left-projects-section` and `left-files-section` landmarks.
 - The follow-up refit applies the uploaded draft source directly: `gtum-stage`, `gtum-scaler`, `gtum-window`, `body-grid`, `sidebar`, `agent`, and `statusbar` now follow the `/Users/kwon/Downloads/test (1)` JSX/CSS proportions.
 - The old activity rail is removed from the rendered DOM. Panel resize handles are owned by the shell grid instead of the side panels.
 - The frontend has now been fully reset because the prior implementation continued to overlap the design draft. The old `src/app`, `src/features`, `src/widgets`, `src/shared`, `src/stores`, and `src/lib` frontend implementation is deleted.
 - The active frontend now starts at `src/app/main.tsx`, which mounts the uploaded design prototype through `src/app/providers/legacy-prototype.ts` while the design is migrated into reusable TSX/FSD components.
 - Sprint 18 extraction has started: `Titlebar` and `StatusBar` now live in `src/widgets/app-shell/ui` as TSX components while preserving the uploaded design class names, anchors, visible copy, and settings entry behavior.
-- The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and preserve the rich uploaded-design browser fixture fallback.
+- The first backend reconnection slice is active through `src/shared/api/runtimeProjects.ts`: the sidebar can open a real project folder in Tauri, route project overview and file reads through the typed service, render the runtime file tree, and keep browser/Vite preview on an empty no-runtime fallback instead of a bundled project fixture.
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
-- Browser/Vite preview keeps the uploaded design fixture as a fallback and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri.
+- The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, browser preview keeps injectable/no-op fallbacks for E2E, and native maximize polling is intentionally disabled to avoid macOS installed-app resize/style-mask churn.
+- The Tauri launch window starts at the uploaded-design baseline (`1320x824`), and the shell now fills the entire viewport after native resize or maximize instead of preserving a fixed canvas with letterboxing.
+- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: user-created terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, and closing runtime-backed tabs terminates the PTY session. Agent command review and decisions stay in the right panel until approval, then approved commands dispatch through the same terminal runtime.
+- The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `read_agent_provider_capabilities` for runtime-backed model/attachment metadata, then call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and an optional selected model id.
+- Provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, browser preview no longer fabricates agent replies, and Codex command review/decisions stay in the right agent panel instead of creating user terminal tabs.
+- Windows Codex suggestion execution now avoids passing the full prompt through `codex.cmd`; the runtime sends the prompt over stdin and prefers the direct Node `codex.js` entrypoint when available.
+- Windows release-executable smoke now launches successfully and initializes app-data state after migrating a legacy `%APPDATA%\com.gagakor.gtum` file into a sibling `.legacy-file-<timestamp>.json` backup.
+- Browser/Vite preview starts from the empty `Open a project` state and exposes `window.__GTUM_BACKEND_BRIDGE__` so E2E can verify the bridge without requiring Tauri or bundled project data.
+- Validation priority is now installable-desktop first: Windows manual install/launch smoke and native runtime behavior must be checked before using web/Vite preview as secondary regression evidence.
 - Legacy frontend E2E tests have been removed with the deleted frontend. The active UI smoke coverage is now `tests/e2e/design-prototype.spec.ts`.
-- Verification passed on 2026-05-28 with `npm run build` and `npm run test:e2e`.
+- Verification passed on 2026-06-01 with `npm run lint`, `npm run build`, `npm run test:e2e`, `cargo check --manifest-path src-tauri/Cargo.toml`, `git diff --check`, and a macOS DMG smoke from `npx tauri build --bundles dmg --verbose`.
 
 Phase:
 
@@ -1847,6 +2006,7 @@ Phase:
 Detailed execution plan:
 
 - [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)
+- [Real Runtime Loop Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-06-01-real-runtime-loop.md)
 
 Scope:
 
@@ -1877,11 +2037,22 @@ Sprint 17 initial backlog:
 - `P0` done: prepare failing E2E coverage for the new shell landmarks
 - `P0` done: implement titlebar/statusbar and left `Projects/Files` accordion
 - `P0` done: refit the shell, left sidebar, right agent panel, and statusbar to the uploaded JSX/CSS source structure
-- `P0` done: keep the right agent model row visible with compact execution-mode controls
+- `P0` done: replace the right agent provider/readiness row with the standalone Agent Bar baseline: compact selected-model header, per-workspace agent session tabs, composer-level model/reasoning/fast-mode controls, and no detached context summary card
 - `P0` done: delete the previous frontend implementation and replace it with the uploaded design prototype as the only active frontend
 - `P0` done: reconnect the clean prototype to the Tauri filesystem backend for project overview and file reads
 - `P0` done: add the TSX app entry and FSD-style type/service seams without changing the uploaded design DOM
-- `P0` done: route the legacy prototype's project overview and file-open behavior through `src/shared/api/runtimeProjects.ts` while preserving browser fixture content
+- `P0` done: route the legacy prototype's project overview and file-open behavior through `src/shared/api/runtimeProjects.ts` while keeping browser preview on an empty runtime-required fallback
+- `P0` done: make the custom titlebar the real frameless desktop window chrome through `src/shared/api/runtimeWindow.ts` and Tauri window-control permissions
+- `P0` done: wire terminal tabs to real PTY create/read/write/terminate behavior through `src/shared/api/runtimeTerminals.ts`
+- `P0` done: wire agent suggestions to the real Codex session-backed request path and diagnostics through `src/shared/api/runtimeAgentSuggestions.ts`
+- `P0` done: surface Codex suggestion runtime failures as visible messages instead of approval cards, covering CLI failures, unstructured output, error-only responses, and empty-command responses
+- `P0` done: remove browser-preview canned agent replies and show a desktop-runtime-required state for Codex requests without Tauri
+- `P0` done: fix the Windows Codex request launch path that failed with `batch file arguments are invalid` by moving the prompt to stdin and bypassing the npm `.cmd` shim when possible
+- `P0` done: fix Windows installed-app startup when a legacy file occupies the app-data root, including Rust unit coverage and release-executable launch smoke
+- `P0` done: replace the simulated Codex provider-login path in the runtime desktop flow with `src/shared/api/runtimeAgentAuth.ts`, a `codex login --device-auth` terminal launcher, runtime connection hydration, disconnect handling, and Codex reconnect/error display
+- `P0` done: approved commands run only as isolated Agent-owned jobs with right-panel status/log/cancel visibility; the user-visible center terminal is never created, selected, written, or otherwise mutated by Agent approval
+- `P0` partial: run an installable desktop smoke pass first; Windows build/launch/state-file initialization is covered, while native folder picker, PTY terminal, Codex login launcher, and first real suggestion request still need manual sign-off
+- `P0` next: re-establish workspace snapshot/restore on the new shell using the fixed per-store state files after the installed-app smoke baseline is captured
 - `P1` done: extract `Titlebar` and `StatusBar` into TSX app-shell components with E2E shell contract coverage
 - `P1` start workbench tab model design for Sprint 18
 - `P1` extract the legacy `Titlebar`, `Sidebar`, `Workspace`, `AgentPanel`, and modal surfaces into TSX components that consume typed runtime services
@@ -2013,12 +2184,6 @@ Sprint 17 initial backlog:
 - `Sprint 17`
   - is the new product design clearly prioritized over the existing implementation, with a small and testable first implementation slice
 
-## 다음 실행 추천 / Recommended Next Action
+## Recommended Next Action
 
-### 한국어
-
-다음 단계로는 [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md)의 `Sprint 17`부터 실행한다. 첫 구현은 titlebar/statusbar, 좌측 `Projects/Files` accordion, 우측 agent model row를 대상으로 하고, 기존 구조와 충돌하면 새 디자인 시안을 우선한다.
-
-### English
-
-The next step is to execute `Sprint 17` from the [New Product Design Implementation Plan](/home/kwon/project/gtum/docs/superpowers/plans/2026-05-28-new-product-design-implementation.md). The first implementation slice should target the titlebar/statusbar, left `Projects/Files` accordion, and right agent model row, and the new design should win whenever it conflicts with existing structure.
+Resolve the Anthropic approval/contract gate (or restrict public Claude releases to API/cloud credentials), complete the Windows installed-app sign-off, and record a sustained manual soak. Do not run live `claude -p` inference without explicit user approval. Auto-approval remains out of scope.

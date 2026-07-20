@@ -20,6 +20,7 @@
 - 의미 있는 작업은 현재 스프린트 문서, 검증 메모, task history를 함께 검토해 지금까지 밟아온 경로와 반복 문제를 먼저 파악한다.
 - 구조, 흐름, 정책, 권한, 계약이 바뀌면 관련 문서를 같은 작업 안에서 함께 갱신한다.
 - 문서와 코드가 다르면 실제 코드와 최신 결정을 기준으로 문서를 수정한다.
+- Agent-tab requests, permission cards, and approved agent work must never create, focus, write to, or otherwise mutate the user-visible center terminal; use a separate agent-owned execution surface or show an unavailable/manual-run state.
 - 브랜치 운영 기본값은 `feature/* -> dev -> master`다.
 - `WORKLOG`는 진행 중 스프린트의 임시 추적 문서로만 사용하고, 스프린트 종료 시 source-of-truth 문서에 흡수한 뒤 삭제한다.
 - source-of-truth 기술 문서가 200줄을 넘으면 상단 라우팅 섹션을 두거나 하위 문서로 분리한다.

@@ -188,17 +188,31 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 2. `docs/architecture.md`
 3. `docs/message-flow.md` if needed
 4. `docs/product-plan.md` if needed
+5. `docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md` for authoritative startup auth, recovery of a persisted real Claude error, explicit-disconnect preservation, and connected-only capability discovery
+6. `docs/superpowers/plans/2026-07-15-claude-cli-session-auth.md` for the active Claude CLI-session correction, safe-mode boundary, and public-distribution gate
+7. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` for model-specific effort/Fast capabilities, persistence, UI semantics, and request mapping
+8. `docs/superpowers/plans/2026-07-16-selected-provider-fast-toggle.md` for the current selected-provider marks and direct capability-gated Fast-button interaction
+
+The 2026-07-15 plan supersedes `docs/superpowers/plans/2026-07-14-claude-api-provider.md` for current Claude authentication policy. Read the 2026-07-14 file only when historical API-only implementation context is needed.
+
+The 2026-07-16 recovery plan extends the current authentication and effort/Fast contracts; use it first when startup shows a previously connected Claude provider without model, reasoning, or Fast controls.
+
+For Claude execution options, the effort/Fast plan extends the account-catalog plan: the same prompt-free returned model catalog is authoritative for each model's `executionOptions`, and no static alias or entitlement inference is allowed.
+
+The selected-provider/Fast-toggle plan changes only the active-mark and button interaction. Provider/project/Agent-session persistence, the frozen request payload, runtime validation, and center-terminal isolation remain governed by the existing contracts.
 
 ### When the issue is current implementation structure or persistence boundaries
 
 1. `docs/architecture.md`
 2. `docs/technical-design.md`
+3. `docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md` when tracing startup auth/capability ownership or persisted Claude error recovery
 
 ### When the issue is request payloads, approval, restore, or data flow
 
 1. `docs/message-flow.md`
 2. `docs/technical-design.md`
 3. `docs/architecture.md` if needed
+4. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` when the request includes Claude reasoning or Fast mode
 
 ### When the issue is frontend UI/UX
 
@@ -207,6 +221,7 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 3. `docs/design-concepts-sprint-15.md` when the screen direction itself needs to be chosen
 4. `docs/ui-ux-wireframes.md` if needed
 5. `docs/technical-design.md` if needed
+6. `docs/superpowers/plans/2026-07-16-selected-provider-fast-toggle.md` when reviewing explicit current-provider treatment or the direct Fast-button semantics
 
 ### When the issue is left-rail, side-panel, or settings UX
 

@@ -175,11 +175,11 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - editor는 좁아질 때 코드 줄을 wrap하지 말고, pane 내부 horizontal scroll을 우선해야 한다.
 - terminal은 prompt, command, success/error output, running indicator가 보여야 한다.
 - agent board는 실제로 일을 주고 답변을 받고 제안을 보내는 `에이전트 작업창`처럼 읽혀야 한다.
-- 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> composer -> pending dock`가 이어지는 하나의 작업 surface처럼 보여야 한다.
-- 오른쪽 agent workspace 상단에는 현재 provider/model과 실행 모드를 compact row로 먼저 보여줘야 한다.
+- 오른쪽 agent workspace는 서로 분리된 카드 모음이 아니라 `mission header -> thread -> composer approval -> composer`가 이어지는 하나의 작업 surface처럼 보여야 한다.
+- 오른쪽 agent workspace 상단에는 현재 provider와 session/readiness 상태를 compact row로 먼저 보여줘야 한다. 모델명과 실행 모드는 런타임 동기화가 없으면 고정 값으로 보여주지 않는다.
 - thread와 composer가 항상 오른쪽 패널에서 가장 눈에 띄고 사용성이 좋은 영역이어야 한다.
-- approval UI는 항상 큰 카드로 열려 있지 않고, 기본은 `승인 대기 n` 형태의 slim footer 또는 compact drawer여야 한다.
-- approval queue는 여러 후보를 compact row 또는 small pill 목록으로 보여주고, 사용자가 열었을 때만 상세 승인 카드와 실행 버튼이 펼쳐지는 구조가 맞다.
+- approval UI는 항상 큰 카드로 열려 있지 않고, 기본 제안은 activity row로 유지한 뒤 사용자가 열었을 때만 composer 바로 위 permission request로 펼쳐져야 한다.
+- approval queue는 여러 후보를 compact row 또는 small pill 목록으로 보여주고, 사용자가 열었을 때만 상세 결정 패널이 composer 위에 나타나는 구조가 맞다.
 - approval 영역은 `과거 승인 기록`이 아니라 `현재 pending action`만 보여주는 것이 맞다.
 - 과거 승인이나 이미 끝난 결정은 approval UI가 아니라 task history / trace 같은 secondary zone으로 내려야 한다.
 - agent workspace 내부 카드, queue row, command block, context chip은 기본적으로 가로 스크롤보다 줄바꿈을 우선해야 한다.
@@ -187,7 +187,7 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 - agent workspace도 side panel처럼 compact typography와 짧은 row height를 우선해, 세로 공간을 과도하게 먹지 않게 해야 한다.
 - terminal은 상단 고정 모드 버튼이 아니라 `+`로 여는 workbench tab 타입이어야 하며, 기본 화면을 점유하는 주인공은 아니어야 한다.
 - 하단 패널은 기본 구조에서 제거하고, 필요 정보는 pane 또는 overlay로 푼다.
-- pending dock은 editor와 agent board를 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
+- composer approval은 editor와 agent board를 밀어내지 않으면서도, 어떤 파일, line anchor, 로그를 보고 제안이 나왔는지 보여줘야 한다.
 - 첫 code-reading slice는 read-only viewer까지만 포함한다.
 - line anchor와 restore 상태는 숨은 내부 상태가 아니라 사용자가 다시 읽을 수 있는 정보여야 한다.
 - binary와 large-file fallback은 에러처럼 보이지 않고 bounded preview mode처럼 읽혀야 한다.
@@ -223,10 +223,20 @@ For the current active slice, the frontend should follow these rules:
 - the `Test` tab is for structured test results and failing-test focus views rather than raw shell output
 - the `Preview` tab is for rendered surfaces such as Markdown, HTML, or generated output previews
 - the agent board should read like an `agent work window` where users assign work, read replies, and approve actions
-- the top of the right agent workspace should expose the current provider/model and execution mode through a compact row
+- runtime agent work should appear as a live conversational assistant turn: progress and final answer stay in the thread, while command-bearing results stay lightweight as execution-suggestion activity rows and open the detailed permission request directly above the composer
+- composer controls should keep attachment and runtime-backed model selection inside the input toolbar, show project scope through the active workspace/session rather than a current-tab context chip, and render reasoning/fast controls only from provider capabilities
+- Claude reasoning/Fast visibility must follow the effective selected model's `executionOptions`, including empty/false overrides; Codex may use the provider-level compatibility fields only when model options are absent
+- the Claude reasoning menu may add one UI-only `Default` row that means `reasoningLevel: null`; do not invent a provider label or effort value for the CLI/model default
+- closed provider, model, and reasoning menu controls in the composer should use compact icons or provider/model marks with no long visible names or wrapped text; exact full names and current state belong inside their opened lists, while exact accessible labels and expanded/selected semantics remain available to assistive technology
+- the active provider mark in both the Agent header and closed composer control must use an explicit selected/current treatment for Codex and Claude alike; provider identity styling must remain neutral and must not imply that a provider is selected or ready
+- Fast must be a capability-gated direct boolean button rather than a menu: one native pointer, Enter, or Space activation inverts it exactly once, closes another open composer popup, and exposes exact `Fast mode: Enabled` or `Fast mode: Disabled` through `aria-label`, `title`, and matching `aria-pressed`; unsupported models hide it without erasing the saved provider preference
+- the top of the right agent workspace should expose the current provider and session/readiness state through a compact row; composer-level model picking and reasoning labels must come from `read_agent_provider_capabilities`, and execution modes must not appear as fixed values without runtime policy
+- provider-backed model popups must remain inside the Agent panel and viewport at the default desktop size, use internal vertical scrolling, and scroll the selected row into view on reopen
+- model options must show the complete provider-supplied human label: current account labels remain on one visual line at the default desktop width, while longer valid labels wrap inside the option without clipping or horizontal overflow; keep the exact provider value in accessible metadata and the request payload instead of rendering a raw-ID subtitle
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
 - remove the default bottom panel from the primary layout and solve needed details through panes or overlays
 - the approval rail should show which file, line anchor, and logs produced a suggestion without pushing the editor and agent board away
+- the app shell should fill the full desktop viewport after any native resize or maximize; fixed-aspect canvas letterboxing is not allowed
 - the first code-reading slice should stop at a read-only viewer
 - line-anchor state and restore state should stay legible to users rather than hidden as internal implementation
 - binary and large-file fallback should read like bounded preview modes, not generic errors
@@ -258,7 +268,7 @@ For the current active slice, the frontend should follow these rules:
 - use a `warm neutral base + restrained accent + clear status colors` palette instead of a purple-heavy SaaS look
 - even in mock form, show realistic density such as line numbers, breadcrumbs, stdout/stderr, and approval actions
 - the left rail and side panel should show real tree rows and section headers, not empty placeholder blocks
-- the right agent workspace should combine a conversation thread, approvals, and a composer rather than becoming another passive card stack
+- the right agent workspace should combine a conversation thread, composer-level approvals, and a composer rather than becoming another passive card stack
 
 ## 제품별로 배워야 할 점 / What To Borrow From Each Product
 
@@ -428,6 +438,10 @@ For the current active slice, the frontend should follow these rules:
 - AI conversation dominating while code viewing and test inspection are squeezed into a sidebar or bottom panel
 - layouts that lack an editor-like surface when users need to trace code flow
 - layouts where prior work paths and failure evidence are scattered badly enough that users must reconstruct them manually
+- provider/model popups that are clipped by the Agent shell, hide the selected final row, or add a raw model-ID line that reduces label readability
+- composer provider/model/reasoning menu triggers that repeat long current names, wrap onto another line, or hide their exact accessible names behind icon-only rendering
+- Fast controls that open a popup or listbox, require an intermediate option choice, omit exact `Fast mode: Enabled` / `Fast mode: Disabled` accessible state, or override native one-activation button behavior
+- reasoning/Fast controls that remain visible after switching to a model that does not return support, or that erase a saved provider preference merely because the current model cannot use it
 
 ## 프론트엔드 작업 체크리스트 / Frontend Review Checklist
 
@@ -454,3 +468,7 @@ Before shipping frontend work, check:
 5. can debug or mock details be pushed one level further back
 6. does the user still have an editor-like surface for reading code and tracing flow apart from the agent conversation
 7. can the user distinguish current pending actions from finished decisions and diagnose recurring problems through task history or trace
+8. do provider-backed model labels, popup bounds, and the selected row remain fully readable at the default desktop viewport
+9. do the active Agent-header and closed-composer provider marks show an explicit current treatment for either real provider without confusing identity or readiness, while provider/model/reasoning menus retain exact full names and state in their opened lists
+10. does the supported Fast control toggle directly once for pointer, Enter, and Space with exact `Fast mode: Enabled` / `Fast mode: Disabled` accessible state and matching pressed state, no popup/listbox, and closure of another open composer popup
+11. does switching project, Agent session, provider, or model restore the correct provider-owned preference and send only the currently supported effective value

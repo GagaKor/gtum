@@ -180,6 +180,19 @@ The default is therefore `track with an active WORKLOG during the sprint, then a
   - [`MVP_VALIDATION_NOTES.md`](./MVP_VALIDATION_NOTES.md)
   - `tests/e2e/*`
 
+## Agent / User Terminal Boundary
+
+This is a hard implementation and validation rule.
+
+- The center workbench terminal is exclusively user-owned.
+- Agent-tab requests, permission cards, and approved agent work must never create, select, rename, split, focus, write into, close, or otherwise mutate user-visible center terminal tabs or panes.
+- Do not route agent approval through `create_terminal_session`, `create_terminal_session_with_command`, `execute_terminal_session_command`, or a future equivalent when the result appears in the center workbench terminal.
+- Approved agent work may run only through the separately designed agent-owned background execution contract exposed by `create_agent_job`, `read_agent_job_logs`, and `cancel_agent_job`; its state is shown in the right agent workspace and task history.
+- If that agent-owned execution contract is missing, unsupported, or unsafe for the proposed command, show an explicit unavailable/manual-run state and leave the user's terminal untouched.
+- User-owned terminal input may call `execute_terminal_session_command` only from center terminal UI actions initiated by the user.
+- File edits must use `write_project_file` or `apply_project_patch` with project-root checks and content-hash guards instead of synthetic editor state. Multi-file patch application must validate every edit before the first write so stale or invalid edits cannot leave a partial patch on disk.
+- App-first validation must prove this boundary in the installed/native app. Browser or service tests may support the finding, but they are not sufficient evidence for this boundary.
+
 ## WORKLOG 수명 주기 / WORKLOG Lifecycle
 
 ### 한국어
@@ -302,8 +315,9 @@ If it is ambiguous, update more than one canonical doc and reduce repeated expla
 
 Record verification in this order:
 
-1. add automation under `tests/` whenever possible
-2. reflect coverage expectations in canonical docs
-3. record non-automatable real-device validation in [`MVP_VALIDATION_NOTES.md`](./MVP_VALIDATION_NOTES.md)
+1. validate the installable Tauri desktop path first when the change affects release readiness, native runtime behavior, persistence, or provider login
+2. add automation under `tests/` whenever possible
+3. reflect coverage expectations in canonical docs
+4. record non-automatable real-device validation in [`MVP_VALIDATION_NOTES.md`](./MVP_VALIDATION_NOTES.md)
 
 `WORKLOG` is not the default place for validation evidence.

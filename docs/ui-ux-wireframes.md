@@ -290,6 +290,9 @@ The default workflow should follow this order:
 - show `Connected`, `Needs Login`, `Expired`, `Mock`, `Prototype`, and `Real` through badges plus short descriptions
 - keep raw callback URLs out of the default card body
 - mark unimplemented providers explicitly as `Coming Soon` or `Prototype`
+- treat provider selection as Agent-session state: switching Codex/Claude in one session must not change another project or session, and the persisted workspace row must show that session's provider identity
+- show Claude as a real provider with distinct `API key` or sanitized helper readiness copy; never label it as a subscription/CLI session or expose a raw key, helper output, identity, organization, or subscription metadata
+- distinguish `available` from `connected`. An available provider without validated runtime credentials shows setup guidance and cannot request or silently fall back to another provider
 - write failures around the next action instead of raw technical strings
 
 ## 우선 적용 UX 개편 항목 / Immediate UX Improvement List
@@ -318,6 +321,7 @@ The default workflow should follow this order:
 - open terminal work as a workbench pane tab rather than through a bottom area
 - remove Telegram and runtime/debug from the default structure or demote them to overlay-level surfaces
 - mark provider cards clearly with `mock`, `prototype`, and `real`
+- keep the active provider selector inside the owning Agent session and restore each session's `providerId` independently
 - hide callback URLs and internal state strings from the default screen
 - make it clearer which pane and tab log is attached to the agent request
 

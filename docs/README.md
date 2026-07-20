@@ -19,6 +19,14 @@
 - [작업 로그 템플릿 / Worklog Template](./WORKLOG_TEMPLATE.md)
 - [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
+- [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
+- [Claude Startup Capability Recovery](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
+- [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
+- [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
+- [Claude Model-Specific Effort and Fast Mode](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
+- [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md)
+- [Provider-Aware Model Selection Implementation Plan (Historical Baseline, Superseded)](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
+- [Claude API Provider Integration Plan (Historical, Superseded)](./superpowers/plans/2026-07-14-claude-api-provider.md)
 - [릴리스, 빌드, CI / Release, Build, and CI](./release-build-ci.md)
 - [MVP 검증 메모 / MVP Validation Notes](./MVP_VALIDATION_NOTES.md)
 - [에이전트 운영 가이드 / Agent Operating Guide](../AGENTS.md)
@@ -35,6 +43,7 @@
   - [제품 기획서 / Product Plan](./product-plan.md)
 - 아키텍처, 런타임 책임, 플랫폼 전략, auth와 contract
   - [기술 설계서 / Technical Design](./technical-design.md)
+  - [Claude Startup Capability Recovery](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md) for authoritative startup auth, Claude error recovery, and connected-only capability loading
 - 현재 구현 구조, 모듈 책임, 상태 저장 경계
   - [아키텍처 / Architecture](./architecture.md)
 - request payload, approval, restore, 주요 사용자 흐름
@@ -50,6 +59,7 @@
 - UI 참고 기준
   - [디자인 시스템 / Design System](./design-system.md)
   - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
+  - [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md) for the current selected-provider marks and direct Fast-button interaction
   - [Sprint 15 디자인 시안 / Sprint 15 Design Concepts](./design-concepts-sprint-15.md)
   - [왼쪽 메뉴 뷰 설계 / Left Menu View Plan](./left-menu-views.md)
 - 로고, 아이콘, favicon, 브랜드 사용 원칙
@@ -82,6 +92,20 @@
   - `/Users/kwon/Downloads/test (1)` 새 디자인 시안을 실제 구현 스프린트로 나눠 실행할 때 읽는다.
 - [남은 제품 디자인 구현 계획 / Remaining Product Design Implementation Plan](./superpowers/plans/2026-05-29-remaining-product-design-implementation.md)
   - TSX/FSD 컴포넌트 추출, terminal/provider/approval/restore backend 연결, legacy prototype retirement를 순서대로 진행할 때 읽는다.
+- [실제 런타임 루프 구현 계획 / Real Runtime Loop Implementation Plan](./superpowers/plans/2026-06-01-real-runtime-loop.md)
+  - Codex login, real suggestion, approval, PTY execution, restore, and installable-app smoke를 mock fallback 없이 완성할 때 읽는다.
+- [Claude Startup Capability Recovery](./superpowers/plans/2026-07-16-claude-startup-capability-recovery.md)
+  - Read this for the current desktop startup ordering, fresh validation of a persisted real Claude error, explicit-disconnect preservation, connected-only capability reads, and the completed recovery gate.
+- [Claude CLI Session Authentication Correction](./superpowers/plans/2026-07-15-claude-cli-session-auth.md)
+  - Read this for the active Claude credential-source correction, external CLI login flow, safe-mode isolation contract, validation evidence, and public-distribution compliance gate. It supersedes the 2026-07-14 API-only plan.
+- [Claude Account Model Catalog and Picker Repair](./superpowers/plans/2026-07-15-claude-account-model-catalog-picker.md)
+  - Read this for the active bounded prompt-free Claude CLI catalog, exact returned-value request validation, fail-closed persistence rules, provider capability lifecycle, and contained exact-label model picker.
+- [Claude Model-Specific Effort and Fast Mode](./superpowers/plans/2026-07-15-claude-effort-fast-mode.md)
+  - Read this for the active per-model `executionOptions` contract, provider-scoped reasoning/Fast persistence, request-time validation, and exact Claude CLI effort/settings mapping.
+- [Selected Provider and Direct Fast Toggle Implementation Plan](./superpowers/plans/2026-07-16-selected-provider-fast-toggle.md)
+  - Read this for the current explicit selected-provider treatment and capability-gated direct Fast interaction; persistence, request ownership, and center-terminal isolation remain owned by the existing contracts.
+- [Provider-Aware Model Selection Implementation Plan (Historical Baseline, Superseded)](./superpowers/plans/2026-07-15-provider-aware-model-selection.md)
+  - Read this only for the earlier static-alias model-selection baseline and its historical verification evidence. Its Claude alias table is not the current catalog contract.
 - [에이전트 팀 토폴로지 / Agent Team Topology](./agent-team-topology.md)
   - 서브에이전트 팀빌딩, 역할 소유권, handoff, `planner`, `designer`, `QA`, `tester`가 작업 경로와 문제점을 어떻게 개선안으로 바꾸는지 정할 때 읽는다.
 - [프론트엔드 디자인 벤치마크 / Frontend Design Benchmarks](./frontend-design-benchmarks.md)
@@ -148,8 +172,13 @@
 - 기본 개발 운영 모델은 서브에이전트 기반 멀티 에이전트 구조이며, `planner`, `orchestrator`, `designer`, `frontend`, `backend`, `QA`, `tester` 역할 분리를 우선 사용한다
 - 지원 플랫폼은 `Ubuntu + Windows + macOS`이며, 첫 실사용 기준은 `Windows`, 주요 개발 기준 환경은 `Ubuntu`다
 - 에이전트 제공자는 우선 `Codex + Claude`이며, 첫 실사용 `Codex` 경로의 source of truth는 `OAuth/session login`이다
+- The active Claude contract selects an explicit API key, then a strict helper, then an already authenticated user-owned local CLI session. GTUM performs no Claude.ai OAuth/token capture, and public CLI-session distribution is blocked pending Anthropic approval/contract review.
+- Desktop startup now treats auth discovery as authoritative before capabilities. Only a fresh current validation may recover a persisted real Claude error; explicit disconnect and untrusted legacy errors remain disconnected. Disconnect becomes authoritative only after a synced candidate is atomically installed, pre-commit persistence failures reach IPC without changing memory, and legacy connection maps retain only canonical `codex` and `claude` entries. The renderer reads capabilities only for an exactly connected active provider, while existing generations suppress stale success/rejection and the center terminal remains untouched. Independent review, the exact clean-tree gate (lint, build, Playwright 235/235, Rust 186 / 1 ignored), the prompt-free smoke 1/1, and a native macOS restart check passed before exact tested commit `4ce5b172f2a902c0b9e0ec25ea735eb97131e147` was pushed non-forced to `dev`; no live inference or billing validation is claimed.
+- Claude model availability comes from one bounded prompt-free initialization response from the authenticated installed CLI. Only sanitized returned `value` IDs are selectable and request-valid; protocol or discovery failure fails closed without a static or historical fallback, preserves stored selection for later validation, and retains no account identity data.
+- Claude reasoning and Fast availability comes from each returned model's bounded `executionOptions`, not a provider-wide alias assumption. The selected model overrides compatibility fields, the UI-only `Default` choice sends `reasoningLevel: null`, and provider-scoped preferences survive project/session/provider switching without making unsupported options effective. Request-time catalog validation maps an exact supported effort to `--effort <level>` and emits exactly one sanitized `--settings` JSON object with explicit `fastMode` and optional `apiKeyHelper`; `CLAUDE_CODE_EFFORT_LEVEL` is removed and `CLAUDE_CODE_DISABLE_FAST_MODE=1` blocks enabled Fast before inference. Fast can require organization enablement and usage credits, and this slice claims prompt-free catalog validation only, not live paid inference or billing verification.
+- The completed account-catalog slice established compact non-wrapping provider/model/reasoning/fast marks, exact names/current state in opened lists, exact accessible labels, popup containment at the default, 260 px, and 240 px Agent widths, selected-row restoration, and provider-catalog generation invalidation. Its completed gate passed lint, production build, serial Playwright 221/221, and Rust 169 passed / 1 ignored. The completed model-specific effort/Fast extension separately passed lint, production build, serial Playwright 233/233, Rust 179 passed / 1 ignored, and the bounded initialize-only smoke 1/1 before its exact tested SHA was pushed non-forced to `dev`. Neither slice claims paid Claude inference or billing validation.
 - 현재 저장소의 `OPENAI_API_KEY` 기반 bridge는 개발용 임시 브리지로만 취급하며, 최종 사용자 기본 경로로 간주하지 않는다
-- 현재 Sprint 5 기준으로 task history, workspace restore, execution mode, aging test까지 포함한 MVP 흐름이 구현되어 있다
+- 현재 Sprint 5 기준의 task history, workspace restore, aging test 흐름은 이후 Sprint 17 UI reset과 runtime contract 정리로 재검증 대상이다
 - Sprint 7에서는 폴더 선택기 중심 프로젝트 열기, UI 정보 구조 재배치, provider auth mock/prototype/real 구분이 반영되어 있다
 - Sprint 10에서는 개발용 `Codex` bridge와 diagnostics 보강이 반영되어 있지만, 이는 최종 auth 방향이 아니라 임시 연결 슬라이스다
 - Sprint 11 첫 슬라이스에서는 `Codex CLI`의 ChatGPT session과 `codex exec`를 활용해 API key가 아닌 session-backed real path를 앱 안에서 시작할 수 있게 한다
@@ -158,7 +187,7 @@
 - Sprint 14에서는 `FSD` 기준의 `app / widgets / features / shared` 구조로 프론트 orchestration을 분해하고, `src/App.tsx`를 얇은 entrypoint로 낮춘다
 - Sprint 15에서는 `left rail + split workbench + agent workspace`를 기준으로 `Mission Control`형 workbench baseline을 잠근다
 - Sprint 16에서는 `Concept A` 로고 방향과 왼쪽 메뉴 5개 view baseline을 기준 문서로 확정한다
-- 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact agent model row를 기본값으로 사용한다
+- 현재 앱 UI 디자인 시스템은 `/Users/kwon/Downloads/test (1)` 발전 시안 기준의 `cool dark desktop shell + green execution accent`, 좌우 dock resize, compact provider/session row를 기본값으로 사용한다
 - Active frontend entry is `src/app/main.tsx`; it mounts the uploaded design prototype through `src/app/providers/legacy-prototype.ts` while Sprint 17 extracts `src/prototype.jsx` into TSX/FSD components. The reusable backend bridge starts in `src/shared/api/runtimeProjects.ts`, which wraps Tauri project overview and file reads with browser fallback.
 - Sprint 17부터는 `/Users/kwon/Downloads/test (1)` 새 제품 디자인 시안이 기존 구현과 충돌할 때 우선하며, 상세 실행 순서는 [새 제품 디자인 구현 계획 / New Product Design Implementation Plan](./superpowers/plans/2026-05-28-new-product-design-implementation.md)을 따른다
 - Telegram은 현재 post-MVP 브리지 프로토타입 단계로, 상태 리포트 초안, 런타임 기반 브리지 상태, 제한된 원격 명령 승인 흐름을 앱 안에서 검증한다

@@ -1,12 +1,48 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import {
   createProjectRuntimeService,
   hasTauriRuntime,
 } from './shared/api/runtimeProjects'
+import {
+  createRuntimeWindowControls,
+  initialRuntimeWindowControls,
+} from './shared/api/runtimeWindow'
+import {
+  CODEX_REQUIRED_SCOPES,
+  createAgentAuthRuntimeService,
+  providerViewStateFromConnection,
+} from './shared/api/runtimeAgentAuth'
+import { createAgentSuggestionRuntimeService } from './shared/api/runtimeAgentSuggestions'
+import { createAgentJobRuntimeService } from './shared/api/runtimeAgentJobs'
+import { createTerminalRuntimeService } from './shared/api/runtimeTerminals'
+import { createWorkspaceRuntimeService } from './shared/api/runtimeWorkspace'
+import { useAgentJobLifecycle } from './features/agents/model/useAgentJobLifecycle'
+import { summarizeProjectAgentActivity } from './features/agents/model/projectAgentFleet'
+import { useProjectAgentFleet } from './features/agents/model/useProjectAgentFleet'
+import {
+  beginAgentRequest,
+  completeAgentRequest,
+  createAgentContextCoordinator,
+  createAgentRequestState,
+  projectAgentContextKey,
+  stopAgentRequest as stopAgentRequestState,
+  updateAgentRequestActivity,
+} from './features/agents/model/projectAgentContext'
+import { AgentJobActivity } from './features/agents/ui/AgentJobActivity'
+import { useProjectWorkspaces } from './features/projects/model/useProjectWorkspaces'
+import {
+  auditProjectCloseSafety,
+  projectCloseBlockReasons,
+} from './features/projects/model/projectClosePreflight'
 import { StatusBar } from './widgets/app-shell/ui/StatusBar'
 import { Titlebar } from './widgets/app-shell/ui/Titlebar'
+import { ProjectSwitcher } from './widgets/project-sidebar/ui/ProjectSwitcher'
+import { initialOs, detectRuntimeOs } from './shared/lib/os/detectOs'
+import '@xterm/xterm/css/xterm.css'
 import './styles.css'
 
 const ReactDOM = { createRoot }
@@ -58,7 +94,7 @@ const ReactDOM = { createRoot }
 //     );
 //   }
 //
-// ─────────────────────────────────────────────────────────────────────────────
+// ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 const __TWEAKS_STYLE = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -170,9 +206,9 @@ const __TWEAKS_STYLE = `
     filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
 `;
 
-// ── useTweaks ───────────────────────────────────────────────────────────────
+// ???? useTweaks ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 // Single source of truth for tweak values. setTweak persists via the host
-// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+// (__edit_mode_set_keys ??host rewrites the EDITMODE block on disk).
 function useTweaks(defaults) {
   const [values, setValues] = React.useState(defaults);
   // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
@@ -184,15 +220,15 @@ function useTweaks(defaults) {
     setValues((prev) => ({ ...prev, ...edits }));
     window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
     // Same-window signal so in-page listeners (deck-stage rail thumbnails)
-    // can react — the parent message only reaches the host, not peers.
+    // can react ??the parent message only reaches the host, not peers.
     window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
   }, []);
   return [values, setTweak];
 }
 
-// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// ???? TweaksPanel ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 // Floating shell. Registers the protocol listener BEFORE announcing
-// availability — if the announce ran first, the host's activate could land
+// availability ??if the announce ran first, the host's activate could land
 // before our handler exists and the toolbar toggle would silently no-op.
 // The close button posts __edit_mode_dismissed so the host's toolbar toggle
 // flips off in lockstep; the host echoes __deactivate_edit_mode back which
@@ -277,7 +313,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
           <b>{title}</b>
           <button className="twk-x" aria-label="Close tweaks"
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={dismiss}>✕</button>
+                  onClick={dismiss}>x</button>
         </div>
         <div className="twk-body">
           {children}
@@ -287,7 +323,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
   );
 }
 
-// ── Layout helpers ──────────────────────────────────────────────────────────
+// ???? Layout helpers ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 function TweakSection({ label, children }) {
   return (
@@ -310,7 +346,7 @@ function TweakRow({ label, value, children, inline = false }) {
   );
 }
 
-// ── Controls ────────────────────────────────────────────────────────────────
+// ???? Controls ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
   return (
@@ -336,20 +372,20 @@ function TweakRadio({ label, value, options, onChange }) {
   const trackRef = React.useRef(null);
   const [dragging, setDragging] = React.useState(false);
   // The active value is read by pointer-move handlers attached for the lifetime
-  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  // of a drag ??ref it so a stale closure doesn't fire onChange for every move.
   const valueRef = React.useRef(value);
   valueRef.current = value;
 
   // Segments wrap mid-word once per-segment width runs out. The track is
-  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
-  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // ~248px (280 panel ??28 body pad ??4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char ??so 2
   // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
   // back to a dropdown rather than wrap.
   const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
   const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
   const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
   if (!fitsAsSegments) {
-    // <select> emits strings — map back to the original option value so the
+    // <select> emits strings ??map back to the original option value so the
     // fallback stays type-preserving (numbers, booleans) like the segment path.
     const resolve = (s) => {
       const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
@@ -461,7 +497,7 @@ function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) 
   );
 }
 
-// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// Relative-luminance contrast pick ??checkmarks drawn over a swatch need to
 // read on both #111 and #fafafa without per-option configuration. Hex input
 // only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
 function __twkIsLight(hex) {
@@ -481,8 +517,8 @@ const __TwkCheck = ({ light }) => (
   </svg>
 );
 
-// TweakColor — curated color/palette picker. Each option is either a single
-// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// TweakColor ??curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts ??a lone color
 // renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
 // rest stacked in a sharp column on the right. onChange emits the
 // option in the shape it was passed (string stays string, array stays array).
@@ -513,7 +549,7 @@ function TweakColor({ label, value, options, onChange }) {
           return (
             <button key={i} type="button" className="twk-chip" role="radio"
                     aria-checked={on} data-on={on ? '1' : '0'}
-                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    aria-label={colors.join(', ')} title={colors.join(' /')}
                     style={{ background: hero }}
                     onClick={() => onChange(o)}>
               {sup.length > 0 && (
@@ -545,414 +581,163 @@ Object.assign(window, {
 
 
 // ----- src/data.jsx -----
-// data.jsx — scenario data, i18n strings, icons
+// data.jsx ??scenario data, i18n strings, icons
 
 const STR = {
-  ko: {
-    appName: "gtum",
-    project: "프로젝트",
-    workspace: "워크스페이스",
-    branch: "브랜치",
-    tasks: "작업",
-    providers: "에이전트 연결",
-    connect: "연결",
-    connected: "연결됨",
-    disconnect: "연결 해제",
-    files: "파일",
-    gitStatus: "Git 상태",
-    changes: "변경",
-    ahead: "앞섬",
-    behind: "뒤짐",
-    clean: "깨끗함",
-    dirty: "변경 있음",
-    newTab: "새 탭",
-    closeTab: "탭 닫기",
-    renameTab: "이름 바꾸기",
-    running: "실행 중",
-    failed: "실패",
-    idle: "유휴",
-    passing: "통과",
-    agentChat: "에이전트",
-    suggestedActions: "제안된 작업",
-    approve: "승인",
-    deny: "거절",
-    runInCurrent: "현재 탭에서 실행",
-    runInNew: "새 탭에서 실행",
-    needsApproval: "승인 필요",
-    typeMessage: "에이전트에게 질문하기",
-    askAgent: "질문",
-    explain: "이 오류 설명해줘",
-    suggestFix: "고치는 방법 제안",
-    rerunTests: "테스트 재실행",
-    fast: "Fast",
-    balanced: "Balanced",
-    deep: "Deep",
-    mode: "모드",
-    sendCtx: "현재 탭 출력 첨부됨",
-    contextSize: "컨텍스트",
-    connectProvider: "제공자 연결",
-    connectIntro: "에이전트 제공자 계정을 연결하세요. OAuth 공식 로그인 흐름만 사용합니다.",
-    connectDetails: "API 토큰을 직접 입력하지 않습니다. 세션은 OS 보안 저장소에 보관됩니다.",
-    openBrowser: "브라우저에서 로그인",
-    cancel: "취소",
-    waitingCallback: "콜백을 기다리는 중…",
-    connectSuccess: "연결 완료",
-    sessionScope: "권한 범위",
-    sessionExpiry: "세션 만료",
-    days: "일",
-    review: "검토",
-    runCommand: "명령 실행",
-    target: "대상",
-    command: "명령",
-    cwd: "작업 디렉토리",
-    riskLow: "낮은 위험",
-    riskMid: "중간 위험",
-    riskHigh: "높은 위험",
-    risk: "위험도",
-    rollback: "필요시 되돌리기",
-    explainBeforeRun: "실행 전 설명",
-    you: "사용자",
-    assistant: "에이전트",
-    typing: "응답 생성 중",
-    nowExecuting: "실행 중…",
-    completed: "완료됨",
-    commandHistory: "명령 기록",
-    quickActions: "빠른 작업",
-    statusReady: "준비됨",
-    sessionsLabel: "세션",
-    openProjectFolder: "프로젝트 폴더 열기",
-    statusBarHint: "Cmd+K로 명령 팔레트",
-    workspaceTitle: "오로라 모노레포",
-    aboutContext: "에이전트가 읽을 수 있는 컨텍스트",
-    contextFiles: "선택된 파일",
-    contextTab: "현재 탭 출력",
-    contextHistory: "최근 명령",
-    save: "저장됨",
-    settings: "설정",
-    tabsLabel: "터미널 탭",
-    activeAgent: "활성 에이전트",
-    none: "없음",
-    diffPreview: "diff 미리보기",
-    permRead: "읽기",
-    permExec: "실행",
-    permEdit: "파일 수정",
-    permApprove: "승인 필요",
-    permGranted: "허용",
-    role: "역할",
-    conductor: "지휘자",
-    explorer: "탐색자",
-    tester: "테스터",
-    operator: "운영자",
-    reviewer: "리뷰어",
-    coder: "코더",
-    activity: "활동",
-    parallelAgents: "병렬 에이전트",
-    maxFiles: "최대 파일",
-    maxLogs: "최대 로그",
-    crossReview: "교차 리뷰",
-    on: "켜짐",
-    off: "꺼짐",
-    splitRight: "오른쪽으로 분할",
-    splitDown: "아래로 분할",
-    closePane: "패널 닫기",
-    pane: "패널",
-    panes: "패널",
-    collapse: "접기",
-    expand: "펼치기",
-    collapseSidebar: "사이드바 접기",
-    expandSidebar: "사이드바 펼치기",
-    collapseAgent: "에이전트 접기",
-    expandAgent: "에이전트 펼치기",
-    mergeToSingle: "하나로 합치기",
-    detach: "분리",
-    ctxClose: "닫기",
-    ctxCloseOthers: "다른 탭 닫기",
-    ctxCloseRight: "오른쪽 탭 모두 닫기",
-    ctxCloseLeft: "왼쪽 탭 모두 닫기",
-    ctxCloseAll: "모든 탭 닫기",
-    ctxSplitRight: "오른쪽으로 분할",
-    ctxSplitDown: "아래로 분할",
-    ctxSplitLeft: "왼쪽으로 분할",
-    ctxSplitUp: "위로 분할",
-    ctxMoveRight: "오른쪽 새 그룹으로 이동",
-    ctxMoveDown: "아래 새 그룹으로 이동",
-    ctxNewGroup: "새 그룹으로 이동",
-    emptyGroup: "탭을 끌어다 놓거나 새로 여세요",
-    newTabHere: "여기에 새 탭",
-    settings: "설정",
-    settingsTitle: "설정",
-    settingsConnections: "에이전트 연결",
-    settingsModels: "모델",
-    settingsAppearance: "외관",
-    settingsExecution: "실행",
-    settingsAbout: "정보",
-    selectedModel: "선택된 모델",
-    activeProvider: "활성 제공자",
-    contextWindow: "컨텍스트 창",
-    responseSpeed: "응답 속도",
-    tier: "분류",
-    saveSettings: "저장",
-    pickModel: "모델 선택",
-    noConnectedProviders: "연결된 제공자가 없습니다",
-    parallelLimit: "병렬 워커 수",
-    autoApproveLow: "낮은 위험 자동 승인",
-    streamResponses: "응답 스트리밍",
-    approvalPolicy: "승인 정책",
-    presetCautious: "신중",
-    presetDefault: "기본",
-    presetBold: "공격적",
-    presetCustom: "맞춤",
-    approvalLevel: "승인 수준",
-    actionAlwaysAsk: "항상 묻기",
-    actionAuto: "자동 승인",
-    actionAutoTrusted: "신뢰된 경로만",
-    riskLowFull: "낮은 위험 명령",
-    riskMidFull: "중간 위험 명령",
-    riskHighFull: "높은 위험 명령",
-    riskLowDesc: "읽기, 빌드, 테스트, 포트 점유 해소 등",
-    riskMidDesc: "프로세스 종료, 패키지 설치, 캐시 삭제",
-    riskHighDesc: "git push --force, fly deploy, rm -rf 등",
-    trustedDirs: "신뢰된 경로",
-    trustedDirsHint: "이 디렉토리 안에서만 자동 승인이 적용됩니다",
-    forbiddenPatterns: "차단된 패턴",
-    forbiddenPatternsHint: "이 패턴은 정책과 무관하게 항상 확인합니다",
-    addPattern: "패턴 추가",
-    addDir: "경로 추가",
-    autoApproveLog: "최근 자동 승인",
-    noAutoApprovals: "아직 자동 승인된 명령이 없습니다",
-    undo: "되돌리기",
-    toastAutoRan: "자동 실행됨",
-    autoRanInline: "낮은 위험 — 자동 실행",
-    blockedByPattern: "차단된 패턴",
-    requiresHigher: "이 명령은 더 높은 위험 등급이므로 확인이 필요합니다",
-    streamResponsesHint: "에이전트 응답을 한 글자씩 흘려보냅니다",
-    parallelLimitHint: "동시에 실행되는 워커의 최대 개수",
-    auditTrail: "감사 로그",
-    revert: "되돌리기",
-  },
+  ko: {},
   en: {
-    appName: "gtum",
-    project: "Project",
-    workspace: "Workspace",
+    activeAgent: "active agent",
+    addDir: "Add directory",
+    addPattern: "Add pattern",
+    agentChat: "Agent",
+    approvalLevel: "Approval level",
+    auditTrail: "Audit trail",
+    aboutContext: "Context",
+    approve: "Approve",
+    blockedByPattern: "Blocked by pattern",
     branch: "Branch",
-    tasks: "Tasks",
-    providers: "Agent providers",
+    changes: "changes",
+    closeTab: "Close tab",
+    collapseAgent: "Collapse agent",
+    collapseSidebar: "Collapse sidebar",
+    commandHistory: "Command history",
+    conductor: "Codex",
     connect: "Connect",
     connected: "Connected",
-    disconnect: "Disconnect",
-    files: "Files",
-    gitStatus: "Git status",
-    changes: "changes",
-    ahead: "ahead",
-    behind: "behind",
-    clean: "clean",
-    dirty: "dirty",
-    newTab: "New tab",
-    closeTab: "Close tab",
-    renameTab: "Rename",
-    running: "Running",
-    failed: "Failed",
-    idle: "Idle",
-    passing: "Passing",
-    agentChat: "Agent",
-    suggestedActions: "Suggested actions",
-    approve: "Approve",
-    deny: "Deny",
-    runInCurrent: "Run in current tab",
-    runInNew: "Run in new tab",
-    needsApproval: "Needs approval",
-    typeMessage: "Ask the agent",
-    askAgent: "Ask",
-    explain: "Explain this error",
-    suggestFix: "Suggest a fix",
-    rerunTests: "Rerun tests",
-    fast: "Fast",
-    balanced: "Balanced",
-    deep: "Deep",
-    mode: "Mode",
-    sendCtx: "current tab output attached",
-    contextSize: "Context",
-    connectProvider: "Connect a provider",
-    connectIntro: "Connect your agent provider account. OAuth official sign-in only.",
-    connectDetails: "We never ask for raw API tokens. Sessions live in the OS secure store.",
-    openBrowser: "Open browser to sign in",
-    cancel: "Cancel",
-    waitingCallback: "Waiting for callback…",
-    connectSuccess: "Connected",
-    sessionScope: "Granted scope",
-    sessionExpiry: "Session expires in",
-    days: "days",
-    review: "Review",
-    runCommand: "Run command",
-    target: "Target",
-    command: "Command",
-    cwd: "Working directory",
-    riskLow: "Low risk",
-    riskMid: "Medium risk",
-    riskHigh: "High risk",
-    risk: "Risk",
-    rollback: "Reversible",
-    explainBeforeRun: "Pre-run notes",
-    you: "You",
-    assistant: "Agent",
-    typing: "thinking",
-    nowExecuting: "Executing…",
-    completed: "Completed",
-    commandHistory: "Command history",
-    quickActions: "Quick actions",
-    statusReady: "Ready",
-    sessionsLabel: "Sessions",
-    openProjectFolder: "Open project folder",
-    statusBarHint: "Cmd+K for palette",
-    workspaceTitle: "aurora-monorepo",
-    aboutContext: "Context the agent can read",
-    contextFiles: "Selected files",
-    contextTab: "Current tab output",
-    contextHistory: "Recent commands",
-    save: "Saved",
-    settings: "Settings",
-    tabsLabel: "Terminal tabs",
-    activeAgent: "Active agent",
-    none: "None",
-    diffPreview: "Diff preview",
-    permRead: "Read",
-    permExec: "Execute",
-    permEdit: "Edit files",
-    permApprove: "Approval required",
-    permGranted: "Allowed",
-    role: "Role",
-    conductor: "Conductor",
-    explorer: "Explorer",
-    tester: "Tester",
-    operator: "Operator",
-    reviewer: "Reviewer",
-    coder: "Coder",
-    activity: "Activity",
-    parallelAgents: "Parallel agents",
-    maxFiles: "Max files",
-    maxLogs: "Max log lines",
-    crossReview: "Cross review",
-    on: "on",
-    off: "off",
-    splitRight: "Split right",
-    splitDown: "Split down",
-    closePane: "Close pane",
-    pane: "pane",
-    panes: "panes",
-    collapse: "Collapse",
-    expand: "Expand",
-    collapseSidebar: "Collapse sidebar",
-    expandSidebar: "Expand sidebar",
-    collapseAgent: "Collapse agent",
-    expandAgent: "Expand agent",
-    mergeToSingle: "Merge to single",
-    detach: "Detach",
+    connectDetails: "Connect a provider to enable runtime-backed requests.",
+    connectIntro: "Choose a provider and complete the desktop login flow.",
+    connectProvider: "Connect provider",
+    connectSuccess: "connected",
+    contextFiles: "Selected file",
+    contextTab: "Current tab",
     ctxClose: "Close",
+    ctxCloseAll: "Close All",
+    ctxCloseLeft: "Close to the Left",
     ctxCloseOthers: "Close Others",
     ctxCloseRight: "Close to the Right",
-    ctxCloseLeft: "Close to the Left",
-    ctxCloseAll: "Close All",
-    ctxSplitRight: "Split Right",
+    ctxMoveDown: "Move into New Group Down",
+    ctxMoveRight: "Move into New Group Right",
+    ctxNewGroup: "Move into New Group",
     ctxSplitDown: "Split Down",
     ctxSplitLeft: "Split Left",
+    ctxSplitRight: "Split Right",
     ctxSplitUp: "Split Up",
-    ctxMoveRight: "Move into New Group Right",
-    ctxMoveDown: "Move into New Group Down",
-    ctxNewGroup: "Move into New Group",
-    emptyGroup: "Drag a tab here, or open a new one",
-    newTabHere: "New tab here",
-    settingsTitle: "Settings",
-    settingsConnections: "Agent connections",
-    settingsModels: "Models",
-    settingsAppearance: "Appearance",
-    settingsExecution: "Execution",
-    settingsAbout: "About",
-    selectedModel: "Selected model",
-    activeProvider: "Active provider",
-    contextWindow: "Context window",
-    responseSpeed: "Response speed",
-    tier: "Tier",
-    saveSettings: "Save",
-    pickModel: "Pick model",
-    noConnectedProviders: "No providers connected",
-    parallelLimit: "Parallel workers",
-    autoApproveLow: "Auto-approve low risk",
-    streamResponses: "Stream responses",
-    approvalPolicy: "Approval policy",
-    presetCautious: "Cautious",
-    presetDefault: "Default",
-    presetBold: "Bold",
-    presetCustom: "Custom",
-    approvalLevel: "Approval level",
-    actionAlwaysAsk: "Always ask",
-    actionAuto: "Auto-approve",
-    actionAutoTrusted: "Trusted dirs only",
-    riskLowFull: "Low-risk commands",
-    riskMidFull: "Medium-risk commands",
-    riskHighFull: "High-risk commands",
-    riskLowDesc: "Reads, builds, tests, freeing a port",
-    riskMidDesc: "Killing processes, installing packages, clearing caches",
-    riskHighDesc: "git push --force, fly deploy, rm -rf, etc.",
-    trustedDirs: "Trusted directories",
-    trustedDirsHint: "Auto-approve only applies inside these paths",
+    days: " days",
+    detach: "Detach",
+    attach: "Attach",
+    disconnect: "Disconnect",
+    emptyGroup: "Drag a tab here, or open a real project",
+    expandAgent: "Expand agent",
+    expandSidebar: "Expand sidebar",
+    explain: "Explain current state",
+    failed: "failed",
     forbiddenPatterns: "Forbidden patterns",
     forbiddenPatternsHint: "Always confirm these regardless of policy",
-    addPattern: "Add pattern",
-    addDir: "Add directory",
-    autoApproveLog: "Recent auto-approvals",
-    noAutoApprovals: "No commands auto-approved yet",
-    undo: "Undo",
-    toastAutoRan: "Auto-ran",
-    autoRanInline: "Low risk — auto-ran",
-    blockedByPattern: "Blocked by pattern",
+    high: "High",
+    idle: "idle",
+    low: "Low",
+    mergeToSingle: "Merge to single",
+    mid: "Medium",
+    needsApproval: "Needs review",
+    permissionRequest: "Permission request",
+    decisionNeeded: "Decision needed",
+    chooseOneOption: "Choose one option",
+    selected: "Selected",
+    terminalCommandReview: "Terminal command needs review",
+    commandPreview: "Command preview",
+    allowOnce: "Allow once",
+    permissionDeny: "Deny",
+    allowedOnce: "Allowed once",
+    denied: "Denied",
+    permissionAllowedOnce: "Permission allowed once. Decision kept in the agent panel.",
+    permissionDenied: "Permission denied in the agent panel. I will not run terminal commands.",
+    executionSuggestion: "Execution suggestion",
+    projectScope: "Project scope",
+    commandCount: "command",
+    commandCountPlural: "commands",
+    decisionReviewing: "Reviewing",
+    reason: "Reason",
+    riskHigh: "high risk",
+    riskLow: "low risk",
+    riskMid: "medium risk",
+    newTab: "New tab",
+    newTabHere: "New tab here",
+    noConnectedProviders: "No providers connected",
+    nowExecuting: "Executing",
+    openProjectFolder: "Open project folder",
+    passing: "passing",
+    presetBold: "Bold",
+    presetCautious: "Cautious",
+    presetCustom: "Custom",
+    presetDefault: "Default",
     requiresHigher: "This command needs explicit approval at its risk level",
-    streamResponsesHint: "Stream agent replies character by character",
-    parallelLimitHint: "Max workers running in parallel",
-    auditTrail: "Audit trail",
+    review: "Review command",
+    reviewBeforeRun: "Review in agent panel",
     revert: "Revert",
+    riskHighDesc: "Destructive commands and production deploys",
+    riskHighFull: "High-risk commands",
+    riskLowDesc: "Reads, builds, and tests",
+    riskLowFull: "Low-risk commands",
+    riskMidDesc: "Killing processes, installing packages, clearing caches",
+    riskMidFull: "Medium-risk commands",
+    running: "running",
+    saveSettings: "Save",
+    sendCtx: "send context",
+    sessionExpiry: "Session expires in ",
+    settingsAbout: "About",
+    settingsAppearance: "Appearance",
+    settingsConnections: "Agent connections",
+    settingsExecution: "Execution",
+    settingsTitle: "Settings",
+    statusBarHint: "Command palette",
+    statusReady: "Ready",
+    streamResponses: "Stream responses",
+    streamResponsesHint: "Stream agent replies character by character",
+    suggestFix: "Suggest a fix",
+    suggestedActions: "suggested actions",
+    tabsLabel: "tabs",
+    tasks: "Tasks",
+    typing: "typing",
+    activityPreparing: "Preparing context",
+    activityRequesting: "Requesting Codex",
+    activityWaiting: "Waiting for runtime",
+    activityFinalizing: "Preparing response",
+    keepInAgent: "Keep in agent",
+    terminalRunHint: "Approval records the decision in the Agent panel; terminal execution remains user-owned.",
+    decisionKept: "Decision kept in the agent panel.",
+    trustedDirs: "Trusted directories",
+    typeMessage: "Ask Codex",
+    undo: "Undo",
+    waitingCallback: "Waiting for callback",
+    workspaceTitle: "Open a project",
+    you: "You"
   },
 };
-
 const t = (lang, key) => (STR[lang] && STR[lang][key]) || STR.en[key] || key;
 
 const PROJECT = {
-  name: "aurora-monorepo",
-  path: "~/code/aurora-monorepo",
-  branch: "feature/onboarding-funnel",
-  branchType: "feature",
-  ahead: 3,
+  name: "Open a project",
+  path: "",
+  branch: "no-project",
+  branchType: "none",
+  ahead: 0,
   behind: 0,
-  changedFiles: 7,
-  fileTree: [
-    { name: "apps", type: "dir", open: true, children: [
-      { name: "web", type: "dir", open: true, children: [
-        { name: "src", type: "dir", open: true, children: [
-          { name: "OnboardingFunnel.tsx", type: "ts", changed: true, selected: true },
-          { name: "useFunnelState.ts", type: "ts", changed: true },
-          { name: "main.tsx", type: "ts" },
-        ]},
-        { name: "package.json", type: "json" },
-        { name: "vite.config.ts", type: "ts" },
-      ]},
-      { name: "api", type: "dir", open: true, children: [
-        { name: "src", type: "dir", open: false },
-        { name: "server.ts", type: "ts", changed: true },
-        { name: "package.json", type: "json", changed: true },
-      ]},
-    ]},
-    { name: "packages", type: "dir", open: false },
-    { name: "tests", type: "dir", open: true, children: [
-      { name: "funnel.spec.ts", type: "ts", changed: true },
-      { name: "checkout.spec.ts", type: "ts" },
-    ]},
-    { name: "package.json", type: "json" },
-    { name: "pnpm-workspace.yaml", type: "yaml" },
-    { name: "README.md", type: "md" },
-  ],
+  changedFiles: 0,
+  runtimeBacked: false,
+  fileTree: [],
 };
 
-async function selectRuntimeProjectFolder(defaultPath) {
-  if (!hasTauriRuntime()) return defaultPath || PROJECT.path;
+async function selectRuntimeProjectFolder(defaultPath, runtimeAvailable = hasTauriRuntime()) {
+  const pickerOverride = typeof window === "undefined"
+    ? null
+    : window.__GTUM_PROJECT_FOLDER_PICKER__;
+  if (pickerOverride?.pick) {
+    return pickerOverride.pick({ defaultPath });
+  }
+
+  if (!hasTauriRuntime()) {
+    return runtimeAvailable ? (defaultPath || PROJECT.path || ".") : null;
+  }
 
   const selected = await openDialog({
     directory: true,
@@ -964,254 +749,52 @@ async function selectRuntimeProjectFolder(defaultPath) {
   return typeof selected === "string" ? selected : null;
 }
 
-// VS Code-style workspace.
-//
-// layoutTree is a binary tree where:
-//   - leaves are { type: 'group', groupId } pointing into `groups`
-//   - branches are { type: 'split', direction: 'horizontal'|'vertical',
-//                    children: [TreeNode, ...], sizes: [pct, ...] }
-//     'horizontal' = children laid out side-by-side (row)
-//     'vertical'   = children stacked top-to-bottom (column)
-//
-// `groups` is a dictionary keyed by groupId for O(1) lookup; each group has
-// its own tabbar (tabs[] + activeTabId). Tabs own the shell session data.
+// Start from a real empty workbench. Runtime-backed project, file, terminal,
+// chat, task, and history data are populated only after the desktop app opens
+// a local project or receives an explicit runtime response.
 const WORKSPACE_INITIAL = {
-  layoutTree: {
-    type: "split",
-    direction: "vertical",
-    sizes: [62, 38],
-    children: [
-      { type: "group", groupId: "g-1" },
-      { type: "group", groupId: "g-2" },
-    ],
-  },
-  activeGroupId: "g-1",
+  layoutTree: { type: "group", groupId: "g-empty" },
+  activeGroupId: "g-empty",
   groups: {
-    "g-1": {
-      id: "g-1",
-      activeTabId: "t-backend",
-      tabs: [
-        {
-          id: "t-frontend", title: "frontend",
-          shell: "pnpm", cwd: "apps/web",
-          status: "running", cmd: "pnpm dev",
-          lines: [
-            { kind: "cmd", text: "pnpm dev" },
-            { kind: "log", text: "> aurora-web@0.4.2 dev /Users/yj/code/aurora-monorepo/apps/web" },
-            { kind: "log", text: "> vite --port 5173" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "  VITE v5.2.11  ready in 412 ms", color: "ok" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "  ➜  Local:   http://localhost:5173/" },
-            { kind: "log", text: "  ➜  Network: use --host to expose" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "10:24:18 [vite] hmr update /src/OnboardingFunnel.tsx", color: "dim" },
-            { kind: "log", text: "10:24:51 [vite] hmr update /src/useFunnelState.ts", color: "dim" },
-            { kind: "log", text: "10:25:14 [vite] page reload /src/main.tsx", color: "dim" },
-          ],
-        },
-        {
-          id: "t-backend", title: "backend",
-          shell: "pnpm", cwd: "apps/api",
-          status: "failed", cmd: "pnpm dev:api",
-          lines: [
-            { kind: "cmd", text: "pnpm dev:api" },
-            { kind: "log", text: "> aurora-api@0.4.2 dev:api /Users/yj/code/aurora-monorepo/apps/api" },
-            { kind: "log", text: "> tsx watch src/server.ts" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "[api] initializing kysely pool…", color: "dim" },
-            { kind: "log", text: "[api] loaded 12 routes" },
-            { kind: "log", text: "[api] listening on http://localhost:3001 ⏳", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "Error: listen EADDRINUSE: address already in use :::3001", color: "err" },
-            { kind: "log", text: "    at Server.setupListenHandle [as _listen2] (node:net:1908:16)", color: "err-dim" },
-            { kind: "log", text: "    at listenInCluster (node:net:1956:12)", color: "err-dim" },
-            { kind: "log", text: "    at Server.listen (node:net:2058:7)", color: "err-dim" },
-            { kind: "log", text: "    at start (file:///…/apps/api/src/server.ts:48:10)", color: "err-dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "node:events:497", color: "err-dim" },
-            { kind: "log", text: "      throw er; // Unhandled 'error' event", color: "err-dim" },
-            { kind: "log", text: "      ^", color: "err-dim" },
-            { kind: "log", text: "✖ process exited with code 1", color: "err" },
-          ],
-        },
-        {
-          id: "t-tests", title: "tests",
-          shell: "pnpm", cwd: ".",
-          status: "failed", cmd: "pnpm test:funnel",
-          lines: [
-            { kind: "cmd", text: "pnpm test:funnel" },
-            { kind: "log", text: "> aurora@0.4.2 test:funnel" },
-            { kind: "log", text: "> vitest run tests/funnel.spec.ts" },
-            { kind: "log", text: "" },
-            { kind: "log", text: " RUN  v1.6.0  /Users/yj/code/aurora-monorepo", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: " ❯ tests/funnel.spec.ts  (8)", color: "warn" },
-            { kind: "log", text: "   ✓ persists step on refresh", color: "ok" },
-            { kind: "log", text: "   ✓ goes back without losing answers", color: "ok" },
-            { kind: "log", text: "   ✓ submits valid payload", color: "ok" },
-            { kind: "log", text: "   ✓ derives progress %", color: "ok" },
-            { kind: "log", text: "   ✓ blocks empty step", color: "ok" },
-            { kind: "log", text: "   ✓ handles back from final step", color: "ok" },
-            { kind: "log", text: "   ✗ FunnelState › skipping optional step keeps progress", color: "err" },
-            { kind: "log", text: "       AssertionError: expected 60 to be 50", color: "err-dim" },
-            { kind: "log", text: "       ❯ tests/funnel.spec.ts:74:22", color: "err-dim" },
-            { kind: "log", text: "   ✗ FunnelState › resume after 24h marks stale", color: "err" },
-            { kind: "log", text: "       Error: expected staleness flag to be set", color: "err-dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: " Test Files  1 failed (1)", color: "err" },
-            { kind: "log", text: "      Tests  2 failed | 6 passed (8)", color: "err" },
-            { kind: "log", text: "   Duration  1.42s", color: "dim" },
-          ],
-        },
-      ],
-    },
-    "g-2": {
-      id: "g-2",
-      activeTabId: "t-fly",
-      tabs: [
-        {
-          id: "t-git", title: "git",
-          shell: "zsh", cwd: ".",
-          status: "passing", cmd: "git status",
-          lines: [
-            { kind: "cmd", text: "git status" },
-            { kind: "log", text: "On branch feature/onboarding-funnel" },
-            { kind: "log", text: "Your branch is ahead of 'origin/master' by 3 commits.", color: "dim" },
-            { kind: "log", text: "  (use \"git push\" to publish your local commits)", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "Changes not staged for commit:", color: "warn" },
-            { kind: "log", text: "  (use \"git add <file>...\" to update what will be committed)", color: "dim" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "        modified:   apps/web/src/OnboardingFunnel.tsx", color: "err" },
-            { kind: "log", text: "        modified:   apps/web/src/useFunnelState.ts", color: "err" },
-            { kind: "log", text: "        modified:   apps/api/src/server.ts", color: "err" },
-            { kind: "log", text: "        modified:   apps/api/package.json", color: "err" },
-            { kind: "log", text: "        modified:   tests/funnel.spec.ts", color: "err" },
-            { kind: "log", text: "" },
-            { kind: "log", text: "no changes added to commit (use \"git add\" and/or \"git commit -a\")", color: "dim" },
-          ],
-        },
-        {
-          id: "t-fly", title: "fly deploy",
-          shell: "fly", cwd: ".",
-          status: "running", cmd: "fly deploy --watch",
-          lines: [
-            { kind: "cmd", text: "fly deploy --watch" },
-            { kind: "log", text: "==> Verifying app config" },
-            { kind: "log", text: "Validating /Users/yj/code/aurora-monorepo/fly.toml", color: "dim" },
-            { kind: "log", text: "Platform: machines" },
-            { kind: "log", text: "✓ Configuration is valid", color: "ok" },
-            { kind: "log", text: "--> Verified app config" },
-            { kind: "log", text: "==> Building image" },
-            { kind: "log", text: "Remote builder fly-builder-jolly-snow ready", color: "dim" },
-            { kind: "log", text: " => [internal] load build definition       0.0s", color: "dim" },
-            { kind: "log", text: " => [build 1/8] FROM docker.io/node:20-bookworm  4.2s", color: "dim" },
-            { kind: "log", text: " => [build 2/8] WORKDIR /app                0.1s", color: "dim" },
-            { kind: "log", text: " => [build 3/8] COPY pnpm-lock.yaml         0.0s", color: "dim" },
-            { kind: "log", text: " => [build 4/8] RUN corepack enable         1.8s", color: "dim" },
-            { kind: "log", text: " => [build 5/8] RUN pnpm install --frozen-lockfile  12.4s", color: "dim" },
-            { kind: "log", text: " => [build 6/8] COPY . .                    0.3s", color: "dim" },
-            { kind: "log", text: " => [build 7/8] RUN pnpm -r build           ⏳", color: "warn" },
-          ],
-        },
-      ],
+    "g-empty": {
+      id: "g-empty",
+      activeTabId: null,
+      tabs: [],
     },
   },
 };
 
+const createProjectWorkbench = () => ({
+  workspace: WORKSPACE_INITIAL,
+  selectedFile: null,
+});
+
 const PROVIDERS_INIT = [
-  {
-    id: "claude",
-    label: "Claude",
-    abbr: "Cl",
-    state: "connected",
-    scope: ["files.read", "terminal.read", "exec.suggest"],
-    expiresInDays: 27,
-    activeModel: "claude-sonnet-4.5",
-    models: [
-      { id: "claude-opus-4.5",   label: "Claude Opus 4.5",   tier: "deep",     ctx: "200K", speed: "느림" },
-      { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5", tier: "balanced", ctx: "200K", speed: "보통" },
-      { id: "claude-haiku-4.5",  label: "Claude Haiku 4.5",  tier: "fast",     ctx: "200K", speed: "빠름" },
-    ],
-  },
   {
     id: "codex",
     label: "Codex",
     abbr: "Cx",
     state: "disconnected",
+    availability: "available",
     scope: [],
     expiresInDays: null,
-    activeModel: "gpt-5-codex",
-    models: [
-      { id: "gpt-5",         label: "GPT-5",         tier: "deep",     ctx: "256K", speed: "느림" },
-      { id: "gpt-5-codex",   label: "GPT-5 Codex",   tier: "balanced", ctx: "200K", speed: "보통" },
-      { id: "gpt-5-mini",    label: "GPT-5 mini",    tier: "fast",     ctx: "128K", speed: "빠름" },
-      { id: "o4-mini",       label: "o4-mini",       tier: "deep",     ctx: "128K", speed: "느림" },
-    ],
+  },
+  {
+    id: "claude",
+    label: "Claude",
+    abbr: "Cl",
+    state: "disconnected",
+    availability: "available",
+    scope: ["provider:request"],
+    credentialSource: null,
+    expiresInDays: null,
+    lastError: null,
   },
 ];
 
-const CHAT_INIT = (lang) => [
-  {
-    id: "m1",
-    role: "user",
-    at: "10:24",
-    content: lang === "ko"
-      ? "백엔드 탭이 떨어졌어. 한번 봐줘."
-      : "Backend tab just crashed. Take a look.",
-    contextAttached: ["t-backend"],
-  },
-  {
-    id: "m2",
-    role: "assistant",
-    at: "10:24",
-    roleLabel: lang === "ko" ? "탐색자" : "Explorer",
-    content: lang === "ko"
-      ? "backend 탭 로그를 읽었어. `tsx watch src/server.ts`가 `EADDRINUSE :::3001`로 죽었어 — 누군가 이미 3001을 쓰고 있어."
-      : "I read the backend tab output. `tsx watch src/server.ts` died with `EADDRINUSE :::3001` — something else is already on 3001.",
-  },
-  {
-    id: "m3",
-    role: "assistant",
-    at: "10:24",
-    roleLabel: lang === "ko" ? "리뷰어" : "Reviewer",
-    content: lang === "ko"
-      ? "최근 명령 기록을 보니 4분 전에 같은 서버를 한번 띄웠어. 좀비 프로세스일 가능성이 커. 죽이고 다시 띄우는 게 안전해."
-      : "Recent history shows the same server was launched 4 minutes ago. Likely a zombie process — safe to kill and restart.",
-  },
-  {
-    id: "m4",
-    role: "assistant",
-    at: "10:25",
-    suggestion: {
-      id: "sg-1",
-      title: lang === "ko" ? "포트 3001 점유 프로세스 종료 후 backend 재실행" : "Kill the process on :3001, restart backend",
-      commands: [
-        { cmd: "lsof -ti:3001 | xargs -r kill -9", risk: "mid", target: "new" },
-        { cmd: "pnpm dev:api", risk: "low", target: "t-backend" },
-      ],
-      note: lang === "ko"
-        ? "되돌리기 쉬움. 첫 명령은 새 탭에서, 두 번째는 backend 탭에서 실행."
-        : "Reversible. First command in a new tab, second in the backend tab.",
-    },
-  },
-];
-
-const COMMAND_HISTORY_INIT = [
-  { at: "10:18", tab: "frontend", cmd: "pnpm dev", ok: true },
-  { at: "10:20", tab: "backend", cmd: "pnpm dev:api", ok: true },
-  { at: "10:21", tab: "tests", cmd: "pnpm test:funnel", ok: false },
-  { at: "10:24", tab: "backend", cmd: "pnpm dev:api", ok: false },
-];
-
-const TASKS_INIT = (lang) => [
-  { id: "tk1", label: lang === "ko" ? "온보딩 퍼널 — 진행률 계산 버그 수정" : "Onboarding funnel — progress bug fix", status: "active", agent: "Coder" },
-  { id: "tk2", label: lang === "ko" ? "stale resume 플래그 동작 검증" : "Verify stale-resume flag behavior", status: "waiting", agent: "Tester" },
-  { id: "tk3", label: lang === "ko" ? "Kysely 풀 종료 핸들러 추가" : "Add Kysely pool shutdown handler", status: "queued", agent: "Coder" },
-  { id: "tk4", label: lang === "ko" ? "변경 사항 PR 초안 작성" : "Draft PR summary for changes", status: "queued", agent: "Reviewer" },
-];
-
+const CHAT_INIT = () => [];
+const COMMAND_HISTORY_INIT = [];
+const TASKS_INIT = () => [];
 const Icon = {
   chevron: (props) => (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" {...props}>
@@ -1231,6 +814,11 @@ const Icon = {
   x: (props) => (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" {...props}>
       <path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  ),
+  stop: (props) => (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" {...props}>
+      <rect x="4" y="4" width="6" height="6" rx="1.2" fill="currentColor" />
     </svg>
   ),
   send: (props) => (
@@ -1254,6 +842,11 @@ const Icon = {
   spark: (props) => (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}>
       <path d="M6 1.5 L6.9 5.1 L10.5 6 L6.9 6.9 L6 10.5 L5.1 6.9 L1.5 6 L5.1 5.1 Z" fill="currentColor" />
+    </svg>
+  ),
+  bolt: (props) => (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" {...props}>
+      <path d="M6.8 1.4 2.9 6.5h2.7l-.4 4.1 3.9-5.2H6.4z" fill="currentColor" stroke="currentColor" strokeWidth=".5" strokeLinejoin="round" />
     </svg>
   ),
   folder: (props) => (
@@ -1319,7 +912,7 @@ const Icon = {
   ),
 };
 
-// Derive a status badge for a whole group from its tabs — worst-status wins.
+// Derive a status badge for a whole group from its tabs ??worst-status wins.
 // Used in sidebar / activity indicators / drag chrome.
 const STATUS_ORDER = { failed: 4, running: 3, passing: 2, idle: 1 };
 function groupStatus(group) {
@@ -1338,7 +931,7 @@ function workspaceStatus(workspace) {
   }
   return best;
 }
-// Active tab of the active group — used by the agent context summary, etc.
+// Active tab of the active group ??used by the agent context summary, etc.
 function activeTabOf(workspace) {
   const g = workspace.groups[workspace.activeGroupId];
   if (!g) return null;
@@ -1359,109 +952,8 @@ function allTabs(workspace) {
   return out;
 }
 
-// File content for editor tabs — keyed by full path in the file tree.
-const FILE_CONTENTS = {
-  "apps/web/src/OnboardingFunnel.tsx": { lang: "tsx", dirty: true, text:
-`import { useEffect } from "react";
-import { useFunnelState } from "./useFunnelState";
-import { StepCard } from "./StepCard";
-import { ProgressBar } from "./ProgressBar";
-
-type Props = {
-  steps: FunnelStep[];
-  onSubmit: (payload: FunnelPayload) => void;
-};
-
-export function OnboardingFunnel({ steps, onSubmit }: Props) {
-  const funnel = useFunnelState(steps);
-
-  useEffect(() => {
-    if (funnel.isComplete) onSubmit(funnel.payload);
-  }, [funnel.isComplete, funnel.payload, onSubmit]);
-
-  return (
-    <div className="funnel">
-      <ProgressBar value={funnel.progress} />
-      <StepCard
-        step={funnel.current}
-        answer={funnel.answer}
-        onChange={funnel.answer$.next}
-        onBack={funnel.back}
-        onNext={funnel.next}
-      />
-    </div>
-  );
-}` },
-  "apps/web/src/useFunnelState.ts": { lang: "ts", dirty: true, text:
-`import { useMemo, useState } from "react";
-import { Subject } from "rxjs";
-
-/**
- * useFunnelState — manages step navigation + progress
- * BUG: progress calc doesn't drop optional skipped steps
- */
-export function useFunnelState(steps: FunnelStep[]) {
-  const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, unknown>>({});
-
-  const current = steps[idx];
-  const answer$ = useMemo(() => new Subject<unknown>(), []);
-
-  // FIXME — should exclude optional steps that were skipped
-  const progress = Math.round(((idx + 1) / steps.length) * 100);
-
-  return {
-    current, answer: answers[current?.id],
-    progress,
-    isComplete: idx >= steps.length,
-    answer$,
-    payload: answers,
-    back: () => setIdx((i) => Math.max(0, i - 1)),
-    next: () => setIdx((i) => i + 1),
-  };
-}` },
-  "apps/api/src/server.ts": { lang: "ts", dirty: true, text:
-`import { createServer } from "node:http";
-import { router } from "./router";
-import { kysely } from "./db/kysely";
-
-const PORT = 3001;
-
-async function start() {
-  console.log("[api] initializing kysely pool…");
-  await kysely.connect();
-  const server = createServer(router);
-  // FIXME: no graceful shutdown — leaves the port hot on restart
-  server.listen(PORT, () => {
-    console.log(\`[api] listening on http://localhost:\${PORT}\`);
-  });
-}
-
-start().catch((err) => { console.error(err); process.exit(1); });` },
-  "tests/funnel.spec.ts": { lang: "ts", dirty: true, text:
-`import { renderHook, act } from "@testing-library/react";
-import { useFunnelState } from "../apps/web/src/useFunnelState";
-import { describe, it, expect } from "vitest";
-
-const steps = [
-  { id: "name",    optional: false },
-  { id: "email",   optional: false },
-  { id: "team",    optional: true  },
-  { id: "billing", optional: false },
-];
-
-describe("FunnelState", () => {
-  it("skipping optional step keeps progress", () => {
-    const { result } = renderHook(() => useFunnelState(steps));
-    act(() => result.current.next());
-    act(() => result.current.next());
-    act(() => result.current.next());
-    // expected 50, optional removed from denominator
-    expect(result.current.progress).toBe(50);
-  });
-});` },
-};
-
+// File content for editor tabs ??keyed by full path in the file tree.
+const FILE_CONTENTS = {};
 // Make an editor-shaped tab from a file tree node + its full path.
 function tabFromFile(path, name) {
   const c = FILE_CONTENTS[path];
@@ -1473,6 +965,7 @@ function tabFromFile(path, name) {
     displayPath: path,
     lang: c?.lang || "txt",
     content: c?.text || "// (no content for this file in the prototype)",
+    contentHash: null,
     isText: true,
     truncated: false,
     dirty: !!c?.dirty,
@@ -1485,6 +978,90 @@ const projectRuntimeService = createProjectRuntimeService({
   fallbackProject: PROJECT,
   fallbackFileReader: tabFromFile,
 });
+const agentAuthRuntimeService = createAgentAuthRuntimeService();
+const agentSuggestionRuntimeService = createAgentSuggestionRuntimeService();
+const agentJobRuntimeService = createAgentJobRuntimeService();
+const terminalRuntimeService = createTerminalRuntimeService();
+const workspaceRuntimeService = createWorkspaceRuntimeService();
+
+function agentAttachmentPickerOverride() {
+  if (typeof window === "undefined") return null;
+  return window.__GTUM_AGENT_ATTACHMENT_PICKER__ || null;
+}
+
+function toArray(value) {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function labelFromPath(path) {
+  const parts = String(path || "").replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.at(-1) || String(path || "attachment");
+}
+
+function normalizePickedAgentAttachment(value, fallbackKind) {
+  if (typeof value === "string") {
+    return {
+      kind: fallbackKind,
+      path: value,
+      label: labelFromPath(value),
+    };
+  }
+
+  if (!value || !value.path) return null;
+  return {
+    kind: value.kind || fallbackKind,
+    path: value.path,
+    label: value.label || labelFromPath(value.path),
+  };
+}
+
+async function pickAgentAttachments(providerCapabilities) {
+  const enabled = (providerCapabilities?.attachments || []).filter((attachment) => attachment.enabled);
+  const capability = enabled.find((attachment) => attachment.kind === "image")
+    || enabled.find((attachment) => attachment.kind === "file")
+    || enabled.find((attachment) => attachment.kind === "directory");
+  if (!capability) return [];
+
+  const override = agentAttachmentPickerOverride();
+  if (override?.pick) {
+    const picked = await override.pick({ capability, capabilities: enabled });
+    return toArray(picked)
+      .map((value) => normalizePickedAgentAttachment(value, capability.kind))
+      .filter(Boolean);
+  }
+
+  if (!hasTauriRuntime()) return [];
+
+  const selected = await openDialog({
+    multiple: true,
+    directory: capability.kind === "directory",
+    filters: capability.kind === "image"
+      ? [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }]
+      : undefined,
+  });
+
+  return toArray(selected)
+    .map((value) => normalizePickedAgentAttachment(value, capability.kind))
+    .filter(Boolean);
+}
+
+function mergeRuntimeProviderConnections(providers, connections) {
+  const patches = new Map(connections.map((connection) => {
+    const patch = providerViewStateFromConnection(connection);
+    return [patch.id, patch];
+  }));
+
+  return providers.map((provider) => {
+    const patch = patches.get(provider.id);
+    if (!patch) return provider;
+
+    return {
+      ...provider,
+      ...patch,
+    };
+  });
+}
 
 async function readRuntimeProjectOverview(path) {
   const result = await projectRuntimeService.readProjectOverview(path);
@@ -1493,6 +1070,10 @@ async function readRuntimeProjectOverview(path) {
 
 async function readRuntimeProjectFile(project, filePath, fallbackName) {
   return projectRuntimeService.readProjectFile(project, filePath, fallbackName);
+}
+
+async function saveRuntimeProjectFile(project, fileTab) {
+  return projectRuntimeService.saveProjectFile(project, fileTab);
 }
 
 // Walk file tree to find the full path of a given node.
@@ -1507,7 +1088,7 @@ function pathOfNode(tree, target, parents = []) {
   return null;
 }
 
-// Lightweight syntax tokenizer for TS/TSX — keyword, string, comment, number.
+// Lightweight syntax tokenizer for TS/TSX ??keyword, string, comment, number.
 const __TS_KW = new Set("import|from|export|const|let|var|function|return|if|else|for|while|switch|case|default|break|continue|new|class|extends|implements|interface|type|enum|async|await|try|catch|finally|throw|typeof|instanceof|void|null|undefined|true|false|this|super|in|of|as|is|public|private|protected|readonly|static|abstract|yield|delete".split("|"));
 function tokenizeLine(line) {
   const out = [];
@@ -1540,86 +1121,18 @@ function tokenizeLine(line) {
   return out;
 }
 
-// ── Approval policy ─────────────────────────────────────────────────────
-//
-// Policy decides whether a command is auto-approved or routed through the
-// approval modal. We model 3 risk levels with separate rules + an absolute
-// allowlist (trusted dirs) and denylist (forbidden patterns).
-//
-// Preset semantics:
-//   cautious — every command always asks; no shortcuts.
-//   default  — low-risk auto-runs anywhere; mid/high always ask.
-//   bold     — low+mid auto-run inside trusted dirs; high always asks.
-//
-// Forbidden patterns are checked first and always force "always-ask",
-// even if the policy would auto-approve. High-risk is hard-coded to
-// always-ask — you cannot disable it.
-const APPROVAL_PRESETS = {
-  cautious: { lowRisk: "always-ask", midRisk: "always-ask" },
-  default:  { lowRisk: "auto",       midRisk: "always-ask" },
-  bold:     { lowRisk: "auto",       midRisk: "auto-trusted" },
-};
-
-const APPROVAL_POLICY_INIT = {
-  preset: "default",
-  lowRisk: "auto",
-  midRisk: "always-ask",
-  // highRisk is always "always-ask" — not stored, just enforced.
-  trustedDirs: ["~/code/aurora-monorepo"],
-  forbiddenPatterns: ["rm -rf", "git push --force", "sudo", "dd if="],
-};
-
-// Decide what to do with a command:
-//   { action: 'auto' } → execute without modal
-//   { action: 'ask', reason }  → open approval modal
-function policyDecideForCommand(policy, cmd, risk, cwd) {
-  const text = cmd || "";
-  // 1. Forbidden patterns override everything
-  for (const pat of policy.forbiddenPatterns) {
-    if (text.toLowerCase().includes(pat.toLowerCase())) {
-      return { action: "ask", reason: "forbidden", pattern: pat };
-    }
-  }
-  // 2. High risk → always ask
-  if (risk === "high") return { action: "ask", reason: "high-risk" };
-  // 3. Policy by risk level
-  const rule = risk === "low" ? policy.lowRisk : policy.midRisk;
-  if (rule === "auto") return { action: "auto" };
-  if (rule === "auto-trusted") {
-    // Auto-approve only if cwd is inside a trusted dir
-    const inTrusted = policy.trustedDirs.some(
-      (d) => (cwd || "").startsWith(d.replace(/^~/, ""))
-    );
-    return inTrusted ? { action: "auto" } : { action: "ask", reason: "not-trusted" };
-  }
-  return { action: "ask", reason: "policy" };
-}
-
-// Whole-suggestion decision — auto-runs only if EVERY command auto-runs.
-// One blocker means we open the modal with the full list.
-function policyDecideForSuggestion(policy, suggestion, cwd) {
-  const decisions = suggestion.commands.map(
-    (c) => ({ cmd: c, decision: policyDecideForCommand(policy, c.cmd, c.risk, cwd) })
-  );
-  const blocker = decisions.find((d) => d.decision.action === "ask");
-  if (blocker) return { action: "ask", blocker, decisions };
-  return { action: "auto", decisions };
-}
-
 Object.assign(window, {
   STR, t,
   PROJECT, WORKSPACE_INITIAL, PROVIDERS_INIT,
   CHAT_INIT, COMMAND_HISTORY_INIT, TASKS_INIT,
   Icon,
   groupStatus, workspaceStatus, activeTabOf, findTab, allTabs,
-  APPROVAL_PRESETS, APPROVAL_POLICY_INIT,
-  policyDecideForCommand, policyDecideForSuggestion,
   FILE_CONTENTS, tabFromFile, pathOfNode, tokenizeLine,
 });
 
 
 // ----- src/workspace-store.jsx -----
-// workspace-store.jsx — pure functions for VS Code-style workspace state.
+// workspace-store.jsx ??pure functions for VS Code-style workspace state.
 //
 // State shape:
 //   workspace = {
@@ -1641,9 +1154,9 @@ Object.assign(window, {
 //
 // 'horizontal' = side-by-side (row), 'vertical' = stacked (col).
 //
-// Every exported action is a pure function: (state, ...args) → newState.
+// Every exported action is a pure function: (state, ...args) ??newState.
 
-// ── id helpers ──────────────────────────────────────────────────────────
+// ???? id helpers ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 let __gtumIdCounter = 0;
 function uid(prefix) {
   __gtumIdCounter += 1;
@@ -1651,7 +1164,7 @@ function uid(prefix) {
   return prefix + "-" + Date.now().toString(36) + "-" + __gtumIdCounter;
 }
 
-// ── tree utils ──────────────────────────────────────────────────────────
+// ???? tree utils ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 // Walk the tree and call fn(node, path). path is array of [parent, childIdx].
 function visit(tree, fn, path = []) {
@@ -1713,7 +1226,7 @@ function findParentOfGroup(tree, groupId) {
   return result;
 }
 
-// ── pure actions ────────────────────────────────────────────────────────
+// ???? pure actions ????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 function setActiveTab(state, groupId, tabId) {
   const g = state.groups[groupId];
@@ -1772,7 +1285,7 @@ function moveTab(state, tabId, fromGroupId, toGroupId, targetIdx = null) {
       node.type === "group" && node.groupId === fromGroupId ? null : node
     );
     if (next.layoutTree == null) {
-      // workspace must keep at least one group — restore a fresh empty one
+      // workspace must keep at least one group ??restore a fresh empty one
       const emptyId = uid("g");
       groups[emptyId] = { id: emptyId, activeTabId: null, tabs: [] };
       next.layoutTree = { type: "group", groupId: emptyId };
@@ -1797,7 +1310,7 @@ function moveTab(state, tabId, fromGroupId, toGroupId, targetIdx = null) {
 
 // Split a group into two. The new group is empty; if `movingTabId` is given,
 // that tab moves from the source group into the new one. position is one of
-// 'right' | 'left' | 'down' | 'up' — relative to `groupId`.
+// 'right' | 'left' | 'down' | 'up' ??relative to `groupId`.
 function splitGroup(state, groupId, position, movingTabId = null) {
   const newGroupId = uid("g");
   const sourceGroup = state.groups[groupId];
@@ -1815,8 +1328,8 @@ function splitGroup(state, groupId, position, movingTabId = null) {
     if (!tab) return state;
     const remaining = sourceGroup.tabs.filter((tb) => tb.id !== movingTabId);
     if (remaining.length === 0) {
-      // Source group would become empty — that's a degenerate split. Just move active.
-      // Better UX: bail (no-op) — caller should detect and use moveTab instead.
+      // Source group would become empty ??that's a degenerate split. Just move active.
+      // Better UX: bail (no-op) ??caller should detect and use moveTab instead.
       return state;
     }
     groups[groupId] = {
@@ -1842,6 +1355,7 @@ function splitGroup(state, groupId, position, movingTabId = null) {
     const groupLeaf = { type: "group", groupId };
     const newLeaf = { type: "group", groupId: newGroupId };
     return {
+      id: uid("split"),
       type: "split",
       direction,
       sizes: [50, 50],
@@ -1867,7 +1381,7 @@ function dropTabOnEdge(state, srcTabId, srcGroupId, targetGroupId, position) {
   const targetG = state.groups[targetGroupId];
   if (!targetG) return state;
 
-  // Same group + dropping a tab from a single-tab group on its own edge → no-op
+  // Same group + dropping a tab from a single-tab group on its own edge ??no-op
   if (srcGroupId === targetGroupId && srcG.tabs.length === 1) return state;
 
   // First create the new group adjacent to target, then move the tab in.
@@ -1904,6 +1418,7 @@ function dropTabOnEdge(state, srcTabId, srcGroupId, targetGroupId, position) {
     const targetLeaf = { type: "group", groupId: targetGroupId };
     const newLeaf = { type: "group", groupId: newGroupId };
     return {
+      id: uid("split"),
       type: "split",
       direction,
       sizes: [50, 50],
@@ -2034,7 +1549,25 @@ function openTab(state, groupId, tab) {
   };
 }
 
-// openFile — open a file as an editor tab in the active group.
+function updateTab(state, tabId, updater) {
+  let changed = false;
+  const groups = {};
+  for (const [groupId, group] of Object.entries(state.groups)) {
+    let groupChanged = false;
+    const tabs = group.tabs.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      const next = typeof updater === "function" ? updater(tab, group) : { ...tab, ...updater };
+      groupChanged = next !== tab;
+      changed = changed || groupChanged;
+      return next;
+    });
+    groups[groupId] = groupChanged ? { ...group, tabs } : group;
+  }
+
+  return changed ? { ...state, groups } : state;
+}
+
+// openFile ??open a file as an editor tab in the active group.
 // If a tab already exists for that path (in any group), focus it instead.
 function openFile(state, groupId, fileTab) {
   // Look for existing editor tab matching this path
@@ -2069,18 +1602,12 @@ function moveTabToNewGroup(state, srcGroupId, tabId, position) {
   return dropTabOnEdge(state, tabId, srcGroupId, srcGroupId, position);
 }
 
-// Resize a split node's children sizes. We find the split that is the parent
-// of `firstChildId` (so the divider lives between firstChild and its right
-// neighbor) and apply the new ratio.
-function resizeSplit(state, splitPath, sizes) {
-  // splitPath is the array of "L"/"R"/i indices to identify the split.
-  // Simpler approach: we identify the split node by reference walk during
-  // rebuild; the SplitNode component knows the array of sizes and passes them.
-  // For prototype we rebuild every split whose children match the recorded ids.
+// Resize exactly one split using the stable id assigned when it is created.
+// Child-shape matching is unsafe because nested sibling splits can share the
+// same structure and would then be resized together.
+function resizeSplit(state, splitId, sizes) {
   const layoutTree = rebuild(state.layoutTree, (node) => {
-    if (node.type !== "split") return node;
-    if (!node.children.every((c, i) => splitPath[i] && c.type === splitPath[i].type &&
-        (c.type === "group" ? c.groupId === splitPath[i].groupId : true))) return node;
+    if (node.type !== "split" || node.id !== splitId) return node;
     return { ...node, sizes };
   });
   return { ...state, layoutTree };
@@ -2095,12 +1622,12 @@ Object.assign(window, {
   reorderTab, moveTab, moveTabToNewGroup,
   splitGroup, dropTabOnEdge,
   closeTab, closeOtherTabs, closeTabsToRight, closeTabsToLeft, closeAllTabs,
-  openTab, resizeSplit, openFile,
+  openTab, updateTab, resizeSplit, openFile,
 });
 
 
 // ----- src/sidebar.jsx -----
-// sidebar.jsx — VS Code-style two-section accordion:
+// sidebar.jsx ??VS Code-style two-section accordion:
 //   1. Projects (current + recents, branch/path inline)
 //   2. Files (file tree of the active project)
 // Each section header is a clickable toggle; sections collapse independently.
@@ -2133,7 +1660,6 @@ function FileTreeNode({ node, depth, lang, onSelect, selected }) {
   );
 }
 
-// Collapsible accordion section — VS Code style header with chevron.
 function Section({ label, count, open, onToggle, children }) {
   return (
     <div className={"sb-section" + (open ? " open" : " closed")}>
@@ -2147,56 +1673,150 @@ function Section({ label, count, open, onToggle, children }) {
   );
 }
 
-// Recent-project list. For the prototype, items beside the active one are
-// placeholders — clicking is non-destructive (we don't actually swap the
-// workspace), but UX shows hover/active states.
-const RECENT_PROJECTS = [
-  { id: "klystron", name: "klystron-cli",  path: "~/code/klystron-cli",  branch: "main",                changedFiles: 0, ahead: 0, behind: 1 },
-  { id: "harbor",   name: "harbor-mobile", path: "~/code/harbor-mobile", branch: "release/v2.3",        changedFiles: 2, ahead: 0, behind: 0 },
-  { id: "lumen",    name: "lumen-edge",    path: "~/code/lumen-edge",    branch: "feature/qos-shaping", changedFiles: 5, ahead: 1, behind: 0 },
+const WORKSPACE_CODENAME_STEMS = [
+  "ridge",
+  "harbor",
+  "orbit",
+  "signal",
+  "vector",
+  "summit",
 ];
 
-function ProjectItem({ project, active, lang, onSelect }) {
+function workspaceCodename(index) {
+  const stem = WORKSPACE_CODENAME_STEMS[(Math.max(1, index) - 1) % WORKSPACE_CODENAME_STEMS.length];
+  const cycle = Math.floor((Math.max(1, index) - 1) / WORKSPACE_CODENAME_STEMS.length);
+  return cycle > 0 ? `${stem}-${cycle + 1}` : stem;
+}
+
+function agentSessionStatusView(session) {
+  const messages = session?.messages || [];
+  const hasRunning = messages.some((message) => message.progress?.status === "running");
+  if (hasRunning) {
+    return {
+      id: "working",
+      label: "Working",
+      note: "Provider request in progress",
+    };
+  }
+
+  const hasPendingPermission = messages.some((message) =>
+    message.suggestion?.commands?.length > 0 && !message.permissionDecision);
+  if (hasPendingPermission) {
+    return {
+      id: "review",
+      label: "Review needed",
+      note: "Command approval is waiting",
+    };
+  }
+
+  const hasFinishedWork = messages.some((message) =>
+    message.answerMeta || message.permissionDecision || message.completed);
+  if (hasFinishedWork) {
+    return {
+      id: "done",
+      label: "Done",
+      note: "Latest request finished",
+    };
+  }
+
+  return {
+    id: "waiting",
+    label: "Waiting",
+    note: "Ready for a request",
+  };
+}
+
+function ProjectWorkspaceGroup({
+  project,
+  agentWorkspace,
+  activeAgentSessionId,
+  providers,
+  onSelectAgentSession,
+  onNewAgentSession,
+  onCloseAgentSession,
+}) {
+  const sessions = agentWorkspace?.sessions || [];
+
   return (
-    <button
-      className={"project-item" + (active ? " active" : "")}
-      onClick={() => onSelect?.(project)}
-    >
-      <span className={"project-mark" + (active ? " active" : "")}>
-        {(project.name || "?")[0].toUpperCase()}
-      </span>
-      <span className="project-info">
-        <span className="project-name">
-          <span className="nm">{project.name}</span>
-          {active && (
-            <span className="project-tag">{lang === "ko" ? "현재" : "current"}</span>
-          )}
-        </span>
-        <span className="project-meta">
-          <Icon.branch />
-          <span className="project-branch">{project.branch}</span>
-          {project.changedFiles > 0 && (
-            <>
-              <span className="project-meta-sep">·</span>
-              <span className="project-changes">
-                {project.changedFiles} {lang === "ko" ? "변경" : "changes"}
-              </span>
-            </>
-          )}
-          {(project.ahead > 0 || project.behind > 0) && (
-            <>
-              <span className="project-meta-sep">·</span>
-              <span className="project-ahead">↑{project.ahead} ↓{project.behind}</span>
-            </>
-          )}
-        </span>
-      </span>
-    </button>
+    <div className="pg-body">
+      <div className="project-workspace-toolbar">
+        <span className="project-workspace-label">Agent workspaces</span>
+        <span className="pg-count">{sessions.length}</span>
+        <button
+          className="project-workspace-new"
+          type="button"
+          title="New workspace"
+          onClick={onNewAgentSession}
+        >
+          <Icon.plus />
+        </button>
+      </div>
+      {sessions.map((session) => {
+          const status = agentSessionStatusView(session);
+          const active = session.id === activeAgentSessionId;
+          const provider = providers.find((candidate) => candidate.id === session.providerId)
+            || providers.find((candidate) => candidate.id === "codex")
+            || PROVIDERS_INIT[0];
+
+          return (
+            <div className="ws-item-wrap" key={session.id}>
+              <button
+                className={`ws-item ws-${status.id}${active ? " active" : ""}`}
+                data-agent-project-path={project.path || "no-project"}
+                data-agent-session-id={session.id}
+                data-agent-provider-id={provider.id}
+                aria-pressed={active}
+                type="button"
+                onClick={() => onSelectAgentSession(session.id)}
+              >
+                <span className={`ws-state-rail ${status.id}`} />
+                <span className={"ws-mark provider-mark " + provider.id}>{provider.abbr}</span>
+                <span className="ws-info">
+                  <span className="ws-top">
+                    <span className="ws-name">{session.title}</span>
+                    <span className={`ws-status ${status.id}`}>
+                      <span className="ws-dot" />
+                      {status.label}
+                    </span>
+                  </span>
+                  <span className="ws-meta">
+                    <span className="ws-branch">{project.branch}</span>
+                    {project.changedFiles > 0 && (
+                      <>
+                        <span className="ws-sep">/</span>
+                        <span className="ws-changed">{project.changedFiles} changes</span>
+                      </>
+                    )}
+                  </span>
+                  <span className="ws-note">{status.note}</span>
+                </span>
+              </button>
+              {sessions.length > 1 && (
+                <button
+                  className="ws-remove"
+                  type="button"
+                  title={`Delete ${session.title}`}
+                  aria-label={`Delete ${session.title} agent session`}
+                  onClick={() => onCloseAgentSession(session.id)}
+                >
+                  <Icon.x />
+                </button>
+              )}
+            </div>
+          );
+      })}
+    </div>
   );
 }
 
-function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject }) {
-  const [selectedFile, setSelectedFile] = React.useState("OnboardingFunnel.tsx");
+function Sidebar({
+  lang, project, openingProject, collapseSidebar, onOpenFile, onOpenProject,
+  projectRows, activeProjectPath, onSelectProject, onCloseProject,
+  agentSummariesByProjectPath,
+  selectedFile, onSelectFile,
+  agentWorkspace, activeAgentSessionId, providers,
+  onSelectAgentSession, onNewAgentSession, onCloseAgentSession,
+}) {
   const [projectsOpen, setProjectsOpen] = React.useState(true);
   const [filesOpen, setFilesOpen] = React.useState(true);
   const activeProject = project || PROJECT;
@@ -2204,13 +1824,13 @@ function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, o
   const handleFileClick = (node) => {
     const path = node.runtimePath || pathOfNode(activeProject.fileTree, node);
     if (path) onOpenFile?.(path, node.name);
-    setSelectedFile(node.runtimePath || node.name);
+    onSelectFile?.(node.runtimePath || node.name);
   };
 
   return (
     <aside className="sidebar">
       <div className="sb-titlebar">
-        <span className="sb-title">{lang === "ko" ? "탐색기" : "Explorer"}</span>
+        <span className="sb-title">{"Explorer"}</span>
         <button
           className="rail-toggle"
           onClick={collapseSidebar}
@@ -2222,56 +1842,54 @@ function Sidebar({ lang, project, openingProject, collapseSidebar, onOpenFile, o
 
       <div className="sb-scroll">
         <Section
-          label={lang === "ko" ? "프로젝트" : "Projects"}
-          count={1 + RECENT_PROJECTS.length}
+          label={"Projects"}
+          count={projectRows.length}
           open={projectsOpen}
           onToggle={() => setProjectsOpen((v) => !v)}
         >
-          <div className="project-list">
-            <ProjectItem
-              project={activeProject}
-              active
-              lang={lang}
-              onSelect={() => {}}
-            />
-            {RECENT_PROJECTS.map((p) => (
-              <ProjectItem
-                key={p.id}
-                project={p}
-                active={false}
-                lang={lang}
-                onSelect={() => {}}
+          <ProjectSwitcher
+            rows={projectRows}
+            activePath={activeProjectPath}
+            openingProject={openingProject}
+            openProjectLabel={t(lang, "openProjectFolder")}
+            openingProjectLabel="Opening project"
+            openProjectHint="Open a local folder as a workspace"
+            onSelectProject={onSelectProject}
+            onOpenProject={onOpenProject}
+            onCloseProject={onCloseProject}
+            agentSummariesByPath={agentSummariesByProjectPath}
+            plusIcon={<Icon.plus />}
+            branchIcon={<Icon.branch />}
+            activeDetails={activeProject.runtimeBacked ? (
+              <ProjectWorkspaceGroup
+                project={activeProject}
+                agentWorkspace={agentWorkspace}
+                activeAgentSessionId={activeAgentSessionId}
+                providers={providers}
+                onSelectAgentSession={onSelectAgentSession}
+                onNewAgentSession={onNewAgentSession}
+                onCloseAgentSession={onCloseAgentSession}
               />
-            ))}
-            <button className="project-item action" onClick={onOpenProject} disabled={openingProject}>
-              <span className="project-mark plus"><Icon.plus /></span>
-              <span className="project-info">
-                <span className="project-name">
-                  <span className="nm">{t(lang, "openProjectFolder")}</span>
-                </span>
-                <span className="project-meta">
-                  {openingProject
-                    ? (lang === "ko" ? "프로젝트를 여는 중" : "Opening project")
-                    : (lang === "ko" ? "로컬 폴더를 워크스페이스로 열기" : "Open a local folder as a workspace")}
-                </span>
-              </span>
-              <span className="kbd">⌘O</span>
-            </button>
-          </div>
+            ) : null}
+          />
         </Section>
 
         <Section
-          label={lang === "ko" ? "파일" : "Files"}
+          label={"Files"}
           count={activeProject.changedFiles > 0
-            ? `${activeProject.changedFiles} ${lang === "ko" ? "변경" : "changed"}`
+            ? `${activeProject.changedFiles} ${"changed"}`
             : null}
           open={filesOpen}
           onToggle={() => setFilesOpen((v) => !v)}
         >
-          {activeProject.fileTree.map((n, i) =>
+          {activeProject.fileTree.length > 0 ? activeProject.fileTree.map((n, i) =>
             <FileTreeNode key={i} node={n} depth={0} lang={lang}
               onSelect={handleFileClick}
               selected={selectedFile} />
+          ) : (
+            <div className="empty-mini">
+              {"Open a real project folder in the desktop app."}
+            </div>
           )}
         </Section>
       </div>
@@ -2283,15 +1901,15 @@ Object.assign(window, { Sidebar });
 
 
 // ----- src/workspace.jsx -----
-// workspace.jsx — VS Code-style workspace UI.
+// workspace.jsx ??VS Code-style workspace UI.
 // Renders the layout tree, each leaf is a Group (own tabbar + content),
 // each split is a SplitNode (children + drag-resize divider).
 
 const DROP_EDGE_RATIO = 0.18; // top/right/bottom/left ~ 18% wide each
 const MIN_PANE_PCT = 8;       // minimum % of a child after resizing
 
-// ── Code editor view ────────────────────────────────────────────────────
-function CodeEditor({ tab }) {
+// ???? Code editor view ????????????????????????????????????????????????????????????????????????????????????????????????????????
+function CodeEditor({ tab, onChangeFile }) {
   const lines = (tab.content || "").split("\n");
   return (
     <div className="editor-body">
@@ -2300,49 +1918,153 @@ function CodeEditor({ tab }) {
           <div key={i} className="editor-ln">{i + 1}</div>
         ))}
       </div>
-      <div className="editor-code">
-        {lines.map((line, i) => (
-          <div key={i} className="editor-line">
-            {tokenizeLine(line).map((tok, j) => (
-              <span key={j} className={"tk-" + tok.k}>{tok.t}</span>
-            ))}
+      <textarea
+        className="editor-textarea"
+        value={tab.content || ""}
+        spellCheck={false}
+        disabled={tab.isText === false}
+        onChange={(event) => onChangeFile?.(tab.id, event.target.value)}
+      />
+    </div>
+  );
+}
+
+// ???? Tab body ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+function TabBody({ tab, onChangeFile }) {
+  if (!tab) return null;
+  if (tab.type === "editor") return <CodeEditor tab={tab} onChangeFile={onChangeFile} />;
+  return <TerminalBody tab={tab} />;
+}
+
+// Live xterm.js terminal wired to the runtime PTY session. Reads raw output
+// incrementally via readRawOutput and forwards keystrokes via writeInput.
+function XtermTerminal({ owner }) {
+  const containerRef = React.useRef(null);
+  const projectPath = owner?.projectPath;
+  const terminalSessionId = owner?.terminalSessionId;
+
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const capturedOwner = { projectPath, terminalSessionId };
+
+    let disposed = false;
+    let from = 0;
+    let nextPumpTimeout = null;
+
+    const term = new Terminal({
+      convertEol: false,
+      cursorBlink: true,
+      fontFamily:
+        '"Geist Mono", "JetBrains Mono", "SF Mono", ui-monospace, monospace',
+      fontSize: 12,
+      theme: { background: "#0a0c10", foreground: "#e6e6e6" },
+    });
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(container);
+
+    const safeFit = () => {
+      try {
+        fitAddon.fit();
+      } catch {
+        return; /* container not measurable yet */
+      }
+      // Match the PTY size to the xterm viewport so the shell's line editor
+      // (backspace, cursor moves, prompt redraw) uses the correct width and
+      // does not overwrite earlier output.
+      void terminalRuntimeService.resizeSession(capturedOwner, term.rows, term.cols);
+    };
+
+    safeFit();
+    term.focus();
+
+    const dataSub = term.onData((data) => {
+      void terminalRuntimeService.writeInput(capturedOwner, data);
+    });
+
+    const pump = async () => {
+      try {
+        const output = await terminalRuntimeService.readRawOutput(capturedOwner, from);
+        if (disposed) return;
+        if (output.chunk) {
+          term.write(output.chunk);
+          from = output.cursor;
+        } else if (typeof output.cursor === "number" && output.cursor < from) {
+          // Buffer reset (session recycled); replay from the new start.
+          from = output.cursor;
+        }
+      } catch {
+        /* transient runtime read failure; retry on next tick */
+      } finally {
+        if (!disposed) {
+          nextPumpTimeout = window.setTimeout(() => {
+            void pump();
+          }, 60);
+        }
+      }
+    };
+
+    void pump();
+
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => safeFit())
+        : null;
+    observer?.observe(container);
+
+    return () => {
+      disposed = true;
+      if (nextPumpTimeout != null) window.clearTimeout(nextPumpTimeout);
+      observer?.disconnect();
+      dataSub.dispose();
+      term.dispose();
+    };
+  }, [projectPath, terminalSessionId]);
+
+  return <div className="term-xterm" ref={containerRef} />;
+}
+
+function TerminalBody({ tab }) {
+  const bodyRef = React.useRef(null);
+  const hasProjectOwner = typeof tab.projectPath === "string" && tab.projectPath.trim().length > 0;
+  const runtimeBacked = Boolean(
+    tab.runtimeBacked && hasProjectOwner && tab.terminalSessionId != null
+  );
+  const terminalOwner = React.useMemo(() => ({
+    projectPath: tab.projectPath,
+    terminalSessionId: tab.terminalSessionId,
+  }), [tab.projectPath, tab.terminalSessionId]);
+
+  React.useEffect(() => {
+    if (!runtimeBacked && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [runtimeBacked, tab?.id, tab?.lines?.length]);
+
+  if (runtimeBacked) {
+    return (
+      <div className="terminal-surface">
+        <XtermTerminal owner={terminalOwner} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="terminal-surface">
+      <div className="tab-body" ref={bodyRef}>
+        {tab.lines.map((ln, i) => (
+          <div key={i} className={"term-line " + (ln.kind === "cmd" ? "cmd" : (ln.color || ""))}>
+            {ln.text}
           </div>
         ))}
+        <div className="term-line dim">Open a runtime-backed terminal in the desktop app to type here.</div>
       </div>
     </div>
   );
 }
 
-// ── Tab body ────────────────────────────────────────────────────────────
-function TabBody({ tab }) {
-  if (!tab) return null;
-  if (tab.type === "editor") return <CodeEditor tab={tab} />;
-  return <TerminalBody tab={tab} />;
-}
-
-function TerminalBody({ tab }) {
-  const bodyRef = React.useRef(null);
-  React.useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [tab?.id, tab?.lines?.length]);
-  return (
-    <div className="tab-body" ref={bodyRef}>
-      {tab.lines.map((ln, i) => (
-        <div key={i} className={"term-line " + (ln.kind === "cmd" ? "cmd" : (ln.color || ""))}>
-          {ln.text}
-        </div>
-      ))}
-      {tab.status === "running" && <div className="term-line"><span className="term-cursor" /></div>}
-      {tab.status === "idle" && (
-        <div className="term-line">
-          <span style={{ color: "var(--accent)" }}>$</span> <span className="term-cursor" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Empty group placeholder ─────────────────────────────────────────────
+// ???? Empty group placeholder ??????????????????????????????????????????????????????????????????????????????????????????
 function EmptyGroup({ lang, onNewTab }) {
   return (
     <div className="empty-group">
@@ -2357,7 +2079,7 @@ function EmptyGroup({ lang, onNewTab }) {
   );
 }
 
-// ── Right-click context menu ────────────────────────────────────────────
+// ???? Right-click context menu ????????????????????????????????????????????????????????????????????????????????????????
 function TabContextMenu({ lang, tab, group, position, onAction, onClose }) {
   React.useEffect(() => {
     const onDoc = (e) => { if (!e.target.closest(".tab-ctx-menu")) onClose(); };
@@ -2405,7 +2127,7 @@ function TabContextMenu({ lang, tab, group, position, onAction, onClose }) {
   );
 }
 
-// ── Group tabbar ────────────────────────────────────────────────────────
+// ???? Group tabbar ????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function GroupTabBar({
   group, isActiveGroup, lang,
   onSetActiveTab, onCloseTab, onNewTab,
@@ -2495,12 +2217,13 @@ function GroupTabBar({
   );
 }
 
-// ── Group (tabbar + content area) ───────────────────────────────────────
+// ???? Group (tabbar + content area) ??????????????????????????????????????????????????????????????????????????????
 function Group({
   group, isActive, lang, executing, project,
   onSetActiveTab, onCloseTab, onNewTab,
   onReorderTab, onDropTabFromAnother, onDropTabOnEdge,
   onTabContextMenu, onFocusGroup,
+  onChangeFile, onSaveFile,
   dragRef, onTabDragStart, onTabDragEnd,
 }) {
   const contentRef = React.useRef(null);
@@ -2584,8 +2307,8 @@ function Group({
                 <span className="cwd">
                   {activeTab.cwd === "." ? activeProject.path : `${activeProject.path}/${activeTab.cwd}`}
                 </span>
-                <span className="sep">·</span>
-                <span className="cmd">{activeTab.cmd || "—"}</span>
+                <span className="sep">/</span>
+                <span className="cmd">{activeTab.cmd || "--"}</span>
                 <span className={"badge " + activeTab.status}>{t(lang, activeTab.status)}</span>
               </div>
             )}
@@ -2593,11 +2316,22 @@ function Group({
               <div className="group-status editor-status">
                 <span className="cwd">{activeTab.displayPath || activeTab.path}</span>
                 {activeTab.dirty && <span className="dirty-dot" />}
-                <span className="sep">·</span>
+                <span className="sep">/</span>
                 <span className="cmd">{activeTab.lang}</span>
+                <button
+                  className="group-status-action"
+                  type="button"
+                  disabled={!activeTab.dirty || activeTab.isText === false || activeTab.truncated}
+                  onClick={() => onSaveFile?.(activeTab)}
+                >
+                  Save
+                </button>
               </div>
             )}
-            <TabBody tab={activeTab} />
+            <TabBody
+              tab={activeTab}
+              onChangeFile={onChangeFile}
+            />
           </>
         ) : (
           <EmptyGroup lang={lang} onNewTab={() => onNewTab(group.id)} />
@@ -2606,22 +2340,18 @@ function Group({
           <div className="run-banner">
             <span className="spin" />
             <span>{t(lang, "nowExecuting")}</span>
-            <span style={{ color: "var(--text-dim)" }}>· {executing}</span>
+            <span style={{ color: "var(--text-dim)" }}>/{executing}</span>
           </div>
         )}
         {edge && (
           <div className="group-drop-overlay" aria-hidden>
             <div className={"group-drop-zone " + edge} />
             {edge !== "center" && (
-              <div className="group-drop-label">
-                {lang === "ko"
-                  ? `${({left:"왼쪽",right:"오른쪽",top:"위",bottom:"아래"})[edge]}에 새 그룹`
-                  : `Split ${edge}`}
-              </div>
+              <div className="group-drop-label">{`Split ${edge}`}</div>
             )}
             {edge === "center" && (
               <div className="group-drop-label center">
-                {lang === "ko" ? "이 그룹에 추가" : "Add to this group"}
+                {"Add to this group"}
               </div>
             )}
           </div>
@@ -2631,7 +2361,7 @@ function Group({
   );
 }
 
-// ── Split node ──────────────────────────────────────────────────────────
+// ???? Split node ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function SplitNode({
   node, onResizeSizes, ...groupProps
 }) {
@@ -2660,13 +2390,15 @@ function SplitNode({
       next[idx] = Math.max(MIN_PANE_PCT, Math.min(100 - MIN_PANE_PCT, next[idx] + dPct));
       next[idx + 1] = Math.max(MIN_PANE_PCT, Math.min(100 - MIN_PANE_PCT,
         next[idx + 1] - dPct));
+      dragRef.current.nextSizes = next;
       setLocalSizes(next);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      // Keep localSizes — clearing it would revert to node.sizes (the initial value)
-      // which makes the resize feel like it doesn't stick.
+      const committedSizes = dragRef.current?.nextSizes || dragRef.current?.startSizes;
+      if (committedSizes) onResizeSizes?.(node.id, committedSizes);
+      dragRef.current = null;
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -2697,7 +2429,7 @@ function SplitNode({
   );
 }
 
-// ── Layout node dispatcher ──────────────────────────────────────────────
+// ???? Layout node dispatcher ????????????????????????????????????????????????????????????????????????????????????????????
 function LayoutNode({ node, workspace, ...rest }) {
   if (node.type === "group") {
     const group = workspace.groups[node.groupId];
@@ -2711,7 +2443,7 @@ function LayoutNode({ node, workspace, ...rest }) {
   return <SplitNode node={node} workspace={workspace} {...rest} />;
 }
 
-// ── Workspace root ──────────────────────────────────────────────────────
+// ???? Workspace root ????????????????????????????????????????????????????????????????????????????????????????????????????????????
 function Workspace({
   workspace, lang, executing, project,
   sidebarOpen, openSidebar, agentOpen, openAgent,
@@ -2755,8 +2487,10 @@ function Workspace({
     onDropTabFromAnother: (src, toGroupId, idx) => actions.moveTab(src.tabId, src.groupId, toGroupId, idx),
     onDropTabOnEdge: (src, targetGroupId, position) => actions.dropTabOnEdge(src.tabId, src.groupId, targetGroupId, position),
     onFocusGroup: actions.setActiveGroup,
+    onChangeFile: actions.changeFile,
+    onSaveFile: actions.saveFile,
     onTabContextMenu,
-    onResizeSizes: (sizes) => { /* sizes persisted via local state for now */ },
+    onResizeSizes: actions.resizeSplit,
   };
 
   return (
@@ -2795,50 +2529,807 @@ Object.assign(window, { Workspace });
 
 
 // ----- src/agent.jsx -----
-// agent.jsx — right pane: chat-centric agent panel
+// agent.jsx ??right pane: chat-centric agent panel
 
-function ModePill({ mode, setMode, lang }) {
+function providerSessionLabel(provider) {
+  if (!provider) return "No provider";
+  if (provider.availability === "deferred") return "Coming later";
+  if (provider.state === "connected") {
+    if (provider.id !== "claude") return "CLI session";
+    if (provider.credentialSource === "claude_cli_session") return "CLI session";
+    if (["anthropic_api_key", "api_key_helper"].includes(provider.credentialSource)) {
+      return "API credential";
+    }
+    return "Connected";
+  }
+  if (provider.state === "pending") return "Checking login";
+  if (provider.state === "error") return "Needs attention";
+
+  return "Connect provider";
+}
+
+function providerConnectionPath(connection) {
+  if (connection.provider !== "claude") {
+    return connection.connectionKind === "real"
+      ? "the local CLI session"
+      : "the runtime provider";
+  }
+  if (connection.credentialSource === "claude_cli_session") {
+    return "the local Claude CLI session";
+  }
+  if (["anthropic_api_key", "api_key_helper"].includes(connection.credentialSource)) {
+    return "the API credential path via the local Claude CLI";
+  }
+  return "the local Claude provider runtime";
+}
+
+function formatReasoningLevelLabel(level) {
+  const normalized = String(level || "").trim();
+  if (!normalized) return "Default";
+  const lower = normalized.toLowerCase();
+  if (lower === "xhigh" || lower === "x_high" || lower === "extra_high") return "XHigh";
+  if (lower === "low") return "Low";
+  if (lower === "medium") return "Medium";
+  if (lower === "high") return "High";
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+const MODEL_REASONING_LEVEL_RANK = Object.freeze({
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 4,
+});
+
+function providerReasoningLevels(providerCapabilities) {
+  return (providerCapabilities?.reasoningLevels || [])
+    .filter((level) => (
+      sanitizedAgentReasoningLevel(level?.level) === level?.level
+    ));
+}
+
+function reasoningLevelCapability(providerCapabilities, selectedLevel) {
+  const normalized = String(selectedLevel || "").trim();
+  if (!normalized) return null;
+
+  return providerReasoningLevels(providerCapabilities)
+    .find((level) => level.level === normalized) || null;
+}
+
+function reasoningLevelLabel(providerCapabilities, selectedLevel) {
+  return reasoningLevelCapability(providerCapabilities, selectedLevel)?.label
+    || formatReasoningLevelLabel(selectedLevel);
+}
+
+function normalizeReasoningLevel(providerCapabilities, selectedLevel) {
+  const levels = providerReasoningLevels(providerCapabilities);
+  if (levels.length === 0) return null;
+
+  const selected = String(selectedLevel || "").trim();
+  if (selected && levels.some((level) => level.level === selected)) return selected;
+
+  const preferred = String(providerCapabilities?.defaultReasoningLevel || "").trim();
+  if (preferred && levels.some((level) => level.level === preferred)) return preferred;
+
+  return levels[0].level;
+}
+
+const MAX_PERSISTED_AGENT_MODEL_ID_LENGTH = 128;
+
+function sanitizedAgentModelId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_PERSISTED_AGENT_MODEL_ID_LENGTH) return null;
+  return normalized;
+}
+
+function sanitizeSelectedAgentModels(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => {
+    const modelId = sanitizedAgentModelId(value[providerId]);
+    return modelId ? [[providerId, modelId]] : [];
+  }));
+}
+
+const MAX_PERSISTED_AGENT_REASONING_LEVEL_BYTES = 16;
+
+function sanitizedAgentReasoningLevel(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (new TextEncoder().encode(normalized).byteLength > MAX_PERSISTED_AGENT_REASONING_LEVEL_BYTES) {
+    return null;
+  }
+  return normalized;
+}
+
+function sanitizeSelectedAgentReasoningLevels(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => {
+    const reasoningLevel = sanitizedAgentReasoningLevel(value[providerId]);
+    return reasoningLevel ? [[providerId, reasoningLevel]] : [];
+  }));
+}
+
+function sanitizeAgentFastModes(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => (
+    typeof value[providerId] === "boolean"
+      ? [[providerId, value[providerId]]]
+      : []
+  )));
+}
+
+function providerSelectableModels(providerCapabilities, providerId) {
+  if (
+    !providerCapabilities?.supportsModelSelection ||
+    providerCapabilities.provider !== providerId
+  ) return [];
+  return (providerCapabilities.availableModels || []).filter((model) =>
+    model?.providerId === providerId && Boolean(sanitizedAgentModelId(model.modelId))
+  );
+}
+
+function storedAgentModel(providerCapabilities, selectedModelId, providerId) {
+  const storedModelId = sanitizedAgentModelId(selectedModelId);
+  if (!storedModelId) return null;
+
+  return providerSelectableModels(providerCapabilities, providerId)
+    .find((model) => model.modelId === storedModelId) || null;
+}
+
+function effectiveAgentModel(providerCapabilities, selectedModelId, providerId) {
+  const storedModel = storedAgentModel(providerCapabilities, selectedModelId, providerId);
+  if (storedModel) return storedModel;
+
+  const currentModelId = sanitizedAgentModelId(providerCapabilities?.currentModel?.modelId);
+  if (!currentModelId) return null;
+
+  return providerSelectableModels(providerCapabilities, providerId)
+    .find((model) => model.modelId === currentModelId) || null;
+}
+
+function effectiveAgentExecutionCapabilities(providerCapabilities, selectedModelId, providerId) {
+  const model = effectiveAgentModel(providerCapabilities, selectedModelId, providerId);
+  if (!model || !Object.prototype.hasOwnProperty.call(model, "executionOptions")) {
+    return providerCapabilities;
+  }
+
+  return {
+    ...providerCapabilities,
+    reasoningLevels: model.executionOptions.reasoningLevels,
+    defaultReasoningLevel: null,
+    supportsFastMode: model.executionOptions.supportsFastMode,
+    usesModelExecutionOptions: true,
+  };
+}
+
+function normalizeAgentReasoningLevel(executionCapabilities, selectedLevel) {
+  const storedLevel = sanitizedAgentReasoningLevel(selectedLevel);
+  if (!storedLevel) {
+    return executionCapabilities?.usesModelExecutionOptions
+      ? null
+      : normalizeReasoningLevel(executionCapabilities, null);
+  }
+
+  const storedCapability = reasoningLevelCapability(executionCapabilities, storedLevel);
+  if (storedCapability) return storedCapability.level;
+
+  return executionCapabilities?.usesModelExecutionOptions
+    ? null
+    : normalizeReasoningLevel(executionCapabilities, null);
+}
+
+function validatedStoredAgentModelId(providerCapabilities, selectedModelId, providerId) {
+  return storedAgentModel(providerCapabilities, selectedModelId, providerId)?.modelId || null;
+}
+
+function selectedAgentModel(providerCapabilities, selectedModelId, activeProvider) {
+  return effectiveAgentModel(providerCapabilities, selectedModelId, activeProvider?.id)
+    || {
+      modelId: null,
+      label: activeProvider ? `${activeProvider.label} default` : "Default model",
+    };
+}
+
+function agentWorkspaceKey(project) {
+  return project?.runtimeBacked && project.path ? project.path : "no-project";
+}
+
+function agentContextOwner(project, sessionId) {
+  if (!sessionId) return null;
+  return {
+    projectPath: agentWorkspaceKey(project),
+    sessionId,
+  };
+}
+
+function agentWorkspaceTitle(project) {
+  return project?.runtimeBacked && project.name ? project.name : "No workspace";
+}
+
+const AGENT_SESSION_DIRECTORY_STORAGE_KEY = "gtum.agent-session-directory.v1";
+
+function readAgentSessionDirectory(lang) {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(AGENT_SESSION_DIRECTORY_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    return Object.fromEntries(Object.entries(parsed).flatMap(([workspaceKey, entry]) => {
+      if (!entry || typeof entry !== "object" || !Array.isArray(entry.sessions)) return [];
+      const sessions = entry.sessions.flatMap((session) => {
+        if (!session || typeof session !== "object") return [];
+        const id = typeof session.id === "string" ? session.id.trim() : "";
+        const title = typeof session.title === "string" ? session.title.trim() : "";
+        if (!id || !title) return [];
+
+        return [{
+          id,
+          title,
+          workspaceKey,
+          workspaceTitle: typeof entry.workspaceTitle === "string"
+            ? entry.workspaceTitle
+            : workspaceKey,
+          createdAt: typeof session.createdAt === "string" ? session.createdAt : nowHm(),
+          updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowHm(),
+          providerId: session.providerId === "claude" ? "claude" : "codex",
+          messages: CHAT_INIT(lang),
+          draft: "",
+          request: createAgentRequestState(),
+          selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
+          selectedReasoningLevels: sanitizeSelectedAgentReasoningLevels(
+            session.selectedReasoningLevels,
+          ),
+          fastModes: sanitizeAgentFastModes(session.fastModes),
+          attachments: {},
+        }];
+      });
+      if (sessions.length === 0) return [];
+      const activeSessionId = sessions.some((session) => session.id === entry.activeSessionId)
+        ? entry.activeSessionId
+        : sessions[0].id;
+
+      return [[workspaceKey, {
+        workspaceKey,
+        workspaceTitle: typeof entry.workspaceTitle === "string"
+          ? entry.workspaceTitle
+          : workspaceKey,
+        activeSessionId,
+        sessions,
+      }]];
+    }));
+  } catch {
+    return {};
+  }
+}
+
+function writeAgentSessionDirectory(store) {
+  if (typeof window === "undefined") return;
+
+  const directory = Object.fromEntries(Object.entries(store).map(([workspaceKey, entry]) => [
+    workspaceKey,
+    {
+      workspaceTitle: entry.workspaceTitle,
+      activeSessionId: entry.activeSessionId,
+      sessions: (entry.sessions || []).map((session) => ({
+        id: session.id,
+        title: session.title,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        providerId: session.providerId === "claude" ? "claude" : "codex",
+        selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
+        selectedReasoningLevels: sanitizeSelectedAgentReasoningLevels(
+          session.selectedReasoningLevels,
+        ),
+        fastModes: sanitizeAgentFastModes(session.fastModes),
+      })),
+    },
+  ]));
+
+  try {
+    window.localStorage.setItem(
+      AGENT_SESSION_DIRECTORY_STORAGE_KEY,
+      JSON.stringify(directory),
+    );
+  } catch {
+    // The runtime job store remains authoritative. If WebView storage is
+    // unavailable, keep the current in-memory session directory unchanged.
+  }
+}
+
+function makeAgentSession(project, lang, index) {
+  return {
+    id: uid("agent"),
+    title: workspaceCodename(index),
+    workspaceKey: agentWorkspaceKey(project),
+    workspaceTitle: agentWorkspaceTitle(project),
+    createdAt: nowHm(),
+    updatedAt: nowHm(),
+    providerId: "codex",
+    messages: CHAT_INIT(lang),
+    draft: "",
+    request: createAgentRequestState(),
+    selectedModels: {},
+    selectedReasoningLevels: {},
+    fastModes: {},
+    attachments: {},
+  };
+}
+
+function ensureAgentWorkspace(store, project, lang) {
+  const key = agentWorkspaceKey(project);
+  if (store[key]?.sessions?.length) return store;
+
+  const session = makeAgentSession(project, lang, 1);
+  return {
+    ...store,
+    [key]: {
+      workspaceKey: key,
+      workspaceTitle: agentWorkspaceTitle(project),
+      activeSessionId: session.id,
+      sessions: [session],
+    },
+  };
+}
+
+function AgentHeader({
+  lang,
+  activeProvider, providerCapabilities, selectedModelId,
+  agentWorkspace, activeAgentSession,
+  onOpenSettings, collapseAgent,
+}) {
+  const model = selectedAgentModel(providerCapabilities, selectedModelId, activeProvider);
+  const workspaceLabel = agentWorkspace?.workspaceTitle || "No workspace";
+  const sessionLabel = activeAgentSession?.title || "Agent 1";
+
   return (
-    <div className="mode-pill">
-      {["fast", "balanced", "deep"].map((m) => (
+    <div className="agent-header">
+      <div className={"provider-mark " + activeProvider.id + " current"}>
+        {activeProvider.abbr}
+      </div>
+      <div className="agent-model-main">
+        <div className="agent-model-name">
+          <span>{model.label}</span>
+          <Icon.chevronDown />
+        </div>
+        <div className="agent-model-sub">
+          <span>{activeProvider.label}</span>
+          <span>{providerSessionLabel(activeProvider)}</span>
+          <span>{workspaceLabel} / {sessionLabel}</span>
+        </div>
+      </div>
+      <button
+        className="rail-toggle"
+        onClick={onOpenSettings}
+        title={t(lang, "settingsTitle")}
+      >
+        <Icon.gear />
+      </button>
+      <button
+        className="rail-toggle"
+        onClick={collapseAgent}
+        title={t(lang, "collapseAgent")}
+      >
+        <Icon.panelRight />
+      </button>
+    </div>
+  );
+}
+
+function AgentSessionTabs({
+  agentWorkspace, activeSessionId, projectPath,
+  onSelectSession, onNewSession, onCloseSession,
+}) {
+  const sessions = agentWorkspace?.sessions || [];
+
+  return (
+    <div className="agent-session-strip" aria-label="Agent sessions">
+      <div className="agent-session-tabs" role="group" aria-label="Agent session choices">
+        {sessions.map((session) => (
+          <div className="agent-session-tab-wrap" key={session.id}>
+            <button
+              className={"agent-session-tab" + (session.id === activeSessionId ? " active" : "")}
+              data-agent-project-path={projectPath || "no-project"}
+              data-agent-session-id={session.id}
+              aria-pressed={session.id === activeSessionId}
+              type="button"
+              onClick={() => onSelectSession(session.id)}
+            >
+              <span>{session.title}</span>
+              <small>{session.messages.length}</small>
+            </button>
+            {sessions.length > 1 && (
+              <button
+                className="agent-session-close"
+                type="button"
+                title={`Close ${session.title}`}
+                aria-label={`Close ${session.title} agent session`}
+                onClick={() => onCloseSession(session.id)}
+              >
+                <Icon.x />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <button
+        className="agent-session-new"
+        type="button"
+        title="New agent session"
+        onClick={onNewSession}
+      >
+        <Icon.plus />
+      </button>
+    </div>
+  );
+}
+
+function riskLabel(lang, risk) {
+  const key = "risk" + risk[0].toUpperCase() + risk.slice(1);
+  return t(lang, key);
+}
+
+function commandCountLabel(lang, count) {
+  const noun = count === 1 ? t(lang, "commandCount") : t(lang, "commandCountPlural");
+  return `${count} ${noun}`;
+}
+
+function commandTargetLabel(command) {
+  return "isolated Agent job";
+}
+
+function providerRuntimeLabel(providerId) {
+  if (providerId === "codex") return "Codex CLI";
+  if (providerId === "claude") return "Claude CLI";
+  return "provider";
+}
+
+function providerDisplayName(providerId) {
+  if (providerId === "claude") return "Claude";
+  if (providerId === "codex") return "Codex";
+  return "Provider";
+}
+
+function isProviderConnectionFailure(message) {
+  return /(?:api.?key|credential|not logged|not connected|unauthori[sz]ed|authentication|session\s+(?:is\s+)?(?:missing|expired)|run\s+codex\s+login)/i
+    .test(String(message || ""));
+}
+
+function progressStepLabel(lang, step) {
+  if (typeof step === "string") return t(lang, step);
+  return step?.label || "";
+}
+
+function progressStepDetail(step) {
+  if (typeof step === "string") return null;
+  return step?.detail || null;
+}
+
+function progressStepKey(step, index) {
+  if (typeof step === "string") return step;
+  return step?.id || step?.label || String(index);
+}
+
+function formatElapsedMs(elapsedMs) {
+  const seconds = Math.max(0, Math.round((Number(elapsedMs) || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${rest}s`;
+}
+
+function makeAgentAnswerMeta(startedAtMs) {
+  const answeredAtMs = Date.now();
+  return {
+    answeredAt: nowHmAt(answeredAtMs),
+    elapsedMs: answeredAtMs - startedAtMs,
+  };
+}
+
+function parseNumberedChoiceEvent(content) {
+  const text = String(content || "").trim();
+  if (!text) return null;
+
+  const optionPattern = /(^|\s)(\d{1,2})[.)]\s+([\s\S]*?)(?=(?:\s+\d{1,2}[.)]\s+)|$)/g;
+  const matches = [];
+  let match;
+
+  while ((match = optionPattern.exec(text)) !== null) {
+    const leading = match[1] || "";
+    const start = match.index + leading.length;
+    const optionNumber = Number(match[2]);
+    const label = match[3].trim();
+
+    if (!Number.isFinite(optionNumber) || !label) continue;
+    matches.push({
+      id: String(optionNumber),
+      label,
+      start,
+    });
+  }
+
+  if (matches.length < 2) return null;
+  if (!matches.every((option, index) => Number(option.id) === index + 1)) return null;
+
+  const prompt = text.slice(0, matches[0].start).trim();
+
+  return {
+    type: "choice",
+    prompt,
+    options: matches.map((option) => ({
+      id: option.id,
+      label: option.label,
+    })),
+    selectedOptionId: null,
+  };
+}
+
+function agentProgressStageDelayMs() {
+  const configuredDelay = typeof window !== "undefined"
+    ? Number(window.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__)
+    : NaN;
+
+  if (Number.isFinite(configuredDelay) && configuredDelay >= 0) {
+    return configuredDelay;
+  }
+
+  return 180;
+}
+
+function waitForAgentProgressStage() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, agentProgressStageDelayMs());
+  });
+}
+
+function makeAgentProgressSteps({
+  project, activeTab, providerId, model, attachments, reasoningLabel, fastMode,
+}) {
+  const runtimeLabel = providerRuntimeLabel(providerId);
+  const projectName = project?.name || "project";
+  const tabTitle = activeTab?.title || "no active tab";
+  const modelLabel = model || "runtime default model";
+  const attachmentCount = attachments?.length || 0;
+  const displayedReasoningLabel = reasoningLabel || "runtime default";
+
+  return [
+    {
+      id: "context",
+      label: `Reading ${projectName} context`,
+      detail: `Active tab: ${tabTitle}`,
+    },
+    {
+      id: "request",
+      label: `Sending request to ${runtimeLabel} runtime`,
+      detail: `Model: ${modelLabel} / reasoning: ${displayedReasoningLabel} / fast: ${fastMode ? "on" : "off"} / attachments: ${attachmentCount}`,
+    },
+    {
+      id: "waiting",
+      label: `Waiting for ${runtimeLabel} response`,
+      detail: "Desktop runtime is processing the request",
+    },
+  ];
+}
+
+function highestSuggestionRisk(suggestion) {
+  if (suggestion.commands.some((command) => command.risk === "high")) return "high";
+  if (suggestion.commands.some((command) => command.risk === "mid")) return "mid";
+  return "low";
+}
+
+function AgentChoiceEvent({ lang, event, onChoose }) {
+  const selectedOptionId = event.selectedOptionId || null;
+
+  return (
+    <div className="agent-event-card choice">
+      <div className="agent-event-head">
+        <div className="agent-event-icon">
+          <Icon.spark />
+        </div>
+        <div className="agent-event-title">
+          <span>{t(lang, "decisionNeeded")}</span>
+          <strong>{t(lang, "chooseOneOption")}</strong>
+        </div>
+        {selectedOptionId && <span className="agent-event-state">{t(lang, "selected")}</span>}
+      </div>
+      <div className="agent-choice-options">
+        {event.options.map((option) => {
+          const selected = selectedOptionId === option.id;
+          return (
+            <button
+              className={"agent-choice-option" + (selected ? " selected" : "")}
+              disabled={Boolean(selectedOptionId)}
+              key={option.id}
+              onClick={() => onChoose(option)}
+              type="button"
+            >
+              <span className="agent-choice-index">{option.id}</span>
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function permissionDecisionLabel(lang, status) {
+  if (status === "allow_once") return t(lang, "allowedOnce");
+  if (status === "denied") return t(lang, "denied");
+  return null;
+}
+
+function AgentCommandActivity({ lang, suggestion, risk, permissionDecision }) {
+  const decisionStatus = permissionDecision?.status || null;
+  const decisionLabel = permissionDecisionLabel(lang, decisionStatus);
+
+  return (
+    <div className="agent-command-activity" data-risk={risk}>
+      <div className="agent-command-activity-icon">
+        <Icon.spark />
+      </div>
+      <div className="agent-command-activity-main">
+        <div className="agent-command-activity-kicker">{t(lang, "executionSuggestion")}</div>
+        <div className="agent-command-activity-title">{suggestion.title}</div>
+        <div className="agent-turn-meta">
+          <span>{commandCountLabel(lang, suggestion.commands.length)}</span>
+          <span className={"risk " + risk}>{riskLabel(lang, risk)}</span>
+          <span className="agent-status-badge">{decisionLabel || t(lang, "needsApproval")}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComposerPermissionRequest({
+  lang, suggestion, risk, onPermissionDecision, projectPath, agentSessionId,
+}) {
+  if (!suggestion?.commands?.length) return null;
+  const choose = (event, decision) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onPermissionDecision(suggestion, decision);
+  };
+
+  return (
+    <div
+      className="composer-approval"
+      data-risk={risk}
+      data-suggestion-id={suggestion.id || undefined}
+      data-owner-project-path={projectPath || ""}
+      data-owner-session-id={agentSessionId || ""}
+    >
+      <div className="composer-approval-head">
+        <div className="composer-approval-icon">
+          <Icon.shield />
+        </div>
+        <div className="composer-approval-title">
+          <span>{t(lang, "permissionRequest")}</span>
+          <strong>{t(lang, "terminalCommandReview")}</strong>
+        </div>
+        <span className={"risk " + risk}>{riskLabel(lang, risk)}</span>
+      </div>
+      <div className="composer-approval-summary">{suggestion.title}</div>
+      <div className="agent-event-section-label">{t(lang, "commandPreview")}</div>
+      <div className="composer-approval-cmds">
+        {suggestion.commands.map((command, index) => (
+          <div className="composer-approval-cmd" key={command.cmd + index}>
+            <span className="composer-approval-order">{index + 1}</span>
+            <code>{command.cmd}</code>
+            <span className={"risk " + command.risk}>{riskLabel(lang, command.risk)}</span>
+            <span className="target">{commandTargetLabel(command)}</span>
+          </div>
+        ))}
+      </div>
+      {suggestion.note && (
+        <div className="composer-approval-reason">
+          <span>{t(lang, "reason")}</span>
+          <span>{suggestion.note}</span>
+        </div>
+      )}
+      <div className="composer-approval-actions">
         <button
-          key={m}
-          className={mode === m ? "active" : ""}
-          onClick={() => setMode(m)}
+          className="btn btn-ghost"
+          type="button"
+          onClick={(event) => choose(event, "denied")}
         >
-          {t(lang, m)}
+          {t(lang, "permissionDeny")}
         </button>
-      ))}
+        <button
+          className="btn btn-primary"
+          type="button"
+          onClick={(event) => choose(event, "allow_once")}
+        >
+          <Icon.shield /> {t(lang, "allowOnce")}
+        </button>
+      </div>
     </div>
   );
 }
 
-function ContextSummary({ lang, activeTab, activePane, project }) {
-  const activeProject = project || PROJECT;
-  const contextFiles = activeTab?.type === "editor"
-    ? activeTab.displayPath || activeTab.path
-    : "OnboardingFunnel.tsx, useFunnelState.ts";
+function AgentTurn({
+  msg, lang, onChooseDecisionOption,
+}) {
+  const suggestion = msg.suggestion;
+  const decisionEvent = msg.decisionEvent;
+  const permissionDecision = msg.permissionDecision;
+  const isRunning = msg.progress?.status === "running";
+  const isFailed = msg.progress?.status === "failed";
+  const risk = suggestion?.commands?.length ? highestSuggestionRisk(suggestion) : null;
+  const title = isRunning ? "Working" : isFailed ? "Could not finish" : null;
+  const steps = msg.progress?.steps || [];
+  const showRuntimeState = Boolean(title);
+  const answerMeta = msg.answerMeta;
+
   return (
-    <div className="context-summary">
-      <div className="h">{t(lang, "aboutContext")}</div>
-      <div className="row">
-        <span className="k">{t(lang, "contextFiles")}:</span>
-        <span className="v">{contextFiles}</span>
-      </div>
-      <div className="row">
-        <span className="k">{t(lang, "contextTab")}:</span>
-        <span className="v">[{activeTab.title}] {activePane.lines.length} {lang === "ko" ? "줄" : "lines"}</span>
-      </div>
-      <div className="row">
-        <span className="k">{t(lang, "branch")}:</span>
-        <span className="v">{activeProject.branch}</span>
-      </div>
+    <div
+      className={"agent-turn" + (isRunning ? " running" : "") + (isFailed ? " failed" : "") + (!showRuntimeState ? " completed" : "")}
+      data-request-turn-id={String(msg.id || "").endsWith("-agent-turn") ? msg.id : undefined}
+      data-suggestion-id={suggestion?.id || undefined}
+    >
+      {showRuntimeState && (
+        <div className="agent-turn-head">
+          <span>{title}</span>
+          <span>{msg.at}</span>
+        </div>
+      )}
+      {showRuntimeState && steps.length > 0 && (
+        <div className="agent-turn-progress">
+          {steps.map((step, index) => (
+            <div
+              className={"agent-turn-step " + (isRunning && index === steps.length - 1 ? "active" : "done")}
+              key={progressStepKey(step, index)}
+            >
+              <span className="agent-turn-dot" />
+              <span className="agent-turn-step-copy">
+                <span>{progressStepLabel(lang, step)}</span>
+                {progressStepDetail(step) && <span>{progressStepDetail(step)}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!showRuntimeState && answerMeta && (
+        <div className="agent-turn-answer-meta">
+          Answered {answerMeta.answeredAt} / {formatElapsedMs(answerMeta.elapsedMs)}
+        </div>
+      )}
+      {msg.content && (
+        <div className="agent-turn-copy" dangerouslySetInnerHTML={{ __html: renderInline(msg.content) }} />
+      )}
+      {decisionEvent?.type === "choice" && (
+        <AgentChoiceEvent
+          lang={lang}
+          event={decisionEvent}
+          onChoose={(option) => onChooseDecisionOption?.(msg.id, option)}
+        />
+      )}
+      {suggestion?.commands?.length > 0 && (
+        <AgentCommandActivity
+          lang={lang}
+          suggestion={suggestion}
+          risk={risk}
+          permissionDecision={permissionDecision}
+        />
+      )}
     </div>
   );
 }
 
-function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
+function MessageBubble({
+  msg, lang, onChooseDecisionOption,
+}) {
   if (msg.role === "user") {
+    const attachedContext = (msg.contextAttached || []).filter(Boolean);
+
     return (
       <div className="msg user">
         <div className="msg-meta">
@@ -2846,53 +3337,61 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
           <span className="role-tag user">{t(lang, "you")}</span>
         </div>
         <div className="msg-bubble">{msg.content}</div>
-        {msg.contextAttached && (
+        {attachedContext.length > 0 && (
           <div className="ctx-attach">
             <span className="clip" />
-            <span>{lang === "ko" ? "첨부됨:" : "Attached:"} [{msg.contextAttached[0].replace("t-", "")}]</span>
+            <span>{"Attached:"} [{attachedContext[0].replace("t-", "")}]</span>
           </div>
         )}
       </div>
     );
   }
 
-  if (msg.suggestion) {
-    const s = msg.suggestion;
+  if (msg.progress) {
+    const roleLabel = msg.roleLabel || providerDisplayName(msg.suggestion?.provider);
     return (
       <div className="msg assistant">
         <div className="msg-meta">
           <span>{msg.at}</span>
-          <span className="role-tag assistant">
-            {t(lang, "conductor")}
-          </span>
-          <span>· {t(lang, "suggestedActions")}</span>
+          <span className="role-tag assistant">{roleLabel}</span>
         </div>
-        <div className="sugg">
-          <div className="sugg-h">
-            <span className="icon"><Icon.spark /></span>
-            <span>{s.title}</span>
-            <span className="need">{t(lang, "needsApproval")}</span>
+        <AgentTurn
+          msg={msg}
+          lang={lang}
+          onChooseDecisionOption={onChooseDecisionOption}
+        />
+      </div>
+    );
+  }
+
+  if (msg.suggestion) {
+    const s = msg.suggestion;
+    const roleLabel = msg.roleLabel || providerDisplayName(s.provider);
+    if (!s.commands?.length) {
+      return (
+        <div className="msg assistant">
+          <div className="msg-meta">
+            <span>{msg.at}</span>
+            <span className="role-tag assistant">{roleLabel}</span>
           </div>
-          <div className="sugg-cmds">
-            {s.commands.map((c, i) => (
-              <div className="sugg-cmd" key={i}>
-                <span style={{ color: "var(--accent)", flexShrink: 0 }}>$</span>
-                <span className="cmd-text">{c.cmd}</span>
-                <span className={"risk " + c.risk}>{t(lang, "risk" + c.risk[0].toUpperCase() + c.risk.slice(1))}</span>
-                <span className="target">
-                  {c.target === "new" ? (lang === "ko" ? "새 탭" : "new tab") : `[${c.target.replace("t-", "")}]`}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="sugg-note">{s.note}</div>
-          <div className="sugg-actions">
-            <button className="btn btn-primary" onClick={() => onOpenApproval(s)}>
-              <Icon.shield /> {t(lang, "review")}
-            </button>
-            <button className="btn btn-ghost">{t(lang, "deny")}</button>
+          <div className="msg-bubble">
+            {s.error || s.note || s.title || `${roleLabel} could not produce a safe command.`}
           </div>
         </div>
+      );
+    }
+
+    return (
+      <div className="msg assistant">
+        <div className="msg-meta">
+          <span>{msg.at}</span>
+          <span className="role-tag assistant">{roleLabel}</span>
+        </div>
+        <AgentTurn
+          msg={{ ...msg, progress: { status: "completed", steps: [] } }}
+          lang={lang}
+          onChooseDecisionOption={onChooseDecisionOption}
+        />
       </div>
     );
   }
@@ -2904,12 +3403,9 @@ function MessageBubble({ msg, lang, activeTab, onOpenApproval }) {
           <span>{msg.at}</span>
           <span className="role-tag assistant">{t(lang, "operator")}</span>
         </div>
-        <div className={"completed-card" + (msg.autoRan ? " auto-ran" : "")}>
+        <div className="completed-card">
           <div className="ttl">
             <Icon.dot /> {t(lang, "completed")}
-            {msg.autoRan && (
-              <span className="auto-ran-tag">{t(lang, "autoRanInline")}</span>
-            )}
           </div>
           <div>{msg.completed.summary}</div>
           <div className="cmds">
@@ -2941,30 +3437,213 @@ function renderInline(s) {
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
-function TypingIndicator({ lang }) {
+function TypingIndicator({ lang, activity = [], providerLabel = "Provider" }) {
   return (
     <div className="msg assistant">
       <div className="msg-meta">
-        <span className="role-tag assistant">{t(lang, "assistant")}</span>
-        <span>· {t(lang, "typing")}</span>
+        <span className="role-tag assistant">{providerLabel}</span>
+        <span>/{t(lang, "typing")}</span>
       </div>
       <div className="typing">
         <span className="blob" />
         <span className="blob" />
         <span className="blob" />
       </div>
+      {activity.length > 0 && (
+        <div className="agent-activity">
+          {activity.map((key, index) => (
+            <div
+              className={"agent-activity-row " + (index === activity.length - 1 ? "active" : "done")}
+              key={key}
+            >
+              <span className="agent-activity-dot" />
+              <span>{t(lang, key)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function Composer({ lang, activeTab, onSend, mode, setMode }) {
-  const [val, setVal] = React.useState("");
+const WINDOW_RESIZE_ZONES = [
+  ["n", "North"],
+  ["e", "East"],
+  ["s", "South"],
+  ["w", "West"],
+  ["ne", "NorthEast"],
+  ["nw", "NorthWest"],
+  ["se", "SouthEast"],
+  ["sw", "SouthWest"],
+];
+
+function WindowResizeZones({ windowControls, maximized }) {
+  if (!windowControls.available || maximized) return null;
+
+  return (
+    <div className="window-resize-zones" aria-hidden="true">
+      {WINDOW_RESIZE_ZONES.map(([zone, direction]) => (
+        <div
+          className={"window-resize-zone " + zone}
+          key={zone}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            windowControls.startResizeDragging(direction).catch(() => undefined);
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+const COMPOSER_REFERENCE_GROUPS = {
+  "@": {
+    title: "Files and folders",
+    items: [
+      { label: "@ src/", detail: "Reference a project file or folder" },
+      { label: "@ active file", detail: "Attach the current editor context" },
+    ],
+  },
+  "#": {
+    title: "PRs and issues",
+    items: [
+      { label: "# Pull request", detail: "Reference a GitHub PR by number" },
+      { label: "# Issue", detail: "Reference an issue when GitHub is connected" },
+    ],
+  },
+  "/": {
+    title: "Slash commands",
+    items: [
+      { label: "/review", detail: "Ask the provider to review the current project" },
+      { label: "/test", detail: "Ask for a focused test command suggestion" },
+    ],
+  },
+};
+
+function composerReferenceGroup(value) {
+  const text = String(value || "");
+  const token = text.split(/\s/).at(-1) || "";
+  const trigger = token[0];
+  if (!trigger || !COMPOSER_REFERENCE_GROUPS[trigger]) return null;
+  if (token.length > 24) return null;
+  return COMPOSER_REFERENCE_GROUPS[trigger];
+}
+
+function Composer({
+  lang, providers, activeProvider, onSelectProvider,
+  providerCapabilities, selectedModelId, onSelectModel,
+  reasoningLevel, fastMode, onSelectReasoningLevel, onSelectFastMode,
+  attachments, onPickAttachment, onRemoveAttachment, onSend,
+  draft, onDraftChange,
+  busy = false, onStop,
+}) {
+  const val = draft || "";
+  const [openMenu, setOpenMenu] = React.useState(null);
   const ref = React.useRef(null);
+  const providerTriggerRef = React.useRef(null);
+  const modelTriggerRef = React.useRef(null);
+  const reasoningTriggerRef = React.useRef(null);
+  const modelMenuRef = React.useRef(null);
+  const providerMenuOpen = openMenu === "provider";
+  const modelMenuOpen = openMenu === "model";
+  const reasoningMenuOpen = openMenu === "reasoning";
+  React.useLayoutEffect(() => {
+    const textarea = ref.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(120, textarea.scrollHeight) + "px";
+  }, [val]);
+  React.useEffect(() => {
+    setOpenMenu(null);
+  }, [activeProvider?.id]);
+  React.useEffect(() => {
+    if (!openMenu) return undefined;
+
+    const closeOnEscape = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      const trigger = openMenu === "provider"
+        ? providerTriggerRef.current
+        : openMenu === "model"
+          ? modelTriggerRef.current
+          : reasoningTriggerRef.current;
+      setOpenMenu(null);
+      window.requestAnimationFrame(() => trigger?.focus());
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [openMenu]);
+  const providerTriggerLabel = activeProvider
+    ? `Provider: ${activeProvider.label} · ${providerSessionLabel(activeProvider)}`
+    : "No provider";
+  const availableModels = providerSelectableModels(providerCapabilities, activeProvider?.id);
+  const selectedModel = effectiveAgentModel(
+    providerCapabilities,
+    selectedModelId,
+    activeProvider?.id,
+  );
+  const effectiveModelId = selectedModel?.modelId || null;
+  const modelTriggerLabel = `${activeProvider?.label || "Provider"} model: ${selectedModel?.label || "Default model"}`;
+  const showModelPicker = Boolean(providerCapabilities?.supportsModelSelection && availableModels.length > 0);
+  React.useLayoutEffect(() => {
+    if (!modelMenuOpen) return;
+    const selectedOption = modelMenuRef.current
+      ?.querySelector('[role="option"][aria-selected="true"]');
+    selectedOption?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [modelMenuOpen, effectiveModelId]);
+  const enabledAttachments = (providerCapabilities?.attachments || []).filter((attachment) => attachment.enabled);
+  const attachmentTitle = enabledAttachments.length > 0
+    ? `Attach ${enabledAttachments.map((attachment) => attachment.label).join(", ")}`
+    : t(lang, "attach");
+  const canAttach = enabledAttachments.length > 0;
+  const executionCapabilities = effectiveAgentExecutionCapabilities(
+    providerCapabilities,
+    selectedModelId,
+    activeProvider?.id,
+  );
+  const usesModelExecutionOptions = Boolean(executionCapabilities?.usesModelExecutionOptions);
+  const reasoningLevels = providerReasoningLevels(executionCapabilities);
+  const reasoningOptions = usesModelExecutionOptions
+    ? [
+        {
+          level: null,
+          label: "Default",
+          description: "Use the runtime default effort",
+        },
+        ...reasoningLevels,
+      ]
+    : reasoningLevels;
+  const reasoningIndicatorLevels = usesModelExecutionOptions
+    ? [...reasoningLevels].sort((left, right) => (
+        MODEL_REASONING_LEVEL_RANK[left.level] - MODEL_REASONING_LEVEL_RANK[right.level]
+      ))
+    : reasoningLevels;
+  const normalizedReasoningLevel = normalizeAgentReasoningLevel(
+    executionCapabilities,
+    reasoningLevel,
+  );
+  const selectedReasoningIndex = reasoningIndicatorLevels
+    .findIndex((level) => level.level === normalizedReasoningLevel);
+  const reasoningLabel = normalizedReasoningLevel
+    ? reasoningLevelLabel(executionCapabilities, normalizedReasoningLevel)
+    : usesModelExecutionOptions ? "Default" : "";
+  const reasoningTriggerLabel = `Reasoning level: ${reasoningLabel}`;
+  const showReasoningControl = reasoningLevels.length > 0
+    && (usesModelExecutionOptions || Boolean(normalizedReasoningLevel));
+  const showFastMode = Boolean(executionCapabilities?.supportsFastMode);
+  const fastModeLabel = fastMode ? "Enabled" : "Disabled";
+  const fastModeTriggerLabel = `Fast mode: ${fastModeLabel}`;
+  const referenceGroup = composerReferenceGroup(val);
   const submit = () => {
+    if (busy) {
+      onStop?.();
+      return;
+    }
+
     const v = val.trim();
     if (!v) return;
     onSend(v);
-    setVal("");
     if (ref.current) ref.current.style.height = "auto";
   };
   const onKey = (e) => {
@@ -2974,160 +3653,300 @@ function Composer({ lang, activeTab, onSend, mode, setMode }) {
     }
   };
   const onInput = (e) => {
-    setVal(e.target.value);
+    onDraftChange(e.target.value);
     e.target.style.height = "auto";
     e.target.style.height = Math.min(120, e.target.scrollHeight) + "px";
   };
 
-  const quickPrompts = [
-    t(lang, "explain"),
-    t(lang, "suggestFix"),
-    t(lang, "rerunTests"),
-  ];
-
   return (
     <div className="composer">
-      <div className="composer-quick">
-        {quickPrompts.map((q, i) => (
-          <button key={i} className="qchip" onClick={() => onSend(q)}>
-            <Icon.spark /> {q}
-          </button>
-        ))}
-      </div>
       <div className="composer-input">
-        <textarea
-          ref={ref}
-          value={val}
-          onChange={onInput}
-          onKeyDown={onKey}
-          placeholder={t(lang, "typeMessage")}
-          rows={1}
-        />
-        <div className="composer-foot">
-          <span className="ctx-tag">
-            <span className="clip" />
-            [{activeTab.title}] · {t(lang, "sendCtx")}
-          </span>
-          <ModePill mode={mode} setMode={setMode} lang={lang} />
-          <button className="send" onClick={submit} disabled={!val.trim()}>
-            <Icon.send />
-          </button>
+        <div className="composer-top">
+          <textarea
+            ref={ref}
+            value={val}
+            onChange={onInput}
+            onKeyDown={onKey}
+            placeholder={`Ask ${activeProvider?.label || "provider"}`}
+            rows={1}
+          />
+          <span className="composer-hint">⌘L</span>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ModelPicker({ lang, providers, activeProviderId, activeModelId, onChange }) {
-  const [open, setOpen] = React.useState(false);
-  const ref = React.useRef(null);
-  React.useEffect(() => {
-    if (!open) return;
-    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    setTimeout(() => document.addEventListener("mousedown", close), 0);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-
-  const activeProvider = providers.find((p) => p.id === activeProviderId);
-  const activeModel = activeProvider?.models.find((m) => m.id === activeModelId);
-  const label = activeModel ? activeModel.label.replace("Claude ", "").replace("GPT-", "GPT-") : t(lang, "pickModel");
-
-  return (
-    <div className="model-picker" ref={ref}>
-      <button className="model-picker-btn" onClick={() => setOpen((v) => !v)}>
-        <Icon.spark />
-        <span className="ttl">{label}</span>
-        <Icon.chevronDown style={{ opacity: 0.6 }} />
-      </button>
-      {open && (
-        <div className="model-picker-menu">
-          {providers.filter((p) => p.state === "connected").map((p) => (
-            <React.Fragment key={p.id}>
-              <div className="model-picker-group-label">
-                <div className={"provider-mark " + p.id} style={{ width: 18, height: 18, fontSize: 9 }}>{p.abbr}</div>
-                {p.label}
-              </div>
-              {p.models.map((m) => (
+        {attachments.length > 0 && (
+          <div className="composer-attachments" aria-label="Attached context">
+            {attachments.map((attachment) => (
+              <span className="composer-attachment-chip" key={attachment.path}>
+                <span>{attachment.label || labelFromPath(attachment.path)}</span>
                 <button
-                  key={m.id}
-                  className={"model-picker-item" + (p.id === activeProviderId && m.id === activeModelId ? " active" : "")}
-                  onClick={() => { onChange(p.id, m.id); setOpen(false); }}
+                  type="button"
+                  title={`Remove ${attachment.label || labelFromPath(attachment.path)}`}
+                  onClick={() => onRemoveAttachment(attachment.path)}
                 >
-                  <span className="model-picker-name">{m.label}</span>
-                  <span className={"model-picker-tier " + m.tier}>{t(lang, m.tier)}</span>
+                  <Icon.x />
                 </button>
-              ))}
-            </React.Fragment>
-          ))}
-          {providers.filter((p) => p.state === "connected").length === 0 && (
-            <div className="model-picker-empty">
-              {t(lang, "noConnectedProviders")}
+              </span>
+            ))}
+          </div>
+        )}
+        {referenceGroup && (
+          <div className="composer-reference-menu">
+            <div className="composer-reference-title">{referenceGroup.title}</div>
+            {referenceGroup.items.map((item) => (
+              <button
+                className="composer-reference-option"
+                key={item.label}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const prefix = val.replace(/(\S*)$/, "");
+                  onDraftChange(`${prefix}${item.label} `);
+                }}
+              >
+                <span>{item.label}</span>
+                <small>{item.detail}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="composer-foot">
+          <button
+            className="composer-tool"
+            title={attachmentTitle}
+            type="button"
+            disabled={!canAttach}
+            onClick={onPickAttachment}
+          >
+            <Icon.plus />
+          </button>
+          <div className="composer-provider-wrap">
+            <button
+              className="composer-provider-chip"
+              ref={providerTriggerRef}
+              title={providerTriggerLabel}
+              type="button"
+              aria-label={providerTriggerLabel}
+              aria-haspopup="listbox"
+              aria-expanded={providerMenuOpen}
+              onClick={() => setOpenMenu((current) => current === "provider" ? null : "provider")}
+            >
+              {activeProvider && (
+                <span className={"provider-mark " + activeProvider.id + " current"} aria-hidden="true">
+                  {activeProvider.abbr}
+                </span>
+              )}
+            </button>
+            {providerMenuOpen && (
+              <div className="composer-model-menu composer-provider-menu" role="listbox" aria-label="Agent provider">
+                {providers.map((provider) => (
+                  <button
+                    className={"composer-model-option composer-provider-option" + (provider.id === activeProvider?.id ? " active" : "")}
+                    key={provider.id}
+                    type="button"
+                    role="option"
+                    aria-selected={provider.id === activeProvider?.id}
+                    onClick={() => {
+                      onSelectProvider(provider.id);
+                      setOpenMenu(null);
+                    }}
+                  >
+                    <span>{provider.label}</span>
+                    <small>{providerSessionLabel(provider)}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {showModelPicker && (
+            <div className="composer-model-wrap">
+              <button
+                className="composer-model-chip"
+                ref={modelTriggerRef}
+                type="button"
+                title={modelTriggerLabel}
+                aria-label={modelTriggerLabel}
+                aria-haspopup="listbox"
+                aria-expanded={modelMenuOpen}
+                onClick={() => setOpenMenu((current) => current === "model" ? null : "model")}
+              >
+                <Icon.spark aria-hidden="true" />
+              </button>
+              {modelMenuOpen && (
+                <div
+                  className="composer-model-menu composer-selection-menu"
+                  ref={modelMenuRef}
+                  role="listbox"
+                  aria-label={`${activeProvider?.label || "Provider"} models`}
+                >
+                  {availableModels.map((model) => (
+                    <button
+                      className={"composer-model-option" + (model.modelId === effectiveModelId ? " active" : "")}
+                      key={model.modelId}
+                      type="button"
+                      role="option"
+                      data-model-id={model.modelId}
+                      title={model.modelId}
+                      aria-selected={model.modelId === effectiveModelId}
+                      onClick={() => {
+                        onSelectModel(model.modelId);
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span>{model.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
+          {showReasoningControl && (
+            <div className="composer-control-wrap composer-reasoning-wrap">
+              <button
+                className="composer-reasoning-chip"
+                ref={reasoningTriggerRef}
+                title={reasoningTriggerLabel}
+                type="button"
+                aria-label={reasoningTriggerLabel}
+                aria-haspopup="listbox"
+                aria-expanded={reasoningMenuOpen}
+                onClick={() => setOpenMenu((current) => current === "reasoning" ? null : "reasoning")}
+              >
+                <span className="reasoning-bars" aria-hidden="true">
+                  {reasoningIndicatorLevels.map((level, index) => (
+                    <i
+                      className={index <= selectedReasoningIndex ? "active" : ""}
+                      key={level.level}
+                    />
+                  ))}
+                </span>
+              </button>
+              {reasoningMenuOpen && (
+                <div
+                  className="composer-model-menu composer-selection-menu composer-reasoning-menu"
+                  role="listbox"
+                  aria-label="Reasoning levels"
+                >
+                  {reasoningOptions.map((level) => (
+                    <button
+                      className={"composer-model-option" + (level.level === normalizedReasoningLevel ? " active" : "")}
+                      key={level.level || "runtime-default"}
+                      type="button"
+                      role="option"
+                      data-reasoning-level={level.level || "default"}
+                      title={level.description || level.label}
+                      aria-selected={level.level === normalizedReasoningLevel}
+                      onClick={() => {
+                        onSelectReasoningLevel(level.level);
+                        setOpenMenu(null);
+                      }}
+                    >
+                      <span>{level.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {showFastMode && (
+            <div className="composer-control-wrap composer-fast-wrap">
+              <button
+                className={"fast-toggle" + (fastMode ? " active" : "")}
+                title={fastModeTriggerLabel}
+                type="button"
+                aria-label={fastModeTriggerLabel}
+                aria-pressed={fastMode}
+                onClick={() => {
+                  setOpenMenu(null);
+                  onSelectFastMode(!fastMode);
+                }}
+              >
+                <Icon.bolt aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          <button
+            className={"send" + (busy ? " stopping" : "")}
+            onClick={submit}
+            disabled={!busy && !val.trim()}
+            title={busy ? "Stop response" : "Send"}
+          >
+            {busy ? <Icon.stop /> : <Icon.send />}
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 function AgentPanel({
-  lang, messages, isTyping, activeTab, activePane, mode, setMode,
-  onSend, onOpenApproval, providers, collapseAgent,
-  activeProviderId, activeModelId, onSwitchModel, onOpenSettings, project,
+  lang, messages, isTyping, agentActivity = [],
+  agentJobs = [], onCancelAgentJob,
+  onSend, providers, collapseAgent,
+  activeProviderId, onSelectProvider, onOpenSettings, project,
+  providerCapabilities, selectedModelId, onSelectModel,
+  reasoningLevel, fastMode, onSelectReasoningLevel, onSelectFastMode,
+  agentWorkspace, activeAgentSessionId, onSelectAgentSession,
+  onNewAgentSession, onCloseAgentSession,
+  attachments, onPickAttachment, onRemoveAttachment,
+  onChooseDecisionOption, onPermissionDecision, onStopAgentRequest,
+  requestPhase, composerDraft, onComposerDraftChange,
 }) {
   const chatRef = React.useRef(null);
-  React.useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
-  }, [messages.length, isTyping]);
+  const agentBusy = isTyping || messages.some((message) => message.progress?.status === "running");
+  const pendingPermissionMessage = [...messages]
+    .reverse()
+    .find((message) => message.suggestion?.commands?.length > 0 && !message.permissionDecision);
+  const pendingPermissionSuggestion = pendingPermissionMessage?.suggestion || null;
+  const pendingPermissionRisk = pendingPermissionSuggestion
+    ? highestSuggestionRisk(pendingPermissionSuggestion)
+    : null;
+  React.useLayoutEffect(() => {
+    const chat = chatRef.current;
+    if (!chat) return undefined;
+
+    let frame = window.requestAnimationFrame(() => {
+      chat.scrollTop = chat.scrollHeight;
+      frame = window.requestAnimationFrame(() => {
+        chat.scrollTop = chat.scrollHeight;
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, isTyping, agentActivity, pendingPermissionMessage?.id]);
 
   const active = providers.find((p) => p.id === activeProviderId) || providers.find((p) => p.state === "connected") || providers[0];
+  const activeAgentSession = agentWorkspace?.sessions?.find((session) => session.id === activeAgentSessionId)
+    || agentWorkspace?.sessions?.[0]
+    || null;
 
   return (
-    <aside className="agent">
-      <div className="agent-header">
-        <div className={"provider-mark " + active.id} style={{ width: 32, height: 32, fontSize: 12 }}>
-          {active.abbr}
-        </div>
-        <div className="who">
-          <div className="nm">
-            {t(lang, "agentChat")}
-            <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-              · {active.label}
-            </span>
-          </div>
-          <div className="sub">
-            {lang === "ko" ? "지휘자 + 4 워커 · " : "Conductor + 4 workers · "}
-            {t(lang, mode)}
-          </div>
-        </div>
-        <button
-          className="rail-toggle"
-          onClick={onOpenSettings}
-          title={t(lang, "settingsTitle")}
-        >
-          <Icon.gear />
-        </button>
-        <button
-          className="rail-toggle"
-          onClick={collapseAgent}
-          title={t(lang, "collapseAgent")}
-        >
-          <Icon.panelRight />
-        </button>
-      </div>
+    <aside
+      className="agent"
+      data-agent-project-path={project?.path || "no-project"}
+      data-agent-session-id={activeAgentSessionId || ""}
+      data-agent-provider-id={active?.id || ""}
+      data-request-state={requestPhase || "idle"}
+    >
+      <AgentHeader
+        lang={lang}
+        activeProvider={active}
+        providerCapabilities={providerCapabilities}
+        selectedModelId={selectedModelId}
+        agentWorkspace={agentWorkspace}
+        activeAgentSession={activeAgentSession}
+        onOpenSettings={onOpenSettings}
+        collapseAgent={collapseAgent}
+      />
 
-      <div className="agent-model-row">
-        <ModelPicker
-          lang={lang}
-          providers={providers}
-          activeProviderId={activeProviderId}
-          activeModelId={activeModelId}
-          onChange={onSwitchModel}
-        />
-        <ModePill mode={mode} setMode={setMode} lang={lang} />
-      </div>
+      <AgentSessionTabs
+        agentWorkspace={agentWorkspace}
+        activeSessionId={activeAgentSessionId}
+        projectPath={project?.path || "no-project"}
+        onSelectSession={onSelectAgentSession}
+        onNewSession={onNewAgentSession}
+        onCloseSession={onCloseAgentSession}
+      />
 
-      <ContextSummary lang={lang} activeTab={activeTab} activePane={activePane} project={project} />
+      <AgentJobActivity jobs={agentJobs} onCancel={onCancelAgentJob} />
 
       <div className="chat" ref={chatRef}>
         {messages.map((m) => (
@@ -3135,19 +3954,44 @@ function AgentPanel({
             key={m.id}
             msg={m}
             lang={lang}
-            activeTab={activeTab}
-            onOpenApproval={onOpenApproval}
+            onChooseDecisionOption={onChooseDecisionOption}
           />
         ))}
-        {isTyping && <TypingIndicator lang={lang} />}
+        {isTyping && <TypingIndicator lang={lang} activity={agentActivity} providerLabel={active?.label} />}
       </div>
 
+      {pendingPermissionSuggestion && (
+        <ComposerPermissionRequest
+          lang={lang}
+          suggestion={pendingPermissionSuggestion}
+          risk={pendingPermissionRisk}
+          onPermissionDecision={onPermissionDecision}
+          projectPath={project?.path || "no-project"}
+          agentSessionId={activeAgentSessionId}
+        />
+      )}
+
       <Composer
+        key={`${project?.path || "no-project"}\u0000${activeAgentSessionId || ""}`}
         lang={lang}
-        activeTab={activeTab}
+        providers={providers}
+        activeProvider={active}
+        onSelectProvider={onSelectProvider}
+        providerCapabilities={providerCapabilities}
+        selectedModelId={selectedModelId}
+        onSelectModel={onSelectModel}
+        reasoningLevel={reasoningLevel}
+        fastMode={fastMode}
+        onSelectReasoningLevel={onSelectReasoningLevel}
+        onSelectFastMode={onSelectFastMode}
+        attachments={attachments}
+        onPickAttachment={onPickAttachment}
+        onRemoveAttachment={onRemoveAttachment}
         onSend={onSend}
-        mode={mode}
-        setMode={setMode}
+        draft={composerDraft}
+        onDraftChange={onComposerDraftChange}
+        busy={agentBusy}
+        onStop={onStopAgentRequest}
       />
     </aside>
   );
@@ -3157,277 +4001,18 @@ Object.assign(window, { AgentPanel });
 
 
 // ----- src/modals.jsx -----
-// modals.jsx — approval + OAuth provider connect
+// modals.jsx ??approval + OAuth provider connect
 
-function ApprovalModal({ lang, suggestion, onClose, onApprove, tabs, project }) {
-  if (!suggestion) return null;
-  const activeProject = project || PROJECT;
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-h">
-          <div className="modal-ico">
-            <Icon.shield />
-          </div>
-          <div>
-            <div className="modal-title">{t(lang, "runCommand")}</div>
-            <div className="modal-sub">{suggestion.title}</div>
-          </div>
-        </div>
-        <div className="modal-body">
-          {suggestion._policyReason && (
-            <div className="policy-reason-banner">
-              <Icon.shield />
-              <div>
-                <div className="policy-reason-h">
-                  {suggestion._policyReason === "forbidden"
-                    ? t(lang, "blockedByPattern")
-                    : suggestion._policyReason === "high-risk"
-                      ? t(lang, "riskHighFull")
-                      : suggestion._policyReason === "not-trusted"
-                        ? (lang === "ko" ? "신뢰된 경로 밖" : "Outside trusted dirs")
-                        : t(lang, "requiresHigher")}
-                </div>
-                {suggestion._policyBlocker && (
-                  <code className="policy-reason-pattern">{suggestion._policyBlocker}</code>
-                )}
-              </div>
-            </div>
-          )}
-          <div className="approval-row">
-            <div className="lbl">{t(lang, "cwd")}</div>
-            <div className="val">{activeProject.path}</div>
-          </div>
-          <div className="approval-row">
-            <div className="lbl">{t(lang, "branch")}</div>
-            <div className="val">
-              <span className="accent">{activeProject.branch}</span>
-              <span className="meta"> · {activeProject.changedFiles} {t(lang, "changes")}</span>
-            </div>
-          </div>
-          <div className="approval-row">
-            <div className="lbl">{t(lang, "command")}</div>
-            <div className="approval-cmd-list">
-              {suggestion.commands.map((c, i) => {
-                const targetLabel = c.target === "new"
-                  ? (lang === "ko" ? "새 탭" : "new tab")
-                  : tabs.find((tb) => tb.id === c.target)?.title || c.target;
-                return (
-                  <div className="approval-cmd" key={i}>
-                    <span><span className="order">{i + 1}.</span>{c.cmd}</span>
-                    <span className={"risk " + c.risk}>{t(lang, "risk" + c.risk[0].toUpperCase() + c.risk.slice(1))}</span>
-                    <span style={{ color: "var(--text-dim)", fontSize: 10.5 }}>→ [{targetLabel}]</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div className="approval-row">
-            <div className="lbl">{t(lang, "explainBeforeRun")}</div>
-            <div className="val" style={{ fontFamily: "var(--font-ui)", color: "var(--text-muted)" }}>
-              {suggestion.note}
-            </div>
-          </div>
-          <div className="approval-row">
-            <div className="lbl">{t(lang, "rollback")}</div>
-            <div className="val" style={{ color: "var(--accent)", fontFamily: "var(--font-ui)" }}>
-              {lang === "ko" ? "예 — 프로세스만 종료, 파일은 수정하지 않음" : "Yes — kills a process only, no file changes"}
-            </div>
-          </div>
-        </div>
-        <div className="modal-foot">
-          <button className="btn btn-ghost" onClick={onClose}>{t(lang, "cancel")}</button>
-          <button className="btn btn-secondary" onClick={onClose}>{t(lang, "deny")}</button>
-          <button className="btn btn-primary" onClick={() => onApprove(suggestion)}>
-            <Icon.spark /> {t(lang, "approve")}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OAuthModal({ lang, initialProvider, onClose, onConnect }) {
-  const [stage, setStage] = React.useState("pick"); // pick | browser | success
-  const [selected, setSelected] = React.useState(initialProvider || "codex");
-
-  const goBrowser = () => {
-    setStage("browser");
-    setTimeout(() => setStage("success"), 2400);
-  };
-
-  const providerMeta = {
-    claude: {
-      label: "Claude",
-      abbr: "Cl",
-      sub: lang === "ko" ? "Anthropic 공식 OAuth" : "Anthropic official OAuth",
-      url: "https://claude.ai/oauth/authorize?client_id=gtum&scope=read.files...",
-    },
-    codex: {
-      label: "Codex",
-      abbr: "Cx",
-      sub: lang === "ko" ? "OpenAI 공식 로그인" : "OpenAI official sign-in",
-      url: "https://auth.openai.com/oauth/authorize?client_id=gtum&scope=...",
-    },
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-h">
-          <div className="modal-ico"><Icon.shield /></div>
-          <div>
-            <div className="modal-title">{t(lang, "connectProvider")}</div>
-            <div className="modal-sub">{t(lang, "connectIntro")}</div>
-          </div>
-        </div>
-
-        {stage === "pick" && (
-          <div className="modal-body">
-            <div className="oauth-provider-pick">
-              {["claude", "codex"].map((id) => {
-                const m = providerMeta[id];
-                return (
-                  <div
-                    key={id}
-                    className={"oauth-card" + (selected === id ? " selected" : "")}
-                    onClick={() => setSelected(id)}
-                  >
-                    <div className={"mark " + id}>{m.abbr}</div>
-                    <div className="ttl">{m.label}</div>
-                    <div className="sub">{m.sub}</div>
-                    {selected === id && <div className="check">✓</div>}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginTop: 10, lineHeight: 1.5 }}>
-              {t(lang, "connectDetails")}
-            </div>
-          </div>
-        )}
-
-        {stage === "browser" && (
-          <div className="modal-body">
-            <div className="browser-sim">
-              <div className="browser-bar">
-                <div className="lights"><span className="l" /><span className="l" /><span className="l" /></div>
-                <div className="url">{providerMeta[selected].url}</div>
-              </div>
-              <div className="browser-body">
-                <div className="spin-big" />
-                <div style={{ color: "var(--text)" }}>{providerMeta[selected].label} {lang === "ko" ? "공식 로그인 페이지" : "official sign-in"}</div>
-                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{t(lang, "waitingCallback")}</div>
-              </div>
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginTop: 8, fontFamily: "var(--font-mono)" }}>
-              {lang === "ko" ? "콜백 URL:" : "Callback URL:"} gtum://oauth/callback
-            </div>
-          </div>
-        )}
-
-        {stage === "success" && (
-          <div className="modal-body">
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-              <div
-                style={{
-                  width: 36, height: 36, borderRadius: 9,
-                  background: "color-mix(in oklab, var(--accent) 18%, var(--surface-2))",
-                  color: "var(--accent)",
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 16, fontWeight: 700,
-                }}
-              >✓</div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>
-                  {providerMeta[selected].label} · {t(lang, "connectSuccess")}
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
-                  {t(lang, "sessionExpiry")} 30{t(lang, "days")} · {lang === "ko" ? "OS 보안 저장소에 저장됨" : "Saved to OS keychain"}
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-faint)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              {t(lang, "sessionScope")}
-            </div>
-            <div className="scope-list">
-              {["files.read", "terminal.read", "exec.suggest", "exec.run (approval)"].map((s) => (
-                <div className="sc" key={s}><span className="dot" />{s}</div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="modal-foot">
-          {stage === "pick" && (
-            <>
-              <button className="btn btn-ghost" onClick={onClose}>{t(lang, "cancel")}</button>
-              <button className="btn btn-primary" onClick={goBrowser}>
-                {t(lang, "openBrowser")}
-              </button>
-            </>
-          )}
-          {stage === "browser" && (
-            <>
-              <button className="btn btn-ghost" onClick={onClose}>{t(lang, "cancel")}</button>
-              <button className="btn btn-secondary" disabled style={{ opacity: 0.5 }}>
-                {t(lang, "waitingCallback")}
-              </button>
-            </>
-          )}
-          {stage === "success" && (
-            <button className="btn btn-primary" onClick={() => { onConnect(selected); onClose(); }}>
-              {lang === "ko" ? "완료" : "Done"}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-Object.assign(window, { ApprovalModal, OAuthModal, SettingsModal, ApprovalToast });
-
-// ApprovalToast — bottom-right notification for auto-approved actions.
-// Includes a 'Undo' button. The host dismisses after a timeout but the
-// user can act on it manually before that.
-function ApprovalToast({ lang, toast, onDismiss, onUndo }) {
-  return (
-    <div className="approval-toast" role="status">
-      <div className="toast-ico">
-        <Icon.spark />
-      </div>
-      <div className="toast-body">
-        <div className="toast-title">{toast.title}</div>
-        <div className="toast-cmd">{toast.cmd}</div>
-        <div className="toast-sub">{t(lang, "autoRanInline")}</div>
-      </div>
-      <button className="toast-btn" onClick={onUndo}>
-        {t(lang, "undo")}
-      </button>
-      <button className="toast-x" onClick={onDismiss} title="dismiss">
-        <Icon.x />
-      </button>
-    </div>
-  );
-}
-
-// SettingsModal — full settings page with tabs in a left rail.
-// Sections: Connections / Models / Appearance / Execution / About.
+// SettingsModal ??full settings page with tabs in a left rail.
+// Sections: Connections / Appearance / Execution / About.
 function SettingsModal({
-  lang, providers, onClose, onConnect, onDisconnect, onSwitchModel,
+  lang, providers, onClose, onConnect, onDisconnect,
   accent, accentOptions, onSetAccent,
-  mode, onSetMode,
-  parallelLimit, onSetParallelLimit,
-  approvalPolicy, onSetApprovalPolicy,
-  autoApprovalLog,
-  streamResponses, onSetStreamResponses,
 }) {
   const [section, setSection] = React.useState("connections");
 
   const sections = [
     { id: "connections", label: t(lang, "settingsConnections") },
-    { id: "models",      label: t(lang, "settingsModels") },
     { id: "appearance",  label: t(lang, "settingsAppearance") },
     { id: "execution",   label: t(lang, "settingsExecution") },
     { id: "about",       label: t(lang, "settingsAbout") },
@@ -3469,19 +4054,31 @@ function SettingsModal({
                     <div className="settings-provider-info">
                       <div className="settings-provider-name">{p.label}</div>
                       <div className="settings-provider-sub">
-                        {p.state === "connected"
+                        {p.availability === "deferred"
+                          ? <span className="provider-deferred">Coming later / {p.lastError || "Provider support is deferred."}</span>
+                          : p.state === "connected"
                           ? <>
                               <span className="dot-ok" /> {t(lang, "connected")}
-                              <span className="dot-sep">·</span>
-                              {t(lang, "sessionExpiry")} {p.expiresInDays}{t(lang, "days")}
-                              <span className="dot-sep">·</span>
-                              {p.scope.length} {lang === "ko" ? "권한" : "scopes"}
+                              <span className="dot-sep">/</span>
+                              {p.expiresInDays == null
+                                ? providerSessionLabel(p)
+                                : <>{t(lang, "sessionExpiry")} {p.expiresInDays}{t(lang, "days")}</>}
+                              <span className="dot-sep">/</span>
+                              {p.scope.length > 0 ? p.scope.join(", ") : "no scopes"}
                             </>
-                          : <span style={{ color: "var(--text-dim)" }}>{lang === "ko" ? "연결되지 않음" : "Not connected"}</span>}
+                          : p.state === "error"
+                            ? <span style={{ color: "var(--warn)" }}>{p.lastError || ("Connection needs attention")}</span>
+                            : p.state === "pending"
+                              ? <span style={{ color: "var(--text-dim)" }}>{"Checking login"}</span>
+                              : <span style={{ color: "var(--text-dim)" }}>{"Not connected"}</span>}
                       </div>
                     </div>
-                    {p.state === "connected" ? (
+                    {p.availability === "deferred" ? (
+                      <span className="provider-coming-later">Coming later</span>
+                    ) : p.state === "connected" ? (
                       <button className="btn btn-ghost" onClick={() => onDisconnect(p.id)}>{t(lang, "disconnect")}</button>
+                    ) : p.state === "pending" ? (
+                      <button className="btn btn-primary" type="button" disabled>{"Checking…"}</button>
                     ) : (
                       <button className="btn btn-primary" onClick={() => onConnect(p.id)}>{t(lang, "connect")}</button>
                     )}
@@ -3491,59 +4088,11 @@ function SettingsModal({
             </div>
           )}
 
-          {section === "models" && (
-            <div className="settings-pane">
-              <h3 className="settings-h">{t(lang, "settingsModels")}</h3>
-              <p className="settings-sub">
-                {lang === "ko" ? "각 제공자별로 사용할 기본 모델을 선택하세요." : "Pick the default model per provider."}
-              </p>
-              {providers.filter((p) => p.state === "connected").length === 0 && (
-                <div className="settings-empty">{t(lang, "noConnectedProviders")}</div>
-              )}
-              {providers.map((p) => (
-                <div key={p.id} className="model-section">
-                  <div className="model-section-h">
-                    <div className={"provider-mark " + p.id} style={{ width: 26, height: 26, fontSize: 11 }}>
-                      {p.abbr}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div className="model-section-name">{p.label}</div>
-                      <div className="model-section-sub">
-                        {p.state === "connected"
-                          ? <>{t(lang, "activeProvider")}: <span style={{ color: "var(--accent)" }}>{p.activeModel}</span></>
-                          : (lang === "ko" ? "연결 후 모델을 선택할 수 있습니다" : "Connect to pick a model")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="model-grid">
-                    {p.models.map((m) => (
-                      <button
-                        key={m.id}
-                        className={"model-card" + (p.activeModel === m.id ? " active" : "") + (p.state !== "connected" ? " disabled" : "")}
-                        disabled={p.state !== "connected"}
-                        onClick={() => onSwitchModel(p.id, m.id)}
-                      >
-                        <div className="model-card-h">
-                          <div className="model-card-name">{m.label}</div>
-                          <div className={"model-card-tier " + m.tier}>{t(lang, m.tier)}</div>
-                        </div>
-                        <div className="model-card-meta">
-                          <span>{t(lang, "contextWindow")}: <b>{m.ctx}</b></span>
-                          <span>· {t(lang, "responseSpeed")}: <b>{m.speed}</b></span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           {section === "appearance" && (
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsAppearance")}</h3>
               <div className="settings-row">
-                <div className="settings-row-label">{lang === "ko" ? "액센트 컬러" : "Accent color"}</div>
+                <div className="settings-row-label">{"Accent color"}</div>
                 <div className="accent-swatches">
                   {accentOptions.map((c) => (
                     <button
@@ -3561,57 +4110,12 @@ function SettingsModal({
           {section === "execution" && (
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsExecution")}</h3>
-              <p className="settings-sub">
-                {lang === "ko" ? "에이전트가 명령을 실제로 실행하기 전 확인하는 방식을 제어합니다." : "Controls how the agent confirms before running commands."}
-              </p>
-
-              <ExecutionPolicy
-                lang={lang}
-                policy={approvalPolicy}
-                onChange={onSetApprovalPolicy}
-              />
-
-              <AutoApprovalLog lang={lang} log={autoApprovalLog} />
-
-              <div className="settings-divider" />
-
-              <div className="settings-row">
+              <div className="execution-truth">
+                <Icon.shield />
                 <div>
-                  <div className="settings-row-label">{t(lang, "mode")}</div>
-                  <div className="settings-row-hint">
-                    {lang === "ko" ? "컨텍스트 크기·모델·교차 리뷰를 조정하는 실행 정책" : "Policy bundling context size, model, cross-review"}
-                  </div>
+                  <strong>Every command requires review.</strong>
+                  <p>Approved work runs as an isolated Agent job. The center terminal is never touched.</p>
                 </div>
-                <div className="mode-pill" style={{ width: "auto" }}>
-                  {["fast", "balanced", "deep"].map((m) => (
-                    <button
-                      key={m}
-                      className={mode === m ? "active" : ""}
-                      onClick={() => onSetMode(m)}
-                    >{t(lang, m)}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="settings-row">
-                <div>
-                  <div className="settings-row-label">{t(lang, "parallelLimit")}</div>
-                  <div className="settings-row-hint">{t(lang, "parallelLimitHint")}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input
-                    type="range" min="1" max="8" value={parallelLimit}
-                    onChange={(e) => onSetParallelLimit(Number(e.target.value))}
-                    style={{ width: 160, accentColor: "var(--accent)" }}
-                  />
-                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)", minWidth: 16, textAlign: "right" }}>{parallelLimit}</span>
-                </div>
-              </div>
-              <div className="settings-row">
-                <div>
-                  <div className="settings-row-label">{t(lang, "streamResponses")}</div>
-                  <div className="settings-row-hint">{t(lang, "streamResponsesHint")}</div>
-                </div>
-                <SettingsToggle value={streamResponses} onChange={onSetStreamResponses} />
               </div>
             </div>
           )}
@@ -3620,9 +4124,9 @@ function SettingsModal({
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsAbout")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.7 }}>
-                <div><b style={{ color: "var(--text)" }}>gtum</b> · prototype build</div>
-                <div>{lang === "ko" ? "로컬 데스크톱 워크스페이스 — 프로젝트 + 멀티 터미널 + 멀티 에이전트" : "Local desktop workspace — projects + multi-terminal + multi-agent"}</div>
-                <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>Tauri · Rust · React · xterm.js</div>
+                <div><b style={{ color: "var(--text)" }}>gtum</b> /prototype build</div>
+                <div>{"Local desktop workspace: projects + multi-terminal + multi-agent"}</div>
+                <div style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>Tauri /Rust /React /xterm.js</div>
               </div>
             </div>
           )}
@@ -3632,242 +4136,15 @@ function SettingsModal({
   );
 }
 
-function SettingsToggle({ value, onChange }) {
-  return (
-    <button
-      type="button"
-      className="twk-toggle"
-      data-on={value ? "1" : "0"}
-      role="switch"
-      aria-checked={!!value}
-      onClick={() => onChange(!value)}
-    ><i /></button>
-  );
-}
-
-// ── Execution policy editor ─────────────────────────────────────────────
-// Preset bar + per-risk dropdowns + trusted dirs + forbidden patterns.
-// Choosing a preset overwrites lowRisk/midRisk to the preset values; editing
-// either dropdown flips the preset to 'custom'.
-function ExecutionPolicy({ lang, policy, onChange }) {
-  const applyPreset = (presetId) => {
-    const preset = APPROVAL_PRESETS[presetId];
-    onChange({ ...policy, preset: presetId, ...preset });
-  };
-  const setLevel = (key, value) => {
-    onChange({ ...policy, preset: "custom", [key]: value });
-  };
-  const addPattern = (text) => {
-    const v = text.trim();
-    if (!v) return;
-    if (policy.forbiddenPatterns.includes(v)) return;
-    onChange({ ...policy, forbiddenPatterns: [...policy.forbiddenPatterns, v] });
-  };
-  const removePattern = (pat) => {
-    onChange({ ...policy, forbiddenPatterns: policy.forbiddenPatterns.filter((p) => p !== pat) });
-  };
-  const addDir = (text) => {
-    const v = text.trim();
-    if (!v) return;
-    if (policy.trustedDirs.includes(v)) return;
-    onChange({ ...policy, trustedDirs: [...policy.trustedDirs, v] });
-  };
-  const removeDir = (d) => {
-    onChange({ ...policy, trustedDirs: policy.trustedDirs.filter((x) => x !== d) });
-  };
-
-  return (
-    <div className="policy-box">
-      <div className="policy-h">
-        <div>
-          <div className="settings-row-label">{t(lang, "approvalPolicy")}</div>
-          <div className="settings-row-hint">
-            {lang === "ko"
-              ? "프리셋을 고르거나 위험 등급별로 세부 설정하세요."
-              : "Pick a preset, or fine-tune per risk level."}
-          </div>
-        </div>
-        <div className="policy-preset-bar">
-          {["cautious", "default", "bold", "custom"].map((p) => (
-            <button
-              key={p}
-              className={policy.preset === p ? "active" : ""}
-              onClick={() => p !== "custom" && applyPreset(p)}
-              disabled={p === "custom"}
-              title={p === "custom" ? (lang === "ko" ? "직접 수정하면 자동 전환됩니다" : "Auto-set when you customize") : ""}
-            >
-              {t(lang, "preset" + p[0].toUpperCase() + p.slice(1))}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="policy-grid">
-        <PolicyRow
-          lang={lang}
-          level="low"
-          value={policy.lowRisk}
-          options={["always-ask", "auto", "auto-trusted"]}
-          onChange={(v) => setLevel("lowRisk", v)}
-        />
-        <PolicyRow
-          lang={lang}
-          level="mid"
-          value={policy.midRisk}
-          options={["always-ask", "auto", "auto-trusted"]}
-          onChange={(v) => setLevel("midRisk", v)}
-        />
-        <PolicyRow
-          lang={lang}
-          level="high"
-          value="always-ask"
-          options={["always-ask"]}
-          locked
-        />
-      </div>
-
-      <div className="policy-lists">
-        <ChipList
-          label={t(lang, "trustedDirs")}
-          hint={t(lang, "trustedDirsHint")}
-          items={policy.trustedDirs}
-          onAdd={addDir}
-          onRemove={removeDir}
-          placeholder={t(lang, "addDir")}
-          chipClass="trust"
-        />
-        <ChipList
-          label={t(lang, "forbiddenPatterns")}
-          hint={t(lang, "forbiddenPatternsHint")}
-          items={policy.forbiddenPatterns}
-          onAdd={addPattern}
-          onRemove={removePattern}
-          placeholder={t(lang, "addPattern")}
-          chipClass="forbid"
-        />
-      </div>
-    </div>
-  );
-}
-
-function PolicyRow({ lang, level, value, options, onChange, locked }) {
-  const labels = {
-    "always-ask": t(lang, "actionAlwaysAsk"),
-    "auto":       t(lang, "actionAuto"),
-    "auto-trusted": t(lang, "actionAutoTrusted"),
-  };
-  return (
-    <div className={"policy-row risk-" + level + (locked ? " locked" : "")}>
-      <div className="policy-row-info">
-        <div className="policy-row-title">
-          <span className={"risk-dot " + level} />
-          {t(lang, "risk" + level[0].toUpperCase() + level.slice(1) + "Full")}
-          {locked && <span className="lock-tag">🔒</span>}
-        </div>
-        <div className="policy-row-hint">{t(lang, "risk" + level[0].toUpperCase() + level.slice(1) + "Desc")}</div>
-      </div>
-      <div className="policy-seg">
-        {options.map((opt) => (
-          <button
-            key={opt}
-            className={value === opt ? "active" : ""}
-            disabled={locked}
-            onClick={() => !locked && onChange(opt)}
-          >{labels[opt]}</button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ChipList({ label, hint, items, onAdd, onRemove, placeholder, chipClass }) {
-  const [text, setText] = React.useState("");
-  const submit = () => { onAdd(text); setText(""); };
-  return (
-    <div className="chip-list">
-      <div className="chip-list-h">
-        <div className="settings-row-label">{label}</div>
-        <div className="settings-row-hint">{hint}</div>
-      </div>
-      <div className="chip-list-items">
-        {items.map((it) => (
-          <span key={it} className={"chip-pill " + chipClass}>
-            <span>{it}</span>
-            <button className="chip-x" onClick={() => onRemove(it)} title="remove">
-              <Icon.x />
-            </button>
-          </span>
-        ))}
-      </div>
-      <div className="chip-list-add">
-        <input
-          className="chip-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder={placeholder}
-        />
-        <button className="btn btn-secondary" onClick={submit} disabled={!text.trim()}>+</button>
-      </div>
-    </div>
-  );
-}
-
-// ── Recent auto-approvals ────────────────────────────────────────────────
-function AutoApprovalLog({ lang, log }) {
-  return (
-    <div className="audit-box">
-      <div className="audit-h">
-        <div className="settings-row-label">{t(lang, "autoApproveLog")}</div>
-        <div className="settings-row-hint">{lang === "ko" ? "최근 20개" : "Last 20"}</div>
-      </div>
-      {log.length === 0 ? (
-        <div className="audit-empty">{t(lang, "noAutoApprovals")}</div>
-      ) : (
-        <div className="audit-rows">
-          {log.map((entry) => (
-            <div key={entry.id} className={"audit-row" + (entry.undone ? " undone" : "")}>
-              <span className="audit-time">{entry.at}</span>
-              <span className="audit-cmds">
-                {entry.commands.map((c) => c.cmd).join("  ·  ")}
-              </span>
-              {entry.undone && (
-                <span className="audit-tag">{lang === "ko" ? "되돌림" : "reverted"}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
 // ----- src/app.jsx -----
-// app.jsx — main app shell + state, using VS Code-style workspace store.
+// app.jsx ??main app shell + state, using VS Code-style workspace store.
 
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "accent": "#5DF18A",
-  "lang": "ko",
-  "modeDefault": "balanced"
+  "lang": "en"
 }/*EDITMODE-END*/;
 
 const ACCENT_OPTIONS = ["#5DF18A", "#9D6BFF", "#FF7849", "#5BAEFF", "#F25DAB"];
-
-const EXEC_OUTPUTS = {
-  "lsof -ti:3001 | xargs -r kill -9": [
-    { kind: "log", text: "94821" },
-    { kind: "log", text: "✓ process killed", color: "ok" },
-  ],
-  "pnpm dev:api": [
-    { kind: "log", text: "> aurora-api@0.4.2 dev:api" },
-    { kind: "log", text: "> tsx watch src/server.ts" },
-    { kind: "log", text: "[api] initializing kysely pool…", color: "dim" },
-    { kind: "log", text: "[api] loaded 12 routes" },
-    { kind: "log", text: "[api] listening on http://localhost:3001 ✓", color: "ok" },
-    { kind: "log", text: "[api] ready in 642ms", color: "ok" },
-  ],
-};
 
 function App() {
   const [t_, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -3875,36 +4152,137 @@ function App() {
   const accent = t_.accent;
   const stageRef = React.useRef(null);
   const scalerRef = React.useRef(null);
+  const windowRef = React.useRef(null);
 
-  React.useLayoutEffect(() => {
-    const fit = () => {
-      const stage = stageRef.current;
-      const scaler = scalerRef.current;
-      if (!stage || !scaler) return;
-      const sw = stage.clientWidth;
-      const sh = stage.clientHeight;
-      const scale = Math.min(sw / 1320, sh / 824, 1);
-      scaler.style.setProperty("--scale", scale);
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(document.documentElement);
-    return () => ro.disconnect();
+  // OS window-chrome variant (mac traffic lights vs Windows caption buttons).
+  // Start from a synchronous best guess, then refine via the Tauri runtime.
+  const [os, setOs] = React.useState(initialOs);
+  React.useEffect(() => {
+    let alive = true;
+    detectRuntimeOs().then((detected) => { if (alive) setOs(detected); });
+    return () => { alive = false; };
   }, []);
 
-  const [workspace, setWorkspace] = React.useState(WORKSPACE_INITIAL);
-  const [activeProject, setActiveProject] = React.useState(PROJECT);
+  const [windowControls, setWindowControls] = React.useState(initialRuntimeWindowControls);
+  React.useEffect(() => {
+    if (windowControls.available) return undefined;
+    let alive = true;
+    createRuntimeWindowControls().then((controls) => { if (alive) setWindowControls(controls); });
+    return () => { alive = false; };
+  }, [windowControls.available]);
+
+  const [maximized, setMaximized] = React.useState(false);
+
+  const onToggleMax = React.useCallback(async () => {
+    if (!windowControls.available) {
+      setMaximized((m) => !m);
+      return;
+    }
+
+    try {
+      await windowControls.toggleMaximize();
+      setMaximized((m) => !m);
+    } catch {
+      setMaximized((m) => !m);
+    }
+  }, [windowControls]);
+  const onMinimize = React.useCallback(() => {
+    windowControls.minimize().catch(() => undefined);
+  }, [windowControls]);
+  const onClose = React.useCallback(() => {
+    windowControls.close().catch(() => undefined);
+  }, [windowControls]);
+  const onStartDrag = React.useCallback(() => {
+    if (!windowControls.available) return;
+    windowControls.startDragging().catch(() => undefined);
+  }, [windowControls]);
+
+  // Responsive: measure the window's real (design-space) width and derive a
+  // width class that drives breadcrumb/pill compaction in CSS.
+  const [winW, setWinW] = React.useState(1320);
+  React.useEffect(() => {
+    const el = windowRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setWinW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const widthClass = winW < 940 ? "w-sm" : winW < 1180 ? "w-md" : "w-lg";
+
+  const [fallbackWorkbench, setFallbackWorkbench] = React.useState(createProjectWorkbench);
+  // Bridges provisional tabs to their eventual runtime owner so closing a tab
+  // before create resolves still disposes the backend session when it arrives.
+  const terminalCreateOwnersRef = React.useRef(new Map());
+  const terminalCreateInFlightRef = React.useRef(new Set());
+  const projectWorkspaces = useProjectWorkspaces({
+    fallbackProject: PROJECT,
+    readProjectOverview: readRuntimeProjectOverview,
+    createWorkbench: createProjectWorkbench,
+    workspaceService: workspaceRuntimeService,
+  });
+  const activeProject = projectWorkspaces.activeProject;
+  const activeProjectPath = projectWorkspaces.registry.activePath;
+  const activeWorkbench = projectWorkspaces.activeWorkbench || fallbackWorkbench;
+  const workspace = activeWorkbench.workspace;
+  const selectedFile = activeWorkbench.selectedFile;
+  const updateProjectWorkbench = projectWorkspaces.updateProjectWorkbench;
+  const getProjectWorkbench = projectWorkspaces.getProjectWorkbench;
+  const getActiveProjectWorkbench = projectWorkspaces.getActiveProjectWorkbench;
+  const setWorkspace = React.useCallback((updater) => {
+    const applyWorkspaceUpdate = (current) => {
+      const nextWorkspace = typeof updater === "function"
+        ? updater(current.workspace)
+        : updater;
+      return nextWorkspace === current.workspace
+        ? current
+        : { ...current, workspace: nextWorkspace };
+    };
+    if (activeProjectPath) {
+      updateProjectWorkbench(activeProjectPath, applyWorkspaceUpdate);
+      return;
+    }
+    setFallbackWorkbench(applyWorkspaceUpdate);
+  }, [activeProjectPath, updateProjectWorkbench]);
+  const setSelectedFile = React.useCallback((nextSelectedFile) => {
+    const updateSelection = (current) => current.selectedFile === nextSelectedFile
+      ? current
+      : { ...current, selectedFile: nextSelectedFile };
+    if (activeProjectPath) {
+      updateProjectWorkbench(activeProjectPath, updateSelection);
+      return;
+    }
+    setFallbackWorkbench(updateSelection);
+  }, [activeProjectPath, updateProjectWorkbench]);
+  const getOwnedWorkspace = React.useCallback((projectPath) => {
+    if (!projectPath) return fallbackWorkbench.workspace;
+    return getProjectWorkbench(projectPath)?.workspace || null;
+  }, [fallbackWorkbench.workspace, getProjectWorkbench]);
+  const updateOwnedWorkspace = React.useCallback((projectPath, updater) => {
+    if (!projectPath) return false;
+    return updateProjectWorkbench(projectPath, (current) => {
+      const nextWorkspace = updater(current.workspace);
+      return nextWorkspace === current.workspace
+        ? current
+        : { ...current, workspace: nextWorkspace };
+    });
+  }, [updateProjectWorkbench]);
   const [projectBusy, setProjectBusy] = React.useState(false);
   const [projectError, setProjectError] = React.useState(null);
   const [providers, setProviders] = React.useState(PROVIDERS_INIT);
   const [tasks, setTasks] = React.useState(TASKS_INIT(lang));
   const [history, setHistory] = React.useState(COMMAND_HISTORY_INIT);
-  const [messages, setMessages] = React.useState(CHAT_INIT(lang));
-  const [isTyping, setIsTyping] = React.useState(false);
-  const [mode, setMode] = React.useState(t_.modeDefault);
-  const [approval, setApproval] = React.useState(null);
-  const [oauth, setOauth] = React.useState(null);
-  const [executing, setExecuting] = React.useState(null);
+  const [agentSessionStore, setAgentSessionStore] = React.useState(() =>
+    ensureAgentWorkspace(readAgentSessionDirectory(lang), PROJECT, lang)
+  );
+  const agentContextCoordinatorRef = React.useRef(null);
+  if (!agentContextCoordinatorRef.current) {
+    agentContextCoordinatorRef.current = createAgentContextCoordinator();
+  }
+  const sessionCloseInFlightRef = React.useRef(new Set());
+  const providerConnectionGenerationsRef = React.useRef(new Map());
+  const providerCapabilityGenerationsRef = React.useRef(new Map());
+  const committedAgentContextOwnersRef = React.useRef(null);
+  const executing = null;
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [agentOpen, setAgentOpen] = React.useState(true);
   const [sidebarWidth, setSidebarWidth] = React.useState(264);
@@ -3913,6 +4291,20 @@ function App() {
   const AGENT_DEFAULT = 380;
   const SIDEBAR_BOUNDS = { min: 180, max: 440, collapse: Math.round(SIDEBAR_DEFAULT * 0.2) };
   const AGENT_BOUNDS   = { min: 240, max: 560, collapse: Math.round(AGENT_DEFAULT * 0.2) };
+
+  // Edge-triggered responsive reflow: collapse the agent panel below ~1180px
+  // and the sidebar below ~940px, re-opening when crossing back. Only fires on
+  // threshold crossings so manual toggles between breakpoints stick.
+  const prevWRef = React.useRef(winW);
+  React.useEffect(() => {
+    const w = winW;
+    const p = prevWRef.current;
+    prevWRef.current = w;
+    if (p >= 1180 && w < 1180) setAgentOpen(false);
+    else if (p < 1180 && w >= 1180) setAgentOpen(true);
+    if (p >= 940 && w < 940) setSidebarOpen(false);
+    else if (p < 940 && w >= 940) setSidebarOpen(true);
+  }, [winW]);
 
   // Resize a side panel by dragging the divider. Tracks pointer delta and
   // either snaps to bounds or collapses the panel if dragged past the
@@ -3924,8 +4316,8 @@ function App() {
     const startW = side === "left" ? sidebarWidth : agentWidth;
     const setW   = side === "left" ? setSidebarWidth : setAgentWidth;
     const setOpen = side === "left" ? setSidebarOpen : setAgentOpen;
-    // Account for transform scale on .gtum-scaler so 1px of pointer movement
-    // corresponds to 1px of design-space movement.
+    // Keep the drag math resilient if a future shell reintroduces transform
+    // scaling; today's shell fills the viewport with --scale resolving to 1.
     const scale = parseFloat(getComputedStyle(scalerRef.current).getPropertyValue("--scale")) || 1;
     document.body.classList.add(side === "left" ? "resizing-h-left" : "resizing-h-right");
 
@@ -3952,27 +4344,483 @@ function App() {
     window.addEventListener("pointerup", onUp);
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [activeProviderId, setActiveProviderId] = React.useState("claude");
-  const [parallelLimit, setParallelLimit] = React.useState(3);
-  const [approvalPolicy, setApprovalPolicy] = React.useState(APPROVAL_POLICY_INIT);
-  const [autoApprovalLog, setAutoApprovalLog] = React.useState([]);
-  const [toast, setToast] = React.useState(null);
-  const [streamResponses, setStreamResponses] = React.useState(true);
-  const activeModelId = providers.find((p) => p.id === activeProviderId)?.activeModel
-    || providers.find((p) => p.state === "connected")?.activeModel;
+  const [providerCapabilities, setProviderCapabilities] = React.useState({});
+  const [providerCapabilityRefreshRevisions, setProviderCapabilityRefreshRevisions] = React.useState({});
+  const activeAgentWorkspaceKey = agentWorkspaceKey(activeProject);
+  const activeAgentWorkspace = agentSessionStore[activeAgentWorkspaceKey] || null;
+  const activeAgentSession = activeAgentWorkspace?.sessions?.find(
+    (session) => session.id === activeAgentWorkspace.activeSessionId,
+  ) || activeAgentWorkspace?.sessions?.[0] || null;
+  const activeAgentSessionId = activeAgentSession?.id || null;
+  const activeProviderId = activeAgentSession?.providerId || "codex";
+  const activeProviderConnectionState =
+    providers.find((provider) => provider.id === activeProviderId)?.state || "disconnected";
+  const activeProviderCapabilityRefreshRevision =
+    providerCapabilityRefreshRevisions[activeProviderId] || 0;
+  const messages = activeAgentSession?.messages || [];
+  const activeAgentRequest = activeAgentSession?.request || createAgentRequestState();
+  const isTyping = activeAgentRequest.phase === "running";
+  const agentActivity = activeAgentRequest.activity || [];
+  const activeProviderCapabilities = providerCapabilities[activeProviderId] || null;
+  const selectedAgentModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
+  const activeAgentAttachments = activeAgentSession?.attachments?.[activeProviderId] || [];
+  const activeAgentExecutionCapabilities = effectiveAgentExecutionCapabilities(
+    activeProviderCapabilities,
+    selectedAgentModelId,
+    activeProviderId,
+  );
+  const agentReasoningLevel = normalizeAgentReasoningLevel(
+    activeAgentExecutionCapabilities,
+    activeAgentSession?.selectedReasoningLevels?.[activeProviderId],
+  );
+  const agentFastMode = Boolean(
+    activeAgentSession?.fastModes?.[activeProviderId]
+    && activeAgentExecutionCapabilities?.supportsFastMode,
+  );
+  const {
+    jobs: agentJobs,
+    registerJobs: registerAgentJobs,
+    cancelJob: cancelAgentJob,
+  } = useAgentJobLifecycle({
+    project: activeProject,
+    sessionId: activeAgentSessionId,
+    service: agentJobRuntimeService,
+  });
+  const {
+    fleet: projectAgentFleet,
+    registerJobs: registerFleetJobs,
+  } = useProjectAgentFleet({
+    projects: projectWorkspaces.rows.map((row) => row.project),
+    service: agentJobRuntimeService,
+  });
+  const agentSummariesByProjectPath = React.useMemo(() => Object.fromEntries(
+    projectWorkspaces.rows.map((row) => {
+      const workspaceEntry = agentSessionStore[row.path];
+      const localSignals = (workspaceEntry?.sessions || []).map((session) => ({
+        runningRequest: session.request?.phase === "running",
+        jobCreateInFlight: agentContextCoordinatorRef.current.hasPermissionInFlight({
+          projectPath: row.path,
+          sessionId: session.id,
+        }),
+        pendingPermissionCount: session.messages.filter((message) =>
+          message.suggestion?.commands?.length > 0 && !message.permissionDecision).length,
+        failedRequestCount: session.messages.filter((message) =>
+          String(message.id || "").endsWith("-agent-turn") &&
+          message.progress?.status === "failed").length,
+        completedRequestCount: session.messages.filter((message) =>
+          String(message.id || "").endsWith("-agent-turn") &&
+          message.progress?.status === "completed").length,
+      }));
+      const fleetEntry = projectAgentFleet.projectsByPath[row.path];
+      const detailErrorCount = row.path === activeAgentWorkspaceKey
+        ? agentJobs.filter((view) => view.logError || view.actionError).length
+        : 0;
+      return [row.path, summarizeProjectAgentActivity({
+        jobs: fleetEntry?.jobs || [],
+        localSignals,
+        listError: fleetEntry?.listError || null,
+        detailErrorCount,
+      })];
+    }),
+  ), [
+    activeAgentWorkspaceKey,
+    agentJobs,
+    agentSessionStore,
+    projectAgentFleet,
+    projectWorkspaces.rows,
+  ]);
 
-  const onSwitchModel = (providerId, modelId) => {
-    setActiveProviderId(providerId);
+  React.useEffect(() => {
+    writeAgentSessionDirectory(agentSessionStore);
+  }, [agentSessionStore]);
+
+  React.useEffect(() => {
+    const nextOwners = new Map();
+    for (const [projectPath, workspaceEntry] of Object.entries(agentSessionStore)) {
+      for (const session of workspaceEntry.sessions || []) {
+        const owner = { projectPath, sessionId: session.id };
+        nextOwners.set(projectAgentContextKey(owner), owner);
+      }
+    }
+
+    const previousOwners = committedAgentContextOwnersRef.current;
+    if (previousOwners) {
+      for (const [contextKey, owner] of previousOwners) {
+        if (!nextOwners.has(contextKey)) {
+          agentContextCoordinatorRef.current.clearContext(owner);
+        }
+      }
+    }
+    committedAgentContextOwnersRef.current = nextOwners;
+  }, [agentSessionStore]);
+
+  React.useEffect(() => {
+    setAgentSessionStore((prev) => ensureAgentWorkspace(prev, activeProject, lang));
+  }, [activeProject.name, activeProject.path, activeProject.runtimeBacked, lang]);
+
+  const updateAgentSession = React.useCallback((project, sessionId, updater) => {
+    setAgentSessionStore((prev) => {
+      const key = agentWorkspaceKey(project);
+      if (
+        sessionId &&
+        !prev[key]?.sessions?.some((session) => session.id === sessionId)
+      ) return prev;
+
+      const ensured = ensureAgentWorkspace(prev, project, lang);
+      const workspaceEntry = ensured[key];
+      const targetSessionId = sessionId
+        || workspaceEntry.activeSessionId
+        || workspaceEntry.sessions[0]?.id;
+      if (!targetSessionId) return ensured;
+      if (!workspaceEntry.sessions.some((session) => session.id === targetSessionId)) {
+        return ensured;
+      }
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          sessions: workspaceEntry.sessions.map((session) =>
+            session.id === targetSessionId
+              ? {
+                ...updater(session),
+                updatedAt: nowHm(),
+              }
+              : session
+          ),
+        },
+      };
+    });
+  }, [lang]);
+
+  const updateAgentSessionMessages = React.useCallback((project, sessionId, updater) => {
+    updateAgentSession(project, sessionId, (session) => ({
+      ...session,
+      messages: typeof updater === "function" ? updater(session.messages) : updater,
+    }));
+  }, [updateAgentSession]);
+
+  const setMessages = React.useCallback((updater) => {
+    const targetProject = activeProject;
+    const targetSessionId = activeAgentSessionId;
+    updateAgentSessionMessages(targetProject, targetSessionId, updater);
+  }, [activeAgentSessionId, activeProject, updateAgentSessionMessages]);
+
+  const selectAgentSession = React.useCallback((sessionId) => {
+    setAgentSessionStore((prev) => {
+      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const key = agentWorkspaceKey(activeProject);
+      const workspaceEntry = ensured[key];
+      if (!workspaceEntry.sessions.some((session) => session.id === sessionId)) return ensured;
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          activeSessionId: sessionId,
+        },
+      };
+    });
+  }, [activeProject, lang]);
+
+  const newAgentSession = React.useCallback(() => {
+    setAgentSessionStore((prev) => {
+      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const key = agentWorkspaceKey(activeProject);
+      const workspaceEntry = ensured[key];
+      const session = makeAgentSession(activeProject, lang, workspaceEntry.sessions.length + 1);
+
+      return {
+        ...ensured,
+        [key]: {
+          ...workspaceEntry,
+          activeSessionId: session.id,
+          sessions: [...workspaceEntry.sessions, session],
+        },
+      };
+    });
+  }, [activeProject, lang]);
+
+  const closeAgentSession = React.useCallback(async (sessionId) => {
+    const originProject = { ...activeProject };
+    const owner = agentContextOwner(originProject, sessionId);
+    if (!owner) return;
+    const contextKey = projectAgentContextKey(owner);
+    const coordinator = agentContextCoordinatorRef.current;
+    if (sessionCloseInFlightRef.current.has(contextKey)) return;
+    sessionCloseInFlightRef.current.add(contextKey);
+
+    try {
+      const keepSessionForRequest = () => {
+        updateAgentSessionMessages(originProject, sessionId, (prev) => [...prev, {
+          id: "session-close-" + Date.now(),
+          role: "assistant",
+          roleLabel: "System",
+          at: nowHm(),
+          content: "This session has a running provider request. Stop it or wait for it to finish before closing the session.",
+        }]);
+      };
+      if (coordinator.hasRequestInFlight(owner)) {
+        keepSessionForRequest();
+        return;
+      }
+      const createGenerationAtStart = coordinator.jobCreateGeneration(owner);
+      const hasCreateInFlight = () => coordinator.hasPermissionInFlight(owner);
+      const createStartedDuringClose = () =>
+        coordinator.jobCreateGeneration(owner) !== createGenerationAtStart;
+      const keepSessionForCreate = () => {
+        updateAgentSessionMessages(originProject, sessionId, (prev) => [...prev, {
+          id: "session-close-" + Date.now(),
+          role: "assistant",
+          roleLabel: "System",
+          at: nowHm(),
+          content: "This session is starting an Agent job. Wait for creation to finish before closing the session.",
+        }]);
+      };
+      if (hasCreateInFlight() || createStartedDuringClose()) {
+        keepSessionForCreate();
+        return;
+      }
+      if (coordinator.hasRequestInFlight(owner)) {
+        keepSessionForRequest();
+        return;
+      }
+
+      let sessionJobs = activeAgentSessionId === sessionId ? agentJobs : [];
+      if (originProject.runtimeBacked && agentJobRuntimeService.hasRuntime()) {
+        try {
+          sessionJobs = await agentJobRuntimeService.listProjectJobs(
+            originProject,
+            100,
+            sessionId,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          updateAgentSessionMessages(originProject, sessionId, (prev) => [...prev, {
+            id: "session-close-" + Date.now(),
+            role: "assistant",
+            roleLabel: "System",
+            at: nowHm(),
+            content: `Could not verify Agent jobs for this session, so it remains open: ${message}`,
+          }]);
+          return;
+        }
+      }
+
+      if (hasCreateInFlight() || createStartedDuringClose()) {
+        keepSessionForCreate();
+        return;
+      }
+
+      if (sessionJobs.some((job) => job.status === "running" || job.status === "cancelling")) {
+        updateAgentSessionMessages(originProject, sessionId, (prev) => [...prev, {
+          id: "session-close-" + Date.now(),
+          role: "assistant",
+          roleLabel: "System",
+          at: nowHm(),
+          content: "This session has a running Agent job. Cancel or finish the job before closing the session.",
+        }]);
+        return;
+      }
+
+      setAgentSessionStore((prev) => {
+        const ensured = ensureAgentWorkspace(prev, originProject, lang);
+        const key = agentWorkspaceKey(originProject);
+        const workspaceEntry = ensured[key];
+        if (workspaceEntry.sessions.length <= 1) return ensured;
+
+        const sessions = workspaceEntry.sessions.filter((session) => session.id !== sessionId);
+        const nextActiveSessionId = workspaceEntry.activeSessionId === sessionId
+          ? sessions[0]?.id
+          : workspaceEntry.activeSessionId;
+
+        return {
+          ...ensured,
+          [key]: {
+            ...workspaceEntry,
+            activeSessionId: nextActiveSessionId,
+            sessions,
+          },
+        };
+      });
+    } finally {
+      sessionCloseInFlightRef.current.delete(contextKey);
+    }
+  }, [activeAgentSessionId, activeProject, agentJobs, lang, updateAgentSessionMessages]);
+
+  const stopAgentRequest = React.useCallback(() => {
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    const owner = agentContextOwner(originProject, originSessionId);
+    if (!owner) return;
+    const generation = agentContextCoordinatorRef.current.stopRequest(owner);
+    const stoppedAtMs = Date.now();
+    updateAgentSession(originProject, originSessionId, (session) => ({
+      ...session,
+      request: stopAgentRequestState(
+        session.request || createAgentRequestState(),
+        generation,
+      ),
+      messages: session.messages.map((message) => {
+        if (message.progress?.status !== "running") return message;
+        const startedAtMs = message.progress.startedAtMs || stoppedAtMs;
+
+        return {
+          ...message,
+          at: nowHmAt(stoppedAtMs),
+          progress: {
+            status: "failed",
+            steps: message.progress.steps || [],
+          },
+          answerMeta: {
+            answeredAt: nowHmAt(stoppedAtMs),
+            elapsedMs: stoppedAtMs - startedAtMs,
+          },
+          content: "Stopped by user.",
+        };
+      }),
+    }));
+  }, [activeAgentSessionId, activeProject, updateAgentSession]);
+
+  const selectAgentReasoningLevel = React.useCallback((reasoningLevel) => {
+    if (
+      reasoningLevel == null
+      && activeAgentExecutionCapabilities?.usesModelExecutionOptions
+    ) {
+      updateAgentSession(activeProject, activeAgentSessionId, (session) => {
+        const selectedReasoningLevels = sanitizeSelectedAgentReasoningLevels(
+          session.selectedReasoningLevels,
+        );
+        const nextSelectedReasoningLevels = { ...selectedReasoningLevels };
+        delete nextSelectedReasoningLevels[activeProviderId];
+        return {
+          ...session,
+          selectedReasoningLevels: nextSelectedReasoningLevels,
+        };
+      });
+      return;
+    }
+
+    const capability = reasoningLevelCapability(
+      activeAgentExecutionCapabilities,
+      reasoningLevel,
+    );
+    if (!capability) return;
+
+    updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+      ...session,
+      selectedReasoningLevels: {
+        ...sanitizeSelectedAgentReasoningLevels(session.selectedReasoningLevels),
+        [activeProviderId]: capability.level,
+      },
+    }));
+  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
+
+  const selectAgentFastMode = React.useCallback((fastMode) => {
+    if (!activeAgentExecutionCapabilities?.supportsFastMode) return;
+
+    updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+      ...session,
+      fastModes: {
+        ...sanitizeAgentFastModes(session.fastModes),
+        [activeProviderId]: Boolean(fastMode),
+      },
+    }));
+  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
+
+  const selectAgentProvider = React.useCallback((providerId) => {
+    if (!providers.some((provider) => provider.id === providerId)) return;
+    updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+      ...session,
+      providerId,
+    }));
+  }, [activeAgentSessionId, activeProject, providers, updateAgentSession]);
+
+  const closeRuntimeTabs = React.useCallback((tabs) => {
+    for (const tab of tabs) {
+      const registeredOwner = terminalCreateOwnersRef.current.get(tab?.id);
+      if (tab?.id) {
+        terminalCreateOwnersRef.current.delete(tab.id);
+        terminalCreateInFlightRef.current.delete(tab.id);
+      }
+      const projectPath = tab?.terminalSessionId != null
+        ? tab.projectPath
+        : registeredOwner?.projectPath;
+      const terminalSessionId = tab?.terminalSessionId ?? registeredOwner?.terminalSessionId;
+      if (
+        typeof projectPath !== "string" ||
+        projectPath.trim().length === 0 ||
+        terminalSessionId == null
+      ) continue;
+      const owner = {
+        projectPath,
+        terminalSessionId,
+      };
+      terminalRuntimeService.closeSession(owner).catch(() => undefined);
+    }
+  }, []);
+
+  const invalidateProviderCapabilities = React.useCallback((providerId) => {
+    const generation = (providerCapabilityGenerationsRef.current.get(providerId) || 0) + 1;
+    providerCapabilityGenerationsRef.current.set(providerId, generation);
+    setProviderCapabilities((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, providerId)) return prev;
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
+    return generation;
+  }, []);
+  const refreshProviderCapabilities = React.useCallback((providerId) => {
+    invalidateProviderCapabilities(providerId);
+    setProviderCapabilityRefreshRevisions((prev) => ({
+      ...prev,
+      [providerId]: (prev[providerId] || 0) + 1,
+    }));
+  }, [invalidateProviderCapabilities]);
+  const reconcileProviderCapabilities = React.useCallback((connection) => {
+    if (connection.status === "connected") {
+      refreshProviderCapabilities(connection.provider);
+    } else {
+      invalidateProviderCapabilities(connection.provider);
+    }
+  }, [invalidateProviderCapabilities, refreshProviderCapabilities]);
+  const applyProviderConnection = React.useCallback((connection) => {
+    setProviders((prev) => mergeRuntimeProviderConnections(prev, [connection]));
+    reconcileProviderCapabilities(connection);
+  }, [reconcileProviderCapabilities]);
+  const markProviderError = React.useCallback((providerId, message) => {
+    invalidateProviderCapabilities(providerId);
+    setProviders((prev) => prev.map((p) => p.id === providerId
+      ? { ...p, state: "error", lastError: message, expiresInDays: null }
+      : p));
+  }, [invalidateProviderCapabilities]);
+  const onDisconnect = async (providerId) => {
+    const generation = (providerConnectionGenerationsRef.current.get(providerId) || 0) + 1;
+    providerConnectionGenerationsRef.current.set(providerId, generation);
+    invalidateProviderCapabilities(providerId);
+    const isCurrent = () => providerConnectionGenerationsRef.current.get(providerId) === generation;
+    if (agentAuthRuntimeService.hasRuntime()) {
+      try {
+        const connection = await agentAuthRuntimeService.disconnect(providerId);
+        if (!isCurrent()) return;
+        applyProviderConnection(connection);
+        return;
+      } catch (error) {
+        if (!isCurrent()) return;
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError(providerId, message);
+        return;
+      }
+    }
+
     setProviders((prev) => prev.map((p) =>
-      p.id === providerId ? { ...p, activeModel: modelId } : p));
-  };
-  const onDisconnect = (providerId) => {
-    setProviders((prev) => prev.map((p) =>
-      p.id === providerId ? { ...p, state: "disconnected", scope: [], expiresInDays: null } : p));
+      p.id === providerId
+        ? { ...p, state: "disconnected", scope: [], credentialSource: null, expiresInDays: null }
+        : p));
   };
 
   React.useEffect(() => {
-    setMessages(CHAT_INIT(lang));
     setTasks(TASKS_INIT(lang));
   }, [lang]);
   React.useEffect(() => {
@@ -3981,25 +4829,323 @@ function App() {
   React.useEffect(() => {
     window.__GTUM_BACKEND_BRIDGE__ = projectRuntimeService.getBridgeState(activeProject);
   }, [activeProject]);
+  React.useEffect(() => {
+    if (!agentAuthRuntimeService.hasRuntime()) return undefined;
 
-  const pushProjectMessage = (message) => {
-    setMessages((prev) => [...prev, {
+    let cancelled = false;
+    const generationsAtStart = new Map(providerConnectionGenerationsRef.current);
+    agentAuthRuntimeService.listConnections()
+      .then((connections) => {
+        if (cancelled) return;
+        const currentConnections = connections.filter((connection) =>
+          (providerConnectionGenerationsRef.current.get(connection.provider) || 0)
+            === (generationsAtStart.get(connection.provider) || 0));
+        currentConnections.forEach(reconcileProviderCapabilities);
+        setProviders((prev) => mergeRuntimeProviderConnections(prev, currentConnections));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setProviders((prev) => prev.map((provider) => {
+          const generationAtStart = generationsAtStart.get(provider.id) || 0;
+          const currentGeneration = providerConnectionGenerationsRef.current.get(provider.id) || 0;
+          if (
+            currentGeneration !== generationAtStart ||
+            provider.state === "connected" ||
+            provider.state === "pending"
+          ) return provider;
+
+          return {
+            ...provider,
+            state: "error",
+            lastError: message,
+            expiresInDays: null,
+          };
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reconcileProviderCapabilities]);
+  React.useEffect(() => {
+    if (
+      !agentSuggestionRuntimeService.hasRuntime()
+      || activeProviderConnectionState !== "connected"
+    ) return undefined;
+
+    let cancelled = false;
+    const providerId = activeProviderId;
+    const capabilityGeneration =
+      (providerCapabilityGenerationsRef.current.get(providerId) || 0) + 1;
+    const connectionGeneration = providerConnectionGenerationsRef.current.get(providerId) || 0;
+    providerCapabilityGenerationsRef.current.set(providerId, capabilityGeneration);
+    const isCurrent = () => (
+      !cancelled
+      && providerCapabilityGenerationsRef.current.get(providerId) === capabilityGeneration
+      && (providerConnectionGenerationsRef.current.get(providerId) || 0) === connectionGeneration
+    );
+    agentSuggestionRuntimeService.readProviderCapabilities(providerId)
+      .then((capabilities) => {
+        if (!isCurrent()) return;
+        setProviderCapabilities((prev) => ({
+          ...prev,
+          [capabilities.provider]: capabilities,
+        }));
+      })
+      .catch((error) => {
+        if (!isCurrent()) return;
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError(providerId, message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeProviderCapabilityRefreshRevision,
+    activeProviderConnectionState,
+    activeProviderId,
+    markProviderError,
+  ]);
+  React.useEffect(() => {
+    const capabilities = providerCapabilities[activeProviderId] || null;
+    const storedModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
+    if (
+      !activeAgentSessionId ||
+      !capabilities?.supportsModelSelection ||
+      !sanitizedAgentModelId(storedModelId) ||
+      storedAgentModel(capabilities, storedModelId, activeProviderId)
+    ) return;
+
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    updateAgentSession(originProject, originSessionId, (session) => {
+      const selectedModels = sanitizeSelectedAgentModels(session.selectedModels);
+      const currentStoredModelId = selectedModels[activeProviderId];
+      if (
+        !currentStoredModelId ||
+        storedAgentModel(capabilities, currentStoredModelId, activeProviderId)
+      ) return session;
+
+      const nextSelectedModels = { ...selectedModels };
+      delete nextSelectedModels[activeProviderId];
+      return {
+        ...session,
+        selectedModels: nextSelectedModels,
+      };
+    });
+  }, [
+    activeAgentSession?.selectedModels,
+    activeAgentSessionId,
+    activeProject,
+    activeProviderId,
+    providerCapabilities,
+    updateAgentSession,
+  ]);
+  React.useEffect(() => {
+    if (!terminalRuntimeService.hasRuntime()) return undefined;
+
+    let cancelled = false;
+    let nextSummaryTimeout = null;
+    const pollRuntimeTerminals = async () => {
+      const mountedWorkbench = getActiveProjectWorkbench();
+      const runtimeTabs = allTabs(mountedWorkbench?.workspace || WORKSPACE_INITIAL)
+        .map(({ tab }) => tab)
+        .filter((tab) =>
+          tab?.runtimeBacked &&
+          typeof tab.projectPath === "string" &&
+          tab.projectPath.trim().length > 0 &&
+          tab.terminalSessionId != null
+        );
+
+      for (const tab of runtimeTabs) {
+        const owner = {
+          projectPath: tab.projectPath,
+          terminalSessionId: tab.terminalSessionId,
+        };
+        try {
+          const logs = await terminalRuntimeService.readLogs(owner, 400);
+          if (cancelled) return;
+          updateOwnedWorkspace(owner.projectPath, (current) => updateTab(current, tab.id, (currentTab) => {
+            if (
+              currentTab.projectPath !== owner.projectPath ||
+              currentTab.terminalSessionId !== owner.terminalSessionId
+            ) {
+              return currentTab;
+            }
+            if (
+              currentTab.lastLogLineCount === logs.logLineCount &&
+              currentTab.runtimeUpdatedAt === logs.updatedAt &&
+              currentTab.status === logs.status
+            ) {
+              return currentTab;
+            }
+
+            return {
+              ...currentTab,
+              status: logs.status,
+              runtimeStatus: logs.runtimeStatus,
+              lastLogLineCount: logs.logLineCount,
+              runtimeUpdatedAt: logs.updatedAt,
+              lines: logs.lines.length > 0 ? logs.lines : currentTab.lines,
+            };
+          }));
+        } catch (error) {
+          if (cancelled) return;
+          const message = error instanceof Error ? error.message : String(error);
+          updateOwnedWorkspace(owner.projectPath, (current) => updateTab(current, tab.id, (currentTab) => {
+            if (
+              currentTab.projectPath !== owner.projectPath ||
+              currentTab.terminalSessionId !== owner.terminalSessionId
+            ) {
+              return currentTab;
+            }
+            return {
+              ...currentTab,
+              status: "failed",
+              lines: [
+                ...currentTab.lines,
+                { kind: "log", text: `terminal read failed: ${message}`, color: "err" },
+              ],
+            };
+          }));
+        }
+      }
+    };
+
+    const pollAndSchedule = async () => {
+      try {
+        await pollRuntimeTerminals();
+      } finally {
+        if (!cancelled) {
+          nextSummaryTimeout = window.setTimeout(() => {
+            void pollAndSchedule();
+          }, 1000);
+        }
+      }
+    };
+    void pollAndSchedule();
+
+    return () => {
+      cancelled = true;
+      if (nextSummaryTimeout != null) window.clearTimeout(nextSummaryTimeout);
+    };
+  }, [getActiveProjectWorkbench, updateOwnedWorkspace]);
+
+  const pushProjectMessage = React.useCallback((message, targetProject = activeProject, targetSessionId = activeAgentSessionId) => {
+    updateAgentSessionMessages(targetProject, targetSessionId, (prev) => [...prev, {
       id: "project-" + Date.now(),
       role: "assistant",
-      roleLabel: lang === "ko" ? "시스템" : "System",
+      roleLabel: "System",
       at: nowHm(),
       content: message,
     }]);
-  };
+  }, [activeAgentSessionId, activeProject, updateAgentSessionMessages]);
+
+  React.useEffect(() => {
+    if (!projectWorkspaces.restoreError) return;
+    pushProjectMessage(`Could not restore the workspace: ${projectWorkspaces.restoreError}`);
+  }, [projectWorkspaces.restoreError, pushProjectMessage]);
+
+  const prepareProjectClose = React.useCallback(async (projectPath) => {
+    const coordinator = agentContextCoordinatorRef.current;
+    const closeToken = coordinator.tryBeginProjectClose(projectPath);
+    if (!closeToken) {
+      return {
+        blocked: true,
+        reason: projectCloseBlockReasons.agentRequest,
+      };
+    }
+
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      coordinator.finishProjectClose(closeToken);
+    };
+    const blocked = (reason) => ({ blocked: true, reason, release });
+    const localAudit = (jobs = [], terminals = []) => {
+      const workspaceEntry = agentSessionStore[projectPath];
+      const provisionalTerminalTabIds = new Set(
+        [...terminalCreateInFlightRef.current].filter((tabId) =>
+          terminalCreateOwnersRef.current.get(tabId)?.projectPath === projectPath
+        ),
+      );
+      return auditProjectCloseSafety({
+        sessions: workspaceEntry?.sessions || [],
+        workbench: getProjectWorkbench(projectPath),
+        provisionalTerminalTabIds,
+        jobs,
+        terminals,
+      });
+    };
+
+    const initialAudit = localAudit();
+    if (initialAudit.blocked) return blocked(initialAudit.reason);
+
+    const projectEntry = projectWorkspaces.registry.entriesByPath[projectPath];
+    const projectOwner = projectEntry?.project?.runtimeBacked
+      ? projectEntry.project
+      : { path: projectPath, runtimeBacked: true };
+    let jobs;
+    try {
+      jobs = await agentJobRuntimeService.listProjectJobs(projectOwner, 100);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return blocked(`${projectCloseBlockReasons.verification} Agent jobs: ${message}`);
+    }
+
+    let terminals;
+    try {
+      terminals = await terminalRuntimeService.listSessions(projectPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return blocked(`${projectCloseBlockReasons.verification} Terminals: ${message}`);
+    }
+
+    const finalAudit = localAudit(jobs, terminals);
+    return finalAudit.blocked
+      ? blocked(finalAudit.reason)
+      : { blocked: false, reason: null, release };
+  }, [agentSessionStore, getProjectWorkbench, projectWorkspaces.registry.entriesByPath]);
+
+  const handleSelectProject = React.useCallback((path) => {
+    void projectWorkspaces.activateProject(path);
+  }, [projectWorkspaces.activateProject]);
+
+  const handleCloseProject = React.useCallback((path) => {
+    void projectWorkspaces.closeProject(path, prepareProjectClose).then((result) => {
+      if (!result.closed) return;
+      for (const [tabId, owner] of terminalCreateOwnersRef.current) {
+        if (owner.projectPath !== path) continue;
+        terminalCreateOwnersRef.current.delete(tabId);
+        terminalCreateInFlightRef.current.delete(tabId);
+      }
+      setAgentSessionStore((current) => {
+        if (!Object.hasOwn(current, path)) return current;
+        const next = { ...current };
+        delete next[path];
+        return next;
+      });
+    });
+  }, [prepareProjectClose, projectWorkspaces.closeProject]);
 
   const handleOpenProject = async () => {
     setProjectBusy(true);
     setProjectError(null);
     try {
-      const selectedPath = await selectRuntimeProjectFolder(activeProject.path);
+      if (!projectRuntimeService.hasRuntime()) {
+        pushProjectMessage("Opening a real project folder is available in the installed desktop app.");
+        return;
+      }
+      const selectedPath = await selectRuntimeProjectFolder(
+        activeProject.path,
+        projectRuntimeService.hasRuntime(),
+      );
       if (!selectedPath) return;
-      const nextProject = await readRuntimeProjectOverview(selectedPath);
-      setActiveProject(nextProject);
+      const nextProject = await projectWorkspaces.openProject(selectedPath);
+      if (!nextProject) return;
       setHistory((prev) => [...prev, {
         at: nowHm(),
         tab: "workspace",
@@ -4009,19 +5155,27 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setProjectError(message);
-      pushProjectMessage(lang === "ko"
-        ? `프로젝트를 열지 못했어: ${message}`
-        : `Could not open the project: ${message}`);
+      pushProjectMessage(`Could not open the project: ${message}`);
     } finally {
       setProjectBusy(false);
     }
   };
 
   const handleOpenFile = async (path, name) => {
+    const originProject = { ...activeProject };
+    const ownerPath = activeProjectPath || originProject.path;
     setProjectError(null);
     try {
-      const tab = await readRuntimeProjectFile(activeProject, path, name);
-      setWorkspace((w) => openFile(w, w.activeGroupId, tab));
+      const tab = await readRuntimeProjectFile(originProject, path, name);
+      if (ownerPath) {
+        updateOwnedWorkspace(ownerPath, (current) => openFile(
+          current,
+          current.activeGroupId,
+          tab,
+        ));
+      } else {
+        setWorkspace((current) => openFile(current, current.activeGroupId, tab));
+      }
       setHistory((prev) => [...prev, {
         at: nowHm(),
         tab: "editor",
@@ -4031,13 +5185,370 @@ function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setProjectError(message);
-      pushProjectMessage(lang === "ko"
-        ? `파일을 열지 못했어: ${message}`
-        : `Could not open the file: ${message}`);
+      pushProjectMessage(`Could not open the file: ${message}`);
     }
   };
 
-  // ── workspace actions (thin wrappers around the pure store) ──────────
+  const requestRuntimeAgentSuggestions = React.useCallback(async (
+    text,
+    messageId,
+    requestToken,
+    requestOwnerSnapshot,
+    requestOptionsSnapshot,
+  ) => {
+    const {
+      project: originProject,
+      sessionId: originSessionId,
+      activeTab: originTab,
+    } = requestOwnerSnapshot;
+    const {
+      provider: originProviderId,
+      model: selectedModelId,
+      attachments,
+      reasoningLevel,
+      fastMode,
+    } = requestOptionsSnapshot;
+    const originProviderLabel = providerDisplayName(originProviderId);
+    const turnId = messageId + "-agent-turn";
+    const isCurrentRequest = () =>
+      agentContextCoordinatorRef.current.isRequestCurrent(requestToken);
+    const startedAtMs = Date.now();
+    const reasoningLabel = reasoningLevel
+      ? formatReasoningLevelLabel(reasoningLevel)
+      : "runtime default";
+    const runningSteps = makeAgentProgressSteps({
+      project: originProject,
+      activeTab: originTab,
+      providerId: originProviderId,
+      model: selectedModelId,
+      attachments,
+      reasoningLabel,
+      fastMode,
+    });
+    const completedSteps = [
+      ...runningSteps,
+      {
+        id: "finalizing",
+        label: "Preparing answer for the agent panel",
+        detail: "Formatting the runtime response",
+      },
+    ];
+    updateAgentSession(originProject, originSessionId, (session) => ({
+      ...session,
+      request: beginAgentRequest(
+        session.request || createAgentRequestState(),
+        requestToken.generation,
+        turnId,
+        ["activityPreparing"],
+      ),
+      attachments: {
+        ...(session.attachments || {}),
+        [originProviderId]: [],
+      },
+      messages: [...session.messages, {
+        id: turnId,
+        role: "assistant",
+        roleLabel: originProviderLabel,
+        at: nowHm(),
+        progress: {
+          status: "running",
+          steps: runningSteps.slice(0, 1),
+          startedAtMs,
+        },
+      }],
+    }));
+    const revealRunningSteps = (steps) => {
+      if (!isCurrentRequest()) return;
+      updateAgentSession(originProject, originSessionId, (session) => ({
+        ...session,
+        request: updateAgentRequestActivity(
+          session.request || createAgentRequestState(),
+          requestToken.generation,
+          [],
+        ),
+        messages: session.messages.map((message) =>
+          message.id === turnId && message.progress?.status === "running"
+            ? {
+                ...message,
+                progress: {
+                  status: "running",
+                  steps,
+                  startedAtMs,
+                },
+              }
+            : message
+        ),
+      }));
+    };
+    const updateOriginMessages = (updater) => {
+      updateAgentSessionMessages(originProject, originSessionId, updater);
+    };
+
+    try {
+      await waitForAgentProgressStage();
+      if (!isCurrentRequest()) return;
+      revealRunningSteps(runningSteps.slice(0, 2));
+
+      const suggestionsResultPromise = Promise.resolve(agentSuggestionRuntimeService.requestSuggestions({
+          provider: originProviderId,
+          agentSessionId: originSessionId,
+          project: originProject,
+          activeTab: originTab,
+          userTask: text,
+          model: selectedModelId,
+          attachments,
+          reasoningLevel,
+          fastMode,
+        }))
+        .then((suggestions) => ({ suggestions }))
+        .catch((error) => ({ error }));
+
+      await waitForAgentProgressStage();
+      if (!isCurrentRequest()) return;
+      revealRunningSteps(runningSteps);
+
+      const suggestionsResult = await suggestionsResultPromise;
+      if (!isCurrentRequest()) return;
+      if (suggestionsResult.error) {
+        throw suggestionsResult.error;
+      }
+
+      const suggestions = suggestionsResult.suggestions;
+      const actionableSuggestions = suggestions.filter((suggestion) => suggestion.commands.length > 0);
+      const errorSuggestions = suggestions.filter((suggestion) => suggestion.error && suggestion.commands.length === 0);
+      const replySuggestions = suggestions.filter((suggestion) => !suggestion.error && suggestion.commands.length === 0);
+      const primarySuggestion = actionableSuggestions[0] || null;
+      const primaryReply = replySuggestions[0] || null;
+
+      if (errorSuggestions.length > 0 && !primarySuggestion) {
+        const errorText = errorSuggestions.map((suggestion) => suggestion.error).filter(Boolean).join("\n");
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        updateOriginMessages((prev) => prev.map((message) => message.id === turnId
+          ? {
+              ...message,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "failed",
+                steps: completedSteps,
+              },
+              answerMeta,
+              content: `${originProviderLabel} could not produce a safe command: ${errorText}`,
+            }
+          : message));
+        return;
+      }
+
+      if (primaryReply && !primarySuggestion) {
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        const replyText = primaryReply.title || primaryReply.note || "Done.";
+        const decisionEvent = parseNumberedChoiceEvent(replyText);
+        updateOriginMessages((prev) => prev.map((message) => message.id === turnId
+          ? {
+              ...message,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "completed",
+                steps: [],
+              },
+              answerMeta,
+              content: decisionEvent?.prompt || replyText,
+              decisionEvent,
+            }
+          : message));
+        return;
+      }
+
+      if (!primarySuggestion) {
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        updateOriginMessages((prev) => prev.map((message) => message.id === turnId
+          ? {
+              ...message,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "failed",
+                steps: completedSteps,
+              },
+              answerMeta,
+              content: `${originProviderLabel} did not return an executable suggestion.`,
+            }
+          : message));
+        return;
+      }
+
+      const answerMeta = makeAgentAnswerMeta(startedAtMs);
+      updateOriginMessages((prev) => prev.map((message) => message.id === turnId
+        ? {
+            ...message,
+            at: answerMeta.answeredAt,
+            progress: {
+              status: "completed",
+              steps: completedSteps,
+            },
+            answerMeta,
+            content: "",
+            suggestion: primarySuggestion,
+          }
+        : message));
+
+      if (actionableSuggestions.length > 1) {
+        updateOriginMessages((prev) => [
+          ...prev,
+          ...actionableSuggestions.slice(1).map((suggestion, index) => ({
+            id: messageId + "-runtime-extra-" + index,
+            role: "assistant",
+            roleLabel: originProviderLabel,
+            at: answerMeta.answeredAt,
+            progress: {
+              status: "completed",
+              steps: [],
+            },
+            answerMeta,
+            content: "",
+            suggestion,
+          })),
+        ]);
+      }
+    } catch (error) {
+      if (!isCurrentRequest()) return;
+      const message = error instanceof Error ? error.message : String(error);
+      let refreshedConnection = false;
+      if (agentAuthRuntimeService.hasRuntime()) {
+        try {
+          const connections = await agentAuthRuntimeService.listConnections();
+          if (!isCurrentRequest()) return;
+          const connection = connections.find((candidate) => candidate.provider === originProviderId);
+          if (connection) {
+            applyProviderConnection(connection);
+            refreshedConnection = true;
+          }
+        } catch {
+          // Fall back to the runtime error text when the auth refresh itself is unavailable.
+        }
+      }
+      if (!refreshedConnection && isProviderConnectionFailure(message)) {
+        markProviderError(originProviderId, message);
+      }
+      const answerMeta = makeAgentAnswerMeta(startedAtMs);
+      updateOriginMessages((prev) => prev.map((entry) => entry.id === turnId
+        ? {
+            ...entry,
+            at: answerMeta.answeredAt,
+            progress: {
+              status: "failed",
+              steps: completedSteps,
+            },
+            answerMeta,
+            content: `Could not request ${originProviderLabel} suggestions: ${message}`,
+          }
+        : entry));
+    } finally {
+      if (agentContextCoordinatorRef.current.finishRequest(requestToken)) {
+        updateAgentSession(originProject, originSessionId, (session) => ({
+          ...session,
+          request: completeAgentRequest(
+            session.request || createAgentRequestState(),
+            requestToken.generation,
+          ),
+        }));
+      }
+    }
+  }, [
+    applyProviderConnection,
+    markProviderError,
+    updateAgentSession,
+    updateAgentSessionMessages,
+  ]);
+
+  const handlePickAgentAttachment = React.useCallback(async () => {
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    const originProviderId = activeProviderId;
+    if (!originSessionId) return;
+    try {
+      const attachments = await pickAgentAttachments(providerCapabilities[originProviderId] || null);
+      if (attachments.length === 0) return;
+      updateAgentSession(originProject, originSessionId, (session) => ({
+        ...session,
+        attachments: {
+          ...(session.attachments || {}),
+          [originProviderId]: [
+            ...(session.attachments?.[originProviderId] || []),
+            ...attachments,
+          ],
+        },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      updateAgentSessionMessages(originProject, originSessionId, (prev) => [...prev, {
+        id: "attach-error-" + Date.now(),
+        role: "assistant",
+        roleLabel: providerDisplayName(originProviderId),
+        at: nowHm(),
+        content: `Could not attach the selected file: ${message}`,
+      }]);
+    }
+  }, [activeAgentSessionId, activeProject, activeProviderId, providerCapabilities, updateAgentSession, updateAgentSessionMessages]);
+
+  const handleRemoveAgentAttachment = React.useCallback((path) => {
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    if (!originSessionId) return;
+    updateAgentSession(originProject, originSessionId, (session) => ({
+      ...session,
+      attachments: {
+        ...(session.attachments || {}),
+        [activeProviderId]: (session.attachments?.[activeProviderId] || [])
+          .filter((attachment) => attachment.path !== path),
+      },
+    }));
+  }, [activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
+
+  const appendProviderUnavailableMessage = React.useCallback((providerId, messageId) => {
+    const provider = providers.find((p) => p.id === providerId);
+    const label = provider?.label || providerId;
+    setMessages((prev) => [...prev, {
+      id: messageId + "-provider-unavailable",
+      role: "assistant",
+      roleLabel: label,
+      at: nowHm(),
+      content: `${label} is unavailable in this desktop runtime. GTUM will not continue with a mock reply.`,
+    }]);
+  }, [lang, providers, setMessages]);
+
+  const appendProviderConnectionRequiredMessage = React.useCallback((providerId, messageId) => {
+    const label = providerDisplayName(providerId);
+    setMessages((prev) => [...prev, {
+      id: messageId + "-provider-connection-required",
+      role: "assistant",
+      roleLabel: label,
+      at: nowHm(),
+      content: `Connect or reconnect ${label} in Settings before sending a provider request.`,
+    }]);
+  }, [setMessages]);
+
+  const appendRuntimeProjectRequiredMessage = React.useCallback((providerId, messageId) => {
+    const label = providerDisplayName(providerId);
+    setMessages((prev) => [...prev, {
+      id: messageId + "-runtime-project-required",
+      role: "assistant",
+      roleLabel: label,
+      at: nowHm(),
+      content: `Open a real local folder as a project in the desktop app before running a ${label} request.`,
+    }]);
+  }, [setMessages]);
+
+  const appendRuntimeUnavailableMessage = React.useCallback((providerId, messageId) => {
+    const label = providerDisplayName(providerId);
+    setMessages((prev) => [...prev, {
+      id: messageId + "-runtime-unavailable",
+      role: "assistant",
+      roleLabel: label,
+      at: nowHm(),
+      content: `Real ${label} requests only run in the desktop runtime. Open the desktop app, choose a real local project folder, and connect ${label}.`,
+    }]);
+  }, [setMessages]);
+
+  // ???? workspace actions (thin wrappers around the pure store) ????????????????????
   const actions = React.useMemo(() => ({
     setActiveTab: (gId, tId) => setWorkspace((w) => setActiveTab(w, gId, tId)),
     setActiveGroup: (gId) => setWorkspace((w) => setActiveGroup(w, gId)),
@@ -4050,197 +5561,495 @@ function App() {
     moveTabToNewGroup: (gId, tId, pos) => setWorkspace((w) => moveTabToNewGroup(w, gId, tId, pos)),
     splitGroup: (gId, pos) => setWorkspace((w) => splitGroup(w, gId, pos)),
     dropTabOnEdge: (tId, fromG, toG, pos) => setWorkspace((w) => dropTabOnEdge(w, tId, fromG, toG, pos)),
-    closeTab: (gId, tId) => setWorkspace((w) => closeTab(w, gId, tId)),
-    closeOtherTabs: (gId, tId) => setWorkspace((w) => closeOtherTabs(w, gId, tId)),
-    closeTabsToRight: (gId, tId) => setWorkspace((w) => closeTabsToRight(w, gId, tId)),
-    closeTabsToLeft: (gId, tId) => setWorkspace((w) => closeTabsToLeft(w, gId, tId)),
-    closeAllTabs: (gId) => setWorkspace((w) => closeAllTabs(w, gId)),
-    newTab: (gId) => setWorkspace((w) => openTab(w, gId, {
-      title: lang === "ko" ? "새 탭" : "new",
-      cwd: ".",
-      lines: [{ kind: "log", text: `${activeProject.path} (${activeProject.branch}) $`, color: "dim" }],
-    })),
-  }), [lang, activeProject.path, activeProject.branch]);
+    resizeSplit: (splitPath, sizes) => setWorkspace((w) => resizeSplit(w, splitPath, sizes)),
+    closeTab: (gId, tId) => {
+      const found = findTab(getOwnedWorkspace(activeProjectPath) || WORKSPACE_INITIAL, tId);
+      if (found?.tab) closeRuntimeTabs([found.tab]);
+      setWorkspace((w) => closeTab(w, gId, tId));
+    },
+    closeOtherTabs: (gId, tId) => {
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
+      if (group) closeRuntimeTabs(group.tabs.filter((tab) => tab.id !== tId));
+      setWorkspace((w) => closeOtherTabs(w, gId, tId));
+    },
+    closeTabsToRight: (gId, tId) => {
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
+      if (group) {
+        const idx = group.tabs.findIndex((tab) => tab.id === tId);
+        closeRuntimeTabs(idx >= 0 ? group.tabs.slice(idx + 1) : []);
+      }
+      setWorkspace((w) => closeTabsToRight(w, gId, tId));
+    },
+    closeTabsToLeft: (gId, tId) => {
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
+      if (group) {
+        const idx = group.tabs.findIndex((tab) => tab.id === tId);
+        closeRuntimeTabs(idx >= 0 ? group.tabs.slice(0, idx) : []);
+      }
+      setWorkspace((w) => closeTabsToLeft(w, gId, tId));
+    },
+    closeAllTabs: (gId) => {
+      const group = getOwnedWorkspace(activeProjectPath)?.groups[gId];
+      if (group) closeRuntimeTabs(group.tabs);
+      setWorkspace((w) => closeAllTabs(w, gId));
+    },
+    newTab: (gId) => {
+      const projectPath = activeProject.path;
+      if (projectPath && agentContextCoordinatorRef.current.isProjectClosing(projectPath)) return;
+      const localId = uid("t");
+      const title = "terminal";
+      if (!activeProject.runtimeBacked) {
+        setWorkspace((w) => openTab(w, gId, {
+          id: localId,
+          projectPath,
+          title,
+          cwd: ".",
+          status: "failed",
+          runtimeBacked: false,
+          terminalSessionId: null,
+          lines: [{
+            kind: "log",
+            text: "Open a real project folder before creating a terminal.",
+            color: "warn",
+          }],
+        }));
+        return;
+      }
+      terminalCreateOwnersRef.current.set(localId, {
+        projectPath,
+        terminalSessionId: null,
+      });
+      terminalCreateInFlightRef.current.add(localId);
+      setWorkspace((w) => openTab(w, gId, {
+        id: localId,
+        projectPath,
+        title,
+        cwd: ".",
+        status: "running",
+        runtimeBacked: false,
+        terminalSessionId: null,
+        lines: [{ kind: "log", text: `${projectPath} (${activeProject.branch}) $`, color: "dim" }],
+      }));
 
-  // ── Send / approve flow uses workspace lookups ────────────────────────
+      terminalRuntimeService.createTerminalTab({
+        projectPath,
+        title,
+        cwd: ".",
+      }).then((runtimeTab) => {
+        terminalCreateInFlightRef.current.delete(localId);
+        const registeredOwner = terminalCreateOwnersRef.current.get(localId);
+        const runtimeOwner = {
+          projectPath: runtimeTab.projectPath,
+          terminalSessionId: runtimeTab.terminalSessionId,
+        };
+        if (
+          !registeredOwner ||
+          registeredOwner.projectPath !== projectPath ||
+          registeredOwner.terminalSessionId != null
+        ) {
+          terminalCreateOwnersRef.current.delete(localId);
+          terminalRuntimeService.closeSession(runtimeOwner).catch(() => undefined);
+          return;
+        }
+        terminalCreateOwnersRef.current.set(localId, runtimeOwner);
+        updateOwnedWorkspace(projectPath, (w) => updateTab(w, localId, (tab) => {
+          if (
+            tab.projectPath !== projectPath ||
+            tab.runtimeBacked ||
+            tab.terminalSessionId != null
+          ) {
+            return tab;
+          }
+          return {
+            ...tab,
+            ...runtimeTab,
+            id: localId,
+            title,
+            lines: runtimeTab.lines.length > 0 ? runtimeTab.lines : tab.lines,
+          };
+        }));
+      }).catch((error) => {
+        terminalCreateInFlightRef.current.delete(localId);
+        const registeredOwner = terminalCreateOwnersRef.current.get(localId);
+        if (
+          !registeredOwner ||
+          registeredOwner.projectPath !== projectPath ||
+          registeredOwner.terminalSessionId != null
+        ) return;
+        terminalCreateOwnersRef.current.delete(localId);
+        const message = error instanceof Error ? error.message : String(error);
+        updateOwnedWorkspace(projectPath, (w) => updateTab(w, localId, (tab) => {
+          if (
+            tab.projectPath !== projectPath ||
+            tab.runtimeBacked ||
+            tab.terminalSessionId != null
+          ) {
+            return tab;
+          }
+          return {
+            ...tab,
+            status: "failed",
+            lines: [...tab.lines, { kind: "log", text: message, color: "err" }],
+          };
+        }));
+      });
+    },
+    changeFile: (tabId, content) => {
+      const currentTab = findTab(
+        getOwnedWorkspace(activeProjectPath) || WORKSPACE_INITIAL,
+        tabId,
+      )?.tab;
+      const ownerPath = currentTab?.projectPath || activeProjectPath;
+      if (ownerPath && agentContextCoordinatorRef.current.isProjectClosing(ownerPath)) return;
+      setWorkspace((w) => updateTab(w, tabId, (tab) => ({
+        ...tab,
+        content,
+        dirty: true,
+      })));
+    },
+    saveFile: async (fileTab) => {
+      const projectPath = fileTab.projectPath;
+      const current = findTab(getOwnedWorkspace(projectPath) || WORKSPACE_INITIAL, fileTab.id)?.tab || fileTab;
+      if (current.type !== "editor") return;
+      if (current.truncated) {
+        pushProjectMessage("Reload the full file before saving; truncated previews cannot be written.");
+        return;
+      }
+
+      try {
+        const projectOwner = {
+          path: projectPath,
+          runtimeBacked: true,
+        };
+        const saved = await saveRuntimeProjectFile(projectOwner, current);
+        updateOwnedWorkspace(projectPath, (w) => updateTab(w, current.id, (tab) => {
+          if (tab.projectPath !== projectPath) return tab;
+          if (tab.content !== current.content) {
+            return {
+              ...tab,
+              contentHash: saved.contentHash,
+              dirty: true,
+            };
+          }
+
+          return {
+            ...tab,
+            ...saved,
+            id: tab.id,
+            dirty: false,
+          };
+        }));
+        setHistory((prev) => [...prev, {
+          at: nowHm(),
+          tab: "editor",
+          cmd: `save ${saved.displayPath || saved.path}`,
+          ok: true,
+        }]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        pushProjectMessage(`Could not save the file: ${message}`);
+      }
+    },
+  }), [
+    closeRuntimeTabs,
+    lang,
+    activeProject,
+    activeProjectPath,
+    activeProject.path,
+    activeProject.branch,
+    activeProject.runtimeBacked,
+    getOwnedWorkspace,
+    pushProjectMessage,
+    setWorkspace,
+    updateOwnedWorkspace,
+  ]);
+
+  // ???? Send / approve flow uses workspace lookups ????????????????????????????????????????????????
   const activeTab = activeTabOf(workspace);
 
   const onSend = (text) => {
+    const originSessionId = activeAgentSessionId;
+    if (!originSessionId) return false;
+    const originProviderId = activeAgentSession?.providerId || "codex";
+    const originSelectedModelId = validatedStoredAgentModelId(
+      providerCapabilities[originProviderId] || null,
+      activeAgentSession?.selectedModels?.[originProviderId],
+      originProviderId,
+    );
+    const originProject = Object.freeze({ ...activeProject });
+    const originTabLines = Array.isArray(activeTab?.lines)
+      ? Object.freeze(activeTab.lines.map((line) => (
+          line && typeof line === "object" ? Object.freeze({ ...line }) : line
+        )))
+      : activeTab?.lines;
+    const originTab = activeTab
+      ? Object.freeze({ ...activeTab, lines: originTabLines })
+      : null;
+    const attachments = Object.freeze(
+      (activeAgentSession?.attachments?.[originProviderId] || [])
+        .map((attachment) => Object.freeze({ ...attachment })),
+    );
+    const requestOptionsSnapshot = Object.freeze({
+      provider: originProviderId,
+      model: originSelectedModelId,
+      attachments,
+      reasoningLevel: agentReasoningLevel,
+      fastMode: agentFastMode,
+    });
+    const requestOwnerSnapshot = Object.freeze({
+      project: originProject,
+      sessionId: originSessionId,
+      activeTab: originTab,
+    });
     const id = "u" + Date.now();
-    setMessages((prev) => [...prev, {
-      id, role: "user", at: nowHm(), content: text,
-      contextAttached: [activeTab?.id || ""],
-    }]);
-    setIsTyping(true);
-    setTimeout(() => {
-      const reply = canned(text, lang, activeTab);
-      setMessages((prev) => [...prev, ...reply.map((r, i) => ({
-        ...r, id: id + "-r" + i, at: nowHm(),
-      }))]);
-      setIsTyping(false);
-    }, mode === "fast" ? 700 : mode === "balanced" ? 1100 : 1700);
-  };
+    const originProvider = providers.find((provider) => provider.id === originProviderId);
+    const requestOwner = agentSuggestionRuntimeService.hasRuntime()
+      && originProvider?.availability !== "deferred"
+      && originProvider?.state === "connected"
+      && originProject.runtimeBacked
+      ? agentContextOwner(originProject, originSessionId)
+      : null;
+    const requestToken = requestOwner
+      ? agentContextCoordinatorRef.current.tryBeginRequest(requestOwner)
+      : null;
+    if (requestOwner && !requestToken) return false;
+    updateAgentSession(originProject, originSessionId, (session) => ({
+      ...session,
+      draft: "",
+      messages: [...session.messages, {
+        id, role: "user", at: nowHm(), content: text,
+        contextAttached: originTab?.id ? [originTab.id] : [],
+      }],
+    }));
 
-  // Append output to a specific tab (anywhere in any group)
-  const appendToTab = (tabId, lines) => {
-    setWorkspace((w) => {
-      const found = findTab(w, tabId);
-      if (!found) return w;
-      const { group } = found;
-      return {
-        ...w,
-        groups: {
-          ...w.groups,
-          [group.id]: {
-            ...group,
-            tabs: group.tabs.map((tb) => tb.id === tabId ? { ...tb, lines: [...tb.lines, ...lines] } : tb),
-          },
-        },
-      };
-    });
-  };
-  const setTabStatus = (tabId, status, cmd) => {
-    setWorkspace((w) => {
-      const found = findTab(w, tabId);
-      if (!found) return w;
-      const { group } = found;
-      return {
-        ...w,
-        groups: {
-          ...w.groups,
-          [group.id]: {
-            ...group,
-            tabs: group.tabs.map((tb) => tb.id === tabId ? { ...tb, status, cmd: cmd ?? tb.cmd } : tb),
-          },
-        },
-      };
-    });
-  };
-
-  const onApprove = async (sugg, { auto = false, blockedReason = null } = {}) => {
-    setApproval(null);
-    const startedAt = nowHm();
-    const ranCommands = [];
-    for (let i = 0; i < sugg.commands.length; i++) {
-      const c = sugg.commands[i];
-      let targetTabId = c.target;
-      if (targetTabId === "new") {
-        // Add a new tab into the active group, marked as running
-        const newId = "t-fix-" + Date.now() + "-" + i;
-        setWorkspace((w) => {
-          const gId = w.activeGroupId;
-          const g = w.groups[gId];
-          const newTab = {
-            id: newId, title: lang === "ko" ? `수정-${i + 1}` : `fix-${i + 1}`,
-            shell: "zsh", cwd: ".", status: "running", cmd: c.cmd,
-            lines: [{ kind: "cmd", text: c.cmd }],
-          };
-          return {
-            ...w,
-            groups: {
-              ...w.groups,
-              [gId]: { ...g, tabs: [...g.tabs, newTab], activeTabId: newId },
-            },
-          };
-        });
-        targetTabId = newId;
-      } else {
-        appendToTab(targetTabId, [{ kind: "log", text: "" }, { kind: "cmd", text: c.cmd }]);
-        setTabStatus(targetTabId, "running", c.cmd);
-        setWorkspace((w) => {
-          const f = findTab(w, targetTabId);
-          if (!f) return w;
-          return setActiveTab(w, f.group.id, targetTabId);
-        });
+    if (agentSuggestionRuntimeService.hasRuntime()) {
+      if (originProvider?.availability === "deferred") {
+        appendProviderUnavailableMessage(originProviderId, id);
+        return true;
+      }
+      if (originProvider?.state !== "connected") {
+        appendProviderConnectionRequiredMessage(originProviderId, id);
+        return true;
+      }
+      if (!originProject.runtimeBacked) {
+        appendRuntimeProjectRequiredMessage(originProviderId, id);
+        return true;
       }
 
-      setExecuting(c.cmd);
-      await sleep(900);
-      const out = EXEC_OUTPUTS[c.cmd] || [{ kind: "log", text: "✓ done", color: "ok" }];
-      appendToTab(targetTabId, out);
-      setExecuting(null);
-      const finalStatus = c.cmd.startsWith("pnpm dev") ? "running" : "idle";
-      setTabStatus(targetTabId, finalStatus);
-
-      ranCommands.push({ tabId: targetTabId, cmd: c.cmd, risk: c.risk });
-
-      setHistory((prev) => [...prev, {
-        at: nowHm(),
-        tab: findTab(workspace, targetTabId)?.tab.title || "new",
-        cmd: c.cmd, ok: true,
-      }]);
+      void requestRuntimeAgentSuggestions(
+        text,
+        id,
+        requestToken,
+        requestOwnerSnapshot,
+        requestOptionsSnapshot,
+      );
+      return true;
     }
 
-    setMessages((prev) => [...prev, {
-      id: "done-" + Date.now(),
-      role: "assistant",
-      at: nowHm(),
-      autoRan: auto,
-      completed: {
-        summary: lang === "ko"
-          ? `${sugg.commands.length}개 명령 실행 완료. backend가 다시 :3001에 떴어.`
-          : `Ran ${sugg.commands.length} commands. backend is back up on :3001.`,
-        commands: sugg.commands.map((c) => c.cmd),
-      },
-    }]);
-
-    if (auto) {
-      // Log it + show toast with undo
-      const entry = {
-        id: "auto-" + Date.now(),
-        at: startedAt,
-        suggestion: sugg,
-        commands: ranCommands,
-      };
-      setAutoApprovalLog((prev) => [entry, ...prev].slice(0, 20));
-      setToast({
-        id: entry.id,
-        title: lang === "ko" ? "자동 실행됨" : "Auto-ran",
-        cmd: sugg.commands[0].cmd + (sugg.commands.length > 1 ? ` +${sugg.commands.length - 1}` : ""),
-        suggestion: sugg,
-      });
-      setTimeout(() => setToast((t) => t?.id === entry.id ? null : t), 5500);
-    }
+    appendRuntimeUnavailableMessage(originProviderId, id);
+    return true;
   };
 
-  // Policy-aware entry point — Decide whether to open modal or auto-run.
-  const requestApproval = (sugg) => {
-    const cwd = activeTab?.cwd || ".";
-    const decision = policyDecideForSuggestion(approvalPolicy, sugg, cwd);
-    if (decision.action === "auto") {
-      onApprove(sugg, { auto: true });
+  const handleChooseDecisionOption = React.useCallback((messageId, option) => {
+    const sourceMessage = messages.find((message) => message.id === messageId);
+    if (sourceMessage?.decisionEvent?.type !== "choice") return;
+    if (sourceMessage.decisionEvent.selectedOptionId) return;
+    if (!onSend(`${option.id}. ${option.label}`)) return;
+
+    setMessages((prev) => prev.map((message) => {
+      if (message.id !== messageId || message.decisionEvent?.type !== "choice") return message;
+      return {
+        ...message,
+        decisionEvent: {
+          ...message.decisionEvent,
+          selectedOptionId: option.id,
+        },
+      };
+    }));
+  }, [messages, onSend]);
+
+  const recordPermissionDecision = React.useCallback(async (sugg, decision) => {
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    const owner = agentContextOwner(originProject, originSessionId);
+    if (!owner) return;
+    const originProviderLabel = providerDisplayName(sugg.provider);
+    const suggestionIdentity = String(
+      sugg.id || sugg.commands.map((command) => command.cmd).join("\u0000"),
+    );
+    const coordinator = agentContextCoordinatorRef.current;
+    if (!coordinator.beginPermission(owner, suggestionIdentity)) return;
+
+    const at = nowHm();
+    const markDecision = (message) => message.suggestion?.id === sugg.id
+      ? {
+          ...message,
+          permissionDecision: {
+            status: decision,
+            at,
+          },
+        }
+      : message;
+
+    try {
+      updateAgentSessionMessages(originProject, originSessionId, (prev) => prev.map(markDecision));
+
+      if (decision === "denied") {
+        updateAgentSessionMessages(originProject, originSessionId, (prev) => [
+          ...prev,
+          {
+            id: "permission-decision-" + Date.now(),
+            role: "assistant",
+            roleLabel: originProviderLabel,
+            at,
+            content: `${t(lang, "permissionDenied")} Suggested command: \`${sugg.commands[0]?.cmd || ""}\``,
+          },
+        ]);
+        return;
+      }
+
+      coordinator.noteJobCreate(owner);
+
+      const jobResults = [];
+      for (let index = 0; index < sugg.commands.length; index += 1) {
+        const command = sugg.commands[index];
+        try {
+          const job = await agentJobRuntimeService.createProjectJob(
+            originProject,
+            command.cmd,
+            `agent-${sugg.id || "command"}-${index + 1}`,
+            originSessionId,
+          );
+          registerAgentJobs([job], {
+            projectPath: originProject.path,
+            sessionId: originSessionId,
+          });
+          registerFleetJobs([job], {
+            projectPath: owner.projectPath,
+            sessionId: owner.sessionId,
+          });
+          jobResults.push({ command: command.cmd, job, ok: job.status !== "failed" });
+          setHistory((prev) => [...prev, {
+            at,
+            tab: "agent",
+            cmd: command.cmd,
+            ok: job.status !== "failed",
+          }]);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          jobResults.push({ command: command.cmd, error: message, ok: false });
+          setHistory((prev) => [...prev, {
+            at,
+            tab: "agent",
+            cmd: command.cmd,
+            ok: false,
+          }]);
+        }
+      }
+
+      const jobSummary = jobResults.map((result) => {
+        if (result.job?.jobId != null && result.job.jobId >= 0) {
+          return `\`${result.command}\` -> agent job #${result.job.jobId}`;
+        }
+        if (result.error) return `\`${result.command}\` -> ${result.error}`;
+        return `\`${result.command}\` -> ${result.job?.lastEvent || "agent job unavailable"}`;
+      }).join("\n");
+
+      updateAgentSessionMessages(originProject, originSessionId, (prev) => [
+        ...prev,
+        {
+          id: "permission-decision-" + Date.now(),
+          role: "assistant",
+          roleLabel: originProviderLabel,
+          at,
+          content: `${t(lang, "decisionKept")}\n${jobSummary}`,
+        },
+      ]);
+    } finally {
+      coordinator.finishPermission(owner, suggestionIdentity);
+    }
+  }, [
+    activeAgentSessionId,
+    activeProject,
+    lang,
+    registerAgentJobs,
+    registerFleetJobs,
+    updateAgentSessionMessages,
+  ]);
+
+  const handleProviderConnect = async (providerId) => {
+    const originProject = { ...activeProject };
+    const originSessionId = activeAgentSessionId;
+    const selectedProvider = providers.find((provider) => provider.id === providerId);
+    if (selectedProvider?.availability === "deferred" || selectedProvider?.state === "pending") return;
+    const generation = (providerConnectionGenerationsRef.current.get(providerId) || 0) + 1;
+    providerConnectionGenerationsRef.current.set(providerId, generation);
+    invalidateProviderCapabilities(providerId);
+    const isCurrent = () => providerConnectionGenerationsRef.current.get(providerId) === generation;
+
+    if (agentAuthRuntimeService.hasRuntime()) {
+      const label = selectedProvider?.label || providerDisplayName(providerId);
+      setProviders((prev) => prev.map((provider) => provider.id === providerId
+        ? { ...provider, state: "pending", lastError: null }
+        : provider));
+      try {
+        const requestedScopes = providerId === "codex"
+          ? CODEX_REQUIRED_SCOPES
+          : selectedProvider?.scope;
+        const connection = await agentAuthRuntimeService.beginLogin(providerId, requestedScopes);
+        if (!isCurrent()) return;
+        applyProviderConnection(connection);
+        if (connection.status === "connected") {
+          const connectionPath = providerConnectionPath(connection);
+          pushProjectMessage(`${connection.displayName} connected through ${connectionPath}.`, originProject, originSessionId);
+          setSettingsOpen(false);
+          return;
+        }
+
+        const connectionError = connection.lastError || (providerId === "claude"
+          ? "Run claude auth login in your terminal, then reconnect Claude."
+          : `${label} CLI session is not ready. Run codex login, then reconnect.`);
+        markProviderError(providerId, connectionError);
+        pushProjectMessage(connectionError, originProject, originSessionId);
+      } catch (error) {
+        if (!isCurrent()) return;
+        const message = error instanceof Error ? error.message : String(error);
+        markProviderError(providerId, message);
+        pushProjectMessage(`Could not validate ${label} credentials: ${message}`, originProject, originSessionId);
+      }
       return;
     }
-    // Open modal with policy reason attached so user knows why it didn't auto-run
-    setApproval({ ...sugg, _policyReason: decision.blocker?.decision?.reason || null,
-                  _policyBlocker: decision.blocker?.decision?.pattern || null });
+
+    const label = selectedProvider?.label || providerDisplayName(providerId);
+    const unavailableMessage = `Desktop runtime is not connected. Open the installed app and connect ${label} there.`;
+    markProviderError(providerId, unavailableMessage);
+    pushProjectMessage(unavailableMessage, originProject, originSessionId);
   };
-
-  const openOAuth = (providerId) => setOauth({ providerId });
-  const onConnect = (id) => {
-    setProviders((prev) => prev.map((p) => p.id === id
-      ? { ...p, state: "connected", scope: ["files.read", "terminal.read", "exec.suggest"], expiresInDays: 30 }
-      : p));
-  };
-
-  // flatten for sidebar
-  const flatTabs = allTabs(workspace).map(({ tab, groupId }) => ({
-    id: tab.id, title: tab.title, status: tab.status, cmd: tab.cmd, groupId,
-  }));
-
   return (
     <>
       <div className="gtum-stage" ref={stageRef}>
-        <div className="gtum-scaler" ref={scalerRef}>
-          <div className="gtum-window">
+        <div className={"gtum-scaler" + (maximized ? " is-max" : "")} ref={scalerRef}>
+            <div
+              className={"gtum-window os-" + os + " " + widthClass + (maximized ? " is-max" : "")}
+              data-command-history-count={history.length}
+              data-project-error={projectError ? "true" : "false"}
+              ref={windowRef}
+            >
+            <WindowResizeZones windowControls={windowControls} maximized={maximized} />
             <Titlebar
               lang={lang}
+              os={os}
+              maximized={maximized}
               workspace={workspace}
               providers={providers}
               project={activeProject}
               icons={Icon}
               translate={t}
               openSettings={() => setSettingsOpen(true)}
+              onMinimize={onMinimize}
+              onToggleMax={onToggleMax}
+              onClose={onClose}
+              onStartDrag={onStartDrag}
             />
             <div
               className={"body-grid" +
@@ -4257,20 +6066,34 @@ function App() {
                 <Sidebar
                   lang={lang}
                   project={activeProject}
+                  projectRows={projectWorkspaces.rows}
+                  activeProjectPath={projectWorkspaces.registry.activePath}
+                  agentSummariesByProjectPath={agentSummariesByProjectPath}
                   openingProject={projectBusy}
+                  selectedFile={selectedFile}
                   collapseSidebar={() => setSidebarOpen(false)}
                   onOpenProject={handleOpenProject}
+                  onSelectProject={handleSelectProject}
+                  onCloseProject={handleCloseProject}
                   onOpenFile={handleOpenFile}
+                  onSelectFile={setSelectedFile}
+                  agentWorkspace={activeAgentWorkspace}
+                  activeAgentSessionId={activeAgentSessionId}
+                  providers={providers}
+                  onSelectAgentSession={selectAgentSession}
+                  onNewAgentSession={newAgentSession}
+                  onCloseAgentSession={closeAgentSession}
                 />
               )}
               {sidebarOpen && (
                 <div
                   className="resize-handle handle-left"
                   onPointerDown={startResize("left")}
-                  title={lang === "ko" ? "끌어서 크기 조정" : "Drag to resize"}
+                  title={"Drag to resize"}
                 />
               )}
               <Workspace
+                key={activeProjectPath || "no-project"}
                 workspace={workspace}
                 lang={lang}
                 executing={executing}
@@ -4285,7 +6108,7 @@ function App() {
                 <div
                   className="resize-handle handle-right"
                   onPointerDown={startResize("right")}
-                  title={lang === "ko" ? "끌어서 크기 조정" : "Drag to resize"}
+                  title={"Drag to resize"}
                 />
               )}
               {agentOpen && (
@@ -4293,25 +6116,56 @@ function App() {
                   lang={lang}
                   messages={messages}
                   isTyping={isTyping}
-                  activeTab={activeTab || { title: "—", lines: [] }}
-                  activePane={activeTab || { lines: [] }}
-                  mode={mode}
-                  setMode={setMode}
+                  agentActivity={agentActivity}
+                  agentJobs={agentJobs}
+                  onCancelAgentJob={cancelAgentJob}
                   onSend={onSend}
-                  onOpenApproval={requestApproval}
                   providers={providers}
                   collapseAgent={() => setAgentOpen(false)}
                   activeProviderId={activeProviderId}
-                  activeModelId={activeModelId}
-                  onSwitchModel={onSwitchModel}
+                  onSelectProvider={selectAgentProvider}
                   onOpenSettings={() => setSettingsOpen(true)}
                   project={activeProject}
+                  providerCapabilities={activeProviderCapabilities}
+                  selectedModelId={selectedAgentModelId}
+                  onSelectModel={(modelId) => updateAgentSession(
+                    activeProject,
+                    activeAgentSessionId,
+                    (session) => ({
+                      ...session,
+                      selectedModels: {
+                        ...(session.selectedModels || {}),
+                        [activeProviderId]: modelId,
+                      },
+                    }),
+                  )}
+                  reasoningLevel={agentReasoningLevel}
+                  fastMode={agentFastMode}
+                  onSelectReasoningLevel={selectAgentReasoningLevel}
+                  onSelectFastMode={selectAgentFastMode}
+                  agentWorkspace={activeAgentWorkspace}
+                  activeAgentSessionId={activeAgentSessionId}
+                  onSelectAgentSession={selectAgentSession}
+                  onNewAgentSession={newAgentSession}
+                  onCloseAgentSession={closeAgentSession}
+                  attachments={activeAgentAttachments}
+                  onPickAttachment={handlePickAgentAttachment}
+                  onRemoveAttachment={handleRemoveAgentAttachment}
+                  onChooseDecisionOption={handleChooseDecisionOption}
+                  onPermissionDecision={recordPermissionDecision}
+                  onStopAgentRequest={stopAgentRequest}
+                  requestPhase={activeAgentRequest.phase}
+                  composerDraft={activeAgentSession?.draft || ""}
+                  onComposerDraftChange={(draft) => updateAgentSession(
+                    activeProject,
+                    activeAgentSessionId,
+                    (session) => ({ ...session, draft }),
+                  )}
                 />
               )}
             </div>
             <StatusBar
               lang={lang}
-              mode={mode}
               workspace={workspace}
               project={activeProject}
               icons={Icon}
@@ -4321,142 +6175,46 @@ function App() {
         </div>
       </div>
 
-      {approval && (
-        <ApprovalModal
-          lang={lang}
-          suggestion={approval}
-          tabs={flatTabs}
-          project={activeProject}
-          onClose={() => setApproval(null)}
-          onApprove={onApprove}
-        />
-      )}
-
-      {oauth && (
-        <OAuthModal
-          lang={lang}
-          initialProvider={oauth.providerId || "codex"}
-          onClose={() => setOauth(null)}
-          onConnect={onConnect}
-        />
-      )}
-
       {settingsOpen && (
         <SettingsModal
           lang={lang}
           providers={providers}
           accent={t_.accent}
           accentOptions={ACCENT_OPTIONS}
-          mode={mode}
-          parallelLimit={parallelLimit}
-          approvalPolicy={approvalPolicy}
-          autoApprovalLog={autoApprovalLog}
-          streamResponses={streamResponses}
           onClose={() => setSettingsOpen(false)}
-          onConnect={(id) => { setSettingsOpen(false); openOAuth(id); }}
+          onConnect={handleProviderConnect}
           onDisconnect={onDisconnect}
-          onSwitchModel={onSwitchModel}
           onSetAccent={(v) => setTweak("accent", v)}
-          onSetMode={(v) => { setMode(v); setTweak("modeDefault", v); }}
-          onSetParallelLimit={setParallelLimit}
-          onSetApprovalPolicy={setApprovalPolicy}
-          onSetStreamResponses={setStreamResponses}
-        />
-      )}
-
-      {toast && (
-        <ApprovalToast
-          lang={lang}
-          toast={toast}
-          onDismiss={() => setToast(null)}
-          onUndo={() => {
-            // Mark as undone in log
-            setAutoApprovalLog((prev) => prev.map((e) =>
-              e.id === toast.id ? { ...e, undone: true } : e));
-            // Tell the user via chat
-            setMessages((prev) => [...prev, {
-              id: "undo-" + Date.now(),
-              role: "assistant",
-              roleLabel: lang === "ko" ? "운영자" : "Operator",
-              at: nowHm(),
-              content: lang === "ko"
-                ? `방금 자동 실행한 \`${toast.cmd}\`을 되돌렸어 (시뮬레이션).`
-                : `Reverted \`${toast.cmd}\` (simulated).`,
-            }]);
-            setToast(null);
-          }}
         />
       )}
 
       <TweaksPanel title="Tweaks">
-        <TweakSection label={lang === "ko" ? "외관" : "Appearance"} />
+        <TweakSection label={"Appearance"} />
         <TweakColor
-          label={lang === "ko" ? "액센트 컬러" : "Accent color"}
+          label={"Accent color"}
           value={t_.accent}
           options={ACCENT_OPTIONS}
           onChange={(v) => setTweak("accent", v)}
         />
-        <TweakSection label={lang === "ko" ? "언어" : "Language"} />
+        <TweakSection label={"Language"} />
         <TweakRadio
-          label={lang === "ko" ? "UI 언어" : "UI language"}
+          label={"UI language"}
           value={t_.lang}
-          options={[{ value: "ko", label: "한국어" }, { value: "en", label: "English" }]}
+          options={[{ value: "ko", label: "Korean" }, { value: "en", label: "English" }]}
           onChange={(v) => setTweak("lang", v)}
-        />
-        <TweakSection label={lang === "ko" ? "실행 모드" : "Execution"} />
-        <TweakRadio
-          label={lang === "ko" ? "기본 모드" : "Default mode"}
-          value={mode}
-          options={[
-            { value: "fast", label: "Fast" },
-            { value: "balanced", label: "Bal" },
-            { value: "deep", label: "Deep" },
-          ]}
-          onChange={(v) => { setMode(v); setTweak("modeDefault", v); }}
         />
       </TweaksPanel>
     </>
   );
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function nowHm() {
-  const d = new Date();
+function nowHmAt(timestampMs) {
+  const d = new Date(timestampMs);
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
 
-function canned(input, lang, activeTab) {
-  const s = input.toLowerCase();
-  if (s.includes("test") || s.includes("테스트")) {
-    return [
-      { role: "assistant", roleLabel: lang === "ko" ? "테스터" : "Tester",
-        content: lang === "ko"
-          ? "tests 탭에서 `vitest`를 다시 돌렸어. funnel.spec.ts에서 `skipping optional step` 케이스가 60이 아니라 50이 나와야 한다는데, `useFunnelState.ts`의 진행률 계산이 optional step을 빼지 않고 있어."
-          : "I reran `vitest`. `skipping optional step` expects 50 but got 60 — `useFunnelState.ts` doesn't exclude optional steps from progress." },
-      { role: "assistant", roleLabel: lang === "ko" ? "코더" : "Coder",
-        suggestion: {
-          id: "sg-test",
-          title: lang === "ko" ? "useFunnelState 진행률 계산 패치 후 재실행" : "Patch useFunnelState progress, rerun tests",
-          commands: [{ cmd: "pnpm test:funnel --reporter=verbose", risk: "low", target: "t-tests" }],
-          note: lang === "ko" ? "파일 수정은 아직 안 함 — 우선 재실행해서 실패 stack을 확인할 수 있음." : "No file edits yet — rerun first to inspect the failing stack.",
-        }},
-    ];
-  }
-  if (s.includes("explain") || s.includes("설명")) {
-    const status = activeTab?.status || "idle";
-    return [{
-      role: "assistant", roleLabel: lang === "ko" ? "탐색자" : "Explorer",
-      content: lang === "ko"
-        ? `현재 [${activeTab?.title || "-"}] 탭 상태는 \`${status}\`. ${status === "failed" ? "오류 스택을 보면 listener가 이미 점유 중인 포트에 다시 바인딩하려고 함." : "정상 동작 중."}`
-        : `Tab [${activeTab?.title || "-"}] is currently \`${status}\`. ${status === "failed" ? "Listener is trying to bind to a port already in use." : "Running normally."}`,
-    }];
-  }
-  return [{
-    role: "assistant", roleLabel: lang === "ko" ? "지휘자" : "Conductor",
-    content: lang === "ko"
-      ? "확인했어. 더 자세한 분석이 필요하면 mode를 Deep으로 올려서 다시 물어봐."
-      : "Got it. Switch to Deep mode for a more thorough analysis.",
-  }];
+function nowHm() {
+  return nowHmAt(Date.now());
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);

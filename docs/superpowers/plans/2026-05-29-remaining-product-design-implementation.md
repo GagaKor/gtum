@@ -232,20 +232,22 @@ git commit -m "refactor: extract workspace stage"
 
 **Files:**
 - Create: `src/shared/api/runtimeTerminals.ts`
-- Create: `tests/e2e/terminal-runtime.spec.ts`
+- Create: `tests/e2e/runtime-terminal-service.spec.ts`
+- Modify: `tests/e2e/design-prototype.spec.ts`
+- Modify: `src/prototype.jsx`
 - Modify: `docs/message-flow.md`
 - Modify: `docs/technical-design.md`
 
-- [ ] **Step 1: Write service contract test for `create_terminal_session_with_command`**
-- [ ] **Step 2: Implement `createTerminalSession`, `readTerminalLogs`, `executeTerminalCommand`, and `closeTerminalSession` wrappers**
-- [ ] **Step 3: Wire a first terminal tab action to the service behind browser fallback**
-- [ ] **Step 4: Run verification**
+- [x] **Step 1: Write service contract test for terminal create/read/write/close command payloads**
+- [x] **Step 2: Implement `createTerminalTab`, `readLogs`, `executeCommand`, and `closeSession` wrappers**
+- [x] **Step 3: Wire terminal tab creation, runtime log polling, close termination, and approved command writes to the service behind browser fallback**
+- [x] **Step 4: Run verification**
 
 Run:
 
 ```bash
 npm run build
-npm run test:e2e -- tests/e2e/terminal-runtime.spec.ts
+npm run test:e2e -- tests/e2e/runtime-terminal-service.spec.ts tests/e2e/design-prototype.spec.ts --grep "runtime PTY bridge|runtime-backed terminal|executes commands|browser preview terminal"
 ```
 
 Expected: PASS in browser fallback and type-checks desktop command payloads.
@@ -253,7 +255,7 @@ Expected: PASS in browser fallback and type-checks desktop command payloads.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/shared/api/runtimeTerminals.ts tests/e2e/terminal-runtime.spec.ts docs/message-flow.md docs/technical-design.md
+git add src/shared/api/runtimeTerminals.ts tests/e2e/runtime-terminal-service.spec.ts tests/e2e/design-prototype.spec.ts src/prototype.jsx docs/message-flow.md docs/technical-design.md
 git commit -m "feat: add terminal runtime service"
 ```
 
@@ -298,21 +300,22 @@ git commit -m "refactor: extract agent panel"
 - Create: `src/shared/api/runtimeAgentSuggestions.ts`
 - Modify: `src/entities/agent/model/types.ts`
 - Modify: `src/prototype.jsx`
-- Modify: `tests/e2e/agent-runtime.spec.ts`
+- Create: `tests/e2e/runtime-agent-suggestions-service.spec.ts`
+- Modify: `tests/e2e/design-prototype.spec.ts`
 - Modify: `docs/message-flow.md`
 
-- [ ] **Step 1: Write failing test for `request_agent_suggestions` payload shape**
-- [ ] **Step 2: Implement provider diagnostics and suggestion request wrappers**
-- [ ] **Step 3: Replace canned suggestion path only behind a runtime-backed feature branch**
-- [ ] **Step 4: Keep browser fallback canned replies for design preview**
-- [ ] **Step 5: Run verification**
+- [x] **Step 1: Write failing test for `request_agent_suggestions` payload shape**
+- [x] **Step 2: Implement provider diagnostics and suggestion request wrappers**
+- [x] **Step 3: Replace canned suggestion path only behind a runtime-backed Codex path**
+- [x] **Step 4: Retire browser fallback canned replies and show runtime-unavailable state for agent requests**
+- [x] **Step 5: Run verification**
 
 Run:
 
 ```bash
 npm run build
 npm run lint
-npm run test:e2e -- tests/e2e/agent-runtime.spec.ts
+npm run test:e2e -- tests/e2e/runtime-agent-suggestions-service.spec.ts tests/e2e/design-prototype.spec.ts --grep "runtime agent suggestion|routes agent requests"
 ```
 
 Expected: PASS.
@@ -320,9 +323,37 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/shared/api/runtimeAgentSuggestions.ts src/entities/agent/model/types.ts src/prototype.jsx tests/e2e/agent-runtime.spec.ts docs/message-flow.md
+git add src/shared/api/runtimeAgentSuggestions.ts src/entities/agent/model/types.ts src/prototype.jsx tests/e2e/runtime-agent-suggestions-service.spec.ts tests/e2e/design-prototype.spec.ts docs/message-flow.md
 git commit -m "feat: add agent suggestion runtime service"
 ```
+
+### Task 8A: Add Provider Auth Runtime Service And Codex Login Launcher
+
+**Files:**
+- Create: `src/shared/api/runtimeAgentAuth.ts`
+- Modify: `src/prototype.jsx`
+- Create: `tests/e2e/runtime-agent-auth-service.spec.ts`
+- Modify: `tests/e2e/design-prototype.spec.ts`
+- Modify: `docs/message-flow.md`
+- Modify: `docs/architecture.md`
+- Modify: `docs/technical-design.md`
+- Modify: `docs/MVP_VALIDATION_NOTES.md`
+
+- [x] **Step 1: Write failing service tests for provider connection commands and `codex login --device-auth` terminal launcher payloads**
+- [x] **Step 2: Implement the typed auth runtime service and provider snapshot normalization**
+- [x] **Step 3: Hydrate provider state from the runtime in the uploaded design prototype**
+- [x] **Step 4: Replace runtime-backed Codex settings connect with a CLI login terminal launcher plus `begin_agent_login` validation**
+- [x] **Step 5: Keep browser preview on the simulated OAuth modal**
+- [x] **Step 6: Run targeted red/green verification**
+
+Run:
+
+```bash
+npm run build
+npm run test:e2e -- tests/e2e/runtime-agent-auth-service.spec.ts tests/e2e/design-prototype.spec.ts --grep "Codex CLI login|provider connections"
+```
+
+Expected: PASS.
 
 ### Task 9: Implement Approval Execution Path
 

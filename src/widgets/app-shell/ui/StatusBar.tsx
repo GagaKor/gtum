@@ -9,7 +9,6 @@ import {
 
 export interface StatusBarProps {
   readonly lang: ShellLanguage
-  readonly mode: string
   readonly workspace: ShellWorkspace
   readonly project: ShellProject
   readonly icons: Pick<ShellIcons, 'dot' | 'branch'>
@@ -18,7 +17,6 @@ export interface StatusBarProps {
 
 export function StatusBar({
   lang,
-  mode,
   workspace,
   project,
   icons,
@@ -36,41 +34,37 @@ export function StatusBar({
       <span className="item ok">
         <DotIcon /> {translate(lang, 'statusReady')}
       </span>
-      <span className="sep">·</span>
+      <span className="sep">/</span>
       <span className="item">
         <BranchIcon /> {project.branch}
       </span>
-      <span className="sep">·</span>
+      <span className="sep">/</span>
       <span className="item warn">
         {project.changedFiles} {translate(lang, 'changes')}
       </span>
-      <span className="sep">·</span>
-      <span className="item">↑{project.ahead} ↓{project.behind}</span>
-      <span className="sep">·</span>
+      <span className="sep">/</span>
       <span className="item">
-        {tabsList.length} {translate(lang, 'tabsLabel')} · {groupCount}{' '}
-        {lang === 'ko' ? '그룹' : 'groups'}
+        up {project.ahead} / down {project.behind}
+      </span>
+      <span className="sep">/</span>
+      <span className="item">
+        {tabsList.length} {translate(lang, 'tabsLabel')} / {groupCount} groups
         {failed > 0 && (
           <span style={{ color: 'var(--err)' }}>
             {' '}
-            · {failed} {translate(lang, 'failed')}
+            / {failed} {translate(lang, 'failed')}
           </span>
         )}
         {running > 0 && (
           <span style={{ color: 'var(--accent)' }}>
             {' '}
-            · {running} {translate(lang, 'running')}
+            / {running} {translate(lang, 'running')}
           </span>
         )}
       </span>
       <span className="spacer" />
       <span className="item">
-        {translate(lang, 'mode')}:{' '}
-        <span style={{ color: 'var(--accent)' }}>{translate(lang, mode)}</span>
-      </span>
-      <span className="sep">·</span>
-      <span className="item">
-        <span className="kbd">⌘K</span> {translate(lang, 'statusBarHint')}
+        <span className="kbd">Cmd+K</span> {translate(lang, 'statusBarHint')}
       </span>
     </div>
   )

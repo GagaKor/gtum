@@ -72,8 +72,8 @@ The default `gtum` UI is a dark desktop developer tool.
   - 코드 surface와 terminal/diff/test/preview pane을 분할 가능한 workbench로 다룬다.
   - 각 pane은 자신의 tab strip을 가진다.
 - `Right agent workspace`
-  - provider, context, thread, composer, pending suggestions가 하나의 작업 흐름으로 이어져야 한다.
-  - 활성 provider/model과 실행 모드를 agent workspace 상단의 compact row로 먼저 읽을 수 있어야 한다.
+  - provider, context, thread, activity log, composer approval, composer가 하나의 작업 흐름으로 이어져야 한다.
+  - 활성 provider와 session/readiness 상태를 agent workspace 상단의 compact row로 먼저 읽을 수 있어야 한다. 모델 선택은 `read_agent_provider_capabilities`가 실제 모델 목록을 제공할 때 composer에서만 노출하고, 실행 모드는 런타임 정책이 없으면 노출하지 않는다.
 - `Status/pill strip`
   - 하단 고정 패널보다 workbench 안의 작은 상태 pill을 우선한다.
 
@@ -86,15 +86,23 @@ The default screen is composed of five areas:
 - `Left rail + side panel`
   - Switches `Project`, `Explorer`, `Source Control`, `Outline`, and `Settings` through an icon-only rail.
   - Side-panel rows default to compact height and single-line ellipsis.
+  - The `Projects` section renders the active project as an expandable workspace group. Its child workspace rows mirror the right-panel agent sessions, show provider mark, branch, changed-file count, and status, and allow switching or creating isolated agent workspaces without leaving the project tree.
   - The side panel must be horizontally resizable with a 4px dock resize handle, collapsing back to the rail below the threshold.
 - `Center workbench`
   - Treats code, terminal, diff, test, and preview panes as a split-capable workbench.
   - Each pane owns its own tab strip.
 - `Right agent workspace`
-  - Provider, context, thread, composer, and pending suggestions must read as one work flow.
-  - Active provider/model and execution mode should be readable first through a compact row at the top of the agent workspace.
+  - Selected model, provider readiness, per-workspace agent sessions, thread, composer-level approval, and composer must read as one work flow.
+  - The top of the agent workspace uses a compact model header plus workspace-scoped agent session tabs. The previous standalone provider row and context summary card are retired.
+  - The active Agent session's provider mark in the header and closed composer control uses an explicit selected/current treatment for both Codex and Claude. Provider identity styling alone must remain neutral and must not imply selection or connection readiness.
+  - Composer controls expose attachment, runtime-backed model picking, capability-backed reasoning level, capability-backed fast mode, and send. Project scope is implicit through the active workspace and agent session, not a separate chip.
 - `Status/pill strip`
   - Prefer small status pills inside the workbench over a permanent bottom panel.
+- `Desktop launch geometry`
+  - The uploaded-design baseline and default Tauri launch window are `1320x824`.
+  - The frameless shell must fill the entire viewport at every restored, resized, and maximized desktop size.
+  - Do not preserve the `1320x824` aspect ratio through fixed-canvas scaling when the window is larger; top, bottom, left, or right letterboxing is a regression.
+  - Smaller windows should reflow through compact shell states and panel collapse rather than centered transform scaling.
 
 ## 토큰 / Tokens
 
@@ -147,6 +155,9 @@ Implementation tokens now live as CSS variables in `src/styles.css` after the fr
 | `--warn` | `#ffb85c` | Waiting, warning, dirty |
 | `--err` | `#ff6a6a` | Error, failed, high risk |
 | `--info` | `#6eb3ff` | Informational state |
+| `--scrollbar-thumb` | `var(--surface-3)` | Themed scrollbar thumb for side panels, editor panes, terminal panes, and settings surfaces |
+| `--scrollbar-thumb-hover` | `var(--border-strong)` | Themed scrollbar hover state |
+| `--scrollbar-track` | `transparent` | Themed scrollbar track; app panels must not expose the native Windows default scrollbar |
 
 Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, and `--radius-xl: 18px`. Avoid oversized radii inside the workbench; reserve `999px` for chips and pills only.
 
@@ -166,10 +177,12 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - 동일한 카드 반복처럼 보이지 않게 role별 밀도와 내부 구성을 다르게 한다.
 - `dock-resize-handle`
   - 좌우 panel 안쪽 edge에 붙는 4px vertical handle이다. hover와 drag 중에는 `--accent`로만 강조하고, 별도 텍스트 버튼처럼 보이면 안 된다.
-- `agent-model-row`
-  - 오른쪽 agent workspace 첫 줄에서 현재 provider/model과 실행 모드를 조밀하게 보여준다.
-- `suggestion-card`
-  - 명령, 대상, 위험도, 승인 상태를 함께 보여준다.
+- `agent-header`, `agent-session-strip`
+  - Current Agent Bar baseline: selected model and provider readiness live in the compact header; workspace-scoped agent sessions live in the session strip. Do not restore the retired `agent-model-row`.
+- `agent-log-item`
+  - 실행 제안은 큰 카드가 아니라 요약, 명령 수, 위험도, 결정 상태를 보여주는 가벼운 activity row로 표시한다.
+- `composer-approval`
+  - 현재 검토 중인 제안에만 composer 바로 위에서 명령, 대상, 위험도, 사유, 결정 버튼을 보여준다.
 
 ### English
 
@@ -181,14 +194,50 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
   - Must read as a low compact tab, not a large CTA.
 - `code-window`, `terminal-window`, `diff-window`
   - Use dark `--bg-deep` surfaces, monospace text, and line-level state colors.
+- `editor-textarea`
+  - Center editor panes use a real editable text buffer with a gutter and compact status-bar `Save` action. Truncated or binary previews are not saveable from the editor surface.
+- `terminal-input-form`
+  - Center terminal panes expose a compact monospace input row for user-owned PTY commands. This input belongs to the center terminal only; Agent approval controls must not type into it.
 - `agent-card`, `side-section`
   - Avoid repeated generic card treatment; vary density and structure by role.
 - `dock-resize-handle`
   - A 4px vertical handle pinned to the inner edge of each side panel. Highlight it with `--accent` on hover and drag; it must not look like a separate text button.
-- `agent-model-row`
-  - Compactly shows the current provider/model and execution mode as the first row of the right agent workspace.
-- `suggestion-card`
-  - Show command, target, risk, and approval state together.
+- `titlebar`
+  - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. Titlebar dragging and edge/corner resizing must call the native window API, while browser preview keeps safe no-op fallbacks.
+- `agent-header`
+  - Compactly shows the selected runtime model, provider readiness, active workspace, and active agent session. It must not include a generic `Agent / provider` title or a detached provider tab row.
+- `agent-provider-selector`
+  - Belongs to the active Agent session rather than global app state. It lists Codex and Claude as real providers, distinguishes availability from connection readiness, and persists the selected `providerId` with that session. Switching one session must not change another session or project.
+  - The provider mark in the active header and closed composer trigger must expose the same explicit selected/current treatment for either real provider. Keep global provider-identity styling independent so a provider mark never implies selection or readiness by itself.
+  - Claude connection copy must say `API key` or use the runtime's sanitized non-secret credential label. It must never describe Claude as a subscription or generic CLI session, expose a raw-key input, or render helper output, identity, organization, token, or subscription metadata.
+- `agent-session-strip`
+  - Manages Agent conversation tabs per workspace. Switching projects restores the active Agent workspace session set and each session's provider, so Agent history, provider choice, and request state do not bleed across projects.
+- `project-group`, `ws-item`
+  - Mirror the active project's agent workspace sessions in the left `Projects` tree. A workspace row must expose provider identity, branch context, changed-file count, and one of `Waiting`, `Working`, `Review needed`, or `Done` so parallel agent work is visible before the right panel is opened.
+- `composer-reasoning-chip`
+  - Live in the composer toolbar beside attachment/model controls only when `read_agent_provider_capabilities` reports supported values. Claude uses the effective selected model's `executionOptions`, which overrides provider compatibility fields even when effort is empty or Fast is false; Codex falls back to its provider-level capability contract when model options are absent.
+  - Claude's effort list begins with a UI-only `Default` row. It is selected when no explicit model effort is effective and forwards `reasoningLevel: null`; it must not be presented as a CLI effort value. Switching models immediately recomputes visibility, and unsupported options become effective `null`/`false` without erasing the saved provider preference.
+  - The persistent toolbar trigger is a compact icon or provider-defined mark, never a long reasoning label and never wrapped text. Exact reasoning names and the current selection belong inside the opened list; the compact trigger still retains an exact accessible name and expanded/selected semantics.
+- `fast-toggle`
+  - Renders only when the effective provider/model capability reports Fast support. It is a compact native boolean button, not a menu: it has no popup or listbox, and one pointer, Enter, or Space activation directly writes the inverse Fast value exactly once.
+  - Its `aria-label` and `title` expose the exact `Fast mode: Enabled` or `Fast mode: Disabled` state, and `aria-pressed` exposes the matching boolean. Activating it closes any open provider, model, or reasoning popup. Switching to an unsupported model hides the control while preserving the saved provider preference and making the effective request value `false`.
+- `composer-provider-picker`
+  - Uses a compact provider mark/icon trigger in the closed composer toolbar. Provider name, connection/readiness state, and the current selection are visible in the opened list, not repeated as long closed-trigger text. Preserve exact accessible naming, listbox/option ownership, and the selected indicator.
+- `composer-model-picker`
+  - Renders only a validated runtime capability catalog for the active provider. A model row shows its human label on one visual line; the exact provider value stays in `data-model-id`, `title`, selection state, and the request payload rather than appearing as a second raw-ID line.
+  - The closed composer trigger is a compact model mark/icon with a chevron or equivalent affordance. It must not render or wrap the full current model name. The opened list owns the exact model names and visible current selection, while the trigger's `aria-label` retains the provider and current model name for assistive technology.
+  - The model popup is right-aligned to its composer anchor, bounded by the Agent panel and viewport, and internally scrollable at its maximum height. Opening or reopening it scrolls the one `aria-selected` row into view, including a selected final row. The provider popup keeps its independent left-aligned geometry.
+  - Preserve listbox/option semantics, exact accessible names, one truthful selected check, Escape close with trigger-focus restoration, and provider-change close behavior. Catalog failure hides selection without deleting the session's stored value.
+- `composer-reference-menu`
+  - Opens inline from the composer for `@`, `#`, and `/` triggers. `+` remains the attachment control for provider-supported images/files, while textual references start from the input itself.
+- `agent-turn`
+  - Shows live agent work as one conversational assistant turn. Pending runtime progress appears inside the turn with concrete operation labels instead of generic lifecycle copy, and those labels reveal sequentially rather than all at once. After success the progress clears so the completed turn shows answer-time metadata and reads like normal assistant copy. Numbered reply choices become selectable decision event cards. Command-bearing responses stay lightweight inside the turn as execution-suggestion rows with command count, risk, and decision state.
+- `agent-event-card`
+  - Lives inside the conversational agent turn for reply decisions such as numbered choices and must be fully visible by auto-scrolling the agent thread to the bottom when it appears or changes height. Command permission decisions do not live here; they open as a composer-level approval panel directly above the composer.
+- `composer-approval`
+  - Appears only while a command-bearing response is pending user decision. It shows the permission label, highest risk, command preview, isolated Agent-job target, reason, and only `Deny` and `Allow once` actions. It disappears after a decision; every decision is recorded in the Agent panel. Approval creates at most one isolated Agent job and must not create, focus, write to, or otherwise mutate a user-visible center terminal tab or pane.
+- `agent-job-activity`, `agent-job-row`
+  - Renders only in the right Agent workspace and shows the bounded lifecycle of jobs owned by the active project and Agent session. Rows expose command, job ID, truthful `running`, `cancelling`, `completed`, `failed`, `cancelled`, or `interrupted` state, bounded structured logs, exit metadata, distinct process/log-read errors, and `Cancel` only while running. Active jobs take retention priority over terminal history. Closing an Agent session is blocked while its job creation is in flight or a job remains active.
 
 ## 인터랙션 기준 / Interaction Rules
 
@@ -199,13 +248,19 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - 명령 실행은 항상 승인 전 검토와 승인 후 실행 단계를 분리한다.
 - 좁은 화면에서는 side panel을 먼저 접고, 그 다음 agent workspace를 줄인다.
 - 코드 줄은 강제 wrap보다 pane 내부 horizontal scroll을 우선한다.
-- agent workspace의 pending suggestion은 대화와 composer를 밀어내는 큰 고정 카드가 아니라 compact queue/drawer로 다룬다.
+- agent workspace의 pending suggestion은 분리된 큰 카드가 아니라 하나의 대화형 agent turn 안에서 진행 상태와 결과로 다루고, 선택된 검토는 composer 바로 위 approval panel로 연다.
 
 ### English
 
 - Panel collapse, tab switching, provider selection, and line-anchor navigation must respond immediately.
+- Provider selection updates only the active Agent session. Provider connection state remains canonical runtime state shared by that provider, while request ownership remains `projectPath + agentSessionId + providerId`.
+- An available but disconnected provider shows setup guidance instead of a fabricated response. Browser preview must not fabricate provider connection or suggestion state.
+- Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
+- Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
 - Side-panel resizing must respond immediately to pointer drag; disable grid transition during drag and lock cursor/selection state.
-- Command execution always separates pre-approval review from post-approval execution.
+- Agent command review and decisions stay in the right agent workspace. The center terminal remains exclusively user-owned. Agent requests and approvals must never create, select, rename, split, focus, write into, close, or otherwise mutate a user-visible center terminal tab or pane. If an isolated agent-owned execution surface does not exist, the approval state must remain in the right panel as unavailable/manual-run guidance.
 - On narrow screens, collapse the side panel first, then reduce the agent workspace.
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
-- Pending suggestions in the agent workspace should be a compact queue/drawer, not a large fixed card that pushes away the thread and composer.
+- Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.
+- Composer popups must remain readable inside the clipped desktop shell: they may scroll internally, but their horizontal bounds, selected option, and complete label must remain visible at the default desktop viewport and at 240 px or 260 px Agent widths. Closed provider, model, and reasoning menu triggers stay compact and non-wrapping; their opened lists carry exact full names and current state. The Fast button stays compact and contained but never opens a list. Current account labels should remain on one visual line at the default width, while a longer valid label wraps inside its option instead of clipping or adding horizontal overflow. A provider-supplied model ID may be available as metadata or a tooltip, never as a layout-breaking second text row.
+- Reasoning and Fast state belongs to the active project Agent session and provider. Project, session, provider, or model switching must restore only that owner's preference, while request submission freezes the currently effective options before asynchronous work begins.

@@ -18,6 +18,29 @@ Read this document when:
 - you need to confirm product vision, scope, core value, or user problem framing
 - you are changing top-level policies such as provider direction, execution modes, or multi-agent product behavior
 
+## Current Runtime Policy (2026-07-15)
+
+- `Codex` and `Claude` are available, real provider choices. `Codex` requires a validated local Codex CLI ChatGPT session. Claude credential precedence is an explicit non-empty `ANTHROPIC_API_KEY`, then a valid top-level user `apiKeyHelper`, then an already authenticated session in the installed, user-owned Claude Code CLI. Bedrock, Vertex, Foundry, unknown providers, and source mismatches fail closed.
+- GTUM does not implement Claude.ai OAuth, open an authentication browser, collect a token, or read a Keychain/credential file. When the CLI session is missing, the app instructs the user to run `claude auth login` in their own terminal and reconnect. The CLI alone reads its credential store; GTUM persists only the non-secret source label `claude_cli_session` or the corresponding API-credential label.
+- The Claude runtime adapter and its fail-closed connect/request revision leases are implemented and covered by focused and full Rust verification. A non-billing auth-status smoke succeeded for the local CLI-session path. No live `claude -p` inference has been run because it would consume Agent SDK/subscription credit; live response quality and billing behavior remain an explicit user-approval gate rather than an implementation claim.
+- Provider and model selections belong to each Agent session. The session directory persists `providerId` plus provider-keyed `selectedModels`, so switching projects, sessions, or providers restores only that owner’s prior choice.
+- Provider capability catalogs are runtime-owned. The frontend accepts a catalog only when its top-level provider and every current/available model owner match the requested provider, and model IDs and labels are nonblank and IDs are unique. Capability reads that may start a CLI process run off the Tauri IPC thread. Provider-scoped capability generations invalidate old catalogs for each successfully returned startup connection and every connect, disconnect, reconnect, provider-action error, or capability-read error; only the active connected provider schedules a fresh read, and late success or failure from an older generation cannot overwrite the current state.
+- Claude model choices come from a bounded, authenticated Claude CLI initialization response, not a product-owned alias table. Discovery starts the installed user-owned CLI in the same isolated credential mode as the request path, sends exactly one `initialize` control request, closes stdin, and sends no user prompt or assistant/inference turn. Only sanitized returned `value` fields are selectable; display labels combine `displayName` with the leading description segment. Account identity, email, organization, subscription, and other non-model response data are discarded.
+- The same returned model entry is the authority for its optional execution controls. Every Claude model carries bounded `executionOptions` with its returned effort levels and `supportsFastMode`; the selected model takes precedence over provider-level compatibility fields even when its list is empty or Fast is false. The composer adds a UI-only `Default` effort choice that sends `reasoningLevel: null` and therefore preserves the CLI/model default instead of inventing a Claude effort.
+- The native initialization envelope is version-coupled even though its model fields follow the public Agent SDK `ModelInfo` semantics. Malformed, excessive, duplicate, control-bearing, blank, or otherwise invalid data rejects the catalog atomically. Discovery failure exposes no selectable Claude catalog and preserves a saved choice for later validation; it never falls back to a static, cached, historical, or inferred entitlement list. Older exact model versions, Fable, or extended-context variants appear only when the current CLI account/policy response returns their exact selectable `value`.
+- A stored model is removed only after a supported catalog definitively loads without it; unavailable or not-yet-loaded capabilities preserve the stored choice but cannot forward it. Before an explicit Claude request spawns, the runtime refreshes the catalog and requires an exact match against a returned `value`; `resolvedModel` is not a substitute. A validated value becomes exactly one separate `--model <value>` CLI pair, while `model: null` keeps the runtime-default path without a model flag.
+- Reasoning and Fast preferences are persisted independently under `codex` and `claude` for each project Agent session. An unsupported selected model makes the effective request `reasoningLevel: null` and `fastMode: false` without erasing the saved preference. A stale provider-level Codex reasoning value falls back to the current supported provider default; stale Claude model-owned effort remains `null`/`Default` because the product must not infer a model effort.
+- A Claude request with an explicit model, explicit effort, or enabled Fast refreshes the prompt-free catalog and validates the exact effective model/options before starting inference. A supported effort is emitted as separate `--effort <level>` arguments. Every inference request receives exactly one sanitized `--settings` JSON object containing explicit `fastMode: true` or `false`, plus `apiKeyHelper` only for that credential source. The child never inherits `CLAUDE_CODE_EFFORT_LEVEL`; `CLAUDE_CODE_DISABLE_FAST_MODE=1` rejects enabled Fast before inference. Fast availability can also depend on organization enablement and usage credits, so capability visibility is not a billing-entitlement promise.
+- The active Agent header and closed composer provider marks carry an explicit selected/current treatment for Codex and Claude alike. Provider identity styling remains independent and must not imply selection or connection readiness. Provider, model, and reasoning remain compact non-wrapping menu controls; exact full names and current state appear in their opened lists while accessible names remain exact. Their popups stay inside the Agent panel and viewport, including 240 px and 260 px Agent widths. Current account labels remain on one visual line at the default desktop width, while longer valid provider labels wrap inside their option so the exact name is never clipped. The model list scrolls the selected row into view when reopened and keeps the exact model ID in metadata and the request payload rather than exposing a second raw-ID row.
+- Fast is a capability-gated direct boolean button, not a popup or listbox. One native pointer, Enter, or Space activation inverts the state exactly once and closes any other open composer popup. Its `aria-label` and `title` contain the exact `Fast mode: Enabled` or `Fast mode: Disabled` state, and `aria-pressed` contains the matching boolean. Unsupported models hide the button without erasing the provider-owned saved preference; persistence, Agent-session/provider ownership, and request-time freezing remain unchanged.
+- Every provider request captures `projectPath + agentSessionId + providerId`. Blank session ownership is rejected before IPC, a response whose provider does not match the request is discarded, and stale connection-lease completion must be rejected before any reply or permission card is rendered.
+- Claude CLI-session requests use `--safe-mode --setting-sources ""`; API-key/helper requests retain the `--bare` path. Both use strict structured output, disable model tools, MCP, slash commands, Chrome integration, session persistence, nonessential traffic, and official-marketplace auto-install, and run independently of the user-owned center terminal. Safe mode excludes user/project customizations, but organization-managed policy still applies and can include policy hooks, status-line commands, or file-suggestion commands; GTUM therefore does not claim an absolute process-level "no hooks" boundary. GTUM executes the CLI and any configured helper by validated canonical absolute paths, does not interpret helper arguments or shell syntax, and does not accept, render, log, or persist a raw Anthropic key or helper output.
+- Local technical support for a user-owned Claude CLI session is not permission to distribute third-party Claude.ai login routing. Public distribution remains blocked until Anthropic approval/contract review confirms this use; otherwise public builds must keep Claude on API-key or supported cloud-provider credentials.
+- Command-bearing replies expose only `Allow once` and `Deny`. There is no auto-approval, persisted allow rule, or `Always allow` action.
+- `Allow once` creates exactly one isolated, session-owned Agent job. The job is observed, cancelled, and restored only in the right Agent workspace; it never creates, focuses, writes to, or otherwise mutates the user-owned center terminal.
+- Agent jobs have bounded durable history and structured logs with `running`, `cancelling`, `completed`, `failed`, `cancelled`, and `interrupted` states. Runtime restart marks unfinished persisted jobs `interrupted` and never relaunches them.
+- MVP stabilization is not complete until the full automated gate and installed-app Windows sign-off pass. The current automated aging scenario is necessary evidence, not a substitute for native Windows validation or a longer manual soak.
+
 ## 장문 문서 라우팅 / Long-Doc Routing
 
 ### 한국어
@@ -367,9 +390,8 @@ It is acceptable to start with only `master`, but once implementation begins, in
 설정은 최소한 다음을 다룬다.
 
 - provider 연결과 세션 상태
-- provider별 기본 모델 선택
+- 런타임에서 실제로 동기화된 provider capability와 readiness
 - accent 같은 외관 설정
-- `Fast`, `Balanced`, `Deep` 실행 모드
 - 병렬 worker 수와 응답 스트리밍
 - 위험도별 승인 정책
 - trusted directory와 forbidden pattern
@@ -417,7 +439,7 @@ It should also help users reread the path already taken and expose recurring pro
 The first code-reading delivery should remain read-only.
 Editing, saving, and diff application can follow later, but the MVP path should first prove that users can read code, compare it with live logs, and understand why an approval was suggested.
 
-#### 4. Agent-Assisted Execution
+#### 4. Agent-Assisted Decisions
 
 An agent can suggest actions such as:
 
@@ -426,7 +448,7 @@ An agent can suggest actions such as:
 - inspecting a log file
 - creating a dedicated debugging tab
 
-Execution happens only after user approval.
+The center terminal is user-owned. Agent conversations, command review, decisions, and isolated job activity stay in the right agent panel. `Allow once` records the decision and creates one agent-owned job without creating a terminal tab, writing into an existing terminal, or dispatching through the terminal runtime. `Deny` records the refusal and starts no process.
 
 #### 5. Agent Account Connection
 
@@ -440,8 +462,10 @@ The initial supported providers are:
 The authentication model follows these rules:
 
 - the target first daily-use `Codex` path is `OAuth/session login`, similar in shape to `Conductor` or `Codex CLI`
-- long-lived API tokens or `OPENAI_API_KEY` should not become the default end-user connection path
-- an env/API-key bridge may exist temporarily during development, but it is an internal bridge rather than the release target
+- the `Claude` path uses an explicit API key first, then a strict top-level user `apiKeyHelper`, then an already authenticated local Claude Code CLI session; the CLI-session fallback is local/internal-use infrastructure pending Anthropic approval for third-party distribution
+- GTUM never starts Claude.ai OAuth or captures a token. Users authenticate externally with `claude auth login`, and the installed CLI alone reads its credential store
+- GTUM must not expose an in-app raw-key form or persist the key, helper command output, email, organization, token, or subscription metadata
+- an `OPENAI_API_KEY` bridge may exist temporarily during development, but it is an internal Codex bridge rather than the release target
 - the app should show connection state, granted scopes, and readiness diagnostics
 
 #### 6. Remote Command and Report Channels
@@ -465,16 +489,16 @@ Because this adds important security and authentication boundaries, it should be
 
 The updated design treats settings as an execution-control surface, not a secondary preferences page.
 
-Settings should cover at least:
+Current settings cover:
 
 - provider connections and session state
-- default model selection per provider
+- runtime-synced provider capabilities and readiness diagnostics
 - appearance settings such as the accent color
-- `Fast`, `Balanced`, and `Deep` execution modes
-- parallel worker count and response streaming
-- approval policy by risk level
-- trusted directories and forbidden patterns
-- auto-approval history and undoable notifications
+- a read-only execution contract stating that every command requires review and approved work runs as an isolated Agent job
+
+Parallel-worker tuning, risk-based policy, trusted directories, forbidden patterns, and auto-approval remain future work. They must not appear as functional controls before a persisted runtime contract exists.
+
+Model, reasoning, attachment, and provider fast-mode request controls are exposed only when the runtime discovers provider capabilities. Fixed `Fast`/`Balanced`/`Deep` execution-policy controls remain deferred until scheduling policies are explicit; the Codex path must not display those fixed modes as if they were synchronized runtime state.
 
 ## 정보 구조 / Information Architecture
 
@@ -487,7 +511,7 @@ Settings should cover at least:
 역할:
 
 - 현재 프로젝트, 브랜치, 활성 탭, split group 수를 상단 titlebar에서 표시
-- 연결된 provider 수와 현재 실행 모드를 상단 또는 하단 상태 영역에서 표시
+- 연결된 provider 수와 provider session/readiness 상태를 상단 또는 하단 상태 영역에서 표시
 - branch, 변경 파일 수, ahead/behind, tab/group 상태를 status bar에서 빠르게 확인
 - 큰 대시보드 카드 대신 editor/terminal/agent가 바로 작업 가능한 상태로 보이게 함
 
@@ -520,7 +544,7 @@ Settings should cover at least:
 
 - 프로젝트와 터미널 상태 관찰
 - 선택된 파일, 현재 탭 출력, 최근 명령을 context summary로 표시
-- provider/model picker와 실행 모드를 한 줄에서 조정
+- provider와 session/readiness 상태를 한 줄에서 확인하고, provider 전환만 현재 UI에서 지원
 - 문제 설명
 - 작업 제안
 - 승인된 명령 실행
@@ -531,7 +555,7 @@ Settings should cover at least:
 
 역할:
 
-- provider 연결, 모델 선택, 외관, 실행 정책, 제품 정보를 한 화면에서 관리
+- provider 연결, 외관, 승인 정책, 제품 정보를 한 화면에서 관리
 - 위험도별 승인 정책을 `always ask`, `auto`, `trusted dirs only`로 구분
 - high-risk 명령은 항상 명시 승인으로 고정
 - forbidden pattern은 정책과 무관하게 차단 또는 재확인
@@ -546,7 +570,7 @@ The app is organized around four primary domains plus a top/bottom status shell.
 Responsibilities:
 
 - show current project, branch, active tab, and split-group count in the titlebar
-- show connected provider count and the current execution mode in the top or bottom status area
+- show connected provider count and provider session/readiness state in the top or bottom status area
 - make branch, changed-file count, ahead/behind state, and tab/group state quickly readable in the status bar
 - avoid a large dashboard-card default; editor, terminal, and agent surfaces should be immediately usable
 
@@ -579,10 +603,10 @@ Responsibilities:
 
 - observe project and terminal state
 - expose selected files, current tab output, and recent commands as a context summary
-- let users adjust provider/model picker and execution mode in one compact row
+- let users inspect provider/session readiness and switch providers in one compact row
 - explain problems
 - suggest actions
-- execute approved commands
+- record approved command decisions without terminal execution
 - track task progress
 - summarize which paths failed and which improvements are worth trying next
 
@@ -590,11 +614,10 @@ Responsibilities:
 
 Responsibilities:
 
-- manage provider connections, model choices, appearance, execution policy, and product information in one settings surface
-- split approval behavior into `always ask`, `auto`, and `trusted dirs only` by risk level
-- keep high-risk commands pinned to explicit approval
-- block or reconfirm forbidden patterns regardless of the active policy
-- record auto-run low-risk commands in an audit trail with undoable toast notifications
+- manage available provider connections and appearance, and show the current execution contract and product information in one settings surface
+- keep approval behavior in `always ask` mode for agent-suggested commands
+- expose only `Allow once` and `Deny` for the current command-review contract
+- create approved work through isolated Agent jobs without terminal side effects
 
 ## 권장 UI 구조 / Recommended UI Structure
 
@@ -620,7 +643,7 @@ Responsibilities:
 #### 우측 패널
 
 - 에이전트 작업창
-- provider header, model picker, 실행 모드를 먼저 읽는 compact model row
+- provider header와 session/readiness 상태를 먼저 읽는 compact provider row
 - context summary, 요청 thread, quick prompts, composer
 - 현재 pending suggestion과 승인 검토 진입점
 - 워크플로우 문제 요약과 프로젝트 인사이트
@@ -629,14 +652,14 @@ Responsibilities:
 
 - `Connections`, `Models`, `Appearance`, `Execution`, `About` 탭을 가진 settings modal
 - provider별 세션, scope, 만료 상태와 모델 기본값
-- 실행 모드, 병렬 worker 수, 응답 스트리밍 설정
+- 병렬 worker 수, 응답 스트리밍 설정
 - 위험도별 승인 정책, trusted dirs, forbidden patterns
 - 자동 승인 이력과 undo 가능한 toast
 
 #### 하단 패널 또는 드로어
 
 - 기본 구조에서는 고정 하단 패널을 두지 않는다.
-- 단, 1줄 status bar는 branch, 변경 수, tab/group 수, 실행 모드 같은 메타 상태를 표시할 수 있다.
+- 단, 1줄 status bar는 branch, 변경 수, tab/group 수 같은 메타 상태를 표시할 수 있다.
 - 로그, 알림, 명령 기록, 경로 요약은 workbench pane, compact dock, contextual surface로 푼다.
 
 구체적인 UI 토큰, 색상, 반경, 컴포넌트 상태 표현은 `docs/design-system.md`를 기준으로 한다.
@@ -663,54 +686,26 @@ Responsibilities:
 #### Right Panel
 
 - agent workspace
-- provider header plus compact model picker and execution-mode row
+- provider header plus compact provider/session-readiness row
 - context summary, request thread, quick prompts, and composer
 - current pending suggestions and approval-review entry points
 - workflow findings and project insights
 
 #### Settings and Approval Policy
 
-- settings modal with `Connections`, `Models`, `Appearance`, `Execution`, and `About` tabs
-- provider sessions, scopes, expiration state, and default model choices per provider
-- execution mode, parallel worker count, and response streaming settings
-- approval policy by risk level, trusted directories, and forbidden patterns
-- auto-approval history and undoable toast notifications
+- settings modal with `Connections`, `Appearance`, `Execution`, and `About` tabs
+- provider sessions, scopes, expiration state, and readiness diagnostics
+- a truthful read-only Execution description until persisted scheduling and approval policies exist
 
 #### Bottom Panel or Drawer
 
 - no permanent bottom panel in the default structure
-- a one-line status bar may show metadata such as branch, change count, tab/group count, and execution mode
+- a one-line status bar may show metadata such as branch, change count, and tab/group count
 - logs, notifications, command history, and path recap should be handled through workbench panes, compact docks, or contextual surfaces
 
 Use `docs/design-system.md` for concrete UI tokens, colors, radius, and component state representation.
 
-## 핵심 사용자 흐름 / Core User Flow
-
-### 한국어
-
-#### 기본 흐름
-
-1. 사용자가 프로젝트를 연다.
-2. 사용자가 좌측 `Projects`와 `Files` accordion에서 프로젝트와 파일을 확인한다.
-3. 사용자가 중앙 workbench에서 editor 탭 또는 terminal 탭을 열고, 필요하면 split group으로 배치한다.
-4. 사용자가 탭별로 명령을 실행하거나 코드를 읽는다.
-5. 에이전트가 현재 프로젝트, 선택 파일, 활성 탭 출력, 최근 명령 맥락을 읽는다.
-6. 에이전트가 설명 또는 다음 작업을 제안한다.
-7. 승인 정책이 허용한 low-risk 명령은 audit/undo 가능한 toast와 함께 자동 실행될 수 있고, 그 외 명령은 승인 modal에서 대상, 위험도, rollback 가능성을 검토한다.
-8. 사용자가 승인하면 현재 탭 또는 새 탭에서 명령을 실행한다.
-9. 사용자가 지금까지의 승인, 실패, 재시도 경로를 확인하고 다음 행동을 결정한다.
-
-#### 예시 시나리오
-
-1. 사용자가 모노레포를 연다.
-2. `frontend`, `backend`, `tests` 탭을 만든다.
-3. `backend` 탭에서 서버 실행 오류가 발생한다.
-4. 에이전트가 출력과 관련 설정 파일을 읽는다.
-5. 에이전트가 원인을 설명하고 수정용 명령을 제안한다.
-6. 사용자가 승인하면 새 디버깅 탭에서 명령이 실행된다.
-7. 사용자가 이전 시도와 새 결과를 비교해 반복 문제인지 판단한다.
-
-### English
+## Core User Flow
 
 #### Primary Flow
 
@@ -720,9 +715,9 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 4. The user runs commands per tab or reads code.
 5. The agent reads current project, selected-file, active-tab output, and recent-command context.
 6. The agent suggests explanations or next actions.
-7. Low-risk commands allowed by policy may auto-run with an auditable, undoable toast; other commands open an approval modal that shows target, risk, and rollback notes.
-8. The user approves execution in the current tab or a new tab.
-9. The user reviews the approval, failure, and retry path before deciding the next action.
+7. Suggested commands open inline review inside the right agent panel.
+8. `Allow once` creates one isolated Agent job. The right panel shows its status, bounded structured logs, exit metadata, and Cancel action while the center terminal remains unchanged.
+9. The user reviews the agent decision, job outcome, failure, and retry path before deciding the next action.
 
 #### Example Scenario
 
@@ -731,7 +726,7 @@ Use `docs/design-system.md` for concrete UI tokens, colors, radius, and componen
 3. A startup error appears in the `backend` tab.
 4. The agent reads the output and related config files.
 5. The agent explains the likely cause and proposes a fix command.
-6. The user approves execution in a new debugging tab.
+6. The user selects `Allow once`; an isolated Agent job runs without opening a debugging tab in the center workbench.
 7. The user compares the new result with prior attempts to see whether the problem is repeating.
 
 ## 에이전트 모델 / Agent Model
@@ -797,7 +792,7 @@ Agents should have clear scope and permissions.
 - `Planner`
   - proposes next-step ordering
 - `Operator`
-  - executes approved commands
+  - records approved command decisions and keeps terminal execution user-owned
 - `Reviewer`
   - reviews changes and risks
 
@@ -816,10 +811,10 @@ In the MVP, command execution and file edits should both require user approval.
 The updated design baseline sets the following approval-policy defaults:
 
 - distinguish `low-risk`, `mid-risk`, and `high-risk`
-- `low-risk` commands may be auto-approved depending on settings, but they must leave an audit trail and undoable notification
-- `mid-risk` behavior is controlled by policy across `always ask`, `auto`, and `trusted dirs only`, with a cautious default
+- `low-risk` commands must still be reviewed in the Agent panel and must not auto-run
+- `mid-risk` behavior remains explicit review only, with no automatic terminal execution
 - `high-risk` always requires explicit approval
-- auto-execution outside trusted directories is blocked or reconfirmed by default
+- terminal execution remains user-owned and is never triggered by an Agent-panel approval decision
 - forbidden patterns are always blocked or reconfirmed regardless of risk level
 
 ## 멀티 에이전트 오케스트레이션 / Multi-Agent Orchestration
@@ -945,6 +940,8 @@ A shared project context for multi-agent work may include:
 - task queue and per-agent assignment state
 
 ## 실행 모드 / Execution Modes
+
+Current status: deferred for fixed execution policies. The current app does not expose `Fast`, `Balanced`, or `Deep` scheduling modes. It does expose provider-backed reasoning and Fast request options when `read_agent_provider_capabilities` reports support for the effective provider/model; Claude controls are model-specific, while Codex retains its provider-level compatibility contract. These request options are not scheduling modes. Reintroduce fixed execution policies only after runtime scheduling policies exist.
 
 ### 한국어
 
@@ -1115,10 +1112,10 @@ At the product level, the system needs:
 - 에이전트 패널 제공
 - 에이전트가 프로젝트 맥락과 현재 탭 출력을 읽을 수 있음
 - 에이전트가 선택 파일과 최근 명령 맥락을 읽을 수 있음
-- provider/model 선택과 실행 모드를 오른쪽 agent workspace에서 조정
+- provider/session readiness를 오른쪽 agent workspace에서 확인하고 provider를 전환
 - 에이전트가 명령을 제안할 수 있음
-- 승인된 명령을 현재 탭 또는 새 탭에서 실행할 수 있음
-- 위험도 기반 승인 modal과 low-risk auto-run audit/undo 흐름
+- Agent-panel approval records decisions without terminal execution
+- Explicit review remains required for agent-suggested commands
 
 #### 제외 범위
 
@@ -1147,10 +1144,10 @@ The first version should focus on the smallest complete experience.
 - provide an agent panel
 - let the agent read project context and current tab output
 - let the agent read selected-file and recent-command context
-- adjust provider/model selection and execution mode in the right agent workspace
+- inspect provider/session readiness and switch providers in the right agent workspace
 - let the agent suggest commands
-- run approved commands in the current tab or a new tab
-- risk-based approval modal plus low-risk auto-run audit/undo flow
+- keep command review and decisions in the right agent workspace
+- execute approved agent commands only through isolated, observable Agent jobs; center terminal tabs remain user-owned
 
 #### Out of Scope
 
@@ -1198,7 +1195,7 @@ The first version should focus on the smallest complete experience.
 - 첫 실사용 `Codex` 경로는 `OAuth/session login`을 사용해야 한다.
 - env/API key bridge는 필요하더라도 개발용 임시 경로에 머물러야 한다.
 - 앱은 연결 상태, 권한 범위, 연결 준비 상태와 진단 정보를 사용자에게 표시해야 한다.
-- 앱은 provider별 모델 선택, 실행 모드, 병렬 worker 수를 설정할 수 있어야 한다.
+- 앱은 provider capability discovery와 scheduling policy가 준비되기 전까지 provider별 모델 선택이나 실행 모드를 고정 값으로 보여주지 않아야 한다.
 - 앱은 위험도별 승인 정책, trusted directory, forbidden pattern, 자동 승인 이력을 표시해야 한다.
 - 향후 `SMS`와 `Telegram` 같은 외부 채널을 통해 상태 리포트와 제한된 원격 명령을 지원할 수 있어야 한다.
 
@@ -1236,13 +1233,15 @@ The first version should focus on the smallest complete experience.
 - agents should be able to read selected project files
 - agents should be able to read current or selected tab output
 - agents should be able to generate task suggestions
-- users should be able to review and approve command targets before execution
-- users should be able to connect `Codex` and `Claude` providers from inside the app
+- users should be able to review commands before one-time execution in an isolated Agent job
+- users should be able to connect `Codex` and `Claude` through their approved runtime credential contracts, and each Agent session should persist its own selected `providerId`
 - the first daily-use `Codex` path should use `OAuth/session login`
-- any env/API-key bridge should remain a temporary development path rather than the default user route
+- the `Claude` path should prefer an explicit `ANTHROPIC_API_KEY`, then a user-level `apiKeyHelper` containing one canonical absolute regular executable path, then an authenticated installed CLI session; it should never collect or persist raw credentials in GTUM
+- a missing Claude session should direct the user to run `claude auth login` outside GTUM. GTUM must not initiate Claude.ai OAuth or capture tokens
+- any `OPENAI_API_KEY` bridge should remain a temporary Codex development path rather than the default user route
 - the app should display connection state, readiness diagnostics, and granted scopes
-- the app should let users configure model selection per provider, execution mode, and parallel worker count
-- the app should expose approval policy by risk level, trusted directories, forbidden patterns, and auto-approval history
+- the app should expose only model choices owned by the active provider’s runtime capability catalog; fixed execution-mode choices remain deferred until scheduling policy support exists
+- risk-based policies, trusted-directory rules, and auto-approval history remain future work and must not appear as functional controls before a persisted runtime contract exists
 - the product should remain extensible for external report and limited remote-command channels such as `SMS` and `Telegram`
 
 #### Task Awareness
@@ -1304,7 +1303,6 @@ The first version should focus on the smallest complete experience.
 - 초기 지원 제공자: `Codex`, `Claude`
 - 첫 실사용 `Codex` 경로: `OAuth/session login`
 - 개발용 임시 경로: 필요 시 `OPENAI_API_KEY` 기반 bridge를 둘 수 있지만 source of truth는 아님
-- `Claude`: provider contract 호환 대상이지만 첫 실사용 릴리스에서는 deferred path 유지
 
 한 줄로 정리하면 다음과 같다.
 
@@ -1375,7 +1373,7 @@ Agent connection rules are:
 - initial providers: `Codex`, `Claude`
 - first daily-use `Codex` path: `OAuth/session login`
 - temporary development path: an `OPENAI_API_KEY`-backed bridge may exist, but it is not the source-of-truth release path
-- `Claude`: contract-compatible provider that stays on the deferred path for the first daily-use release
+- `Claude`: an implemented real-provider path that selects an explicit first-party Anthropic API key, then a strict top-level user `apiKeyHelper`, then an already authenticated user-owned local CLI session. No in-app OAuth/token handling exists, no live inference has been run without explicit user approval, and public CLI-session distribution remains blocked pending Anthropic approval/contract review
 
 In one sentence:
 
@@ -1530,40 +1528,6 @@ Against those requirements, `Tauri + Rust + React + TypeScript` provides the bes
 
 ## 제안 마일스톤 / Proposed Milestones
 
-### 한국어
-
-#### 마일스톤 1: 로컬 프로젝트 셸
-
-- 프로젝트 열기
-- 파일 트리 렌더링
-- 기본 프로젝트 메타데이터 표시
-
-#### 마일스톤 2: 터미널 워크스페이스
-
-- PTY 기반 탭
-- 탭 상태 저장
-- 안정적인 터미널 렌더링
-
-#### 마일스톤 3: 에이전트 패널
-
-- 에이전트 채팅 UI
-- 프로젝트 및 탭 컨텍스트 읽기
-- 제안 UI 표시
-
-#### 마일스톤 4: 승인 기반 액션
-
-- 명령 제안 흐름
-- 사용자 승인 UI
-- 현재 탭 또는 새 탭에서 실행
-
-#### 마일스톤 5: 프로젝트 작업 레이어
-
-- 작업 피드
-- 명령 실행 기록
-- 경량 프로젝트 요약
-
-### English
-
 #### Milestone 1: Local Project Shell
 
 - open a project
@@ -1586,7 +1550,7 @@ Against those requirements, `Tauri + Rust + React + TypeScript` provides the bes
 
 - command proposal flow
 - user approval UI
-- execution in the current tab or a new tab
+- isolated Agent-job execution with right-panel lifecycle visibility and no center-terminal mutation
 
 #### Milestone 5: Project Task Layer
 

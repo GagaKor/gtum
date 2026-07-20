@@ -13,9 +13,10 @@
     "windows": [
       {
         "title": "gtum",
-        "width": 1480,
-        "height": 920,
+        "width": 1320,
+        "height": 824,
         "resizable": true,
+        "decorations": false,
         "fullscreen": false
       }
     ],
