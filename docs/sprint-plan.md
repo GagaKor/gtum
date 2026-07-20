@@ -72,6 +72,34 @@ For the current UI direction, treat the following documents as higher priority t
 
 Starting with `Sprint 17`, the new design draft in `/Users/kwon/Downloads/test (1)` overrides the existing implementation. When old structure conflicts with the new design, implement the new design and move old UI into secondary surfaces when needed.
 
+## Active Multi-Account Agent Profiles — 2026-07-20
+
+Goal: let heavy users register multiple supported Codex and Claude CLI profiles, select one exact account per project-owned Agent session, and run concurrent work without credential, capability, preference, request, or approval ownership crossing accounts.
+
+Fixed scope and acceptance:
+
+- one versioned, atomic, bounded registry owns reserved ambient profiles, immutable account IDs/incarnations, separate metadata/credential revisions, exact leases, and at most 16 visible-or-tombstoned profiles per provider
+- legacy auth and session state migrate only to deterministic reserved ambient IDs; ambiguous, missing, disconnected, forgotten, malformed, or unavailable ownership fails closed without choosing another profile
+- additional Codex profiles use behaviorally proven isolated `CODEX_HOME` roots with file credential storage and status-only validation; GTUM never reads or copies `auth.json`
+- additional Claude CLI-session profiles use isolated `CLAUDE_CONFIG_DIR` roots on Linux and Windows; macOS remains ambient-only because Claude credentials are held in Keychain, and unsupported state never falls back to ambient
+- aliases are user-authored data and may contain PII; provider-derived account identity, token, subscription, organization, raw diagnostics, and setup commands never enter persistence or UI attribution, while the selected provider name/mark remains explicit
+- setup guidance is transient and copy-only; Disconnect and Forget do not perform CLI logout, credential deletion, root deletion, or provider-side revocation
+- session v2 persists exact account selection and account-nested model/reasoning/Fast preferences; capability/request/action state, attachments, replies, errors, suggestions, and permission turns stay with the exact account lease
+- the combined picker remains compact at default, 260 px, and 240 px Agent widths while exposing exact provider/alias/status in its list and accessible name; missing/disconnected selection remains visible and blocks Send
+- Settings groups accounts by provider and supports add, rename, default, check, disconnect, and Forget with exact-owner pending state, transient setup copy, platform guidance, and no accidental modal close
+- approval invokes one `create_authorized_agent_job` command with the captured provider/account/incarnation/credential revision and project/session owner; the backend holds authorization through isolated job creation, while rename/default metadata remains non-stale and disconnect/context change/Forget blocks stale work
+- every persisted connected generated profile returns as `Needs verification` after restart and advances its credential revision; capability discovery and Send stay blocked until a fresh exact-profile Check succeeds
+- approval and job creation use the single `create_authorized_agent_job` boundary, which holds the auth lock through exact connected-lease verification and job creation; the provider-less job-create IPC is unavailable
+- 30-cycle account aging, reverse-order races, account switch/reload, bounded caches/tombstones, supported-platform native smoke, narrow visual QA, complete regression, independent review, and exact non-force `dev` integration are completion gates
+- every profile action, request, approval, and Agent job leaves the user-visible center terminal unchanged
+
+Current status at this documentation sync:
+
+- the registry/migration/profile-root, Codex/Claude context, Rust/TypeScript account IPC, coordinated session-v2, immutable account turns, compact picker, accessible Settings, restart revalidation, and atomic approval/job creation are present on the verified candidate
+- the fresh local gate passes lint, frontend build, macOS Tauri release build, serial Playwright 345/345, Rust 303 passed/1 intentional ignore, formatting, compile check, aging, and independent security/UI/documentation reviews
+- exact commit/SHA verification, non-force `dev` integration, and the resulting Ubuntu/Windows/macOS CI record remain pending at this documentation checkpoint; manual VoiceOver/OS-scale observation and native Windows installed-app sign-off remain explicit follow-up/release gates
+- the active execution record is [Multi-Account Agent Profiles Implementation Plan](./superpowers/plans/2026-07-20-multi-account-agent-profiles.md)
+
 ## Current Selected Provider And Direct Fast Toggle — 2026-07-16
 
 Goal: make the current provider equally explicit for Codex and Claude, and make capability-backed Fast a direct boolean control without changing its existing ownership or request contract.
@@ -1989,7 +2017,7 @@ Current status:
 - `src/prototype.jsx` now consumes the reusable backend contract seam instead of duplicating Tauri `invoke` mapping logic; future TSX components should use the same service.
 - The native window-control slice is active through `src/shared/api/runtimeWindow.ts`: the Tauri window is frameless, custom macOS/Windows titlebar controls call the native window API, browser preview keeps injectable/no-op fallbacks for E2E, and native maximize polling is intentionally disabled to avoid macOS installed-app resize/style-mask churn.
 - The Tauri launch window starts at the uploaded-design baseline (`1320x824`), and the shell now fills the entire viewport after native resize or maximize instead of preserving a fixed canvas with letterboxing.
-- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: user-created terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, and closing runtime-backed tabs terminates the PTY session. Agent command review and decisions stay in the right panel until approval, then approved commands dispatch through the same terminal runtime.
+- The terminal runtime slice is active through `src/shared/api/runtimeTerminals.ts`: user-created terminal tabs create real Tauri PTY sessions when desktop runtime is available, runtime logs poll back into the tab body, and closing runtime-backed tabs terminates the PTY session. Agent command review and decisions stay in the right panel; approval dispatches only through the isolated, account-authorized Agent job runtime and never through the center terminal runtime.
 - The agent suggestion runtime slice is active through `src/shared/api/runtimeAgentSuggestions.ts`: desktop-runtime Codex requests call `read_agent_provider_capabilities` for runtime-backed model/attachment metadata, then call `request_agent_suggestions` with project, active tab, selected file, recent log lines, user task, and an optional selected model id.
 - Provider flows now reject silent mock fallback: deferred providers such as Claude show an explicit unavailable state, browser preview no longer fabricates agent replies, and Codex command review/decisions stay in the right agent panel instead of creating user terminal tabs.
 - Windows Codex suggestion execution now avoids passing the full prompt through `codex.cmd`; the runtime sends the prompt over stdin and prefers the direct Node `codex.js` entrypoint when available.

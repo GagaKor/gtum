@@ -18,6 +18,40 @@ This document exceeds 200 lines. Read only the section needed for the current ga
 - use `Validation Priority` and `Current MVP Assessment` for remaining release gates
 - use `Current Automated Aging Test` and `Platform Status` for repeated-use or installed-app validation
 
+## 2026-07-20 Multi-Account Agent Profiles (Local Gate Complete; Dev CI Pending)
+
+Contract under validation:
+
+- one atomic v2 snapshot covers Codex and Claude visible profiles plus bounded tombstones; reserved ambient IDs, immutable generated IDs/incarnations, separate metadata/credential revisions, exact decimal-string IPC, and the 16-per-provider visible-plus-tombstone limit fail closed
+- legacy provider auth and Agent-session state migrates only to the deterministic reserved ambient profile, copies no credential, and does not choose an arbitrary current default when ownership is unavailable or invalid
+- additional Codex contexts isolate `CODEX_HOME`, remove competing credentials, require a behavioral file-store probe, and validate with CLI status without reading `auth.json`
+- additional Claude contexts isolate `CLAUDE_CONFIG_DIR` on Linux/Windows, remove all competing credential paths, and reject additional macOS profiles before child launch because Keychain credentials cannot be isolated by that root
+- account lifecycle, diagnostics, capabilities, suggestions, cancellations, errors, and permission turns preserve exact provider/account ownership; credential-context changes become stale while alias/default metadata changes do not
+- persisted connected generated profiles restart as `Needs verification` with an advanced credential revision; capability discovery, Send, stale approvals, and provider children remain blocked until a fresh exact Check succeeds
+- `create_authorized_agent_job` holds the auth-store lock across exact connected-lease verification and isolated job creation; the provider-less job-create IPC is unregistered, closing the Disconnect/Forget/credential-refresh authorization-to-spawn race
+- setup guidance remains transient and account-specific, Disconnect/Forget never performs provider logout or credential deletion, and every lifecycle/request/approval path is prohibited from mutating the center terminal
+
+Fresh local candidate evidence:
+
+- `npm run lint` passes with zero errors, and `npm run build` passes; Vite reports only the existing large-chunk advisory
+- serial Chromium Playwright passes 345/345 in 2.7 minutes after migrating every remaining provider-only fixture to the v2 account contract
+- the Rust suite passes 303 tests with 0 failures and 1 intentional ignore; the ignored test requires an installed authenticated Claude CLI and performs prompt-free initialization only
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`, warning-free `cargo check --manifest-path src-tauri/Cargo.toml`, and `git diff --check` pass
+- `npm run tauri:build` produces the optimized local macOS executable at `src-tauri/target/release/gtum`
+- account-specific UI coverage includes Claude 48/48, design 58/58, project context 64/64, aging/boundary 16/16, and service/fleet 16/16 focused/full checkpoints before the complete 345-test gate
+- the aging scenario performs 31 explicit Codex A/B switches while preserving account-owned model, reasoning, Fast, attachment, request, and approval state; legacy job creation and center-terminal execution remain zero
+- independent security/code-quality, UI/accessibility, and documentation reviews are approved with no remaining Critical or Important finding
+- picker and Settings geometry is automated at 240/260 px Agent widths and 640x600/720x640 Settings sizes. The in-app browser was unavailable to this session, so manual macOS VoiceOver and 125–200% OS-scale observation remain follow-up QA rather than an automated claim
+
+Open integration and platform evidence:
+
+- fetch, exact commit/SHA verification, non-force `dev` push, and the resulting GitHub Actions run remain pending at this local checkpoint
+- the workflow now requires a fixed non-empty deterministic Rust matrix on Ubuntu, Windows, and macOS, but runner-native results belong to the post-push CI record rather than this local macOS record
+- native Windows installed-app sign-off and a sustained manual soak remain broader MVP/release gates; they do not weaken the fail-closed automated account contract
+- no live paid Codex/Claude inference, billing eligibility, quota rotation, automatic failover, or load balancing is claimed or required by this slice
+
+The execution checklist is [Multi-Account Agent Profiles Implementation Plan](./superpowers/plans/2026-07-20-multi-account-agent-profiles.md). This section records the verified local candidate without pre-claiming remote `dev` integration.
+
 ## 자동화 검증 범위 / Automated Validation Coverage
 
 ### 한국어
@@ -44,7 +78,7 @@ This document exceeds 200 lines. Read only the section needed for the current ga
 - injected terminal runtime bridge coverage in `tests/e2e/design-prototype.spec.ts` for new-tab creation and close/terminate routing
 - agent suggestion runtime service contract behavior through `tests/e2e/runtime-agent-suggestions-service.spec.ts`
 - injected Codex suggestion runtime bridge coverage in `tests/e2e/design-prototype.spec.ts`
-- runtime provider capability coverage verifies composer model picking and image attachment selection use `read_agent_provider_capabilities`, then forward the selected model id and attachment paths in `request_agent_suggestions`.
+- runtime account capability coverage verifies composer model picking and attachments use `read_agent_account_capabilities`, then forward the exact account, selected model, and attachment paths through `request_agent_account_suggestions`; legacy provider-only service coverage remains migration-compatible only.
 - Agent Bar coverage verifies the left `Projects` workspace tree mirrors agent sessions, can create and switch workspaces, the composer stop button cancels a running request in the UI, and `@`, `#`, and `/` open inline reference suggestions.
 - live Codex activity coverage in `tests/e2e/design-prototype.spec.ts` verifies pending runtime requests update a persistent conversational agent turn with sequential concrete operation progress, then clear the internal progress rows and show answer-time metadata when that same turn becomes the final suggestion/result.
 - reply-only Codex coverage verifies normal assistant answers do not create review cards or composer approval panels; only command-bearing responses enter the review flow.
@@ -59,6 +93,8 @@ This document exceeds 200 lines. Read only the section needed for the current ga
 - Rust unit coverage verifies hanging Codex CLI child processes are killed and returned as timeout errors instead of blocking indefinitely.
 - Rust unit coverage now guards app-data startup normalization for missing directories, existing directories, and legacy file-path migration.
 - agent auth runtime service contract behavior through `tests/e2e/runtime-agent-auth-service.spec.ts`
+- v2 account-profile service coverage in `tests/e2e/runtime-agent-auth-service.spec.ts` and `tests/e2e/runtime-agent-suggestions-service.spec.ts` validates atomic snapshots, exact lifecycle/account payloads, canonical revision strings, provider/account owner echoes, inert browser fallback, and no implicit default translation
+- coordinated session/account coverage in `tests/e2e/project-agent-context.spec.ts` and `tests/e2e/claude-provider-workspaces.spec.ts` validates auth-first hydration, account-nested preferences, captured request ownership, stale lease behavior, and zero terminal calls; the compact picker/Settings/aging completion gates remain tracked in the dated in-progress section above
 - injected Codex connect setup-guidance coverage in `tests/e2e/design-prototype.spec.ts`
 - frontend no-mock baseline coverage in `tests/e2e/design-prototype.spec.ts`: browser preview starts at `Open a project`, exposes an empty bridge `projectPath`, contains no `aurora-monorepo`/`OnboardingFunnel.tsx` default data, and shows runtime-required messages instead of canned responses.
 
@@ -190,7 +226,7 @@ Before using web-preview results as evidence, the current sprint or release pass
 - Center terminal tabs now expose a user-owned input form that submits commands into the runtime-backed terminal session. On Windows this uses a hidden persistent shell process, preferring PowerShell, so user commands such as `dir`, `cd`, `ls`, and `clear` work without opening an external console window. `clear` and `cls` also clear the runtime terminal log buffer so the app surface behaves like a terminal, not only a command transcript.
 - Center editor tabs now use real editable buffers and save through `write_project_file`; saves include the last `contentHash` and are rejected if the file changed on disk.
 - Agent patch application is represented by `apply_project_patch`, a project-root-checked file-content edit contract with per-file content-hash guards and all-edit preflight before any write.
-- Approved agent commands now use `create_agent_job` through `src/shared/api/runtimeAgentJobs.ts`, not `create_terminal_session_with_command` or `execute_terminal_session_command`; center terminal tabs remain untouched by approval.
+- Approved agent commands now use `create_authorized_agent_job` through `src/shared/api/runtimeAgentJobs.ts`, not `create_terminal_session_with_command`, `execute_terminal_session_command`, or a provider-less job-create IPC. The backend holds the exact connected account lease through job creation, and center terminal tabs remain untouched by approval.
 
 ## 2026-06-01 Windows Installable Smoke
 
@@ -250,13 +286,14 @@ This is bounded browser-driven evidence with injected runtime seams. Rust tests 
 
 ## Current MVP Assessment
 
-The core MVP implementation is present, but stabilization is not complete. The current branch has durable isolated Agent jobs, real session-owned Codex/Claude provider and model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed connect/request revision leases, provider-neutral request ownership guards, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The account-catalog/request/picker replacement has completed its parser, request, UI, no-prompt compatibility, full-regression, independent-review, and non-force `dev` integration gates. The newer startup auth/capability recovery has also completed focused, full-regression, independent-review, prompt-free compatibility, native restart, and verified non-force `dev` integration gates. The following broader gates remain before an MVP-complete claim:
+The integrated provider-level MVP baseline has durable isolated Agent jobs, Codex/Claude provider/model selection, the Rust-verified Claude API-key/helper/CLI-session adapter, fail-closed provider revision leases, center-terminal isolation, race-focused E2E coverage, and a bounded automated aging scenario. The active multi-account candidate now adds the v2 registry, isolated account contexts, exact IPC/session ownership, compact picker, accessible Settings lifecycle, atomic approval/job creation, restart revalidation, and a complete local regression. The dated 2026-07-20 section is authoritative for its measured local gate and pending `dev` CI. The following broader gates remain before an MVP-complete claim:
 
 - native Windows installed-app validation for folder picker, PTY commands, Codex reconnect/expiry behavior, isolated Agent-job execution, restart restore, and a first real suggestion
 - one explicitly user-approved live Claude request plus the full connect, command review, `Allow once`, isolated Agent-job, project-switch, and zero-center-terminal-mutation regression path
 - Anthropic approval/contract confirmation for public CLI-session distribution, or a release contract that disables that path and uses API-key/supported-cloud credentials
 - signed and notarized macOS distribution
 - sustained manual aging validation beyond the bounded automated scenario
+- complete the post-push multi-account `dev` CI/integration record and retain manual VoiceOver/OS-scale QA as a follow-up accessibility check
 - Telegram external-channel integration
 
 A code-verified state-persistence bug was found and fixed during the deployment-readiness review: auth, workspace, Agent-job, and telegram state now persist to distinct files (`agent-auth.json`, `workspace-state.json`, `agent-jobs.json`, `telegram-state.json`). A follow-on Windows launch blocker caused by a legacy file at the app-data root is also fixed and guarded by Rust unit tests. Rust and browser tests now cover their respective restore contracts; full installed-app restart verification remains pending on Windows.

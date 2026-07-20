@@ -2,8 +2,13 @@ mod runtime;
 
 use runtime::agent_jobs::{AgentJobLogs, AgentJobManager, AgentJobSnapshot, CreateAgentJobRequest};
 use runtime::auth::{
-    provider_validation_failure_message, AgentAuthManager, AgentAuthRuntimeSnapshot,
-    AgentConnectionSnapshot, AgentProvider, CompleteAgentLoginRequest,
+    provider_validation_failure_message, AgentAccountLease, AgentAuthManager,
+    AgentAuthRuntimeSnapshot, AgentConnectionSnapshot, AgentProfileLeaseAuthorization,
+    AgentProfileResponse, AgentProfileSetupGuidance, AgentProfileSnapshot,
+    AgentProfileTombstoneResponse, AgentProvider, AuthorizeAgentProfileLeaseRequest,
+    CanonicalDecimalU64, CheckAgentProfileRequest, CompleteAgentLoginRequest,
+    CreateAgentProfileRequest, ReadAgentProfileSetupGuidanceRequest, RenameAgentProfileRequest,
+    TargetAgentProfileLeaseRequest, TargetAgentProfileRequest,
 };
 use runtime::codex::{
     AgentProviderCapabilities, AgentProviderDiagnostics, AgentSuggestionResponse,
@@ -38,6 +43,35 @@ struct RuntimeInfo {
     app_name: String,
     platform: String,
     mode: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentAccountOwnedResponse<T> {
+    account_id: String,
+    incarnation: CanonicalDecimalU64,
+    credential_revision: CanonicalDecimalU64,
+    #[serde(flatten)]
+    payload: T,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RequestAgentAccountSuggestionsRequest {
+    account_id: String,
+    incarnation: CanonicalDecimalU64,
+    credential_revision: CanonicalDecimalU64,
+    #[serde(flatten)]
+    request: RequestAgentSuggestionsRequest,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateAuthorizedAgentJobRequest {
+    #[serde(flatten)]
+    lease: AuthorizeAgentProfileLeaseRequest,
+    #[serde(flatten)]
+    job: CreateAgentJobRequest,
 }
 
 #[tauri::command]
@@ -227,11 +261,27 @@ fn resize_terminal_session(
 }
 
 #[tauri::command]
-fn create_agent_job(
-    state: tauri::State<'_, AgentJobManager>,
-    request: CreateAgentJobRequest,
+fn create_authorized_agent_job(
+    auth_state: tauri::State<'_, AgentAuthManager>,
+    job_state: tauri::State<'_, AgentJobManager>,
+    request: CreateAuthorizedAgentJobRequest,
 ) -> Result<AgentJobSnapshot, String> {
-    state.create_job(request)
+    validate_authorized_agent_job_session_id(request.job.session_id.as_deref())?;
+
+    let CreateAuthorizedAgentJobRequest { lease, job } = request;
+    auth_state.with_authorized_profile_lease(&lease, |_| job_state.create_job(job))
+}
+
+fn validate_authorized_agent_job_session_id(session_id: Option<&str>) -> Result<(), String> {
+    let session_id = session_id
+        .ok_or_else(|| "agentSessionId is required to own an authorized Agent job.".to_string())?;
+    if session_id.trim().is_empty() || session_id != session_id.trim() {
+        return Err(
+            "agentSessionId must be a canonical non-empty string for an authorized Agent job."
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -267,6 +317,111 @@ fn cancel_agent_job(
 }
 
 #[tauri::command]
+fn list_agent_profiles(
+    state: tauri::State<'_, AgentAuthManager>,
+    provider: AgentProvider,
+) -> Vec<AgentProfileResponse> {
+    state
+        .list_profiles(provider)
+        .into_iter()
+        .map(AgentProfileResponse::from)
+        .collect()
+}
+
+#[tauri::command]
+fn read_agent_profile_snapshot(state: tauri::State<'_, AgentAuthManager>) -> AgentProfileSnapshot {
+    state.read_profile_snapshot()
+}
+
+#[tauri::command]
+async fn create_agent_profile(
+    app: tauri::AppHandle,
+    request: CreateAgentProfileRequest,
+) -> Result<AgentProfileResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AgentAuthManager>()
+            .create_profile(request.provider, &request.alias)
+            .map(AgentProfileResponse::from)
+    })
+    .await
+    .map_err(|error| format!("failed to join account profile creation: {error}"))?
+}
+
+#[tauri::command]
+fn rename_agent_profile(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: RenameAgentProfileRequest,
+) -> Result<AgentProfileResponse, String> {
+    state
+        .rename_profile(request.provider, &request.account_id, &request.alias)
+        .map(AgentProfileResponse::from)
+}
+
+#[tauri::command]
+fn set_default_agent_profile(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: TargetAgentProfileRequest,
+) -> Result<AgentProfileResponse, String> {
+    state
+        .set_default_profile(request.provider, &request.account_id)
+        .map(AgentProfileResponse::from)
+}
+
+#[tauri::command]
+async fn check_agent_profile(
+    app: tauri::AppHandle,
+    request: CheckAgentProfileRequest,
+) -> Result<AgentProfileResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AgentAuthManager>()
+            .check_profile(
+                request.provider,
+                &request.account_id,
+                request.requested_scopes,
+            )
+            .map(AgentProfileResponse::from)
+    })
+    .await
+    .map_err(|error| format!("failed to join account profile check: {error}"))?
+}
+
+#[tauri::command]
+fn disconnect_agent_profile(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: TargetAgentProfileRequest,
+) -> Result<AgentProfileResponse, String> {
+    state
+        .disconnect_profile(request.provider, &request.account_id)
+        .map(AgentProfileResponse::from)
+}
+
+#[tauri::command]
+fn forget_agent_profile(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: TargetAgentProfileRequest,
+) -> Result<AgentProfileTombstoneResponse, String> {
+    state
+        .forget_profile(request.provider, &request.account_id)
+        .map(AgentProfileTombstoneResponse::from)
+}
+
+#[tauri::command]
+fn read_agent_profile_setup_guidance(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: ReadAgentProfileSetupGuidanceRequest,
+) -> Result<AgentProfileSetupGuidance, String> {
+    state.setup_guidance(request.provider, &request.account_id, request.shell)
+}
+
+#[tauri::command]
+fn authorize_agent_profile_lease(
+    state: tauri::State<'_, AgentAuthManager>,
+    request: AuthorizeAgentProfileLeaseRequest,
+) -> Result<AgentProfileLeaseAuthorization, String> {
+    state.authorize_profile_lease(&request)
+}
+
+#[tauri::command]
 async fn list_agent_connections(
     app: tauri::AppHandle,
 ) -> Result<Vec<AgentConnectionSnapshot>, String> {
@@ -275,12 +430,17 @@ async fn list_agent_connections(
         .map_err(|error| format!("failed to join agent connection refresh: {error}"))
 }
 
+fn reject_legacy_provider_only_agent_command(_operation: &str) -> Result<(), String> {
+    Err("An exact Agent account lease is required. Refresh accounts and retry.".to_string())
+}
+
 #[tauri::command]
 async fn begin_agent_login(
     app: tauri::AppHandle,
     provider: AgentProvider,
     requested_scopes: Option<Vec<String>>,
 ) -> Result<AgentConnectionSnapshot, String> {
+    reject_legacy_provider_only_agent_command("begin login")?;
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AgentAuthManager>()
             .begin_login(provider, requested_scopes)
@@ -314,11 +474,114 @@ fn resolve_provider_suggestion_attempt<T>(
         .ok_or_else(|| "The provider returned no suggestion result after validation.".to_string())?
 }
 
+fn resolve_account_owned_provider_result<T>(
+    state: &AgentAuthManager,
+    lease: &AgentAccountLease,
+    require_connected: bool,
+    result: Result<T, String>,
+    payload_provider: impl FnOnce(&T) -> AgentProvider,
+    operation: &str,
+) -> Result<T, String> {
+    state.require_profile_lease_current(lease, require_connected)?;
+    let payload = result.map_err(|_| {
+        format!(
+            "Could not {operation} for the selected {} account.",
+            lease.provider().display_name()
+        )
+    })?;
+    if payload_provider(&payload) != lease.provider() {
+        return Err("Account provider response owner mismatch.".to_string());
+    }
+    Ok(payload)
+}
+
+fn bind_account_owned_payload<T>(
+    lease: &AgentAccountLease,
+    payload_provider: AgentProvider,
+    payload: T,
+) -> Result<AgentAccountOwnedResponse<T>, String> {
+    if payload_provider != lease.provider() {
+        return Err("Account provider response owner mismatch.".to_string());
+    }
+    Ok(AgentAccountOwnedResponse {
+        account_id: lease.account_id().to_string(),
+        incarnation: lease.incarnation().into(),
+        credential_revision: lease.credential_revision().into(),
+        payload,
+    })
+}
+
+fn bind_account_suggestions(
+    lease: &AgentAccountLease,
+    suggestions: Vec<AgentSuggestionResponse>,
+) -> Result<Vec<AgentAccountOwnedResponse<AgentSuggestionResponse>>, String> {
+    if suggestions
+        .iter()
+        .any(|suggestion| suggestion.provider != lease.provider())
+    {
+        return Err("Account suggestion response owner mismatch.".to_string());
+    }
+    Ok(suggestions
+        .into_iter()
+        .map(|payload| AgentAccountOwnedResponse {
+            account_id: lease.account_id().to_string(),
+            incarnation: lease.incarnation().into(),
+            credential_revision: lease.credential_revision().into(),
+            payload,
+        })
+        .collect())
+}
+
+fn resolve_account_execution_context<T>(
+    state: &AgentAuthManager,
+    lease: &AgentAccountLease,
+    require_connected: bool,
+    context: Result<T, String>,
+    context_lease: impl FnOnce(&T) -> &AgentAccountLease,
+) -> Result<T, String> {
+    state.require_profile_lease_current(lease, require_connected)?;
+    let context = context
+        .map_err(|_| "Could not prepare the selected account execution context.".to_string())?;
+    if context_lease(&context) != lease {
+        return Err("Account execution context lease mismatch.".to_string());
+    }
+    Ok(context)
+}
+
+fn resolve_account_suggestion_attempt<T>(
+    provider: AgentProvider,
+    validation_applied: Result<bool, String>,
+    validation: &Result<T, String>,
+    suggestions: Option<Result<Vec<AgentSuggestionResponse>, String>>,
+) -> Result<Vec<AgentSuggestionResponse>, String> {
+    let validation_applied = validation_applied.map_err(|_| {
+        "Could not update the selected account after provider validation.".to_string()
+    })?;
+    if !validation_applied {
+        return Err(
+            "The selected account changed while the operation was running. Retry the operation."
+                .to_string(),
+        );
+    }
+    if validation.is_err() {
+        return Err(match provider {
+            AgentProvider::Codex => {
+                "Codex authentication could not be validated. Reconnect Codex.".to_string()
+            }
+            AgentProvider::Claude => "Claude authentication could not be validated. Check Claude credentials or run `claude auth login` in your own terminal, then reconnect Claude.".to_string(),
+        });
+    }
+    suggestions
+        .ok_or_else(|| "The selected account returned no suggestion result.".to_string())?
+        .map_err(|_| "The selected account suggestion request failed.".to_string())
+}
+
 #[tauri::command]
 async fn request_agent_suggestions(
     app: tauri::AppHandle,
     request: RequestAgentSuggestionsRequest,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
+    reject_legacy_provider_only_agent_command("request suggestions")?;
     if request.agent_session_id.trim().is_empty() {
         return Err("agentSessionId is required to own a provider request.".into());
     }
@@ -363,17 +626,252 @@ async fn request_agent_suggestions(
 }
 
 #[tauri::command]
-fn read_agent_provider_diagnostics(provider: AgentProvider) -> AgentProviderDiagnostics {
-    match provider {
+async fn read_agent_account_diagnostics(
+    app: tauri::AppHandle,
+    request: TargetAgentProfileLeaseRequest,
+) -> Result<AgentAccountOwnedResponse<AgentProviderDiagnostics>, String> {
+    let TargetAgentProfileLeaseRequest {
+        provider,
+        account_id,
+        incarnation,
+        credential_revision,
+    } = request;
+    let state = app.state::<AgentAuthManager>();
+    let initial = state.require_exact_account_profile_lease(
+        provider,
+        &account_id,
+        incarnation.value(),
+        credential_revision.value(),
+        false,
+    )?;
+
+    let (lease, provider_result) = match provider {
+        AgentProvider::Codex => {
+            let context = resolve_account_execution_context(
+                &state,
+                &initial,
+                false,
+                state.capture_codex_account_execution_context(&account_id),
+                |context| context.lease(),
+            )?;
+            let lease = context.lease().clone();
+            state.require_profile_lease_current(&lease, false)?;
+            let joined = tauri::async_runtime::spawn_blocking(move || {
+                runtime::codex::read_codex_diagnostics_for_context(&context)
+            })
+            .await;
+            let result = match joined {
+                Ok(result) => result,
+                Err(_) => Err("account diagnostics worker failed".to_string()),
+            };
+            (lease, result)
+        }
+        AgentProvider::Claude => {
+            let context = resolve_account_execution_context(
+                &state,
+                &initial,
+                false,
+                state.capture_claude_account_execution_context(&account_id),
+                |context| context.lease(),
+            )?;
+            let lease = context.lease().clone();
+            state.require_profile_lease_current(&lease, false)?;
+            let joined = tauri::async_runtime::spawn_blocking(move || {
+                runtime::claude::read_claude_diagnostics_for_context(&context)
+            })
+            .await;
+            let result = match joined {
+                Ok(result) => result,
+                Err(_) => Err("account diagnostics worker failed".to_string()),
+            };
+            (lease, result)
+        }
+    };
+    let diagnostics = resolve_account_owned_provider_result(
+        &state,
+        &lease,
+        false,
+        provider_result,
+        |diagnostics| diagnostics.provider,
+        "read diagnostics",
+    )?;
+    bind_account_owned_payload(&lease, diagnostics.provider, diagnostics)
+}
+
+#[tauri::command]
+async fn read_agent_account_capabilities(
+    app: tauri::AppHandle,
+    request: TargetAgentProfileLeaseRequest,
+) -> Result<AgentAccountOwnedResponse<AgentProviderCapabilities>, String> {
+    let TargetAgentProfileLeaseRequest {
+        provider,
+        account_id,
+        incarnation,
+        credential_revision,
+    } = request;
+    let state = app.state::<AgentAuthManager>();
+    let initial = state.require_exact_account_profile_lease(
+        provider,
+        &account_id,
+        incarnation.value(),
+        credential_revision.value(),
+        true,
+    )?;
+
+    let (lease, provider_result) = match provider {
+        AgentProvider::Codex => {
+            let context = resolve_account_execution_context(
+                &state,
+                &initial,
+                true,
+                state.capture_codex_account_execution_context(&account_id),
+                |context| context.lease(),
+            )?;
+            let lease = context.lease().clone();
+            state.require_profile_lease_current(&lease, true)?;
+            let joined = tauri::async_runtime::spawn_blocking(move || {
+                runtime::codex::read_codex_capabilities_for_context(&context)
+            })
+            .await;
+            let result = match joined {
+                Ok(result) => result,
+                Err(_) => Err("account capabilities worker failed".to_string()),
+            };
+            (lease, result)
+        }
+        AgentProvider::Claude => {
+            let context = resolve_account_execution_context(
+                &state,
+                &initial,
+                true,
+                state.capture_claude_account_execution_context(&account_id),
+                |context| context.lease(),
+            )?;
+            let lease = context.lease().clone();
+            state.require_profile_lease_current(&lease, true)?;
+            let joined = tauri::async_runtime::spawn_blocking(move || {
+                runtime::claude::read_claude_capabilities_for_context(&context)
+            })
+            .await;
+            let result = match joined {
+                Ok(result) => result,
+                Err(_) => Err("account capabilities worker failed".to_string()),
+            };
+            (lease, result)
+        }
+    };
+    let capabilities = resolve_account_owned_provider_result(
+        &state,
+        &lease,
+        true,
+        provider_result,
+        |capabilities| capabilities.provider,
+        "read capabilities",
+    )?;
+    bind_account_owned_payload(&lease, capabilities.provider, capabilities)
+}
+
+#[tauri::command]
+async fn request_agent_account_suggestions(
+    app: tauri::AppHandle,
+    request: RequestAgentAccountSuggestionsRequest,
+) -> Result<Vec<AgentAccountOwnedResponse<AgentSuggestionResponse>>, String> {
+    let RequestAgentAccountSuggestionsRequest {
+        account_id,
+        incarnation,
+        credential_revision,
+        request,
+    } = request;
+    if request.agent_session_id.trim().is_empty() {
+        return Err("agentSessionId is required to own a provider request.".to_string());
+    }
+    let provider = request.provider;
+    let state = app.state::<AgentAuthManager>();
+    let initial = state.require_exact_account_profile_lease(
+        provider,
+        &account_id,
+        incarnation.value(),
+        credential_revision.value(),
+        true,
+    )?;
+
+    let (lease, suggestions) = match provider {
+        AgentProvider::Codex => {
+            let context = resolve_account_execution_context(
+                &state,
+                &initial,
+                true,
+                state.capture_codex_account_execution_context(&account_id),
+                |context| context.lease(),
+            )?;
+            let lease = context.lease().clone();
+            state.require_profile_lease_current(&lease, true)?;
+            let joined = tauri::async_runtime::spawn_blocking(move || {
+                runtime::codex::request_codex_suggestion_attempt_for_context(&context, request)
+            })
+            .await;
+            state.require_profile_lease_current(&lease, true)?;
+            let attempt = joined.map_err(|_| {
+                "Could not complete the selected account suggestion worker.".to_string()
+            })?;
+            let validation_applied =
+                state.apply_codex_account_validation_if_current(&lease, &attempt.validation);
+            let suggestions = resolve_account_suggestion_attempt(
+                provider,
+                validation_applied,
+                &attempt.validation,
+                attempt.suggestions,
+            )?;
+            (lease, suggestions)
+        }
+        AgentProvider::Claude => {
+            let context = resolve_account_execution_context(
+                &state,
+                &initial,
+                true,
+                state.capture_claude_account_execution_context(&account_id),
+                |context| context.lease(),
+            )?;
+            let lease = context.lease().clone();
+            state.require_profile_lease_current(&lease, true)?;
+            let joined = tauri::async_runtime::spawn_blocking(move || {
+                runtime::claude::request_claude_suggestion_attempt_for_context(&context, request)
+            })
+            .await;
+            state.require_profile_lease_current(&lease, true)?;
+            let attempt = joined.map_err(|_| {
+                "Could not complete the selected account suggestion worker.".to_string()
+            })?;
+            let validation_applied =
+                state.apply_claude_account_validation_if_current(&lease, &attempt.validation);
+            let suggestions = resolve_account_suggestion_attempt(
+                provider,
+                validation_applied,
+                &attempt.validation,
+                attempt.suggestions,
+            )?;
+            (lease, suggestions)
+        }
+    };
+    bind_account_suggestions(&lease, suggestions)
+}
+
+#[tauri::command]
+fn read_agent_provider_diagnostics(
+    provider: AgentProvider,
+) -> Result<AgentProviderDiagnostics, String> {
+    reject_legacy_provider_only_agent_command("read diagnostics")?;
+    Ok(match provider {
         AgentProvider::Codex => runtime::codex::read_codex_diagnostics(),
         AgentProvider::Claude => runtime::claude::read_claude_diagnostics(),
-    }
+    })
 }
 
 #[tauri::command]
 async fn read_agent_provider_capabilities(
     provider: AgentProvider,
 ) -> Result<AgentProviderCapabilities, String> {
+    reject_legacy_provider_only_agent_command("read capabilities")?;
     run_blocking_agent_provider_capability_read(move || match provider {
         AgentProvider::Codex => runtime::codex::read_codex_capabilities(),
         AgentProvider::Claude => runtime::claude::read_claude_capabilities(),
@@ -396,6 +894,7 @@ fn disconnect_agent_provider(
     state: tauri::State<'_, AgentAuthManager>,
     provider: AgentProvider,
 ) -> Result<AgentConnectionSnapshot, String> {
+    reject_legacy_provider_only_agent_command("disconnect")?;
     state.disconnect(provider)
 }
 
@@ -618,16 +1117,29 @@ pub fn run() {
             write_terminal_input,
             read_raw_terminal_output,
             resize_terminal_session,
-            create_agent_job,
+            create_authorized_agent_job,
             list_agent_jobs,
             read_agent_job_logs,
             cancel_agent_job,
+            list_agent_profiles,
+            read_agent_profile_snapshot,
+            create_agent_profile,
+            rename_agent_profile,
+            set_default_agent_profile,
+            check_agent_profile,
+            disconnect_agent_profile,
+            forget_agent_profile,
+            read_agent_profile_setup_guidance,
+            authorize_agent_profile_lease,
             list_agent_connections,
             begin_agent_login,
             complete_agent_login,
             request_agent_suggestions,
+            request_agent_account_suggestions,
             read_agent_provider_diagnostics,
             read_agent_provider_capabilities,
+            read_agent_account_diagnostics,
+            read_agent_account_capabilities,
             disconnect_agent_provider,
             agent_auth_runtime_snapshot,
             read_workspace_runtime_snapshot,
@@ -684,6 +1196,28 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn invoke_json_command(
+        webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+        command: &str,
+        body: serde_json::Value,
+    ) -> serde_json::Value {
+        tauri::test::get_ipc_response(
+            webview,
+            tauri::webview::InvokeRequest {
+                cmd: command.into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: body.into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .unwrap_or_else(|error| panic!("{command} failed: {error}"))
+        .deserialize::<serde_json::Value>()
+        .unwrap()
+    }
 
     fn invoke_workspace_project_command(
         webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
@@ -746,6 +1280,65 @@ mod tests {
         assert!(storage_dir.is_dir());
 
         remove_test_path(&storage_dir);
+    }
+
+    #[test]
+    fn multi_account_profile_lifecycle_commands_expose_transient_metadata_only() {
+        let storage_dir = unique_temp_path("profile-lifecycle-commands");
+        remove_test_path(&storage_dir);
+        fs::create_dir_all(&storage_dir).unwrap();
+        let _storage_guard = TestPathGuard(storage_dir.clone());
+        let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(storage_dir.join("agent-auth.json"))
+            .unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(manager)
+            .invoke_handler(tauri::generate_handler![
+                list_agent_profiles,
+                rename_agent_profile,
+                set_default_agent_profile,
+                forget_agent_profile,
+                read_agent_profile_setup_guidance,
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview =
+            tauri::WebviewWindowBuilder::new(&app, "profile-lifecycle", Default::default())
+                .build()
+                .unwrap();
+
+        let profiles = invoke_json_command(
+            &webview,
+            "list_agent_profiles",
+            serde_json::json!({"provider": "codex"}),
+        );
+        let profiles = profiles.as_array().unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0]["accountId"], "codex-default");
+        assert_eq!(profiles[0]["profileKind"]["kind"], "ambient");
+
+        let guidance = invoke_json_command(
+            &webview,
+            "read_agent_profile_setup_guidance",
+            serde_json::json!({
+                "request": {
+                    "provider": "codex",
+                    "accountId": "codex-default",
+                    "shell": "zsh",
+                }
+            }),
+        );
+        assert_eq!(guidance["supported"], false);
+        assert!(guidance["renderedCommand"].is_null());
+        assert!(guidance["unsupportedReason"]
+            .as_str()
+            .unwrap()
+            .contains("ambient"));
+
+        let persisted = fs::read_to_string(storage_dir.join("agent-auth.json")).unwrap();
+        assert!(!persisted.contains("renderedCommand"));
+        assert!(!persisted.contains("CODEX_HOME"));
     }
 
     #[test]
@@ -955,5 +1548,567 @@ mod tests {
             closed.active_project_path,
             closed.open_project_paths.first().cloned()
         );
+    }
+
+    #[test]
+    fn account_owned_ipc_lifecycle_commands_use_string_leases_and_request_envelopes() {
+        let storage_dir = unique_temp_path("account-owned-ipc-lifecycle");
+        remove_test_path(&storage_dir);
+        fs::create_dir_all(&storage_dir).unwrap();
+        let _storage_guard = TestPathGuard(storage_dir.clone());
+        let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(storage_dir.join("agent-auth.json"))
+            .unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(manager)
+            .invoke_handler(tauri::generate_handler![
+                list_agent_profiles,
+                read_agent_profile_snapshot,
+                disconnect_agent_profile,
+                authorize_agent_profile_lease,
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(
+            &app,
+            "account-owned-ipc-lifecycle",
+            Default::default(),
+        )
+        .build()
+        .unwrap();
+
+        let listed = invoke_json_command(
+            &webview,
+            "list_agent_profiles",
+            serde_json::json!({"provider": "codex"}),
+        );
+        let listed_codex = listed.as_array().unwrap().first().unwrap();
+        for field in ["incarnation", "metadataRevision", "credentialRevision"] {
+            assert!(
+                listed_codex[field].is_string(),
+                "listed {field} must cross IPC as a string"
+            );
+        }
+
+        let snapshot = invoke_json_command(
+            &webview,
+            "read_agent_profile_snapshot",
+            serde_json::json!({}),
+        );
+        let codex = snapshot["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|profile| profile["accountId"] == "codex-default")
+            .unwrap();
+        for field in ["incarnation", "metadataRevision", "credentialRevision"] {
+            assert!(
+                codex[field].is_string(),
+                "{field} must cross IPC as a string"
+            );
+        }
+        let incarnation = codex["incarnation"].as_str().unwrap().to_string();
+
+        let disconnected = invoke_json_command(
+            &webview,
+            "disconnect_agent_profile",
+            serde_json::json!({
+                "request": {"provider": "codex", "accountId": "codex-default"}
+            }),
+        );
+        assert_eq!(disconnected["connection"]["status"], "disconnected");
+        assert!(disconnected["credentialRevision"].is_string());
+
+        let authorization = invoke_json_command(
+            &webview,
+            "authorize_agent_profile_lease",
+            serde_json::json!({
+                "request": {
+                    "provider": "codex",
+                    "accountId": "codex-default",
+                    "incarnation": incarnation,
+                    "credentialRevision": disconnected["credentialRevision"],
+                }
+            }),
+        );
+        assert_eq!(authorization["authorized"], false);
+        assert!(authorization["incarnation"].is_string());
+        assert!(authorization["credentialRevision"].is_string());
+
+        let malformed = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "authorize_agent_profile_lease".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: serde_json::json!({
+                    "request": {
+                        "provider": "codex",
+                        "accountId": "codex-default",
+                        "incarnation": 1,
+                        "credentialRevision": "01",
+                    }
+                })
+                .into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+        assert!(
+            malformed.is_err(),
+            "non-canonical IPC lease must be rejected"
+        );
+    }
+
+    #[test]
+    fn authorized_agent_job_ipc_rejects_whitespace_ambiguous_session_ownership() {
+        let project_dir = unique_temp_path("authorized-agent-job-session-boundary");
+        remove_test_path(&project_dir);
+        fs::create_dir_all(&project_dir).unwrap();
+        let _project_guard = TestPathGuard(project_dir.clone());
+        let project_path = fs::canonicalize(&project_dir)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+
+        let auth_manager = AgentAuthManager::new();
+        auth_manager
+            .initialize_storage(project_dir.join("agent-auth.json"))
+            .unwrap();
+        let disconnected = auth_manager
+            .require_account_profile_lease(AgentProvider::Codex, "codex-default", false)
+            .unwrap();
+        auth_manager
+            .apply_codex_account_validation_if_current(
+                &disconnected,
+                &Ok("Connected IPC fixture".to_string()),
+            )
+            .unwrap();
+        let current = auth_manager
+            .require_account_profile_lease(AgentProvider::Codex, "codex-default", true)
+            .unwrap();
+        let job_manager = AgentJobManager::new();
+        job_manager
+            .initialize_storage(project_dir.join("agent-jobs.json"))
+            .unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(auth_manager)
+            .manage(job_manager)
+            .invoke_handler(tauri::generate_handler![create_authorized_agent_job])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(
+            &app,
+            "authorized-agent-job-session-boundary",
+            Default::default(),
+        )
+        .build()
+        .unwrap();
+
+        let error = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "create_authorized_agent_job".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: serde_json::json!({
+                    "request": {
+                        "provider": current.provider().as_key(),
+                        "accountId": current.account_id(),
+                        "incarnation": current.incarnation().to_string(),
+                        "credentialRevision": current.credential_revision().to_string(),
+                        "projectPath": project_path.clone(),
+                        "command": "whoami",
+                        "name": "agent-check",
+                        "sessionId": " agent-session-1 ",
+                    }
+                })
+                .into(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        );
+        let error = error.expect_err("whitespace-ambiguous session ownership must be rejected");
+        let error_message = error.to_string();
+        assert!(
+            error_message.contains(
+                "agentSessionId must be a canonical non-empty string for an authorized Agent job."
+            ),
+            "unexpected direct IPC rejection: {error_message}"
+        );
+        assert!(app
+            .state::<AgentJobManager>()
+            .list_jobs(&project_path, Some(10))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn account_owned_ipc_profile_list_serializes_large_revisions_as_decimal_strings() {
+        let storage_dir = unique_temp_path("account-owned-ipc-profile-list-decimals");
+        remove_test_path(&storage_dir);
+        fs::create_dir_all(&storage_dir).unwrap();
+        let _storage_guard = TestPathGuard(storage_dir.clone());
+        let storage_path = storage_dir.join("agent-auth.json");
+
+        let bootstrap = AgentAuthManager::new();
+        bootstrap.initialize_storage(storage_path.clone()).unwrap();
+        drop(bootstrap);
+
+        let mut persisted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&storage_path).unwrap()).unwrap();
+        persisted["profileRegistry"]["nextIncarnation"] = serde_json::json!(u64::MAX);
+        let codex = persisted["profileRegistry"]["profiles"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|profile| profile["accountId"] == "codex-default")
+            .unwrap();
+        codex["incarnation"] = serde_json::json!(u64::MAX - 1);
+        codex["metadataRevision"] = serde_json::json!(u64::MAX);
+        codex["credentialRevision"] = serde_json::json!(u64::MAX);
+        fs::write(
+            &storage_path,
+            serde_json::to_string_pretty(&persisted).unwrap(),
+        )
+        .unwrap();
+
+        let manager = AgentAuthManager::new();
+        manager.initialize_storage(storage_path).unwrap();
+        let app = tauri::test::mock_builder()
+            .manage(manager)
+            .invoke_handler(tauri::generate_handler![list_agent_profiles])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(
+            &app,
+            "account-owned-ipc-profile-list-decimals",
+            Default::default(),
+        )
+        .build()
+        .unwrap();
+
+        let profiles = invoke_json_command(
+            &webview,
+            "list_agent_profiles",
+            serde_json::json!({"provider": "codex"}),
+        );
+        let codex = profiles.as_array().unwrap().first().unwrap();
+        assert_eq!(codex["incarnation"], (u64::MAX - 1).to_string());
+        assert_eq!(codex["metadataRevision"], u64::MAX.to_string());
+        assert_eq!(codex["credentialRevision"], u64::MAX.to_string());
+    }
+
+    #[test]
+    fn account_owned_ipc_stale_result_precedes_provider_failure_and_hides_raw_error() {
+        let storage_dir = unique_temp_path("account-owned-ipc-stale-provider-result");
+        remove_test_path(&storage_dir);
+        fs::create_dir_all(&storage_dir).unwrap();
+        let _storage_guard = TestPathGuard(storage_dir.clone());
+        let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(storage_dir.join("agent-auth.json"))
+            .unwrap();
+        let stale = manager
+            .require_account_profile_lease(AgentProvider::Codex, "codex-default", false)
+            .unwrap();
+        manager
+            .disconnect_profile(AgentProvider::Codex, "codex-default")
+            .unwrap();
+
+        let error = resolve_account_owned_provider_result(
+            &manager,
+            &stale,
+            false,
+            Err::<AgentProviderDiagnostics, _>(
+                "private@example.com raw-account-provider-secret".to_string(),
+            ),
+            |diagnostics| diagnostics.provider,
+            "read diagnostics",
+        )
+        .err()
+        .expect("stale provider result must be rejected");
+
+        assert!(error.to_ascii_lowercase().contains("changed"), "{error}");
+        assert!(!error.contains("private@example.com"), "{error}");
+        assert!(!error.contains("raw-account-provider-secret"), "{error}");
+    }
+
+    #[test]
+    fn account_owned_ipc_current_provider_failures_are_redacted_and_owner_mismatch_fails_closed() {
+        let storage_dir = unique_temp_path("account-owned-ipc-current-provider-result");
+        remove_test_path(&storage_dir);
+        fs::create_dir_all(&storage_dir).unwrap();
+        let _storage_guard = TestPathGuard(storage_dir.clone());
+        let manager = AgentAuthManager::new();
+        manager
+            .initialize_storage(storage_dir.join("agent-auth.json"))
+            .unwrap();
+        let lease = manager
+            .require_account_profile_lease(AgentProvider::Codex, "codex-default", false)
+            .unwrap();
+
+        let current_failure = resolve_account_owned_provider_result(
+            &manager,
+            &lease,
+            false,
+            Err::<AgentProviderDiagnostics, _>("private@example.com raw-current-secret".into()),
+            |diagnostics| diagnostics.provider,
+            "read diagnostics",
+        )
+        .err()
+        .expect("provider failure must become a generic command error");
+        assert_eq!(
+            current_failure,
+            "Could not read diagnostics for the selected Codex account."
+        );
+        assert!(!current_failure.contains("private@example.com"));
+        assert!(!current_failure.contains("raw-current-secret"));
+
+        let mismatched = AgentProviderDiagnostics {
+            provider: AgentProvider::Claude,
+            setup_state: runtime::codex::AgentProviderSetupState::Ready,
+            connection_path: "Claude".into(),
+            summary: "ready".into(),
+            guidance: "none".into(),
+            base_url: None,
+            model: None,
+            requirements: vec![],
+        };
+        let owner_error = resolve_account_owned_provider_result(
+            &manager,
+            &lease,
+            false,
+            Ok(mismatched),
+            |diagnostics| diagnostics.provider,
+            "read diagnostics",
+        )
+        .err()
+        .expect("provider mismatch must fail closed");
+        assert_eq!(owner_error, "Account provider response owner mismatch.");
+    }
+
+    #[test]
+    fn account_owned_ipc_owner_binding_is_flat_and_rejects_mixed_suggestion_batches() {
+        let manager = AgentAuthManager::new();
+        let lease = manager
+            .require_account_profile_lease(AgentProvider::Codex, "codex-default", false)
+            .unwrap();
+        let diagnostics = AgentProviderDiagnostics {
+            provider: AgentProvider::Codex,
+            setup_state: runtime::codex::AgentProviderSetupState::Ready,
+            connection_path: "Codex".into(),
+            summary: "ready".into(),
+            guidance: "none".into(),
+            base_url: None,
+            model: None,
+            requirements: vec![],
+        };
+        let response =
+            bind_account_owned_payload(&lease, diagnostics.provider, diagnostics).unwrap();
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["provider"], "codex");
+        assert_eq!(json["accountId"], "codex-default");
+        assert_eq!(json["incarnation"], "1");
+        assert_eq!(json["credentialRevision"], "1");
+        assert!(json.get("payload").is_none(), "payload must be flattened");
+
+        let suggestions = vec![
+            AgentSuggestionResponse {
+                id: "codex-1".into(),
+                provider: AgentProvider::Codex,
+                summary: "first".into(),
+                command: "pwd".into(),
+                preferred_target: runtime::codex::AgentExecutionTarget::NewTab,
+                confidence: runtime::codex::AgentSuggestionConfidence::High,
+                error: None,
+            },
+            AgentSuggestionResponse {
+                id: "claude-1".into(),
+                provider: AgentProvider::Claude,
+                summary: "mixed".into(),
+                command: "ls".into(),
+                preferred_target: runtime::codex::AgentExecutionTarget::NewTab,
+                confidence: runtime::codex::AgentSuggestionConfidence::High,
+                error: None,
+            },
+        ];
+        assert!(bind_account_suggestions(&lease, suggestions)
+            .err()
+            .expect("mixed provider batch must be rejected")
+            .contains("owner mismatch"));
+    }
+
+    #[test]
+    fn account_owned_ipc_context_capture_rejects_a_different_lease_tuple() {
+        let manager = AgentAuthManager::new();
+        let expected = manager
+            .require_account_profile_lease(AgentProvider::Codex, "codex-default", false)
+            .unwrap();
+        let mismatched = manager
+            .require_account_profile_lease(AgentProvider::Claude, "claude-default", false)
+            .unwrap();
+
+        let error = resolve_account_execution_context(
+            &manager,
+            &expected,
+            false,
+            Ok(mismatched),
+            |captured| captured,
+        )
+        .unwrap_err();
+        assert_eq!(error, "Account execution context lease mismatch.");
+    }
+
+    #[test]
+    fn account_owned_ipc_suggestion_request_uses_one_flat_required_owner_envelope() {
+        let request =
+            serde_json::from_value::<RequestAgentAccountSuggestionsRequest>(serde_json::json!({
+                "provider": "codex",
+                "accountId": "codex-profile-1",
+                "incarnation": "3",
+                "credentialRevision": "7",
+                "agentSessionId": "agent-session-1",
+                "model": null,
+                "reasoningLevel": null,
+                "fastMode": false,
+                "attachments": [],
+                "projectName": "gtum",
+                "projectPath": "/workspace/gtum",
+                "activeTabId": null,
+                "activeTabTitle": null,
+                "activeFilePath": null,
+                "activeFileLine": null,
+                "activeFileSnippet": null,
+                "lastNLogLines": [],
+                "userTask": "Review the project"
+            }))
+            .unwrap();
+        assert_eq!(request.account_id, "codex-profile-1");
+        assert_eq!(request.request.provider, AgentProvider::Codex);
+        assert_eq!(request.request.agent_session_id, "agent-session-1");
+
+        for invalid in [
+            serde_json::json!({
+                "provider": "codex",
+                "accountId": "codex-profile-1",
+                "incarnation": "3",
+                "agentSessionId": "agent-session-1",
+                "projectName": "gtum",
+                "projectPath": "/workspace/gtum",
+                "userTask": "Review"
+            }),
+            serde_json::json!({
+                "provider": "codex",
+                "accountId": "codex-profile-1",
+                "incarnation": "03",
+                "credentialRevision": "7",
+                "agentSessionId": "agent-session-1",
+                "projectName": "gtum",
+                "projectPath": "/workspace/gtum",
+                "userTask": "Review"
+            }),
+            serde_json::json!({
+                "provider": "codex",
+                "accountId": "codex-profile-1",
+                "incarnation": "3",
+                "credentialRevision": 7,
+                "agentSessionId": "agent-session-1",
+                "projectName": "gtum",
+                "projectPath": "/workspace/gtum",
+                "userTask": "Review"
+            }),
+            serde_json::json!({
+                "accountId": "codex-profile-1",
+                "request": {
+                    "provider": "codex",
+                    "agentSessionId": "agent-session-1",
+                    "projectName": "gtum",
+                    "projectPath": "/workspace/gtum",
+                    "userTask": "Review"
+                }
+            }),
+        ] {
+            assert!(
+                serde_json::from_value::<RequestAgentAccountSuggestionsRequest>(invalid).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn account_owned_ipc_suggestion_resolution_prioritizes_stale_and_redacts_validation() {
+        let changed_success = resolve_account_suggestion_attempt(
+            AgentProvider::Claude,
+            Ok(false),
+            &Ok::<_, String>(runtime::claude::ClaudeConnectionValidation {
+                credential_source: runtime::claude::ClaudeCredentialSource::EnvironmentApiKey,
+            }),
+            Some(Ok(vec![AgentSuggestionResponse {
+                id: "changed-success".into(),
+                provider: AgentProvider::Claude,
+                summary: "must not publish".into(),
+                command: "pwd".into(),
+                preferred_target: runtime::codex::AgentExecutionTarget::NewTab,
+                confidence: runtime::codex::AgentSuggestionConfidence::High,
+                error: None,
+            }])),
+        )
+        .err()
+        .expect("credential-source-changing success must be suppressed");
+        assert!(
+            changed_success.to_ascii_lowercase().contains("changed"),
+            "{changed_success}"
+        );
+
+        let stale = resolve_account_suggestion_attempt(
+            AgentProvider::Codex,
+            Ok(false),
+            &Err::<String, _>("private@example.com raw-validation-secret".to_string()),
+            Some(Err("raw-suggestion-secret".to_string())),
+        )
+        .err()
+        .expect("stale validation result must be rejected");
+        assert!(stale.to_ascii_lowercase().contains("changed"), "{stale}");
+        for forbidden in [
+            "private@example.com",
+            "raw-validation-secret",
+            "raw-suggestion-secret",
+        ] {
+            assert!(!stale.contains(forbidden), "{stale}");
+        }
+
+        let validation_failure = resolve_account_suggestion_attempt(
+            AgentProvider::Codex,
+            Ok(true),
+            &Err::<String, _>("raw-current-secret".to_string()),
+            None,
+        )
+        .err()
+        .expect("current validation failure must be rejected");
+        assert_eq!(
+            validation_failure,
+            "Codex authentication could not be validated. Reconnect Codex."
+        );
+        assert!(!validation_failure.contains("raw-current-secret"));
+    }
+
+    #[test]
+    fn legacy_provider_only_agent_commands_share_one_fail_closed_boundary() {
+        for operation in [
+            "begin login",
+            "request suggestions",
+            "read diagnostics",
+            "read capabilities",
+            "disconnect",
+        ] {
+            let error = reject_legacy_provider_only_agent_command(operation).unwrap_err();
+            assert_eq!(
+                error,
+                "An exact Agent account lease is required. Refresh accounts and retry."
+            );
+        }
     }
 }

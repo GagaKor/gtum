@@ -66,12 +66,23 @@ This document exceeds 200 lines. Read only the matching route first.
 
 ## Current System Boundaries
 
+### 2026-07-20 Multi-Account Agent Profiles
+
+- `src-tauri/src/runtime/auth/mod.rs` owns the versioned v2 profile registry, atomic v1 migration, reserved ambient profiles, immutable IDs/incarnations, separate metadata and credential revisions, bounded tombstones, exact account leases, owned-root provisioning, and profile lifecycle operations. `agent-auth.json` contains non-secret registry/connection metadata only; it never contains copied provider credentials, setup commands, raw child diagnostics, or provider-derived identity.
+- `src-tauri/src/runtime/codex.rs` executes one frozen Codex account context. Additional profiles use a revalidated owned `CODEX_HOME`, a behaviorally proven file credential store, and a scrubbed child environment. The adapter validates through CLI status and never reads or parses `auth.json`.
+- `src-tauri/src/runtime/claude.rs` executes one frozen Claude account context. Additional Linux/Windows profiles use a revalidated owned `CLAUDE_CONFIG_DIR` with competing credential sources removed. Additional macOS Claude profiles stop as unsupported before child launch; the reserved ambient profile alone retains existing Keychain-backed CLI/helper/environment precedence.
+- `src-tauri/src/lib.rs` exposes an atomic all-provider profile snapshot, exact profile lifecycle/guidance commands, full-lease diagnostics/capabilities/suggestions, and atomic account-authorized Agent-job creation. Runtime work requires and successful results echo `provider + accountId + incarnation + credentialRevision`; all incarnation and revision values cross IPC as canonical decimal strings.
+- `src/shared/api/runtimeAgentAuth.ts` and `src/shared/api/runtimeAgentSuggestions.ts` are the typed v2 seams. Account lifecycle targets the exact provider/account, while diagnostics, capabilities, and suggestions require and validate the complete lease. Both reject malformed, stale, or mismatched owners, keep browser fallback inert, and do not translate a missing `accountId` into a provider default.
+- `src/features/agents/model/projectAgentContext.ts` coordinates the session-v2 persistence boundary. Startup waits for the authoritative profile snapshot; legacy provider-only session state can bind only to the matching reserved ambient ID. Existing missing, forgotten, disconnected, or unavailable selections remain explicit and never redirect. Persisted Connected profiles advance credential revision at restart; a generated profile remains selected as `Needs verification` and is not runtime-eligible until its exact Check succeeds.
+- `src/prototype.jsx` owns account-scoped capability/action generations, in-flight request reconciliation, exact attachment catalogs, immutable request turns, and account-attributed errors/suggestions/permissions. Approval calls `createAuthorizedProjectJob` exactly once with the captured full lease and project/session owner; the backend atomically verifies that lease and creates the isolated job. Jobs remain project/session-owned while turns and approvals retain the originating account lease.
+- Profile setup commands are generated only on demand and remain transient copy-only UI data. Profile management and Agent work never route through `runtimeTerminals.ts` or mutate the center workbench terminal.
+
 ### 2026-07-16 Agent Runtime, Claude Startup Recovery, And Provider Models
 
 - `src/features/agents/model/useAgentJobLifecycle.ts` owns the bounded project/session-scoped job view, hydration generations, polling, read/cancel deduplication, stale-response rejection, and final structured-log collection.
 - `src/features/agents/ui/AgentJobActivity.tsx` renders job state, command, structured output, exit metadata, error categories, and Cancel only in the right Agent workspace.
-- `src/prototype.jsx` persists the Agent session directory metadata needed to keep durable ownership addressable across reload, including the session `providerId` plus trimmed `selectedModels`, `selectedReasoningLevels`, and `fastModes` keyed by `codex` or `claude`. Conversation content remains outside that directory, and provider/model/execution preferences are not global.
-- `src/prototype.jsx` also owns startup capability scheduling. It derives the active provider's current connection state and calls `read_agent_provider_capabilities` only while that state is exactly `Connected`, after startup auth discovery resolves. Provider-scoped connection and capability generations suppress both stale success and stale rejection across connect, disconnect, reconnect, and provider-action boundaries; none of this orchestration uses the center-terminal service.
+- `src/prototype.jsx` persists the Agent session directory metadata needed to keep durable ownership addressable across reload, including `providerId`, provider-keyed `selectedAccountIds`, and account-nested `selectedModels`, `selectedReasoningLevels`, and `fastModes`. Conversation content and account-scoped attachment catalogs remain outside that directory.
+- `src/prototype.jsx` also owns startup capability scheduling. It resolves the exact selected account after the atomic profile snapshot and calls `read_agent_account_capabilities` only while that profile is exactly connected. Account-lease connection and capability generations suppress stale success/rejection across check, disconnect, Forget, context change, and account switching; none of this orchestration uses the center-terminal service.
 - `src-tauri/src/runtime/agent_jobs.rs` owns durable Agent jobs and `agent-jobs.json`; the PTY manager remains a separate user-terminal subsystem.
 - `src-tauri/src/runtime/auth/mod.rs` exposes `Codex` and `Claude` as available, real providers and owns the authoritative desktop-startup connection refresh. Both gate connect/request completion through stored-connection revision leases so stale work cannot change auth state or publish a response. Startup may lease a persisted real Claude `Error` for fresh current CLI validation and promote a successful result to `Connected` with the validated source/scopes and no identity/error data. Explicit `Disconnected` Claude state is never auto-connected, while non-real legacy errors normalize to disconnected/untrusted state. Disconnect publishes only after a synchronized temporary candidate atomically replaces the auth store; pre-commit persistence failure returns through IPC without changing memory, and canonical pre-deserialization migration drops malformed, duplicate, noncanonical, or key/provider-mismatched connection entries. Claude validation failures are replaced with one generic actionable redacted message before publication or persistence; Codex error behavior is unchanged. Claude validates an explicit API key, then a strict helper, then an installed user-owned CLI session; availability still does not imply a connected credential or a live-inference-validated state.
 - `src-tauri/src/runtime/claude.rs` owns bounded Claude model discovery and exact-value request validation. It runs the authenticated CLI with one prompt-free SDK `initialize` control request, accepts only sanitized model fields from one matching successful response, and retains each model's bounded `executionOptions` as the authority for effort/Fast support while discarding identity/subscription data. An explicit model, explicit effort, or enabled Fast refreshes the catalog before spawn. Valid selections map to separate `--model <value>` and `--effort <level>` pairs; every inference request receives one sanitized settings JSON with explicit Fast and optional helper path.
@@ -95,9 +106,9 @@ As of the 2026-05-28 frontend reset, the implemented system is best read as thre
    - `src/shared/api/runtimeWorkspace.ts` is the typed frontend seam for workspace restore and repeated-use persistence. The prototype reads the runtime workspace snapshot on desktop startup, reopens the last project through `runtimeProjects.ts`, and persists successful runtime-backed project opens.
    - `src/shared/api/runtimeTerminals.ts` is the typed frontend seam for user-owned terminal runtime sessions. The prototype uses it for user-created PTY tabs, user-submitted terminal input, log polling, and tab close termination. Agent approval decisions must not call this seam to create command tabs or write reviewed commands into existing terminals.
    - `src/shared/api/runtimeAgentJobs.ts` is the typed frontend seam for agent-owned background execution. Approved agent commands use this job surface and stream/log through the Agent panel/task history path instead of mutating the center terminal.
-   - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for provider connection snapshots, disconnects, and `begin_agent_login` validation. It does not own terminal creation; setup guidance stays in the Agent panel.
-   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for provider diagnostics, provider capabilities, and `request_agent_suggestions`. Requests require the owning `agentSessionId`; the seam rejects blank ownership, provider-mismatched responses, cross-provider model rows, blank model metadata, and duplicate model IDs before either Codex or Claude state can render. When Tauri is unavailable, browser preview shows a runtime-unavailable state instead of canned agent replies.
-   - Desktop runtime provider flows must not silently fall back to prototype data. A provider is requestable only after its real runtime connection succeeds. Command-bearing responses remain reviewable in the owning Agent session until explicit approval; `Allow once` creates one isolated Agent job and `Deny` starts no work.
+   - `src/shared/api/runtimeAgentAuth.ts` is the typed frontend seam for the atomic profile snapshot, exact profile lifecycle/check/disconnect/Forget operations, transient setup guidance, and account-lease authorization. Its provider-only connection methods remain migration-compatible; it does not own terminal creation.
+   - `src/shared/api/runtimeAgentSuggestions.ts` is the typed frontend seam for account diagnostics, capabilities, and `request_agent_account_suggestions`. Runtime requests require `provider + accountId + incarnation + credentialRevision`; suggestions additionally require `agentSessionId`. The seam rejects blank, stale, or mismatched full-lease ownership, cross-provider model rows, blank model metadata, and duplicate model IDs before either Codex or Claude state can render. When Tauri is unavailable, browser preview is inert.
+   - Desktop runtime provider flows must not silently fall back to prototype data or another account. An exact profile is requestable only after its real connection succeeds. Command-bearing responses remain reviewable under the captured account lease until explicit approval; `Allow once` creates one isolated Agent job and `Deny` starts no work.
    - The fixed uploaded-design shell is `1320x824`; `src-tauri/tauri.conf.json` uses the same default launch size so the frameless desktop window opens without shell letterboxing.
    - New FSD-style type and service seams under `src/entities`, `src/features`, and `src/shared` are the target for reusable React components and backend-backed state.
    - `src/styles.css` is copied from the uploaded draft source.
@@ -155,11 +166,11 @@ The frontend reset intentionally removes the old frontend contract layer from th
 - [`src/entities`, `src/features`, `src/shared`](../src)
   - initial FSD-style type, policy, and service seams for extracting the uploaded design into reusable TSX components
 - [`src/shared/api/runtimeAgentSuggestions.ts`](../src/shared/api/runtimeAgentSuggestions.ts)
-  - owns the frontend command seam for `read_agent_provider_capabilities`, `read_agent_provider_diagnostics`, and `request_agent_suggestions`
-  - validates top-level and per-model provider ownership plus nonblank, unique model metadata and bounded model `executionOptions`
-  - forwards a stored provider model ID only while it remains in the active provider's supported runtime catalog; a definitively stale value becomes `null`, while unavailable or not-yet-loaded capability state does not erase persistence
-  - renderer orchestration waits for authoritative startup auth and reads capabilities only when the active provider state is exactly `Connected`; connected startup schedules one read, disconnected startup schedules none, and a successful Connect schedules the first read
-  - provider-scoped connection and capability generations invalidate older reads across startup, connect, disconnect, reconnect, provider-action error, and capability-read error reconciliation; late success or rejection cannot replace the current catalog or connection presentation
+  - owns the v2 frontend seam for `read_agent_account_capabilities`, `read_agent_account_diagnostics`, and `request_agent_account_suggestions`; provider-only methods remain migration-compatible
+  - validates the top-level provider/account owner, each model's provider, nonblank unique model metadata, and bounded model `executionOptions`
+  - forwards a stored account model ID only while it remains in that exact account's supported catalog; invalid or unavailable state never selects another account
+  - renderer orchestration waits for authoritative profile hydration and reads capabilities only when the exact selected profile is connected
+  - account-lease generations invalidate older reads across profile lifecycle/context changes; late success or rejection cannot replace another account's catalog or presentation
   - the effective selected model's `executionOptions` override provider compatibility fields; model-owned Claude `Default` is UI-only/null, while absent options retain the Codex provider-level contract
 - [`src/shared/api/runtimeAgentJobs.ts`](../src/shared/api/runtimeAgentJobs.ts)
   - validates and maps project-scoped Agent-job create/list/read/cancel payloads
@@ -254,14 +265,30 @@ The current commands group into these domains:
   - `read_terminal_session_logs`
   - `execute_terminal_session_command`
 - agent jobs
-  - `create_agent_job`
+  - `create_authorized_agent_job`
   - `list_agent_jobs`
   - `read_agent_job_logs`
   - `cancel_agent_job`
 - file edits
   - `write_project_file`
   - `apply_project_patch`
-- provider/auth
+- provider/auth v2
+  - `list_agent_profiles`
+  - `read_agent_profile_snapshot`
+  - `create_agent_profile`
+  - `rename_agent_profile`
+  - `set_default_agent_profile`
+  - `check_agent_profile`
+  - `disconnect_agent_profile`
+  - `forget_agent_profile`
+  - `read_agent_profile_setup_guidance`
+  - `authorize_agent_profile_lease`
+  - `read_agent_account_diagnostics`
+  - `read_agent_account_capabilities`
+  - `request_agent_account_suggestions`
+
+`create_authorized_agent_job` is the only renderer-callable job-creation command. It verifies the exact connected `providerId + accountId + incarnation + credentialRevision` lease and creates the project/session-owned job while the same auth-store critical section is held. The provider-less `create_agent_job` command is not registered, so approval cannot race a Disconnect, Forget, or credential-context refresh through a generic job boundary.
+- provider/auth legacy compatibility
   - `list_agent_connections`
   - `begin_agent_login`
   - `complete_agent_login`
@@ -283,28 +310,30 @@ The current commands group into these domains:
   - `queue_telegram_remote_command`
   - `resolve_telegram_remote_command`
 
-`read_agent_provider_capabilities` is an async command boundary. Provider-specific synchronous discovery executes on a blocking worker; join failure becomes a typed command error rather than blocking or panicking the IPC executor.
+`read_agent_account_capabilities` is the v2 async command boundary for current account-owned discovery; `read_agent_provider_capabilities` remains a legacy migration-compatible boundary. Provider-specific synchronous discovery executes on a blocking worker; join failure becomes a typed command error rather than blocking or panicking the IPC executor.
 
 ## State And Persistence
 
 Current persistence is split like this:
 
-- runtime app-data JSON
+- runtime app-data storage
   - startup normalizes the app-data root before any manager initializes storage
   - if an older install left a file at the app-data root, startup renames it to a sibling `.legacy-file-<timestamp>.json` backup, creates the directory, and then initializes the per-store files
-  - agent auth state
+  - agent auth state: versioned profile registry, visible profile metadata, bounded tombstones, exact connection state, and revision counters in `agent-auth.json`; no credentials, raw diagnostics, setup command, or provider-derived identity
+  - app-owned credential roots referenced by profile kind, retained after Forget and validated independently of the JSON registry before every provider launch
   - workspace state: recent project paths, last opened project path, storage version, and timestamps
   - Agent job state: bounded snapshots and structured logs in `agent-jobs.json`
   - Telegram state
 - frontend `localStorage`
   - tweak/edit-mode values used by the design prototype
   - browser-preview-only UI defaults
-  - minimal Agent session directory metadata (`id`, title, active session, `providerId`, trimmed provider-keyed `selectedModels`, `selectedReasoningLevels`, `fastModes`, timestamps) used to address persisted session-owned requests, model/execution choices, and jobs after reload; conversation content is not stored in this directory
+  - versioned Agent session directory metadata (`id`, title, active session, `providerId`, provider-keyed `selectedAccountIds`, account-nested `selectedModels`, `selectedReasoningLevels`, `fastModes`, timestamps) used to address persisted session/account-owned requests, choices, and jobs after reload; conversation content and attachment catalogs are not stored in this directory
   - future selected-file, line-anchor, and task-history restore metadata once those fields receive a runtime contract
 - memory-only state
   - PTY session objects
   - bounded terminal logs
   - transient UI-derived state
+  - account-scoped attachment catalogs, capability caches, action generations, immutable in-flight request snapshots, and transient setup guidance
 
 Restore is split into two layers:
 
@@ -331,10 +360,10 @@ Restore is split into two layers:
 - the center terminal remains user-owned; explicit Agent-panel approval may execute only through the isolated Agent-job runtime and must never dispatch through the terminal runtime or provider-side execution
 - the real `Codex` path must pass `Codex CLI` and ChatGPT-session validation
 - the real `Claude` path must pass explicit first-party API-key, strict user-level `apiKeyHelper`, or installed first-party CLI-session validation. GTUM never performs Claude.ai OAuth or reads the credential store; provider availability is distinct from connection readiness, and implemented revision leases fail stale completion closed before any UI result is accepted
-- every provider request is owned by `projectPath + agentSessionId + providerId`, and a session switch or delayed completion must not move results into another owner
-- model selection is additionally owned by the provider inside that project/session. Only a supported provider-owned catalog can validate it; a definitively removed model falls back to `null`/runtime default without deleting another provider's selection
+- every v2 provider request is owned by `projectPath + agentSessionId + providerId + accountId + incarnation + credentialRevision`, and a session/account switch or delayed completion must not move results into another owner
+- model, reasoning, Fast, attachment, capability, and conversation-turn state is additionally owned by the exact account inside that project/session. Only a supported account-owned catalog can validate it; an invalid selection is blocked without selecting another account or deleting another account's preference
 - Claude model availability is account/policy response data rather than a repository-owned list. Only exact sanitized returned `value` fields are selectable, and failed discovery preserves but does not authorize a stored value
-- Claude reasoning/Fast availability is also returned per model. Selected-model `executionOptions` take precedence, model-owned stale effort becomes `null`/`Default`, and unsupported controls become effective `null`/`false` without deleting provider-scoped preferences. Codex provider-level stale reasoning instead recovers to its current supported default.
-- A send freezes provider, model, attachments, reasoning, and Fast with the captured project/session owner before any asynchronous boundary. These paths remain entirely within the Agent execution surface and never mutate the user-visible center terminal.
+- Claude reasoning/Fast availability is also returned per model. Selected-model `executionOptions` take precedence, model-owned stale effort becomes `null`/`Default`, and unsupported controls become effective `null`/`false` without deleting the exact account-scoped preferences. Codex provider-level stale reasoning instead recovers only within that account's current supported catalog.
+- A send freezes provider, account, alias, incarnation, credential revision, model, attachments, reasoning, Fast, project/session, and tab context before any asynchronous boundary. Approval atomically reauthorizes that exact credential lease before creating a project/session-owned Agent job. These paths remain entirely within the Agent execution surface and never mutate the user-visible center terminal.
 - `Windows` is the first daily-use validation baseline, and path/shell differences should be absorbed in the `platform` layer
 - a `WORKLOG` is only a temporary in-sprint trace, not a source of truth; once the sprint closes, structural changes should be absorbed into this doc or into [`message-flow.md`](./message-flow.md), [`development-guide.md`](./development-guide.md), and [`technical-design.md`](./technical-design.md), and then the `WORKLOG` should be deleted

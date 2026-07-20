@@ -102,7 +102,7 @@ test('exposes the complete durable agent-job lifecycle vocabulary', () => {
   ])
 })
 
-test('creates, lists, reads, and cancels project jobs with project-scoped runtime payloads', async () => {
+test('keeps generic creation fail-closed while listing, reading, and cancelling project jobs', async () => {
   const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
   const service = createAgentJobRuntimeService({
     hasRuntime: () => true,
@@ -117,28 +117,23 @@ test('creates, lists, reads, and cancels project jobs with project-scoped runtim
   })
   const project = { path: '/workspace/project', runtimeBacked: true }
 
-  const created = await service.createProjectJob(
+  await expect(service.createProjectJob(
     project,
     'whoami',
     'agent-check',
     'agent-session-1',
-  )
+  )).rejects.toThrow(/exact Agent account lease/i)
+  await expect(service.createJob({
+    projectPath: project.path,
+    command: 'whoami',
+    name: 'agent-check',
+    sessionId: 'agent-session-1',
+  })).rejects.toThrow(/exact Agent account lease/i)
   const listed = await service.listProjectJobs(project, 25, 'agent-session-1')
   const logs = await service.readProjectJobLogs(project, 7)
   const cancelled = await service.cancelProjectJob(project, 7)
 
   expect(invoked).toEqual([
-    {
-      command: 'create_agent_job',
-      args: {
-        request: {
-          projectPath: '/workspace/project',
-          command: 'whoami',
-          name: 'agent-check',
-          sessionId: 'agent-session-1',
-        },
-      },
-    },
     {
       command: 'list_agent_jobs',
       args: {
@@ -157,10 +152,113 @@ test('creates, lists, reads, and cancels project jobs with project-scoped runtim
     },
   ])
   expect(invoked.every(({ command }) => !command.includes('terminal'))).toBe(true)
-  expect(created).toEqual(runningJob)
   expect(listed).toEqual([runningJob, completedJob])
   expect(logs).toEqual(jobLogs)
   expect(cancelled).toEqual(cancellingJob)
+})
+
+test('creates an authorized project job with one canonical full account lease payload', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const service = createAgentJobRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+      return runningJob
+    },
+  })
+
+  const created = await service.createAuthorizedProjectJob(
+    { path: '/workspace/project', runtimeBacked: true },
+    {
+      provider: 'codex',
+      accountId: 'codex-profile-a',
+      incarnation: '11',
+      credentialRevision: '7',
+    },
+    'whoami',
+    'agent-check',
+    'agent-session-1',
+  )
+
+  expect(created).toEqual(runningJob)
+  expect(invoked).toEqual([{
+    command: 'create_authorized_agent_job',
+    args: {
+      request: {
+        provider: 'codex',
+        accountId: 'codex-profile-a',
+        incarnation: '11',
+        credentialRevision: '7',
+        projectPath: '/workspace/project',
+        command: 'whoami',
+        name: 'agent-check',
+        sessionId: 'agent-session-1',
+      },
+    },
+  }])
+})
+
+test('rejects malformed authorized leases and mismatched session responses before publication', async () => {
+  let invokeCount = 0
+  const service = createAgentJobRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invokeCount += 1
+      return { ...runningJob, sessionId: 'another-agent-session' }
+    },
+  })
+  const project = { path: '/workspace/project', runtimeBacked: true }
+  const malformedLeases = [
+    {
+      provider: 'unknown',
+      accountId: 'codex-profile-a',
+      incarnation: '11',
+      credentialRevision: '7',
+    },
+    {
+      provider: 'codex',
+      accountId: 'claude-profile-a',
+      incarnation: '11',
+      credentialRevision: '7',
+    },
+    {
+      provider: 'codex',
+      accountId: 'codex-profile-a',
+      incarnation: '01',
+      credentialRevision: '7',
+    },
+    {
+      provider: 'codex',
+      accountId: 'codex-profile-a',
+      incarnation: '11',
+      credentialRevision: 7,
+    },
+  ]
+
+  for (const lease of malformedLeases) {
+    await expect(service.createAuthorizedProjectJob(
+      project,
+      lease as never,
+      'whoami',
+      'agent-check',
+      'agent-session-1',
+    )).rejects.toThrow()
+  }
+  expect(invokeCount).toBe(0)
+
+  await expect(service.createAuthorizedProjectJob(
+    project,
+    {
+      provider: 'codex',
+      accountId: 'codex-profile-a',
+      incarnation: '11',
+      credentialRevision: '7',
+    },
+    'whoami',
+    'agent-check',
+    'agent-session-1',
+  )).rejects.toThrow(/session/i)
+  expect(invokeCount).toBe(1)
 })
 
 test('preserves structured log entries and terminal metadata from the runtime', async () => {
@@ -307,7 +405,18 @@ test('rejects malformed runtime job and log payloads before they reach the UI', 
   })
 
   await expect(
-    malformed.createProjectJob(project, 'whoami', 'invalid', 'agent-session-1'),
+    malformed.createAuthorizedProjectJob(
+      project,
+      {
+        provider: 'codex',
+        accountId: 'codex-profile-a',
+        incarnation: '11',
+        credentialRevision: '7',
+      },
+      'whoami',
+      'invalid',
+      'agent-session-1',
+    ),
   ).rejects.toThrow(/invalid agent job snapshot/i)
   await expect(
     malformed.listProjectJobs(project, 25, 'agent-session-1'),

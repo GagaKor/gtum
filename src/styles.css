@@ -2739,7 +2739,7 @@ body.resizing-h-left, body.resizing-h-right {
 .composer-provider-menu {
   right: auto;
   left: 0;
-  width: min(190px, 100%);
+  width: min(300px, 100%);
 }
 .composer-reasoning-menu {
   width: min(190px, 100%);
@@ -2747,7 +2747,7 @@ body.resizing-h-left, body.resizing-h-right {
 .composer-provider-option {
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 .composer-provider-option small {
   color: var(--text-dim);
@@ -2755,6 +2755,7 @@ body.resizing-h-left, body.resizing-h-right {
 }
 .composer-provider-chip {
   appearance: none;
+  position: relative;
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-muted);
@@ -2774,12 +2775,111 @@ body.resizing-h-left, body.resizing-h-right {
   color: var(--text);
   border-color: var(--border-strong);
 }
+.composer-provider-chip:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+.composer-provider-chip:disabled:hover {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
 .composer-provider-chip .provider-mark {
   width: 16px;
   height: 16px;
   border-radius: 4px;
   font-size: 8px;
   flex: 0 0 auto;
+}
+.composer-account-status-cue {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--text-faint);
+}
+.composer-provider-chip > .composer-account-status-cue {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  border: 1px solid var(--bg);
+  box-sizing: content-box;
+}
+.composer-account-status-cue.connected { background: var(--accent); }
+.composer-account-status-cue.pending,
+.composer-account-status-cue.needs_verification,
+.composer-account-status-cue.loading { background: var(--warn); }
+.composer-account-status-cue.error,
+.composer-account-status-cue.missing { background: var(--err); }
+.composer-account-status-cue.disconnected,
+.composer-account-status-cue.unavailable { background: var(--text-faint); }
+.composer-account-status-cue.forgotten { background: var(--warn); }
+.composer-account-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.composer-account-group + .composer-account-group {
+  border-top: 1px solid var(--border);
+  margin-top: 3px;
+  padding-top: 3px;
+}
+.composer-account-group-label {
+  color: var(--text-dim);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 5px 7px 3px;
+  text-transform: uppercase;
+}
+.composer-account-option {
+  min-width: 0;
+  padding-right: 20px;
+}
+.composer-account-option > .provider-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 8px;
+  flex: 0 0 auto;
+}
+.composer-account-option.disabled {
+  cursor: default;
+  color: var(--text-dim);
+}
+.composer-account-option.disabled:not(.active) {
+  opacity: 0.7;
+}
+.composer-account-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.composer-model-option > .composer-account-copy {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.composer-account-alias {
+  color: inherit;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.composer-account-status {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.composer-account-default {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 5px;
 }
 .composer-reasoning-chip,
 .fast-toggle {
@@ -3580,15 +3680,35 @@ body.resizing-h-left, body.resizing-h-right {
 
 /* ── Settings modal ─────────────────────────────────────────────── */
 .settings-modal {
-  width: 820px;
-  max-width: calc(100vw - 60px);
-  height: 580px;
-  max-height: calc(100vh - 60px);
+  width: 900px;
+  max-width: calc(100vw - 32px);
+  height: 680px;
+  max-height: calc(100vh - 32px);
   display: flex;
   padding: 0;
 }
+.settings-account-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.settings-modal button[aria-disabled="true"]:not(:disabled) {
+  cursor: wait;
+  opacity: 0.56;
+}
+.settings-modal button[aria-disabled="true"]:not(:disabled):hover {
+  filter: none;
+}
 .settings-rail {
-  width: 200px;
+  width: 176px;
+  flex: 0 0 176px;
+  min-width: 0;
   border-right: 1px solid var(--border);
   background: var(--bg-deep);
   padding: 22px 12px 14px;
@@ -3678,11 +3798,13 @@ body.resizing-h-left, body.resizing-h-right {
   display: flex; flex-direction: column; gap: 8px;
 }
 .settings-provider {
-  display: flex; align-items: center; gap: 14px;
-  padding: 12px 14px;
+  display: block;
+  min-width: 0;
+  padding: 0;
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 10px;
+  overflow: hidden;
 }
 .settings-provider.connected {
   border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
@@ -3713,6 +3835,264 @@ body.resizing-h-left, body.resizing-h-right {
   background: var(--surface-2);
   font-family: var(--font-mono);
   font-size: 10.5px;
+}
+.settings-account-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 12px 8px;
+}
+.settings-account-group-header .provider-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  font-size: 11px;
+}
+.settings-account-add,
+.settings-account-rename {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.settings-account-add {
+  padding: 0 12px 8px;
+}
+.settings-account-input {
+  appearance: none;
+  flex: 1 1 170px;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg-deep);
+  color: var(--text);
+  font: 11.5px/1.35 var(--font-mono);
+}
+.settings-account-input:focus {
+  border-color: color-mix(in oklab, var(--accent) 62%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.settings-account-input:disabled {
+  opacity: 0.56;
+}
+.settings-account-add-button {
+  flex: 0 0 auto;
+}
+.settings-account-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+}
+.settings-account-empty {
+  padding: 12px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.settings-account-row {
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface-1) 86%, var(--bg-deep));
+}
+.settings-account-row:last-child {
+  border-bottom: 0;
+}
+.settings-account-summary {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.settings-account-identity {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.settings-account-alias {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.settings-account-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in oklab, var(--accent) 28%, var(--border));
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  font: 9.5px/1.2 var(--font-mono);
+  font-weight: 500;
+}
+.settings-account-badge.subtle {
+  border-color: var(--border);
+  color: var(--text-faint);
+  background: var(--surface-2);
+}
+.settings-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 3px;
+  color: var(--text-faint);
+  font: 10px/1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.settings-account-status.status-connected { color: var(--accent); }
+.settings-account-status.status-needs_verification,
+.settings-account-status.status-error { color: var(--warn); }
+.settings-account-status.status-pending { color: var(--text-muted); }
+.settings-account-actions,
+.settings-account-confirm-actions,
+.settings-account-guidance-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
+.settings-account-actions {
+  flex: 0 1 340px;
+}
+.settings-account-actions .btn,
+.settings-account-confirm-actions .btn,
+.settings-account-guidance-footer .btn,
+.settings-account-rename .btn,
+.settings-account-add .btn {
+  min-height: 27px;
+  padding: 4px 7px;
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+.settings-account-forget {
+  color: var(--danger);
+}
+.settings-account-rename,
+.settings-account-guidance,
+.settings-account-confirm,
+.settings-account-error {
+  margin-top: 8px;
+}
+.settings-account-guidance {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg-deep));
+}
+.settings-account-command {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 8px;
+  border-radius: 5px;
+  background: var(--bg-deep);
+  color: var(--text);
+  font: 10.5px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.settings-account-guidance-footer {
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.settings-account-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid color-mix(in oklab, var(--danger) 28%, var(--border));
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: color-mix(in oklab, var(--danger) 5%, var(--bg-deep));
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.settings-account-warning {
+  padding: 0 12px 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.settings-account-error {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in oklab, var(--warn) 30%, var(--border));
+  border-radius: 6px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 7%, var(--bg-deep));
+  font-size: 10.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.settings-account-group > .settings-account-error {
+  margin: 0 12px 8px;
+}
+
+@media (max-width: 760px), (max-height: 660px) {
+  .settings-modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+    max-height: calc(100vh - 24px);
+    flex-direction: column;
+  }
+  .settings-rail {
+    width: 100%;
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 38px 8px 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-rail-title { display: none; }
+  .settings-rail-item {
+    flex: 1 1 auto;
+    padding: 6px 8px;
+    text-align: center;
+    font-size: 11px;
+  }
+  .settings-body {
+    width: 100%;
+    min-height: 0;
+    padding: 16px;
+  }
+  .settings-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 2;
+  }
+  .settings-pane { gap: 12px; }
+  .settings-account-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
 }
 .execution-truth {
   padding: 16px;

@@ -1,27 +1,45 @@
 use std::{
     env,
     ffi::{OsStr, OsString},
-    fs,
-    io::{Read, Write},
-    path::{Path, PathBuf},
+    fs::{self, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
+    path::{Component, Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+        mpsc::{self, Receiver, TryRecvError},
+        Arc,
+    },
     thread,
-    thread::JoinHandle,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::runtime::auth::AgentProvider;
+use crate::runtime::auth::{
+    capture_ambient_codex_account_execution_context, AgentProvider, CodexAccountExecutionContext,
+    CodexChildProcessTree,
+};
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-const CODEX_AUTH_PATH_LABEL: &str = "~/.codex/auth.json";
+const CODEX_LOGIN_STATUS_LABEL: &str = "codex login status";
 const CODEX_CONNECTION_PATH: &str = "Codex CLI ChatGPT session";
 const CODEX_EXEC_TIMEOUT: Duration = Duration::from_secs(60);
 const CODEX_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
+const CODEX_CHILD_INPUT_LIMIT: usize = 1024 * 1024;
+const CODEX_CHILD_OUTPUT_LIMIT: usize = 1024 * 1024;
+const CODEX_CHILD_IO_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
+const CODEX_ACCOUNT_ENVIRONMENT_OVERRIDES: &[&str] = &[
+    "CODEX_HOME",
+    "CODEX_ACCESS_TOKEN",
+    "CODEX_API_KEY",
+    "OPENAI_API_KEY",
+    "CODEX_SQLITE_HOME",
+];
+static CODEX_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -210,23 +228,9 @@ struct CodexServiceTierCatalogEntry {
     name: Option<String>,
 }
 
-#[derive(Default, Deserialize)]
-struct CodexAuthFile {
-    auth_mode: Option<String>,
-    tokens: Option<CodexAuthTokens>,
-}
-
-#[derive(Default, Deserialize)]
-struct CodexAuthTokens {
-    access_token: Option<String>,
-    refresh_token: Option<String>,
-    account_id: Option<String>,
-    id_token: Option<String>,
-}
-
 struct CodexCliStatus {
     binary_available: bool,
-    auth_file_exists: bool,
+    login_status_available: bool,
     auth_mode: Option<String>,
     has_chatgpt_session: bool,
 }
@@ -243,51 +247,32 @@ impl CodexCliStatus {
 }
 
 pub fn read_codex_diagnostics() -> AgentProviderDiagnostics {
-    diagnostics_from_status(read_codex_cli_status())
+    capture_ambient_codex_account_execution_context()
+        .and_then(|context| read_codex_diagnostics_for_context(&context))
+        .unwrap_or_else(|_| {
+            diagnostics_from_discovery(!codex_command_candidates().is_empty(), None)
+        })
 }
 
 pub fn read_codex_capabilities() -> AgentProviderCapabilities {
-    let binary_available = codex_command_available();
-    let catalog_entries = if binary_available {
-        read_codex_model_catalog_entries().unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    let available_models = model_capabilities_from_codex_entries(&catalog_entries);
-    let current_model_id = read_codex_config_model();
-    let current_model = current_model_id.as_deref().and_then(|model_id| {
-        model_capability_for_id(AgentProvider::Codex, &available_models, model_id)
-    });
-    let effective_model_id = current_model
-        .as_ref()
-        .map(|model| model.model_id.as_str())
-        .or(current_model_id.as_deref())
-        .or_else(|| {
-            available_models
-                .first()
-                .map(|model| model.model_id.as_str())
-        });
-    let reasoning_levels = codex_reasoning_levels_for_model(&catalog_entries, effective_model_id);
-    let default_reasoning_level = codex_default_reasoning_level_for_model(
-        &catalog_entries,
-        effective_model_id,
-        read_codex_config_reasoning_effort().as_deref(),
-        &reasoning_levels,
-    );
-    let supports_fast_mode = codex_model_supports_fast_mode(&catalog_entries, effective_model_id);
+    capture_ambient_codex_account_execution_context()
+        .and_then(|context| read_codex_capabilities_for_context(&context))
+        .unwrap_or_else(|_| codex_unavailable_capabilities())
+}
 
+fn codex_unavailable_capabilities() -> AgentProviderCapabilities {
     AgentProviderCapabilities {
         provider: AgentProvider::Codex,
-        supports_model_selection: binary_available,
-        current_model,
-        available_models,
-        reasoning_levels,
-        default_reasoning_level,
-        supports_fast_mode,
+        supports_model_selection: false,
+        current_model: None,
+        available_models: Vec::new(),
+        reasoning_levels: Vec::new(),
+        default_reasoning_level: None,
+        supports_fast_mode: false,
         attachments: vec![AgentAttachmentCapability {
             kind: AgentAttachmentKind::Image,
             label: "Image".into(),
-            enabled: binary_available,
+            enabled: false,
             invocation_flag: Some("--image".into()),
         }],
     }
@@ -307,11 +292,11 @@ fn diagnostics_from_status(status: CodexCliStatus) -> AgentProviderDiagnostics {
             "Codex CLI is present, but the current login is API-key based instead of ChatGPT session based.".into(),
             "Run `codex login` without API-key mode so gtum can use the ChatGPT session path.".into(),
         )
-    } else if !status.auth_file_exists {
+    } else if !status.login_status_available {
         (
             AgentProviderSetupState::NeedsSetup,
-            "Codex CLI is installed, but no local session file was found for the current desktop user.".into(),
-            "Run `codex login` and complete the browser sign-in flow, then reconnect Codex.".into(),
+            "Codex CLI login status could not be read for the current desktop user.".into(),
+            "Run `codex login`, confirm `codex login status`, then reconnect Codex.".into(),
         )
     } else if !status.has_chatgpt_session {
         (
@@ -339,6 +324,18 @@ fn diagnostics_from_status(status: CodexCliStatus) -> AgentProviderDiagnostics {
     }
 }
 
+fn diagnostics_from_discovery(
+    binary_available: bool,
+    status: Option<CodexCliStatus>,
+) -> AgentProviderDiagnostics {
+    diagnostics_from_status(status.unwrap_or(CodexCliStatus {
+        binary_available,
+        login_status_available: false,
+        auth_mode: None,
+        has_chatgpt_session: false,
+    }))
+}
+
 fn requirements_from_status(status: &CodexCliStatus) -> Vec<AgentProviderRequirementStatus> {
     vec![
         AgentProviderRequirementStatus {
@@ -347,9 +344,9 @@ fn requirements_from_status(status: &CodexCliStatus) -> Vec<AgentProviderRequire
             present: status.binary_available,
         },
         AgentProviderRequirementStatus {
-            name: CODEX_AUTH_PATH_LABEL.into(),
+            name: CODEX_LOGIN_STATUS_LABEL.into(),
             required: true,
-            present: status.auth_file_exists,
+            present: status.login_status_available,
         },
         AgentProviderRequirementStatus {
             name: "ChatGPT session".into(),
@@ -357,10 +354,6 @@ fn requirements_from_status(status: &CodexCliStatus) -> Vec<AgentProviderRequire
             present: status.has_chatgpt_session,
         },
     ]
-}
-
-pub fn validate_codex_connection() -> Result<String, String> {
-    validate_codex_status(read_codex_cli_status())
 }
 
 pub struct CodexSuggestionAttempt {
@@ -371,10 +364,101 @@ pub struct CodexSuggestionAttempt {
 pub fn request_codex_suggestion_attempt(
     request: RequestAgentSuggestionsRequest,
 ) -> CodexSuggestionAttempt {
-    let (validation, suggestions) =
-        run_after_connection_validation(validate_codex_connection, || {
-            request_codex_suggestions_after_validation(request)
-        });
+    let context = match capture_ambient_codex_account_execution_context() {
+        Ok(context) => context,
+        Err(error) => {
+            return CodexSuggestionAttempt {
+                validation: Err(error),
+                suggestions: None,
+            };
+        }
+    };
+    request_codex_suggestion_attempt_for_context(&context, request)
+}
+
+pub(crate) fn read_codex_diagnostics_for_context(
+    context: &CodexAccountExecutionContext,
+) -> Result<AgentProviderDiagnostics, String> {
+    let candidates = codex_command_candidates();
+    if candidates.is_empty() {
+        return Ok(diagnostics_from_discovery(false, None));
+    }
+    Ok(candidates
+        .into_iter()
+        .find_map(|program| {
+            read_codex_diagnostics_with_context(Path::new(&program), context, CODEX_STATUS_TIMEOUT)
+                .ok()
+        })
+        .unwrap_or_else(|| diagnostics_from_discovery(true, None)))
+}
+
+pub(crate) fn read_codex_capabilities_for_context(
+    context: &CodexAccountExecutionContext,
+) -> Result<AgentProviderCapabilities, String> {
+    let mut last_error = None;
+    for program in codex_command_candidates_for_execution() {
+        match read_codex_capabilities_with_context(
+            Path::new(&program),
+            context,
+            CODEX_STATUS_TIMEOUT,
+        ) {
+            Ok(capabilities) => return Ok(capabilities),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "Codex CLI is not installed.".to_string()))
+}
+
+pub(crate) fn request_codex_suggestion_attempt_for_context(
+    context: &CodexAccountExecutionContext,
+    request: RequestAgentSuggestionsRequest,
+) -> CodexSuggestionAttempt {
+    let program = PathBuf::from(codex_command_program());
+    request_codex_suggestion_attempt_with_context(
+        &program,
+        context,
+        request,
+        CODEX_STATUS_TIMEOUT,
+        CODEX_EXEC_TIMEOUT,
+    )
+}
+
+pub(crate) fn validate_codex_connection_for_context(
+    context: &CodexAccountExecutionContext,
+) -> Result<String, String> {
+    let mut last_error = None;
+    for program in codex_command_candidates_for_execution() {
+        match validate_codex_connection_with_context(
+            Path::new(&program),
+            context,
+            CODEX_STATUS_TIMEOUT,
+        ) {
+            Ok(account) => return Ok(account),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "Codex CLI is not installed.".to_string()))
+}
+
+pub(crate) fn request_codex_suggestion_attempt_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    request: RequestAgentSuggestionsRequest,
+    preflight_timeout: Duration,
+    execution_timeout: Duration,
+) -> CodexSuggestionAttempt {
+    let (validation, suggestions) = run_after_connection_validation(
+        || validate_codex_connection_with_context(program, context, preflight_timeout),
+        || {
+            request_codex_suggestions_after_validation_with_context(
+                program,
+                context,
+                request,
+                preflight_timeout,
+                execution_timeout,
+            )
+        },
+    );
 
     CodexSuggestionAttempt {
         validation,
@@ -409,9 +493,9 @@ fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
         );
     }
 
-    if !status.auth_file_exists {
+    if !status.login_status_available {
         return Err(
-            "Codex CLI is installed, but no local session file was found. Run `codex login`, finish sign-in, then reconnect Codex."
+            "Codex CLI login status is unavailable. Run `codex login`, confirm `codex login status`, then reconnect Codex."
                 .into(),
         );
     }
@@ -426,65 +510,67 @@ fn validate_codex_status(status: CodexCliStatus) -> Result<String, String> {
     Ok(status.account_label())
 }
 
-fn request_codex_suggestions_after_validation(
+fn request_codex_suggestions_after_validation_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
     mut request: RequestAgentSuggestionsRequest,
+    preflight_timeout: Duration,
+    execution_timeout: Duration,
 ) -> Result<Vec<AgentSuggestionResponse>, String> {
-    sanitize_codex_request_options(&mut request);
+    sanitize_codex_request_options_with_context(program, context, &mut request, preflight_timeout)?;
 
-    let output_path = temp_file_path("gtum-codex-output", "json");
-    let schema_path = temp_file_path("gtum-codex-schema", "json");
     let prompt = build_prompt(&request);
+    let codex_home = context.revalidated_codex_home()?;
+    let mut artifacts = CodexTempArtifacts::create_in(&codex_home)?;
+    let result = (|| {
+        artifacts.write_schema()?;
+        artifacts.revalidate()?;
+        let args = codex_exec_args(
+            &request.project_path,
+            request.model.as_deref(),
+            request.reasoning_level.as_deref(),
+            &request.attachments,
+            artifacts.schema_path(),
+            artifacts.output_path(),
+        );
+        let (exec_program, args) = codex_invocation_for_program(program, args);
+        let output = run_command_with_input_and_timeout_for_context(
+            exec_program,
+            args,
+            &prompt,
+            context,
+            execution_timeout,
+        )?;
 
-    write_schema_file(&schema_path)?;
-
-    let output = match run_codex_exec(
-        &request.project_path,
-        request.model.as_deref(),
-        request.reasoning_level.as_deref(),
-        &request.attachments,
-        &schema_path,
-        &output_path,
-        &prompt,
-    ) {
-        Ok(output) => output,
-        Err(error) => {
-            let _ = cleanup_temp_files(&schema_path, &output_path);
-            return Err(error);
+        if !output.status.success() {
+            return Err(concat!(
+                "Codex CLI request failed. Child diagnostics were discarded to protect account ",
+                "and project data. Verify the selected Codex account and retry."
+            )
+            .into());
         }
-    };
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if !output.status.success() {
-        let message = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!("Codex CLI exited with status {}.", output.status)
-        };
-        let _ = cleanup_temp_files(&schema_path, &output_path);
-        return Err(message);
+        let raw_output = artifacts.read_output()?;
+        response_from_codex_output(&raw_output, request.provider)
+    })();
+    let cleanup = artifacts.cleanup();
+    match (result, cleanup) {
+        (Ok(response), Ok(())) => Ok(vec![response]),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(cleanup_error)) => Err(cleanup_error),
+        (Err(error), Err(cleanup_error)) => Err(format!(
+            "{error}; secure Codex temporary cleanup failed: {cleanup_error}"
+        )),
     }
-
-    let raw_output = match fs::read_to_string(&output_path) {
-        Ok(contents) => contents,
-        Err(error) => {
-            let _ = cleanup_temp_files(&schema_path, &output_path);
-            return Err(format!("failed to read Codex CLI output: {error}"));
-        }
-    };
-    let response = response_from_codex_output(&raw_output, request.provider);
-
-    let _ = cleanup_temp_files(&schema_path, &output_path);
-
-    Ok(vec![response?])
 }
 
-fn sanitize_codex_request_options(request: &mut RequestAgentSuggestionsRequest) {
-    let catalog_entries = read_codex_model_catalog_entries().unwrap_or_default();
-    let configured_model = read_codex_config_model();
+fn sanitize_codex_request_options_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    request: &mut RequestAgentSuggestionsRequest,
+    timeout: Duration,
+) -> Result<(), String> {
+    let catalog_entries = read_codex_model_catalog_entries_with_context(program, context, timeout)?;
+    let configured_model = read_codex_config_model_with_context(context)?;
     let effective_model_id = request
         .model
         .as_deref()
@@ -498,85 +584,170 @@ fn sanitize_codex_request_options(request: &mut RequestAgentSuggestionsRequest) 
         .as_deref()
         .and_then(non_empty_trimmed)
         .filter(|level| reasoning_level_supported(&reasoning_levels, level));
-
     if !codex_model_supports_fast_mode(&catalog_entries, effective_model_id.as_deref()) {
         request.fast_mode = Some(false);
     }
-}
-
-fn read_codex_cli_status() -> CodexCliStatus {
-    let binary_available = codex_command_available();
-    let auth_path = codex_auth_path();
-    let auth = read_auth_file(&auth_path);
-    let auth_mode = auth.auth_mode.clone();
-    let has_chatgpt_session = if !binary_available {
-        false
-    } else if matches!(auth_mode.as_deref(), Some("chatgpt")) {
-        let tokens = auth.tokens.unwrap_or_default();
-        let has_required_tokens = token_present(tokens.access_token.as_deref())
-            && token_present(tokens.refresh_token.as_deref());
-        let _has_identity = token_present(tokens.account_id.as_deref())
-            || token_present(tokens.id_token.as_deref());
-        has_required_tokens && codex_login_status_reports_chatgpt()
-    } else {
-        false
-    };
-
-    CodexCliStatus {
-        binary_available,
-        auth_file_exists: auth_path.exists(),
-        auth_mode,
-        has_chatgpt_session,
-    }
-}
-
-fn codex_command_available() -> bool {
-    codex_command_candidates_for_execution()
-        .into_iter()
-        .any(|program| {
-            run_command_with_input_and_timeout(
-                program,
-                vec!["--version".into()],
-                "",
-                CODEX_STATUS_TIMEOUT,
-            )
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-        })
-}
-
-fn codex_login_status_reports_chatgpt() -> bool {
-    codex_command_candidates_for_execution()
-        .into_iter()
-        .any(|program| {
-            run_command_with_input_and_timeout(
-                program,
-                vec!["login".into(), "status".into()],
-                "",
-                CODEX_STATUS_TIMEOUT,
-            )
-            .map(|output| {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                output.status.success()
-                    && (stdout.contains("Logged in using ChatGPT")
-                        || stderr.contains("Logged in using ChatGPT"))
-            })
-            .unwrap_or(false)
-        })
-}
-
-fn read_auth_file(path: &PathBuf) -> CodexAuthFile {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|contents| serde_json::from_str::<CodexAuthFile>(&contents).ok())
-        .unwrap_or_default()
+    Ok(())
 }
 
 fn command_for_program(program: impl AsRef<OsStr>) -> Command {
     let mut command = Command::new(program);
     hide_windows_console(&mut command);
     command
+}
+
+pub(crate) fn configure_codex_child_environment(
+    command: &mut Command,
+    context: &CodexAccountExecutionContext,
+) -> Result<(), String> {
+    if context.lease().provider() != AgentProvider::Codex {
+        return Err("the Codex execution context belongs to another provider".to_string());
+    }
+    let codex_home = context.revalidated_codex_home()?;
+    for variable in CODEX_ACCOUNT_ENVIRONMENT_OVERRIDES {
+        command.env_remove(variable);
+    }
+    command.env("CODEX_HOME", codex_home);
+    Ok(())
+}
+
+pub(crate) fn validate_codex_connection_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    timeout: Duration,
+) -> Result<String, String> {
+    validate_codex_status(read_codex_cli_status_with_context(
+        program, context, timeout,
+    )?)
+}
+
+fn read_codex_cli_status_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    timeout: Duration,
+) -> Result<CodexCliStatus, String> {
+    let (program, args) =
+        codex_invocation_for_program(program, vec!["login".into(), "status".into()]);
+    let output =
+        run_command_with_input_and_timeout_for_context(program, args, "", context, timeout)?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let status_output = format!("{stdout}\n{stderr}");
+    let normalized = status_output.to_ascii_lowercase();
+    let reports_chatgpt = status_output.contains("Logged in using ChatGPT");
+    let auth_mode = if reports_chatgpt {
+        Some("chatgpt".to_string())
+    } else if normalized.contains("api key") || normalized.contains("api_key") {
+        Some("api_key".to_string())
+    } else {
+        None
+    };
+    Ok(CodexCliStatus {
+        binary_available: true,
+        login_status_available: true,
+        auth_mode,
+        has_chatgpt_session: output.status.success() && reports_chatgpt,
+    })
+}
+
+pub(crate) fn read_codex_diagnostics_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    timeout: Duration,
+) -> Result<AgentProviderDiagnostics, String> {
+    read_codex_cli_status_with_context(program, context, timeout).map(diagnostics_from_status)
+}
+
+pub(crate) fn read_codex_config_model_with_context(
+    context: &CodexAccountExecutionContext,
+) -> Result<Option<String>, String> {
+    read_codex_config_preferences_with_context(context).map(|preferences| preferences.model)
+}
+
+#[derive(Default)]
+struct CodexConfigPreferences {
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+}
+
+fn read_codex_config_preferences_with_context(
+    context: &CodexAccountExecutionContext,
+) -> Result<CodexConfigPreferences, String> {
+    let Some(snapshot) = context.revalidated_codex_config_snapshot()? else {
+        return Ok(CodexConfigPreferences::default());
+    };
+    Ok(CodexConfigPreferences {
+        model: snapshot
+            .top_level_string("model")
+            .as_deref()
+            .and_then(non_empty_trimmed),
+        reasoning_effort: snapshot
+            .top_level_string("model_reasoning_effort")
+            .as_deref()
+            .and_then(non_empty_trimmed),
+    })
+}
+
+fn read_codex_model_catalog_entries_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    timeout: Duration,
+) -> Result<Vec<CodexModelCatalogEntry>, String> {
+    let (program, args) =
+        codex_invocation_for_program(program, vec!["debug".into(), "models".into()]);
+    let output =
+        run_command_with_input_and_timeout_for_context(program, args, "", context, timeout)?;
+    if !output.status.success() {
+        return Err("failed to read Codex model catalog".to_string());
+    }
+    parse_codex_model_catalog_entries(&String::from_utf8_lossy(&output.stdout))
+}
+
+pub(crate) fn read_codex_capabilities_with_context(
+    program: &Path,
+    context: &CodexAccountExecutionContext,
+    timeout: Duration,
+) -> Result<AgentProviderCapabilities, String> {
+    let catalog_entries = read_codex_model_catalog_entries_with_context(program, context, timeout)?;
+    let available_models = model_capabilities_from_codex_entries(&catalog_entries);
+    let preferences = read_codex_config_preferences_with_context(context)?;
+    let current_model_id = preferences.model;
+    let current_model = current_model_id.as_deref().and_then(|model_id| {
+        model_capability_for_id(AgentProvider::Codex, &available_models, model_id)
+    });
+    let effective_model_id = current_model
+        .as_ref()
+        .map(|model| model.model_id.as_str())
+        .or(current_model_id.as_deref())
+        .or_else(|| {
+            available_models
+                .first()
+                .map(|model| model.model_id.as_str())
+        });
+    let reasoning_levels = codex_reasoning_levels_for_model(&catalog_entries, effective_model_id);
+    let default_reasoning_level = codex_default_reasoning_level_for_model(
+        &catalog_entries,
+        effective_model_id,
+        preferences.reasoning_effort.as_deref(),
+        &reasoning_levels,
+    );
+    let supports_fast_mode = codex_model_supports_fast_mode(&catalog_entries, effective_model_id);
+
+    Ok(AgentProviderCapabilities {
+        provider: AgentProvider::Codex,
+        supports_model_selection: true,
+        current_model,
+        available_models,
+        reasoning_levels,
+        default_reasoning_level,
+        supports_fast_mode,
+        attachments: vec![AgentAttachmentCapability {
+            kind: AgentAttachmentKind::Image,
+            label: "Image".into(),
+            enabled: true,
+            invocation_flag: Some("--image".into()),
+        }],
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -588,25 +759,6 @@ fn hide_windows_console(command: &mut Command) {
 
 #[cfg(not(target_os = "windows"))]
 fn hide_windows_console(_command: &mut Command) {}
-
-fn read_codex_model_catalog_entries() -> Result<Vec<CodexModelCatalogEntry>, String> {
-    let output = codex_command_candidates_for_execution()
-        .into_iter()
-        .find_map(|program| {
-            run_command_with_input_and_timeout(
-                program,
-                vec!["debug".into(), "models".into()],
-                "",
-                CODEX_STATUS_TIMEOUT,
-            )
-            .ok()
-            .filter(|output| output.status.success())
-        })
-        .ok_or_else(|| "failed to read Codex model catalog".to_string())?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    parse_codex_model_catalog_entries(&stdout)
-}
 
 #[cfg(test)]
 fn parse_codex_model_catalog(raw_output: &str) -> Result<Vec<AgentModelCapability>, String> {
@@ -804,77 +956,12 @@ fn non_empty_trimmed(value: &str) -> Option<String> {
     }
 }
 
-fn token_present(value: Option<&str>) -> bool {
-    value.map(|entry| !entry.trim().is_empty()).unwrap_or(false)
-}
-
-fn codex_auth_path() -> PathBuf {
-    if let Ok(codex_home) = env::var("CODEX_HOME") {
-        return PathBuf::from(codex_home).join("auth.json");
-    }
-
-    home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".codex")
-        .join("auth.json")
-}
-
-fn codex_config_path() -> PathBuf {
-    if let Ok(codex_home) = env::var("CODEX_HOME") {
-        return PathBuf::from(codex_home).join("config.toml");
-    }
-
-    home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".codex")
-        .join("config.toml")
-}
-
-fn read_codex_config_model() -> Option<String> {
-    fs::read_to_string(codex_config_path())
-        .ok()
-        .and_then(|contents| parse_simple_toml_string_key(&contents, "model"))
-}
-
-fn read_codex_config_reasoning_effort() -> Option<String> {
-    fs::read_to_string(codex_config_path())
-        .ok()
-        .and_then(|contents| parse_simple_toml_string_key(&contents, "model_reasoning_effort"))
-}
-
-fn parse_simple_toml_string_key(contents: &str, key: &str) -> Option<String> {
-    contents.lines().find_map(|line| {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') {
-            return None;
-        }
-        let (name, value) = trimmed.split_once('=')?;
-        if name.trim() != key {
-            return None;
-        }
-        parse_quoted_string(value.trim()).or_else(|| non_empty_trimmed(value.trim()))
-    })
-}
-
-fn parse_quoted_string(value: &str) -> Option<String> {
-    let value = value.trim();
-    if value.len() < 2 {
-        return None;
-    }
-    let bytes = value.as_bytes();
-    let quote = bytes[0];
-    if (quote != b'"' && quote != b'\'') || bytes[value.len() - 1] != quote {
-        return None;
-    }
-
-    non_empty_trimmed(&value[1..value.len() - 1])
-}
-
 fn toml_string_literal(value: &str) -> String {
     let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{escaped}\"")
 }
 
+#[cfg(target_os = "macos")]
 fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
@@ -904,8 +991,8 @@ fn codex_exec_args(
     model: Option<&str>,
     reasoning_level: Option<&str>,
     attachments: &[RequestAgentAttachment],
-    schema_path: &PathBuf,
-    output_path: &PathBuf,
+    schema_path: &Path,
+    output_path: &Path,
 ) -> Vec<OsString> {
     let mut args: Vec<OsString> = vec![
         "exec".into(),
@@ -950,37 +1037,17 @@ fn codex_image_attachment_paths(attachments: &[RequestAgentAttachment]) -> Vec<S
         .collect()
 }
 
-fn codex_exec_invocation(
-    project_path: &str,
-    model: Option<&str>,
-    reasoning_level: Option<&str>,
-    attachments: &[RequestAgentAttachment],
-    schema_path: &PathBuf,
-    output_path: &PathBuf,
-) -> (OsString, Vec<OsString>) {
-    let args = codex_exec_args(
-        project_path,
-        model,
-        reasoning_level,
-        attachments,
-        schema_path,
-        output_path,
-    );
-
+fn codex_invocation_for_program(program: &Path, args: Vec<OsString>) -> (OsString, Vec<OsString>) {
     if cfg!(target_os = "windows") {
-        if let Some((node_program, script_path)) = windows_codex_node_entrypoint() {
+        if let Some((node_program, script_path)) =
+            windows_codex_node_entrypoint_from_cmd_path(program)
+        {
             let mut node_args = vec![script_path.into_os_string()];
             node_args.extend(args);
             return (node_program, node_args);
         }
     }
-
-    (codex_command_program(), args)
-}
-
-fn windows_codex_node_entrypoint() -> Option<(OsString, PathBuf)> {
-    find_executable_in_path("codex.cmd")
-        .and_then(|path| windows_codex_node_entrypoint_from_cmd_path(&path))
+    (program.as_os_str().to_os_string(), args)
 }
 
 fn windows_codex_node_entrypoint_from_cmd_path(
@@ -1006,11 +1073,6 @@ fn windows_codex_node_entrypoint_from_cmd_path(
     };
 
     Some((node_program, script_path))
-}
-
-fn find_executable_in_path(name: &str) -> Option<PathBuf> {
-    let path = env::var_os("PATH");
-    find_executable_in_path_with_path(name, path.as_ref())
 }
 
 fn find_executable_in_path_with_path(name: &str, path: Option<&OsString>) -> Option<PathBuf> {
@@ -1095,132 +1157,645 @@ fn platform_codex_app_candidates() -> Vec<PathBuf> {
     }
 }
 
-fn run_codex_exec(
-    project_path: &str,
-    model: Option<&str>,
-    reasoning_level: Option<&str>,
-    attachments: &[RequestAgentAttachment],
-    schema_path: &PathBuf,
-    output_path: &PathBuf,
-    prompt: &str,
-) -> Result<Output, String> {
-    let (program, args) = codex_exec_invocation(
-        project_path,
-        model,
-        reasoning_level,
-        attachments,
-        schema_path,
-        output_path,
-    );
-    run_command_with_input_and_timeout(program, args, prompt, CODEX_EXEC_TIMEOUT)
-}
-
+#[cfg(all(test, unix))]
 fn run_command_with_input_and_timeout(
     program: OsString,
     args: Vec<OsString>,
     input: &str,
     timeout: Duration,
 ) -> Result<Output, String> {
+    run_prepared_command_with_input_and_timeout(command_for_program(&program), args, input, timeout)
+}
+
+fn run_command_with_input_and_timeout_for_context(
+    program: OsString,
+    args: Vec<OsString>,
+    input: &str,
+    context: &CodexAccountExecutionContext,
+    timeout: Duration,
+) -> Result<Output, String> {
     let mut command = command_for_program(&program);
+    configure_codex_child_environment(&mut command, context)?;
+    run_prepared_command_with_input_and_timeout(command, args, input, timeout)
+}
+
+fn run_prepared_command_with_input_and_timeout(
+    mut command: Command,
+    args: Vec<OsString>,
+    input: &str,
+    timeout: Duration,
+) -> Result<Output, String> {
+    if input.len() > CODEX_CHILD_INPUT_LIMIT {
+        return Err("Codex CLI input exceeded the safe limit".to_string());
+    }
+    let mut process_tree = CodexChildProcessTree::prepare(&mut command)?;
     let mut child = command
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("failed to launch Codex CLI: {error}"))?;
+        .map_err(|_| "failed to launch Codex CLI".to_string())?;
+    if let Err(error) = process_tree.attach(&child) {
+        process_tree.terminate(&mut child);
+        return Err(error);
+    }
 
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            let _ = child.kill();
-            let _ = child.wait();
+            process_tree.terminate(&mut child);
             return Err("failed to open Codex CLI stdout stream".into());
         }
     };
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
-            let _ = child.kill();
-            let _ = child.wait();
+            process_tree.terminate(&mut child);
             return Err("failed to open Codex CLI stderr stream".into());
         }
     };
-    let stdout_reader = read_child_pipe(stdout, "stdout");
-    let stderr_reader = read_child_pipe(stderr, "stderr");
-
-    match child.stdin.take() {
-        Some(mut stdin) => {
-            if let Err(error) = stdin.write_all(input.as_bytes()) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("failed to write Codex CLI prompt: {error}"));
-            }
-        }
+    let stdin = match child.stdin.take() {
+        Some(stdin) => stdin,
         None => {
-            let _ = child.kill();
-            let _ = child.wait();
+            process_tree.terminate(&mut child);
             return Err("failed to open Codex CLI prompt stream".into());
         }
-    }
+    };
+    let output_exceeded = Arc::new(AtomicBool::new(false));
+    let observed_output = Arc::new(AtomicUsize::new(0));
+    let stdout_reader = match spawn_bounded_child_reader(
+        stdout,
+        Arc::clone(&observed_output),
+        Arc::clone(&output_exceeded),
+        "stdout",
+    ) {
+        Ok(reader) => reader,
+        Err(error) => {
+            process_tree.terminate(&mut child);
+            return Err(error);
+        }
+    };
+    let stderr_reader = match spawn_bounded_child_reader(
+        stderr,
+        Arc::clone(&observed_output),
+        Arc::clone(&output_exceeded),
+        "stderr",
+    ) {
+        Ok(reader) => reader,
+        Err(error) => {
+            process_tree.terminate(&mut child);
+            return Err(error);
+        }
+    };
+    let input_writer = match spawn_bounded_child_writer(stdin, input.as_bytes().to_vec()) {
+        Ok(writer) => writer,
+        Err(error) => {
+            process_tree.terminate(&mut child);
+            return Err(error);
+        }
+    };
 
     let deadline = Instant::now() + timeout;
+    let mut input_pending = true;
 
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|error| format!("failed to wait for Codex CLI: {error}"))?
-        {
-            let stdout = join_child_pipe(stdout_reader, "stdout")?;
-            let stderr = join_child_pipe(stderr_reader, "stderr")?;
-            return Ok(Output {
-                status,
-                stdout,
-                stderr,
-            });
+    let status = loop {
+        if output_exceeded.load(Ordering::Acquire) {
+            process_tree.terminate(&mut child);
+            return Err("Codex CLI output exceeded the safe limit".to_string());
+        }
+
+        if input_pending {
+            match input_writer.try_recv() {
+                Ok(Ok(())) => input_pending = false,
+                Ok(Err(error)) => {
+                    process_tree.terminate(&mut child);
+                    return Err(error);
+                }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => {
+                    process_tree.terminate(&mut child);
+                    return Err("Codex CLI prompt writer stopped unexpectedly".to_string());
+                }
+            }
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                process_tree.terminate(&mut child);
+                break status;
+            }
+            Ok(None) => {}
+            Err(_) => {
+                process_tree.terminate(&mut child);
+                return Err("failed to wait for Codex CLI".to_string());
+            }
         }
 
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = join_child_pipe(stdout_reader, "stdout");
-            let _ = join_child_pipe(stderr_reader, "stderr");
+            process_tree.terminate(&mut child);
             return Err(format!(
                 "Codex CLI timed out after {} seconds. Try again with a narrower prompt or verify Codex CLI can run from this project.",
                 timeout.as_secs()
             ));
         }
 
-        thread::sleep(Duration::from_millis(50));
-    }
-}
+        thread::sleep(Duration::from_millis(10));
+    };
 
-fn read_child_pipe<T>(mut pipe: T, label: &'static str) -> JoinHandle<Result<Vec<u8>, String>>
-where
-    T: Read + Send + 'static,
-{
-    thread::spawn(move || {
-        let mut output = Vec::new();
-        pipe.read_to_end(&mut output)
-            .map_err(|error| format!("failed to read Codex CLI {label}: {error}"))?;
-        Ok(output)
+    let drain_deadline = Instant::now() + CODEX_CHILD_IO_DRAIN_TIMEOUT;
+    let stdout = receive_bounded_child_output(stdout_reader, drain_deadline, "stdout")?;
+    let stderr = receive_bounded_child_output(stderr_reader, drain_deadline, "stderr")?;
+    if output_exceeded.load(Ordering::Acquire) {
+        return Err("Codex CLI output exceeded the safe limit".to_string());
+    }
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
     })
 }
 
-fn join_child_pipe(
-    handle: JoinHandle<Result<Vec<u8>, String>>,
+fn spawn_bounded_child_reader<T>(
+    mut pipe: T,
+    observed_output: Arc<AtomicUsize>,
+    output_exceeded: Arc<AtomicBool>,
+    label: &'static str,
+) -> Result<Receiver<Result<Vec<u8>, String>>, String>
+where
+    T: Read + Send + 'static,
+{
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name(format!("codex-cli-{label}"))
+        .spawn(move || {
+            let result = (|| {
+                let mut output = Vec::new();
+                let mut buffer = [0_u8; 8192];
+                loop {
+                    let read = pipe
+                        .read(&mut buffer)
+                        .map_err(|_| format!("failed to read Codex CLI {label}"))?;
+                    if read == 0 {
+                        break;
+                    }
+                    let previously_observed = observed_output.fetch_add(read, Ordering::AcqRel);
+                    let remaining = CODEX_CHILD_OUTPUT_LIMIT.saturating_sub(previously_observed);
+                    output.extend_from_slice(&buffer[..read.min(remaining)]);
+                    if previously_observed.saturating_add(read) > CODEX_CHILD_OUTPUT_LIMIT {
+                        output_exceeded.store(true, Ordering::Release);
+                        break;
+                    }
+                }
+                Ok(output)
+            })();
+            let _ = sender.send(result);
+        })
+        .map_err(|_| format!("failed to monitor Codex CLI {label}"))?;
+    Ok(receiver)
+}
+
+fn spawn_bounded_child_writer(
+    mut stdin: std::process::ChildStdin,
+    input: Vec<u8>,
+) -> Result<Receiver<Result<(), String>>, String> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("codex-cli-stdin".to_string())
+        .spawn(move || {
+            let result = stdin
+                .write_all(&input)
+                .map_err(|_| "failed to write Codex CLI prompt".to_string());
+            drop(stdin);
+            let _ = sender.send(result);
+        })
+        .map_err(|_| "failed to monitor Codex CLI prompt input".to_string())?;
+    Ok(receiver)
+}
+
+fn receive_bounded_child_output(
+    receiver: Receiver<Result<Vec<u8>, String>>,
+    deadline: Instant,
     label: &str,
 ) -> Result<Vec<u8>, String> {
-    handle
-        .join()
-        .map_err(|_| format!("Codex CLI {label} reader panicked"))?
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    receiver
+        .recv_timeout(remaining)
+        .map_err(|_| format!("Codex CLI {label} monitor did not stop safely"))?
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CodexArtifactIdentity {
+    device: u64,
+    file: u64,
+}
+
+struct CodexTempArtifactFile {
+    path: PathBuf,
+    file: Option<fs::File>,
+    identity: CodexArtifactIdentity,
+}
+
+impl CodexTempArtifactFile {
+    fn create(path: PathBuf) -> Result<Self, String> {
+        let file = create_new_codex_artifact_file(&path)?;
+        let identity = codex_artifact_identity(&file)?;
+        Ok(Self {
+            path,
+            file: Some(file),
+            identity,
+        })
+    }
+
+    fn revalidate(&self) -> Result<(), String> {
+        let held = self
+            .file
+            .as_ref()
+            .ok_or_else(|| "Codex temporary artifact handle is closed".to_string())?;
+        revalidate_codex_artifact_file(&self.path, held, self.identity)
+    }
+}
+
+struct CodexTempArtifacts {
+    directory_path: PathBuf,
+    directory: Option<fs::File>,
+    directory_identity: CodexArtifactIdentity,
+    schema: CodexTempArtifactFile,
+    output: CodexTempArtifactFile,
+}
+
+impl CodexTempArtifacts {
+    fn create_in(parent: &Path) -> Result<Self, String> {
+        Self::create_in_with_candidate_names(
+            parent,
+            (0..64).map(|_| {
+                let counter = CODEX_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+                OsString::from(format!(
+                    ".gtum-codex-request-{}-{}-{counter}",
+                    std::process::id(),
+                    unix_timestamp_ms()
+                ))
+            }),
+        )
+    }
+
+    fn create_in_with_candidate_names(
+        parent: &Path,
+        candidate_names: impl IntoIterator<Item = OsString>,
+    ) -> Result<Self, String> {
+        let parent = fs::canonicalize(parent)
+            .map_err(|error| format!("failed to resolve Codex temporary parent: {error}"))?;
+        let parent_metadata = fs::symlink_metadata(&parent)
+            .map_err(|error| format!("failed to inspect Codex temporary parent: {error}"))?;
+        if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
+            return Err("Codex temporary parent must be a real directory".to_string());
+        }
+
+        for candidate_name in candidate_names {
+            let mut components = Path::new(&candidate_name).components();
+            if !matches!(components.next(), Some(Component::Normal(_)))
+                || components.next().is_some()
+            {
+                return Err(
+                    "Codex temporary directory name is not a safe path component".to_string(),
+                );
+            }
+            let directory_path = parent.join(candidate_name);
+            if fs::symlink_metadata(&directory_path).is_ok() {
+                continue;
+            }
+            if let Err(error) = crate::runtime::auth::create_private_directory(&directory_path) {
+                if fs::symlink_metadata(&directory_path).is_ok() {
+                    continue;
+                }
+                return Err(format!(
+                    "failed to create private Codex temporary directory: {error}"
+                ));
+            }
+
+            return Self::open_created(directory_path);
+        }
+
+        Err("failed to reserve a unique private Codex temporary directory".to_string())
+    }
+
+    fn open_created(directory_path: PathBuf) -> Result<Self, String> {
+        let directory = open_codex_artifact_directory(&directory_path)?;
+        let directory_identity = codex_artifact_identity(&directory)?;
+        let schema_path = directory_path.join("schema.json");
+        let schema = match CodexTempArtifactFile::create(schema_path) {
+            Ok(schema) => schema,
+            Err(error) => {
+                drop(directory);
+                let _ = remove_verified_codex_directory(&directory_path, directory_identity);
+                return Err(error);
+            }
+        };
+        let output_path = directory_path.join("output.json");
+        let output = match CodexTempArtifactFile::create(output_path) {
+            Ok(output) => output,
+            Err(error) => {
+                let schema_identity = schema.identity;
+                let schema_path = schema.path.clone();
+                drop(schema);
+                let _ = remove_verified_codex_file(&schema_path, schema_identity);
+                drop(directory);
+                let _ = remove_verified_codex_directory(&directory_path, directory_identity);
+                return Err(error);
+            }
+        };
+        let artifacts = Self {
+            directory_path,
+            directory: Some(directory),
+            directory_identity,
+            schema,
+            output,
+        };
+        artifacts.revalidate()?;
+        Ok(artifacts)
+    }
+
+    #[cfg(test)]
+    fn directory_path(&self) -> &Path {
+        &self.directory_path
+    }
+
+    fn schema_path(&self) -> &Path {
+        &self.schema.path
+    }
+
+    fn output_path(&self) -> &Path {
+        &self.output.path
+    }
+
+    fn write_schema(&mut self) -> Result<(), String> {
+        self.revalidate()?;
+        let file = self
+            .schema
+            .file
+            .as_mut()
+            .ok_or_else(|| "Codex schema handle is closed".to_string())?;
+        write_codex_schema_to_file(file)
+    }
+
+    fn read_output(&mut self) -> Result<String, String> {
+        self.revalidate()?;
+        let file = self
+            .output
+            .file
+            .as_mut()
+            .ok_or_else(|| "Codex output handle is closed".to_string())?;
+        file.seek(SeekFrom::Start(0))
+            .map_err(|error| format!("failed to seek Codex CLI output: {error}"))?;
+        let mut output = String::new();
+        file.read_to_string(&mut output)
+            .map_err(|error| format!("failed to read Codex CLI output: {error}"))?;
+        Ok(output)
+    }
+
+    fn revalidate(&self) -> Result<(), String> {
+        let directory = self
+            .directory
+            .as_ref()
+            .ok_or_else(|| "Codex temporary directory handle is closed".to_string())?;
+        revalidate_codex_artifact_directory(
+            &self.directory_path,
+            directory,
+            self.directory_identity,
+        )?;
+        self.schema.revalidate()?;
+        self.output.revalidate()
+    }
+
+    fn cleanup(mut self) -> Result<(), String> {
+        self.revalidate()?;
+        let schema_path = self.schema.path.clone();
+        let schema_identity = self.schema.identity;
+        let output_path = self.output.path.clone();
+        let output_identity = self.output.identity;
+        self.schema.file.take();
+        self.output.file.take();
+        remove_verified_codex_file(&schema_path, schema_identity)?;
+        remove_verified_codex_file(&output_path, output_identity)?;
+        self.directory.take();
+        remove_verified_codex_directory(&self.directory_path, self.directory_identity)
+    }
+}
+
+fn revalidate_codex_artifact_file(
+    path: &Path,
+    held: &fs::File,
+    expected: CodexArtifactIdentity,
+) -> Result<(), String> {
+    let current = open_codex_artifact_file(path)
+        .map_err(|_| "Codex temporary artifact identity changed".to_string())?;
+    let path_identity = codex_artifact_identity(&current)?;
+    let held_identity = codex_artifact_identity(held)?;
+    if path_identity != expected || held_identity != expected {
+        return Err("Codex temporary artifact identity changed".to_string());
+    }
+    Ok(())
+}
+
+fn revalidate_codex_artifact_directory(
+    path: &Path,
+    held: &fs::File,
+    expected: CodexArtifactIdentity,
+) -> Result<(), String> {
+    let current = open_codex_artifact_directory(path)
+        .map_err(|_| "Codex temporary directory identity changed".to_string())?;
+    let path_identity = codex_artifact_identity(&current)?;
+    let held_identity = codex_artifact_identity(held)?;
+    if path_identity != expected || held_identity != expected {
+        return Err("Codex temporary directory identity changed".to_string());
+    }
+    Ok(())
+}
+
+fn remove_verified_codex_file(path: &Path, expected: CodexArtifactIdentity) -> Result<(), String> {
+    let current = open_codex_artifact_file(path)
+        .map_err(|_| "Codex temporary artifact identity changed before cleanup".to_string())?;
+    if codex_artifact_identity(&current)? != expected {
+        return Err("Codex temporary artifact identity changed before cleanup".to_string());
+    }
+    drop(current);
+    fs::remove_file(path)
+        .map_err(|error| format!("failed to remove verified Codex temporary artifact: {error}"))
+}
+
+fn remove_verified_codex_directory(
+    path: &Path,
+    expected: CodexArtifactIdentity,
+) -> Result<(), String> {
+    let current = open_codex_artifact_directory(path)
+        .map_err(|_| "Codex temporary directory identity changed before cleanup".to_string())?;
+    if codex_artifact_identity(&current)? != expected {
+        return Err("Codex temporary directory identity changed before cleanup".to_string());
+    }
+    drop(current);
+    fs::remove_dir(path)
+        .map_err(|error| format!("failed to remove verified Codex temporary directory: {error}"))
+}
+
+#[cfg(unix)]
+fn open_codex_artifact_directory(path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|error| format!("failed to securely open Codex temporary directory: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn open_codex_artifact_directory(path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|error| format!("failed to securely open Codex temporary directory: {error}"))?;
+    validate_windows_codex_artifact_type(&file, true)?;
+    Ok(file)
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn open_codex_artifact_directory(_path: &Path) -> Result<fs::File, String> {
+    Err("secure Codex temporary directory handles are unavailable on this platform".to_string())
+}
+
+#[cfg(unix)]
+fn open_codex_artifact_file(path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|error| format!("failed to securely open Codex temporary artifact: {error}"))?;
+    if !file
+        .metadata()
+        .map_err(|error| format!("failed to inspect Codex temporary artifact: {error}"))?
+        .is_file()
+    {
+        return Err("Codex temporary artifact must be a regular file".to_string());
+    }
+    Ok(file)
+}
+
+#[cfg(target_os = "windows")]
+fn open_codex_artifact_file(path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|error| format!("failed to securely open Codex temporary artifact: {error}"))?;
+    validate_windows_codex_artifact_type(&file, false)?;
+    Ok(file)
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn open_codex_artifact_file(_path: &Path) -> Result<fs::File, String> {
+    Err("secure Codex temporary artifact handles are unavailable on this platform".to_string())
+}
+
+#[cfg(unix)]
+fn codex_artifact_identity(file: &fs::File) -> Result<CodexArtifactIdentity, String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("failed to inspect Codex temporary artifact: {error}"))?;
+    Ok(CodexArtifactIdentity {
+        device: metadata.dev(),
+        file: metadata.ino(),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn codex_artifact_identity(file: &fs::File) -> Result<CodexArtifactIdentity, String> {
+    let information = windows_codex_artifact_information(file)?;
+    Ok(CodexArtifactIdentity {
+        device: u64::from(information.dwVolumeSerialNumber),
+        file: (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn windows_codex_artifact_information(
+    file: &fs::File,
+) -> Result<windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION, String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    let succeeded =
+        unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), &mut information) };
+    if succeeded == 0 {
+        return Err(format!(
+            "failed to inspect Codex temporary artifact handle: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(information)
+}
+
+#[cfg(target_os = "windows")]
+fn validate_windows_codex_artifact_type(file: &fs::File, directory: bool) -> Result<(), String> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+    };
+
+    let attributes = windows_codex_artifact_information(file)?.dwFileAttributes;
+    if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err("Codex temporary artifact must not be a reparse point".to_string());
+    }
+    let is_directory = attributes & FILE_ATTRIBUTE_DIRECTORY != 0;
+    if is_directory != directory {
+        return Err("Codex temporary artifact has the wrong file type".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn codex_artifact_identity(_file: &fs::File) -> Result<CodexArtifactIdentity, String> {
+    Err("secure Codex temporary artifact identity is unavailable on this platform".to_string())
+}
+
+#[cfg(test)]
 fn temp_file_path(prefix: &str, extension: &str) -> PathBuf {
-    env::temp_dir().join(format!("{prefix}-{}.{}", unix_timestamp_ms(), extension))
+    let counter = CODEX_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    env::temp_dir().join(format!(
+        "{prefix}-{}-{}-{counter}.{extension}",
+        std::process::id(),
+        unix_timestamp_ms()
+    ))
 }
 
+#[cfg(test)]
 fn write_schema_file(path: &PathBuf) -> Result<(), String> {
+    let mut file = create_new_codex_artifact_file(path)?;
+    write_codex_schema_to_file(&mut file)
+}
+
+fn write_codex_schema_to_file(file: &mut fs::File) -> Result<(), String> {
     let schema = json!({
         "type": "object",
         "additionalProperties": false,
@@ -1254,14 +1829,48 @@ fn write_schema_file(path: &PathBuf) -> Result<(), String> {
 
     let serialized = serde_json::to_string(&schema)
         .map_err(|error| format!("failed to serialize Codex CLI output schema: {error}"))?;
-    fs::write(path, serialized)
+    file.set_len(0)
+        .and_then(|_| file.seek(SeekFrom::Start(0)))
+        .map_err(|error| format!("failed to prepare Codex CLI output schema: {error}"))?;
+    file.write_all(serialized.as_bytes())
+        .and_then(|_| file.sync_all())
         .map_err(|error| format!("failed to write Codex CLI output schema: {error}"))
 }
 
-fn cleanup_temp_files(schema_path: &PathBuf, output_path: &PathBuf) -> Result<(), String> {
-    let _ = fs::remove_file(schema_path);
-    let _ = fs::remove_file(output_path);
-    Ok(())
+#[cfg(unix)]
+fn create_new_codex_artifact_file(path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|error| format!("failed to securely create Codex CLI artifact: {error}"))
+}
+
+#[cfg(target_os = "windows")]
+fn create_new_codex_artifact_file(path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+
+    OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|error| format!("failed to securely create Codex CLI artifact: {error}"))
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn create_new_codex_artifact_file(_path: &Path) -> Result<fs::File, String> {
+    Err("secure Codex CLI artifact creation is unavailable on this platform".to_string())
 }
 
 fn response_from_codex_output(
@@ -1463,15 +2072,136 @@ fn unix_timestamp_ms() -> u64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn account_owned_ipc_codex_exports_context_only_high_level_wrappers() {
+        let _diagnostics: fn(
+            &CodexAccountExecutionContext,
+        ) -> Result<AgentProviderDiagnostics, String> = read_codex_diagnostics_for_context;
+        let _capabilities: fn(
+            &CodexAccountExecutionContext,
+        ) -> Result<AgentProviderCapabilities, String> = read_codex_capabilities_for_context;
+        let _suggestions: fn(
+            &CodexAccountExecutionContext,
+            RequestAgentSuggestionsRequest,
+        ) -> CodexSuggestionAttempt = request_codex_suggestion_attempt_for_context;
+    }
+
+    #[test]
+    fn codex_account_context_temp_paths_are_unique_under_burst_allocation() {
+        let paths = (0..2_048)
+            .map(|_| temp_file_path("gtum-codex-account-context", "json"))
+            .collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(paths.len(), 2_048, "temporary paths must never alias");
+    }
+
+    #[test]
+    fn codex_account_context_schema_collision_never_truncates_existing_file() {
+        let schema_path = temp_file_path("gtum-codex-schema-collision", "json");
+        write_schema_file(&schema_path).unwrap();
+        fs::write(&schema_path, "collision sentinel").unwrap();
+
+        let collision = write_schema_file(&schema_path);
+        let preserved = fs::read_to_string(&schema_path).unwrap();
+        let _ = fs::remove_file(&schema_path);
+
+        assert!(
+            collision.is_err(),
+            "an existing path must never be reopened"
+        );
+        assert_eq!(preserved, "collision sentinel");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_account_context_schema_symlink_is_rejected_without_touching_target() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_file_path("gtum-codex-schema-symlink", "dir");
+        fs::create_dir(&root).unwrap();
+        let target = root.join("target.json");
+        let schema_path = root.join("schema.json");
+        fs::write(&target, "symlink sentinel").unwrap();
+        symlink(&target, &schema_path).unwrap();
+
+        let tamper = write_schema_file(&schema_path);
+        let preserved = fs::read_to_string(&target).unwrap();
+        let _ = fs::remove_file(&schema_path);
+        let _ = fs::remove_file(&target);
+        let _ = fs::remove_dir(&root);
+
+        assert!(tamper.is_err(), "a schema symlink must be rejected");
+        assert_eq!(preserved, "symlink sentinel");
+    }
+
+    #[test]
+    fn codex_account_context_temp_workspace_retries_collision_without_truncation() {
+        let parent = temp_file_path("gtum-codex-workspace-collision", "dir");
+        fs::create_dir(&parent).unwrap();
+        let collision = parent.join("collision");
+        fs::create_dir(&collision).unwrap();
+        fs::write(collision.join("sentinel"), "preserve me").unwrap();
+
+        let artifacts = CodexTempArtifacts::create_in_with_candidate_names(
+            &parent,
+            [OsString::from("collision"), OsString::from("created")],
+        )
+        .unwrap();
+        let created = artifacts.directory_path().to_path_buf();
+        assert_eq!(created, parent.canonicalize().unwrap().join("created"));
+        assert_eq!(
+            fs::read_to_string(collision.join("sentinel")).unwrap(),
+            "preserve me"
+        );
+
+        artifacts.cleanup().unwrap();
+        assert!(!created.exists());
+        assert!(collision.join("sentinel").exists());
+        let _ = fs::remove_dir_all(&parent);
+    }
+
+    #[test]
+    fn codex_account_context_temp_workspace_rejects_replaced_output_identity() {
+        let parent = temp_file_path("gtum-codex-output-tamper", "dir");
+        fs::create_dir(&parent).unwrap();
+        let mut artifacts = CodexTempArtifacts::create_in_with_candidate_names(
+            &parent,
+            [OsString::from("workspace")],
+        )
+        .unwrap();
+        let output_path = artifacts.output_path().to_path_buf();
+        let displaced = artifacts.directory_path().join("original-output.json");
+        fs::rename(&output_path, &displaced).unwrap();
+        fs::write(&output_path, "replacement sentinel").unwrap();
+
+        let error = artifacts.read_output().unwrap_err();
+        assert!(error.contains("identity changed"), "{error}");
+        let cleanup_error = artifacts.cleanup().unwrap_err();
+        assert!(
+            cleanup_error.contains("identity changed"),
+            "{cleanup_error}"
+        );
+        assert_eq!(
+            fs::read_to_string(&output_path).unwrap(),
+            "replacement sentinel"
+        );
+
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_file(&displaced);
+        let _ = fs::remove_file(parent.join("workspace").join("schema.json"));
+        let _ = fs::remove_dir(parent.join("workspace"));
+        let _ = fs::remove_dir(&parent);
+    }
+
     fn status(
         binary_available: bool,
-        auth_file_exists: bool,
+        login_status_available: bool,
         auth_mode: Option<&str>,
         has_chatgpt_session: bool,
     ) -> CodexCliStatus {
         CodexCliStatus {
             binary_available,
-            auth_file_exists,
+            login_status_available,
             auth_mode: auth_mode.map(str::to_string),
             has_chatgpt_session,
         }
@@ -1493,12 +2223,27 @@ mod tests {
     }
 
     #[test]
-    fn validation_reports_missing_auth_file_separately() {
+    fn codex_account_context_diagnostics_keep_cli_present_when_ambient_root_is_unavailable() {
+        let diagnostics = diagnostics_from_discovery(true, None);
+
+        assert_eq!(diagnostics.setup_state, AgentProviderSetupState::NeedsSetup);
+        assert!(!diagnostics.summary.contains("until Codex CLI is installed"));
+        assert!(diagnostics
+            .requirements
+            .iter()
+            .any(|requirement| requirement.name == "codex CLI" && requirement.present));
+        assert!(diagnostics.requirements.iter().any(|requirement| {
+            requirement.name == CODEX_LOGIN_STATUS_LABEL && !requirement.present
+        }));
+    }
+
+    #[test]
+    fn validation_reports_unavailable_login_status_separately() {
         let error = validate_codex_status(status(true, false, None, false)).unwrap_err();
 
         assert_eq!(
             error,
-            "Codex CLI is installed, but no local session file was found. Run `codex login`, finish sign-in, then reconnect Codex."
+            "Codex CLI login status is unavailable. Run `codex login`, confirm `codex login status`, then reconnect Codex."
         );
     }
 
@@ -1849,19 +2594,6 @@ mod tests {
     }
 
     #[test]
-    fn simple_toml_parser_reads_root_model_key() {
-        let model = parse_simple_toml_string_key(
-            r#"
-                approval_policy = "never"
-                model = "gpt-5.5"
-            "#,
-            "model",
-        );
-
-        assert_eq!(model.as_deref(), Some("gpt-5.5"));
-    }
-
-    #[test]
     fn windows_codex_node_entrypoint_uses_node_script_next_to_cmd() {
         let root = temp_file_path("gtum-codex-entrypoint-test", "dir");
         let script_path = root
@@ -1880,6 +2612,35 @@ mod tests {
 
         assert_eq!(PathBuf::from(program), root.join("node.exe"));
         assert_eq!(script, script_path);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn codex_account_context_windows_cmd_uses_node_for_status_and_exec() {
+        let root = temp_file_path("gtum-codex-windows-node-context", "dir");
+        let script_path = root
+            .join("node_modules")
+            .join("@openai")
+            .join("codex")
+            .join("bin")
+            .join("codex.js");
+        fs::create_dir_all(script_path.parent().unwrap()).unwrap();
+        fs::write(root.join("codex.cmd"), "@echo off").unwrap();
+        fs::write(root.join("node.exe"), "").unwrap();
+        fs::write(&script_path, "").unwrap();
+
+        for original_args in [
+            vec![OsString::from("login"), OsString::from("status")],
+            vec![OsString::from("exec"), OsString::from("--help")],
+        ] {
+            let (program, args) =
+                codex_invocation_for_program(&root.join("codex.cmd"), original_args.clone());
+            assert_eq!(PathBuf::from(program), root.join("node.exe"));
+            assert_eq!(PathBuf::from(&args[0]), script_path);
+            assert_eq!(&args[1..], original_args);
+        }
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1922,6 +2683,75 @@ mod tests {
             "hanging child process should be killed promptly"
         );
         assert!(error.contains("timed out"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_account_context_child_output_is_capped_before_deadline() {
+        let started_at = Instant::now();
+        let error = run_command_with_input_and_timeout(
+            "sh".into(),
+            vec![
+                "-c".into(),
+                "dd if=/dev/zero bs=65536 count=32 2>/dev/null".into(),
+            ],
+            "",
+            Duration::from_secs(2),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("output exceeded the safe limit"), "{error}");
+        assert!(
+            started_at.elapsed() < Duration::from_secs(1),
+            "output overflow must terminate the child before its deadline"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_account_context_child_completion_does_not_wait_on_descendant_pipes() {
+        let started_at = Instant::now();
+        let output = run_command_with_input_and_timeout(
+            "sh".into(),
+            vec!["-c".into(), "(sleep 2) & exit 0".into()],
+            "",
+            Duration::from_millis(100),
+        )
+        .unwrap();
+
+        assert!(output.status.success());
+        assert!(
+            started_at.elapsed() < Duration::from_millis(400),
+            "the owned child completion must terminate descendants before joining pipes"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_account_context_child_timeout_terminates_descendant_tree() {
+        let root = temp_file_path("gtum-codex-descendant-tree", "dir");
+        fs::create_dir(&root).unwrap();
+        let escaped_marker = root.join("escaped-marker");
+        let script = format!(
+            "(sleep 0.3; touch '{}') & sleep 5",
+            escaped_marker.to_string_lossy()
+        );
+
+        let error = run_command_with_input_and_timeout(
+            "sh".into(),
+            vec!["-c".into(), script.into()],
+            "",
+            Duration::from_millis(50),
+        )
+        .unwrap_err();
+        thread::sleep(Duration::from_millis(450));
+
+        assert!(error.contains("timed out"), "{error}");
+        assert!(
+            !escaped_marker.exists(),
+            "a timed-out Codex descendant escaped containment"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

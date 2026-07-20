@@ -1365,6 +1365,7 @@ dependencies = [
 name = "gtum"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "log",
  "portable-pty",
  "serde",
@@ -1373,6 +1374,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-log",
+ "toml 0.9.12+spec-1.1.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

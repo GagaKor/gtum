@@ -9,6 +9,7 @@ const installProjectCloseHarness = async (page: Page) => {
   await page.addInitScript(({ projectA, projectB }) => {
     type TestWindow = Window & {
       __workspaceCloseCalls: RuntimeCall[]
+      __agentAuthCloseCalls: RuntimeCall[]
       __agentCloseCalls: RuntimeCall[]
       __agentJobCloseCalls: RuntimeCall[]
       __terminalCloseCalls: RuntimeCall[]
@@ -90,8 +91,86 @@ const installProjectCloseHarness = async (page: Page) => {
       maxLogEntries: 100,
       lastEvent: status,
     })
+    const codexLease = {
+      provider: 'codex',
+      accountId: 'codex-default',
+      incarnation: '1',
+      credentialRevision: '1',
+    }
+    const profileSnapshot = {
+      registryVersion: 2,
+      profiles: [
+        {
+          provider: 'codex',
+          accountId: 'codex-default',
+          alias: 'Codex ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '1',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'connected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: 1,
+            updatedAt: 1,
+            lastError: null,
+          },
+        },
+        {
+          provider: 'claude',
+          accountId: 'claude-default',
+          alias: 'Claude ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '2',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'disconnected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 1,
+            lastError: null,
+          },
+        },
+      ],
+      tombstones: [],
+    }
+
+    localStorage.setItem('gtum.agent-session-directory.v2', JSON.stringify({
+      [projectA]: {
+        workspaceTitle: 'close-a',
+        activeSessionId: 'close-agent-a',
+        sessions: [{
+          id: 'close-agent-a',
+          title: 'Close A Agent',
+          providerId: 'codex',
+          selectedAccountIds: { codex: 'codex-default' },
+          selectedModels: {},
+          selectedReasoningLevels: {},
+          fastModes: {},
+        }],
+      },
+      [projectB]: {
+        workspaceTitle: 'close-b',
+        activeSessionId: 'close-agent-b',
+        sessions: [{
+          id: 'close-agent-b',
+          title: 'Close B Agent',
+          providerId: 'codex',
+          selectedAccountIds: { codex: 'codex-default' },
+          selectedModels: {},
+          selectedReasoningLevels: {},
+          fastModes: {},
+        }],
+      },
+    }))
 
     bridgeWindow.__workspaceCloseCalls = []
+    bridgeWindow.__agentAuthCloseCalls = []
     bridgeWindow.__agentCloseCalls = []
     bridgeWindow.__agentJobCloseCalls = []
     bridgeWindow.__terminalCloseCalls = []
@@ -196,33 +275,51 @@ const installProjectCloseHarness = async (page: Page) => {
     }
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async () => [{
-        provider: 'codex',
-        displayName: 'Codex',
-        availability: 'available',
-        status: 'connected',
-        connectionKind: 'real',
-        accountLabel: 'Codex session',
-        accountEmail: null,
-        requiredScopes: ['project:read', 'terminal:read'],
-        expiresAt: null,
-        callbackUrl: null,
-        authUrl: null,
-        activeLoginId: null,
-        activeLoginState: null,
-        connectedAt: 1,
-        lastLoginAttemptAt: 1,
-        updatedAt: 1,
-        lastError: null,
-      }],
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentAuthCloseCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(profileSnapshot)
+        }
+        if (command === 'list_agent_connections') {
+          return [{
+            provider: 'codex',
+            displayName: 'Codex',
+            availability: 'available',
+            status: 'connected',
+            connectionKind: 'real',
+            accountLabel: 'Codex session',
+            accountEmail: null,
+            requiredScopes: ['project:read', 'terminal:read'],
+            expiresAt: null,
+            callbackUrl: null,
+            authUrl: null,
+            activeLoginId: null,
+            activeLoginState: null,
+            connectedAt: 1,
+            lastLoginAttemptAt: 1,
+            updatedAt: 1,
+            lastError: null,
+          }]
+        }
+        throw new Error(`Unexpected Agent auth command: ${command}`)
+      },
     }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCloseCalls.push({ command, args })
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
+          const request = args?.request as Record<string, unknown> | undefined
+          if (
+            request?.provider !== codexLease.provider
+            || request.accountId !== codexLease.accountId
+            || request.incarnation !== codexLease.incarnation
+            || request.credentialRevision !== codexLease.credentialRevision
+          ) {
+            throw new Error(`Close capability lease mismatch: ${JSON.stringify(request)}`)
+          }
           return {
-            provider: 'codex',
+            ...codexLease,
             supportsModelSelection: false,
             currentModel: { providerId: 'codex', modelId: 'gpt-default', label: 'GPT Default' },
             availableModels: [],
@@ -232,10 +329,19 @@ const installProjectCloseHarness = async (page: Page) => {
             attachments: [],
           }
         }
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
+          const request = args?.request as Record<string, unknown> | undefined
+          if (
+            request?.provider !== codexLease.provider
+            || request.accountId !== codexLease.accountId
+            || request.incarnation !== codexLease.incarnation
+            || request.credentialRevision !== codexLease.credentialRevision
+          ) {
+            throw new Error(`Close suggestion lease mismatch: ${JSON.stringify(request)}`)
+          }
           return [{
             id: 'close-review',
-            provider: 'codex',
+            ...codexLease,
             summary: 'Run close review command',
             command: 'npm test',
             preferredTarget: 'new_tab',
@@ -349,12 +455,25 @@ test('keeps close checking isolated while selection continues and closes only af
 
   const calls = await page.evaluate(() => ({
     workspace: (window as Window & { __workspaceCloseCalls?: RuntimeCall[] }).__workspaceCloseCalls ?? [],
+    auth: (window as Window & { __agentAuthCloseCalls?: RuntimeCall[] }).__agentAuthCloseCalls ?? [],
     agent: (window as Window & { __agentCloseCalls?: RuntimeCall[] }).__agentCloseCalls ?? [],
     terminal: (window as Window & { __terminalCloseCalls?: RuntimeCall[] }).__terminalCloseCalls ?? [],
   }))
   expect(calls.workspace.map((call) => call.command)).toContain('activate_workspace_project')
   expect(calls.workspace.map((call) => call.command)).toContain('close_workspace_project')
-  expect(calls.agent.filter((call) => call.command === 'request_agent_suggestions')).toHaveLength(0)
+  expect(calls.auth.filter((call) =>
+    call.command === 'read_agent_profile_snapshot',
+  )).toHaveLength(1)
+  expect(calls.auth.filter((call) =>
+    call.command === 'authorize_agent_profile_lease',
+  )).toHaveLength(0)
+  expect(calls.agent.filter((call) =>
+    call.command === 'request_agent_account_suggestions',
+  )).toHaveLength(0)
+  expect(calls.agent.filter((call) =>
+    call.command === 'read_agent_provider_capabilities'
+    || call.command === 'request_agent_suggestions',
+  )).toHaveLength(0)
   expect(calls.terminal.filter((call) =>
     call.command === 'create_terminal_session' || call.command === 'close_terminal_session',
   )).toHaveLength(0)
@@ -471,6 +590,39 @@ test('blocks dirty editors and unresolved permission reviews before closing', as
   await page.getByPlaceholder('Ask Codex').fill('create a permission review')
   await page.locator('.composer-input .send').click()
   await expect(page.locator('.composer-approval')).toBeVisible()
+  const calls = await page.evaluate(() => ({
+    auth: (window as Window & { __agentAuthCloseCalls?: RuntimeCall[] }).__agentAuthCloseCalls ?? [],
+    agent: (window as Window & { __agentCloseCalls?: RuntimeCall[] }).__agentCloseCalls ?? [],
+    terminal: (window as Window & { __terminalCloseCalls?: RuntimeCall[] }).__terminalCloseCalls ?? [],
+  }))
+  const request = calls.agent.find(
+    (call) => call.command === 'request_agent_account_suggestions',
+  )?.args?.request
+  expect(request).toEqual(expect.objectContaining({
+    provider: 'codex',
+    accountId: 'codex-default',
+    incarnation: '1',
+    credentialRevision: '1',
+    projectPath: projectA,
+    agentSessionId: 'close-agent-a',
+    userTask: 'create a permission review',
+  }))
+  expect(calls.auth.filter((call) =>
+    call.command === 'read_agent_profile_snapshot',
+  )).toHaveLength(1)
+  expect(calls.auth.filter((call) =>
+    call.command === 'authorize_agent_profile_lease',
+  )).toHaveLength(0)
+  expect(calls.agent.filter((call) =>
+    call.command === 'read_agent_provider_capabilities'
+    || call.command === 'request_agent_suggestions',
+  )).toHaveLength(0)
+  expect(calls.terminal.filter((call) =>
+    call.command === 'create_terminal_session'
+    || call.command === 'execute_terminal_session_command'
+    || call.command === 'create_terminal_session_with_command'
+    || call.command === 'write_terminal_input',
+  )).toHaveLength(0)
   await reloadedCloseA.click()
   await expect(reloadedCloseA).toHaveAttribute('data-close-state', 'blocked')
   await expect(page.locator('.project-close-reason')).toContainText('pending Agent permissions')

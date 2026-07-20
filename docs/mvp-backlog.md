@@ -66,7 +66,7 @@ This document exceeds 200 lines. Read only the route that matches your question.
 
 ## One-Line MVP Definition
 
-The MVP of `gtum` is a cross-platform desktop workspace where users open local projects, use user-owned multi-tab terminals, select Codex or Claude per Agent session, request provider suggestions with project context, and approve commands into observable isolated Agent jobs without mutating the center terminal. Windows remains the first daily-use release baseline. Claude is a real provider path that selects an explicit API key, then a strict user-level `apiKeyHelper`, then an already authenticated installed CLI session without in-app OAuth or token capture. Public CLI-session distribution remains blocked pending Anthropic approval/contract review.
+The MVP of `gtum` is a cross-platform desktop workspace where users open local projects, use user-owned multi-tab terminals, manually select an exact registered Codex or Claude account per Agent session, request provider suggestions with project context, and approve commands into observable isolated Agent jobs without mutating the center terminal. Account selection never rotates automatically or falls back to another profile. Windows remains the first daily-use release baseline. Additional Codex profiles use isolated CLI homes; additional Claude CLI-session profiles are supported only on Linux and Windows, while macOS remains ambient-only because of Keychain isolation limits. Public Claude CLI-session distribution remains blocked pending Anthropic approval/contract review.
 
 ## MVP가 풀어야 할 핵심 가치 / Core MVP Value
 
@@ -94,8 +94,8 @@ The MVP is considered complete when all of the following are true:
 2. users can view the file tree, current Git branch, and dirty state
 3. users can create and close isolated terminal sessions by tab
 4. terminal output and basic session state are preserved
-5. users can connect Codex through its CLI ChatGPT session and Claude through an explicit API key, strict helper, or pre-authenticated installed CLI session; GTUM exposes no raw-key form, performs no Claude.ai OAuth, and stores no secret or identity metadata
-6. the selected provider can read project context and current terminal output to generate suggestions owned by the originating Agent session
+5. users can register and manually select multiple supported Codex/Claude profiles while preserving one non-removable ambient profile per provider; GTUM exposes no raw-key form, performs no Claude.ai OAuth, and stores no secret or provider-derived identity metadata
+6. the selected exact provider/account can read project context and current terminal output to generate suggestions owned by the originating Agent session and account lease, with no automatic account fallback
 7. users can review suggested commands through `Deny` or `Allow once`, and approval creates one observable isolated Agent job
 8. Agent-job status, bounded logs, exit metadata, cancellation, interruption on restart, task history, and basic agent state are visible in the UI
 9. the app works within a cross-platform architecture targeting Ubuntu, Windows, and macOS, and the first daily-use flow is validated on Windows
@@ -103,9 +103,29 @@ The MVP is considered complete when all of the following are true:
 11. core user flows are covered by UI end-to-end verification
 12. `aging test` evidence shows that core flows remain stable after sustained runtime or repeated use
 
+## Active P0: Multi-Account Agent Profiles
+
+Acceptance criteria:
+
+- each provider has deterministic ambient IDs, exactly one default, immutable generated IDs/incarnations, separate metadata and credential revisions, and a 16-row visible-plus-tombstone bound
+- v1 auth and Agent-session migration is atomic, copies no credential, waits for the authoritative profile snapshot, and never binds ambiguous state to an arbitrary current default
+- persisted Connected profiles advance credential revision on restart; generated profiles retain selection as `Needs verification` and block capability, Send, approval, and provider work until their exact Check succeeds
+- profile roots have enforceable owner-only storage and canonical path revalidation; unsupported permission or path guarantees fail closed
+- additional Codex accounts use isolated `CODEX_HOME` with proven file credential storage; additional Claude CLI-session accounts use isolated `CLAUDE_CONFIG_DIR` on Linux/Windows, with explicit ambient-only behavior on macOS
+- users perform CLI login in their own terminal from transient copyable guidance. GTUM never persists/logs the command and never sends it to the center terminal
+- Disconnect and Forget target one exact account, retain credentials/root/tombstone as applicable, and clearly state that they do not log out or delete provider credentials
+- each Agent session stores one account selection per provider plus account-nested model, reasoning, and Fast preferences; missing, disconnected, forgotten, unsupported, or stale accounts block Send without fallback
+- diagnostics, capabilities, requests, successful responses, errors, suggestions, cancellations, and permission turns carry the exact provider/account/incarnation/credential-revision lease and fail closed on any stale or mismatched field
+- `Allow once` invokes one `create_authorized_agent_job` operation with that full lease and project/session owner; backend authorization and job creation are one critical section, with no separate renderer authorization handoff or provider-less job-create IPC
+- jobs remain project/session-owned and observable in the right Agent workspace; the source turn retains account attribution, and no account operation or approved job mutates the user-visible center terminal
+- compact grouped account picking and narrow Settings management meet keyboard, accessibility, focus, live-status, long-alias, and no-overflow requirements
+- complete service/Rust/E2E regression, 30-cycle race/aging coverage, supported-platform native isolation smoke, visual QA, independent review, and exact non-force `dev` integration are recorded before completion
+
+Status: locally verified, integration pending. Registry, migration, isolated contexts, full-lease IPC, session-v2, immutable turns, compact picker, accessible Settings, restart revalidation, atomic approval/job creation, 31-switch aging, local native build, complete regression, and independent reviews are present. Exact commit/SHA verification, non-force `dev` integration, and runner-native CI evidence remain before this backlog marks the slice integrated; native Windows installed-app and manual VoiceOver/OS-scale checks remain broader follow-up gates.
+
 ## MVP Status
 
-The core implementation includes durable isolated Agent jobs, truthful Codex authentication, session-owned Codex/Claude selection with persisted `providerId`, provider-neutral frontend IPC with required `agentSessionId`, provider-mismatch rejection, center-terminal isolation, a bounded repeated-use E2E scenario, the Claude API-key/helper/CLI-session adapter, and fail-closed connect/request revision leases. Claude helper configuration is intentionally restricted to one canonical absolute regular executable path rather than a command line. CLI-session mode uses safe mode with empty user/project setting sources; API-key/helper mode retains bare operation. Integrated verification passes serial Playwright 200/200, focused Claude tests 42/42, and the full Rust suite 147/147; lint, production build, Rust formatting, and Rust check also pass. Only non-billing auth status was exercised; no live `claude -p` inference was run without explicit user approval. MVP stabilization also remains incomplete until public Claude authentication terms are approved or the release is restricted to API/cloud credentials, the Windows installed-app daily-use flow receives native sign-off, and a sustained manual soak is recorded. The older backlog entries below preserve the decisions and sequencing that were true when those slices were planned; this current status section overrides their historical Claude-deferred and API-only wording. See `docs/MVP_VALIDATION_NOTES.md` and `docs/sprint-plan.md` for evidence and open gates.
+The last fully integrated provider-level baseline includes durable isolated Agent jobs, truthful Codex authentication, provider-neutral frontend IPC, provider-mismatch rejection, center-terminal isolation, a bounded repeated-use scenario, and the Claude API-key/helper/CLI-session adapter. The active P0 supersedes provider-only ownership with exact account profiles and has completed its local gate: serial Playwright 345/345, Rust 303 passed/1 intentional ignore, lint, frontend/native build, formatting/check, aging, and independent review. Exact `dev`/CI integration is still pending in this checkpoint, and no live paid Claude inference is claimed. Broader MVP stabilization still requires approved public Claude authentication terms or an API/cloud-only release, native Windows sign-off, manual accessibility observation, and sustained manual soak. See `docs/MVP_VALIDATION_NOTES.md` and `docs/sprint-plan.md` for current evidence and open gates.
 
 ## MVP 검증 원칙 / MVP Validation Principles
 

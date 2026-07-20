@@ -10,6 +10,25 @@ on:
       - dev
       - master
 
+env:
+  MULTI_ACCOUNT_COMMON_RUST_TESTS: |
+    runtime::auth::tests::multi_account_migration_converts_canonical_v1_records_and_preserves_revalidation_eligibility
+    runtime::auth::tests::multi_account_registry_initializes_reserved_defaults_and_allocates_same_provider_profiles
+    runtime::auth::tests::multi_account_registry_separates_revisions_and_prevents_aba_across_restart
+    runtime::auth::tests::multi_account_restart_requires_fresh_validation_for_connected_generated_profiles
+    runtime::auth::tests::multi_account_registry_set_default_is_metadata_only_and_protects_reserved_ambient
+    runtime::auth::tests::account_owned_ipc_lease_authorization_requires_exact_connected_current_tuple
+    runtime::auth::tests::account_owned_ipc_exact_lease_guard_rejects_stale_tuple_before_runtime_work
+    runtime::auth::tests::codex_account_context_pins_exact_home_and_removes_conflicting_child_credentials
+    runtime::auth::tests::claude_account_context_owned_profile_is_cli_only_and_sets_exact_scrubbed_root
+    runtime::auth::tests::account_owned_ipc_snapshot_serializes_every_revision_as_a_decimal_string
+    runtime::auth::tests::authorized_profile_operation_holds_the_exact_lease_through_the_job_create_boundary
+    runtime::auth::tests::authorized_profile_operation_never_calls_the_job_boundary_for_stale_or_disconnected_leases
+    tests::account_owned_ipc_profile_list_serializes_large_revisions_as_decimal_strings
+    tests::account_owned_ipc_context_capture_rejects_a_different_lease_tuple
+    tests::authorized_agent_job_ipc_rejects_whitespace_ambiguous_session_ownership
+    tests::legacy_provider_only_agent_commands_share_one_fail_closed_boundary
+
 jobs:
   version-check:
     name: Version bump check
@@ -110,6 +129,39 @@ jobs:
       - name: Cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
+      - name: Native multi-account Rust tests
+        shell: bash
+        env:
+          MULTI_ACCOUNT_PLATFORM_RUST_TESTS: |
+            runtime::auth::tests::multi_account_profile_lifecycle_provisions_and_persists_codex_metadata_atomically
+            runtime::auth::tests::claude_account_context_revalidates_owned_permissions_and_symlink_identity_before_spawn
+            runtime::auth::tests::multi_account_auth_store_hardens_existing_file_to_owner_only_mode
+            runtime::auth::tests::codex_account_context_concurrent_a_b_children_keep_exact_isolated_environments
+            runtime::auth::tests::claude_account_context_concurrent_a_b_children_keep_exact_isolated_roots
+        run: |
+          set -euo pipefail
+          selected_tests="${MULTI_ACCOUNT_COMMON_RUST_TESTS}"$'\n'"${MULTI_ACCOUNT_PLATFORM_RUST_TESTS}"
+          test_list="$(mktemp)"
+          trap 'rm -f "$test_list"' EXIT
+          cargo test --manifest-path src-tauri/Cargo.toml --lib -- --list > "$test_list"
+          selected_count=0
+          while IFS= read -r test_name; do
+            [ -z "$test_name" ] && continue
+            selected_count=$((selected_count + 1))
+            grep -Fqx "${test_name}: test" "$test_list" || {
+              echo "Configured Rust test was not discovered: ${test_name}" >&2
+              exit 1
+            }
+          done <<< "$selected_tests"
+          [ "$selected_count" -gt 0 ] || {
+            echo "No native multi-account Rust tests were selected." >&2
+            exit 1
+          }
+          while IFS= read -r test_name; do
+            [ -z "$test_name" ] && continue
+            cargo test --manifest-path src-tauri/Cargo.toml --lib "$test_name" -- --exact --test-threads=1
+          done <<< "$selected_tests"
+
       - name: Playwright E2E
         run: npm run test:e2e
 
@@ -141,6 +193,39 @@ jobs:
       - name: Build Windows app without bundling
         run: npm run tauri:build
 
+      - name: Native multi-account Rust tests
+        shell: bash
+        env:
+          MULTI_ACCOUNT_PLATFORM_RUST_TESTS: |
+            runtime::auth::tests::multi_account_profile_lifecycle_windows_applies_and_verifies_owner_only_acl
+            runtime::auth::tests::codex_account_context_windows_root_revalidation_blocks_cmd_launch
+            runtime::auth::tests::claude_account_context_windows_root_replacement_fails_before_cmd_spawn
+            runtime::auth::tests::codex_account_context_windows_concurrent_a_b_cmd_children_stay_isolated
+            runtime::auth::tests::claude_account_context_windows_concurrent_a_b_node_children_stay_isolated
+        run: |
+          set -euo pipefail
+          selected_tests="${MULTI_ACCOUNT_COMMON_RUST_TESTS}"$'\n'"${MULTI_ACCOUNT_PLATFORM_RUST_TESTS}"
+          test_list="$(mktemp)"
+          trap 'rm -f "$test_list"' EXIT
+          cargo test --manifest-path src-tauri/Cargo.toml --lib -- --list > "$test_list"
+          selected_count=0
+          while IFS= read -r test_name; do
+            [ -z "$test_name" ] && continue
+            selected_count=$((selected_count + 1))
+            grep -Fqx "${test_name}: test" "$test_list" || {
+              echo "Configured Rust test was not discovered: ${test_name}" >&2
+              exit 1
+            }
+          done <<< "$selected_tests"
+          [ "$selected_count" -gt 0 ] || {
+            echo "No native multi-account Rust tests were selected." >&2
+            exit 1
+          }
+          while IFS= read -r test_name; do
+            [ -z "$test_name" ] && continue
+            cargo test --manifest-path src-tauri/Cargo.toml --lib "$test_name" -- --exact --test-threads=1
+          done <<< "$selected_tests"
+
   macos-install-smoke:
     name: macOS install smoke
     runs-on: macos-latest
@@ -168,3 +253,36 @@ jobs:
 
       - name: Build macOS app without bundling
         run: npm run tauri:build
+
+      - name: Native multi-account Rust tests
+        shell: bash
+        env:
+          MULTI_ACCOUNT_PLATFORM_RUST_TESTS: |
+            runtime::auth::tests::multi_account_profile_lifecycle_provisions_and_persists_codex_metadata_atomically
+            runtime::auth::tests::multi_account_profile_lifecycle_macos_rejects_extended_directory_acl
+            runtime::auth::tests::claude_account_context_restored_owned_profile_fails_closed_on_macos
+            runtime::auth::tests::multi_account_auth_store_hardens_existing_file_to_owner_only_mode
+            runtime::auth::tests::codex_account_context_concurrent_a_b_children_keep_exact_isolated_environments
+        run: |
+          set -euo pipefail
+          selected_tests="${MULTI_ACCOUNT_COMMON_RUST_TESTS}"$'\n'"${MULTI_ACCOUNT_PLATFORM_RUST_TESTS}"
+          test_list="$(mktemp)"
+          trap 'rm -f "$test_list"' EXIT
+          cargo test --manifest-path src-tauri/Cargo.toml --lib -- --list > "$test_list"
+          selected_count=0
+          while IFS= read -r test_name; do
+            [ -z "$test_name" ] && continue
+            selected_count=$((selected_count + 1))
+            grep -Fqx "${test_name}: test" "$test_list" || {
+              echo "Configured Rust test was not discovered: ${test_name}" >&2
+              exit 1
+            }
+          done <<< "$selected_tests"
+          [ "$selected_count" -gt 0 ] || {
+            echo "No native multi-account Rust tests were selected." >&2
+            exit 1
+          }
+          while IFS= read -r test_name; do
+            [ -z "$test_name" ] && continue
+            cargo test --manifest-path src-tauri/Cargo.toml --lib "$test_name" -- --exact --test-threads=1
+          done <<< "$selected_tests"

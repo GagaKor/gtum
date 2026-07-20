@@ -12,7 +12,6 @@ import {
   initialRuntimeWindowControls,
 } from './shared/api/runtimeWindow'
 import {
-  CODEX_REQUIRED_SCOPES,
   createAgentAuthRuntimeService,
   providerViewStateFromConnection,
 } from './shared/api/runtimeAgentAuth'
@@ -24,13 +23,23 @@ import { useAgentJobLifecycle } from './features/agents/model/useAgentJobLifecyc
 import { summarizeProjectAgentActivity } from './features/agents/model/projectAgentFleet'
 import { useProjectAgentFleet } from './features/agents/model/useProjectAgentFleet'
 import {
+  agentSessionAccountValue as agentAccountPreference,
   beginAgentRequest,
+  canAssignDefaultToHydratedWorkspace,
+  cloneAndDeepFreezeAgentTurn,
   completeAgentRequest,
   createAgentContextCoordinator,
+  createAgentLeaseGenerationCoordinator,
   createAgentRequestState,
+  agentProfileLeaseKey,
+  hydrateAgentSessionDirectoryStateV2,
+  newAgentSessionAccountSelection,
+  persistAgentSessionDirectoryV2,
   projectAgentContextKey,
   stopAgentRequest as stopAgentRequestState,
   updateAgentRequestActivity,
+  withoutAgentSessionAccountValue as withoutAgentAccountPreference,
+  withAgentSessionAccountValue as withAgentAccountPreference,
 } from './features/agents/model/projectAgentContext'
 import { AgentJobActivity } from './features/agents/ui/AgentJobActivity'
 import { useProjectWorkspaces } from './features/projects/model/useProjectWorkspaces'
@@ -2625,15 +2634,6 @@ function sanitizedAgentModelId(value) {
   return normalized;
 }
 
-function sanitizeSelectedAgentModels(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-
-  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => {
-    const modelId = sanitizedAgentModelId(value[providerId]);
-    return modelId ? [[providerId, modelId]] : [];
-  }));
-}
-
 const MAX_PERSISTED_AGENT_REASONING_LEVEL_BYTES = 16;
 
 function sanitizedAgentReasoningLevel(value) {
@@ -2646,23 +2646,9 @@ function sanitizedAgentReasoningLevel(value) {
   return normalized;
 }
 
-function sanitizeSelectedAgentReasoningLevels(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-
-  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => {
-    const reasoningLevel = sanitizedAgentReasoningLevel(value[providerId]);
-    return reasoningLevel ? [[providerId, reasoningLevel]] : [];
-  }));
-}
-
-function sanitizeAgentFastModes(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-
-  return Object.fromEntries(["codex", "claude"].flatMap((providerId) => (
-    typeof value[providerId] === "boolean"
-      ? [[providerId, value[providerId]]]
-      : []
-  )));
+function selectedAgentAccountId(session, providerId) {
+  const accountId = session?.selectedAccountIds?.[providerId];
+  return typeof accountId === "string" && accountId ? accountId : null;
 }
 
 function providerSelectableModels(providerCapabilities, providerId) {
@@ -2730,15 +2716,105 @@ function validatedStoredAgentModelId(providerCapabilities, selectedModelId, prov
 }
 
 function selectedAgentModel(providerCapabilities, selectedModelId, activeProvider) {
-  return effectiveAgentModel(providerCapabilities, selectedModelId, activeProvider?.id)
-    || {
-      modelId: null,
-      label: activeProvider ? `${activeProvider.label} default` : "Default model",
-    };
+  return effectiveAgentModel(providerCapabilities, selectedModelId, activeProvider?.id);
 }
 
 function agentWorkspaceKey(project) {
   return project?.runtimeBacked && project.path ? project.path : "no-project";
+}
+
+function exactAgentProfile(snapshot, provider, accountId) {
+  if (!provider || !accountId || !Array.isArray(snapshot?.profiles)) return null;
+  const matches = snapshot.profiles.filter((profile) =>
+    profile?.provider === provider && profile?.accountId === accountId
+  );
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function agentProfileEffectiveStatus(profile) {
+  const status = profile?.connection?.status;
+  if (status === "connected" && profile.connection.requiresValidation !== false) {
+    return "needs_verification";
+  }
+  return status || "missing";
+}
+
+function isAgentProfileAuthoritativelyConnected(profile) {
+  return agentProfileEffectiveStatus(profile) === "connected";
+}
+
+function connectedAgentProfile(snapshot, provider, accountId) {
+  const profile = exactAgentProfile(snapshot, provider, accountId);
+  return isAgentProfileAuthoritativelyConnected(profile) ? profile : null;
+}
+
+function connectedAgentProfileLeases(snapshot) {
+  return (snapshot?.profiles || []).filter(
+    isAgentProfileAuthoritativelyConnected
+  );
+}
+
+function agentProfileStatusLabel(status) {
+  if (status === "connected") return "Connected";
+  if (status === "needs_verification") return "Needs verification";
+  if (status === "disconnected") return "Disconnected";
+  if (status === "pending") return "Checking";
+  if (status === "error") return "Needs attention";
+  if (status === "forgotten") return "Forgotten";
+  return "Missing";
+}
+
+function agentAccountPickerGroups(snapshot, providers, selectedProviderId, selectedAccountId) {
+  if (snapshot?.registryVersion !== 2) return [];
+
+  const profiles = Array.isArray(snapshot.profiles) ? snapshot.profiles : [];
+  const tombstones = Array.isArray(snapshot.tombstones) ? snapshot.tombstones : [];
+  const selectedProfile = exactAgentProfile(snapshot, selectedProviderId, selectedAccountId);
+  const selectedTombstone = !selectedProfile && selectedProviderId && selectedAccountId
+    ? tombstones.find((tombstone) => (
+      tombstone.provider === selectedProviderId && tombstone.accountId === selectedAccountId
+    )) || null
+    : null;
+
+  return providers.map((provider) => {
+    const entries = profiles
+      .filter((profile) => profile.provider === provider.id)
+      .map((profile) => {
+        const status = agentProfileEffectiveStatus(profile);
+        return {
+          providerId: provider.id,
+          providerLabel: provider.label,
+          accountId: profile.accountId,
+          alias: profile.alias,
+          status,
+          statusLabel: agentProfileStatusLabel(status),
+          isDefault: profile.isDefault,
+          disabled: status !== "connected",
+          synthetic: false,
+        };
+      });
+
+    if (
+      provider.id === selectedProviderId
+      && selectedAccountId
+      && !selectedProfile
+    ) {
+      const forgotten = Boolean(selectedTombstone);
+      entries.push({
+        providerId: provider.id,
+        providerLabel: provider.label,
+        accountId: selectedAccountId,
+        alias: `${forgotten ? "Forgotten" : "Missing"} account (${selectedAccountId})`,
+        status: forgotten ? "forgotten" : "missing",
+        statusLabel: forgotten ? "Forgotten" : "Missing",
+        isDefault: false,
+        disabled: true,
+        synthetic: true,
+      });
+    }
+
+    return { provider, entries };
+  });
 }
 
 function agentContextOwner(project, sessionId) {
@@ -2753,61 +2829,36 @@ function agentWorkspaceTitle(project) {
   return project?.runtimeBacked && project.name ? project.name : "No workspace";
 }
 
-const AGENT_SESSION_DIRECTORY_STORAGE_KEY = "gtum.agent-session-directory.v1";
+function readAgentSessionDirectory(lang, profileSnapshot) {
+  if (typeof window === "undefined") {
+    return { directory: {}, source: "unavailable", observedWorkspaceKeys: null };
+  }
+  const hydration = hydrateAgentSessionDirectoryStateV2(
+    window.localStorage,
+    profileSnapshot,
+  );
 
-function readAgentSessionDirectory(lang) {
-  if (typeof window === "undefined") return {};
-
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(AGENT_SESSION_DIRECTORY_STORAGE_KEY) || "{}");
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-
-    return Object.fromEntries(Object.entries(parsed).flatMap(([workspaceKey, entry]) => {
-      if (!entry || typeof entry !== "object" || !Array.isArray(entry.sessions)) return [];
-      const sessions = entry.sessions.flatMap((session) => {
-        if (!session || typeof session !== "object") return [];
-        const id = typeof session.id === "string" ? session.id.trim() : "";
-        const title = typeof session.title === "string" ? session.title.trim() : "";
-        if (!id || !title) return [];
-
-        return [{
-          id,
-          title,
+  return {
+    ...hydration,
+    directory: Object.fromEntries(Object.entries(hydration.directory).map(
+      ([workspaceKey, entry]) => [workspaceKey, {
+        workspaceKey,
+        workspaceTitle: entry.workspaceTitle,
+        activeSessionId: entry.activeSessionId,
+        sessions: entry.sessions.map((session) => ({
+          ...session,
           workspaceKey,
-          workspaceTitle: typeof entry.workspaceTitle === "string"
-            ? entry.workspaceTitle
-            : workspaceKey,
-          createdAt: typeof session.createdAt === "string" ? session.createdAt : nowHm(),
-          updatedAt: typeof session.updatedAt === "string" ? session.updatedAt : nowHm(),
-          providerId: session.providerId === "claude" ? "claude" : "codex",
+          workspaceTitle: entry.workspaceTitle,
+          createdAt: session.createdAt || nowHm(),
+          updatedAt: session.updatedAt || nowHm(),
           messages: CHAT_INIT(lang),
           draft: "",
           request: createAgentRequestState(),
-          selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
-          selectedReasoningLevels: sanitizeSelectedAgentReasoningLevels(
-            session.selectedReasoningLevels,
-          ),
-          fastModes: sanitizeAgentFastModes(session.fastModes),
           attachments: {},
-        }];
-      });
-      if (sessions.length === 0) return [];
-      const activeSessionId = sessions.some((session) => session.id === entry.activeSessionId)
-        ? entry.activeSessionId
-        : sessions[0].id;
-
-      return [[workspaceKey, {
-        workspaceKey,
-        workspaceTitle: typeof entry.workspaceTitle === "string"
-          ? entry.workspaceTitle
-          : workspaceKey,
-        activeSessionId,
-        sessions,
-      }]];
-    }));
-  } catch {
-    return {};
-  }
+        })),
+      }],
+    )),
+  };
 }
 
 function writeAgentSessionDirectory(store) {
@@ -2823,28 +2874,19 @@ function writeAgentSessionDirectory(store) {
         title: session.title,
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
-        providerId: session.providerId === "claude" ? "claude" : "codex",
-        selectedModels: sanitizeSelectedAgentModels(session.selectedModels),
-        selectedReasoningLevels: sanitizeSelectedAgentReasoningLevels(
-          session.selectedReasoningLevels,
-        ),
-        fastModes: sanitizeAgentFastModes(session.fastModes),
+        providerId: session.providerId,
+        selectedAccountIds: session.selectedAccountIds || {},
+        selectedModels: session.selectedModels || {},
+        selectedReasoningLevels: session.selectedReasoningLevels || {},
+        fastModes: session.fastModes || {},
       })),
     },
   ]));
 
-  try {
-    window.localStorage.setItem(
-      AGENT_SESSION_DIRECTORY_STORAGE_KEY,
-      JSON.stringify(directory),
-    );
-  } catch {
-    // The runtime job store remains authoritative. If WebView storage is
-    // unavailable, keep the current in-memory session directory unchanged.
-  }
+  persistAgentSessionDirectoryV2(window.localStorage, directory);
 }
 
-function makeAgentSession(project, lang, index) {
+function makeAgentSession(project, lang, index, profileSnapshot) {
   return {
     id: uid("agent"),
     title: workspaceCodename(index),
@@ -2853,6 +2895,7 @@ function makeAgentSession(project, lang, index) {
     createdAt: nowHm(),
     updatedAt: nowHm(),
     providerId: "codex",
+    selectedAccountIds: newAgentSessionAccountSelection("codex", profileSnapshot),
     messages: CHAT_INIT(lang),
     draft: "",
     request: createAgentRequestState(),
@@ -2863,11 +2906,16 @@ function makeAgentSession(project, lang, index) {
   };
 }
 
-function ensureAgentWorkspace(store, project, lang) {
+function ensureAgentWorkspace(store, project, lang, profileSnapshot, hydration) {
   const key = agentWorkspaceKey(project);
   if (store[key]?.sessions?.length) return store;
 
-  const session = makeAgentSession(project, lang, 1);
+  const session = makeAgentSession(
+    project,
+    lang,
+    1,
+    canAssignDefaultToHydratedWorkspace(hydration, key) ? profileSnapshot : null,
+  );
   return {
     ...store,
     [key]: {
@@ -2881,27 +2929,48 @@ function ensureAgentWorkspace(store, project, lang) {
 
 function AgentHeader({
   lang,
-  activeProvider, providerCapabilities, selectedModelId,
+  activeProvider, activeProfile, profileSnapshot,
+  providerCapabilities, selectedModelId,
   agentWorkspace, activeAgentSession,
   onOpenSettings, collapseAgent,
 }) {
   const model = selectedAgentModel(providerCapabilities, selectedModelId, activeProvider);
   const workspaceLabel = agentWorkspace?.workspaceTitle || "No workspace";
-  const sessionLabel = activeAgentSession?.title || "Agent 1";
+  const sessionLabel = activeAgentSession?.title || "No agent session";
+  const profileAvailable = Boolean(activeProvider && activeProfile);
+  const headerPlaceholder = profileSnapshot === undefined
+    ? "Loading agent accounts"
+    : profileSnapshot === null
+      ? "Agent accounts unavailable"
+      : "Selected agent account unavailable";
+  const modelPlaceholder = profileAvailable ? "Model unavailable" : headerPlaceholder;
 
   return (
     <div className="agent-header">
-      <div className={"provider-mark " + activeProvider.id + " current"}>
-        {activeProvider.abbr}
-      </div>
-      <div className="agent-model-main">
-        <div className="agent-model-name">
-          <span>{model.label}</span>
-          <Icon.chevronDown />
+      {profileAvailable && (
+        <div className={"provider-mark " + activeProvider.id + " current"}>
+          {activeProvider.abbr}
         </div>
+      )}
+      <div className="agent-model-main">
+        {model ? (
+          <div className="agent-model-name">
+            <span>{model.label}</span>
+            <Icon.chevronDown />
+          </div>
+        ) : (
+          <div className="agent-model-placeholder">{modelPlaceholder}</div>
+        )}
         <div className="agent-model-sub">
-          <span>{activeProvider.label}</span>
-          <span>{providerSessionLabel(activeProvider)}</span>
+          {profileAvailable ? (
+            <>
+              <span>{activeProvider.label}</span>
+              <span>{activeProfile.alias}</span>
+              <span>{agentProfileStatusLabel(agentProfileEffectiveStatus(activeProfile))}</span>
+            </>
+          ) : (
+            <span>{headerPlaceholder}</span>
+          )}
           <span>{workspaceLabel} / {sessionLabel}</span>
         </div>
       </div>
@@ -2995,11 +3064,6 @@ function providerDisplayName(providerId) {
   if (providerId === "claude") return "Claude";
   if (providerId === "codex") return "Codex";
   return "Provider";
-}
-
-function isProviderConnectionFailure(message) {
-  return /(?:api.?key|credential|not logged|not connected|unauthori[sz]ed|authentication|session\s+(?:is\s+)?(?:missing|expired)|run\s+codex\s+login)/i
-    .test(String(message || ""));
 }
 
 function progressStepLabel(lang, step) {
@@ -3193,6 +3257,7 @@ function ComposerPermissionRequest({
   lang, suggestion, risk, onPermissionDecision, projectPath, agentSessionId,
 }) {
   if (!suggestion?.commands?.length) return null;
+  const accountOwner = suggestion.accountOwner || null;
   const choose = (event, decision) => {
     event.preventDefault();
     event.stopPropagation();
@@ -3204,8 +3269,13 @@ function ComposerPermissionRequest({
       className="composer-approval"
       data-risk={risk}
       data-suggestion-id={suggestion.id || undefined}
-      data-owner-project-path={projectPath || ""}
-      data-owner-session-id={agentSessionId || ""}
+      data-owner-project-path={accountOwner?.projectPath || projectPath || ""}
+      data-owner-session-id={accountOwner?.sessionId || agentSessionId || ""}
+      data-owner-provider-id={accountOwner?.provider || ""}
+      data-owner-account-id={accountOwner?.accountId || ""}
+      data-owner-profile-alias={accountOwner?.alias || ""}
+      data-owner-incarnation={accountOwner?.incarnation || ""}
+      data-owner-credential-revision={accountOwner?.credentialRevision || ""}
     >
       <div className="composer-approval-head">
         <div className="composer-approval-icon">
@@ -3268,12 +3338,19 @@ function AgentTurn({
   const steps = msg.progress?.steps || [];
   const showRuntimeState = Boolean(title);
   const answerMeta = msg.answerMeta;
+  const accountOwner = msg.accountOwner || suggestion?.accountOwner || null;
 
   return (
     <div
       className={"agent-turn" + (isRunning ? " running" : "") + (isFailed ? " failed" : "") + (!showRuntimeState ? " completed" : "")}
       data-request-turn-id={String(msg.id || "").endsWith("-agent-turn") ? msg.id : undefined}
       data-suggestion-id={suggestion?.id || undefined}
+      data-owner-provider-id={accountOwner?.provider || undefined}
+      data-owner-account-id={accountOwner?.accountId || undefined}
+      data-owner-profile-alias={accountOwner?.alias || undefined}
+      data-owner-incarnation={accountOwner?.incarnation || undefined}
+      data-owner-credential-revision={accountOwner?.credentialRevision || undefined}
+      data-permission-decision={permissionDecision?.status || undefined}
     >
       {showRuntimeState && (
         <div className="agent-turn-head">
@@ -3324,14 +3401,26 @@ function AgentTurn({
   );
 }
 
+function agentOwnerDataAttributes(owner) {
+  if (!owner) return {};
+  return {
+    "data-owner-provider-id": owner.provider,
+    "data-owner-account-id": owner.accountId,
+    "data-owner-profile-alias": owner.alias,
+    "data-owner-incarnation": owner.incarnation,
+    "data-owner-credential-revision": owner.credentialRevision,
+  };
+}
+
 function MessageBubble({
   msg, lang, onChooseDecisionOption,
 }) {
+  const accountOwner = msg.accountOwner || msg.suggestion?.accountOwner || null;
   if (msg.role === "user") {
     const attachedContext = (msg.contextAttached || []).filter(Boolean);
 
     return (
-      <div className="msg user">
+      <div className="msg user" {...agentOwnerDataAttributes(accountOwner)}>
         <div className="msg-meta">
           <span>{msg.at}</span>
           <span className="role-tag user">{t(lang, "you")}</span>
@@ -3350,7 +3439,7 @@ function MessageBubble({
   if (msg.progress) {
     const roleLabel = msg.roleLabel || providerDisplayName(msg.suggestion?.provider);
     return (
-      <div className="msg assistant">
+      <div className="msg assistant" {...agentOwnerDataAttributes(accountOwner)}>
         <div className="msg-meta">
           <span>{msg.at}</span>
           <span className="role-tag assistant">{roleLabel}</span>
@@ -3369,7 +3458,7 @@ function MessageBubble({
     const roleLabel = msg.roleLabel || providerDisplayName(s.provider);
     if (!s.commands?.length) {
       return (
-        <div className="msg assistant">
+        <div className="msg assistant" {...agentOwnerDataAttributes(accountOwner)}>
           <div className="msg-meta">
             <span>{msg.at}</span>
             <span className="role-tag assistant">{roleLabel}</span>
@@ -3382,7 +3471,7 @@ function MessageBubble({
     }
 
     return (
-      <div className="msg assistant">
+      <div className="msg assistant" {...agentOwnerDataAttributes(accountOwner)}>
         <div className="msg-meta">
           <span>{msg.at}</span>
           <span className="role-tag assistant">{roleLabel}</span>
@@ -3398,7 +3487,7 @@ function MessageBubble({
 
   if (msg.completed) {
     return (
-      <div className="msg assistant">
+      <div className="msg assistant" {...agentOwnerDataAttributes(accountOwner)}>
         <div className="msg-meta">
           <span>{msg.at}</span>
           <span className="role-tag assistant">{t(lang, "operator")}</span>
@@ -3419,7 +3508,7 @@ function MessageBubble({
   }
 
   return (
-    <div className="msg assistant">
+    <div className="msg assistant" {...agentOwnerDataAttributes(accountOwner)}>
       <div className="msg-meta">
         <span>{msg.at}</span>
         {msg.roleLabel && <span className="role-tag assistant">{msg.roleLabel}</span>}
@@ -3531,12 +3620,12 @@ function composerReferenceGroup(value) {
 }
 
 function Composer({
-  lang, providers, activeProvider, onSelectProvider,
+  lang, providers, activeProvider, profileSnapshot, selectedAccountId, onSelectAccount,
   providerCapabilities, selectedModelId, onSelectModel,
   reasoningLevel, fastMode, onSelectReasoningLevel, onSelectFastMode,
   attachments, onPickAttachment, onRemoveAttachment, onSend,
   draft, onDraftChange,
-  busy = false, onStop,
+  busy = false, canSend = false, onStop,
 }) {
   const val = draft || "";
   const [openMenu, setOpenMenu] = React.useState(null);
@@ -3545,6 +3634,8 @@ function Composer({
   const modelTriggerRef = React.useRef(null);
   const reasoningTriggerRef = React.useRef(null);
   const modelMenuRef = React.useRef(null);
+  const providerMenuRef = React.useRef(null);
+  const providerMenuFocusedAccountRef = React.useRef(null);
   const providerMenuOpen = openMenu === "provider";
   const modelMenuOpen = openMenu === "model";
   const reasoningMenuOpen = openMenu === "reasoning";
@@ -3556,7 +3647,10 @@ function Composer({
   }, [val]);
   React.useEffect(() => {
     setOpenMenu(null);
-  }, [activeProvider?.id]);
+  }, [activeProvider?.id, selectedAccountId]);
+  React.useEffect(() => {
+    if (!providerMenuOpen) providerMenuFocusedAccountRef.current = null;
+  }, [providerMenuOpen]);
   React.useEffect(() => {
     if (!openMenu) return undefined;
 
@@ -3574,9 +3668,91 @@ function Composer({
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [openMenu]);
-  const providerTriggerLabel = activeProvider
-    ? `Provider: ${activeProvider.label} · ${providerSessionLabel(activeProvider)}`
-    : "No provider";
+  const accountGroups = agentAccountPickerGroups(
+    profileSnapshot,
+    providers,
+    activeProvider?.id,
+    selectedAccountId,
+  );
+  const accountEntries = accountGroups.flatMap((group) => group.entries);
+  const selectedAccountEntry = accountEntries.find((entry) => (
+    entry.providerId === activeProvider?.id && entry.accountId === selectedAccountId
+  )) || null;
+  const accountEntriesKey = accountEntries.map((entry) => (
+    `${entry.providerId}\u0000${entry.accountId}\u0000${entry.alias}\u0000${entry.status}`
+  )).join("\u0001");
+  const profilesLoading = profileSnapshot === undefined;
+  const profilesUnavailable = profileSnapshot === null;
+  const providerTriggerLabel = profilesLoading
+    ? "Agent accounts: Loading"
+    : profilesUnavailable
+      ? "Agent accounts: Unavailable"
+      : selectedAccountEntry
+        ? `Agent account: ${selectedAccountEntry.providerLabel} · ${selectedAccountEntry.alias} · ${selectedAccountEntry.statusLabel}`
+        : activeProvider
+          ? `Agent account: ${activeProvider.label} · No account selected`
+          : "Agent account: No provider selected";
+  const providerStatusClass = profilesLoading
+    ? "loading"
+    : profilesUnavailable
+      ? "unavailable"
+      : selectedAccountEntry?.status || "missing";
+  const accountPickerDisabled = profilesLoading || profilesUnavailable;
+  React.useLayoutEffect(() => {
+    if (!providerMenuOpen) return;
+    const menu = providerMenuRef.current;
+    const options = Array.from(menu?.querySelectorAll('[role="option"]') || []);
+    const focusedAccountKey = providerMenuFocusedAccountRef.current;
+    const previouslyFocusedOption = focusedAccountKey
+      ? options.find((option) => (
+        `${option.dataset.providerId}\u0000${option.dataset.accountId}` === focusedAccountKey
+      )) || null
+      : null;
+    const selectedOption = options.find((option) => option.getAttribute("aria-selected") === "true")
+      || null;
+    const target = previouslyFocusedOption || selectedOption || options[0] || null;
+    const activeElement = document.activeElement;
+    const menuOwnedFocus = activeElement === providerTriggerRef.current
+      || menu?.contains(activeElement)
+      || (Boolean(focusedAccountKey) && activeElement === document.body);
+    target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (target && menuOwnedFocus) {
+      target.focus();
+    }
+  }, [
+    accountEntriesKey,
+    providerMenuOpen,
+    selectedAccountId,
+    activeProvider?.id,
+  ]);
+  const handleAccountMenuKeyDown = (event) => {
+    if (event.key === "Tab") {
+      setOpenMenu(null);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const options = Array.from(
+      providerMenuRef.current?.querySelectorAll('[role="option"]') || [],
+    );
+    if (options.length === 0) return;
+    event.preventDefault();
+    const currentIndex = Math.max(0, options.indexOf(document.activeElement));
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? options.length - 1
+        : event.key === "ArrowDown"
+          ? (currentIndex + 1) % options.length
+          : (currentIndex - 1 + options.length) % options.length;
+    options[nextIndex]?.focus();
+    options[nextIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+  const selectAgentAccount = (entry) => {
+    if (entry.disabled) return;
+    onSelectAccount(entry.providerId, entry.accountId);
+    setOpenMenu(null);
+    window.requestAnimationFrame(() => providerTriggerRef.current?.focus());
+  };
   const availableModels = providerSelectableModels(providerCapabilities, activeProvider?.id);
   const selectedModel = effectiveAgentModel(
     providerCapabilities,
@@ -3642,7 +3818,7 @@ function Composer({
     }
 
     const v = val.trim();
-    if (!v) return;
+    if (!v || !canSend) return;
     onSend(v);
     if (ref.current) ref.current.style.height = "auto";
   };
@@ -3724,34 +3900,85 @@ function Composer({
               ref={providerTriggerRef}
               title={providerTriggerLabel}
               type="button"
+              disabled={accountPickerDisabled}
               aria-label={providerTriggerLabel}
               aria-haspopup="listbox"
               aria-expanded={providerMenuOpen}
               onClick={() => setOpenMenu((current) => current === "provider" ? null : "provider")}
             >
-              {activeProvider && (
+              {activeProvider && selectedAccountEntry && (
                 <span className={"provider-mark " + activeProvider.id + " current"} aria-hidden="true">
                   {activeProvider.abbr}
                 </span>
               )}
+              <span
+                className={"composer-account-status-cue " + providerStatusClass}
+                aria-hidden="true"
+              />
             </button>
             {providerMenuOpen && (
-              <div className="composer-model-menu composer-provider-menu" role="listbox" aria-label="Agent provider">
-                {providers.map((provider) => (
-                  <button
-                    className={"composer-model-option composer-provider-option" + (provider.id === activeProvider?.id ? " active" : "")}
+              <div
+                className="composer-model-menu composer-selection-menu composer-provider-menu composer-account-menu"
+                ref={providerMenuRef}
+                role="listbox"
+                aria-label="Agent accounts"
+                onKeyDown={handleAccountMenuKeyDown}
+              >
+                {accountGroups.map(({ provider, entries }) => (
+                  <div
+                    className="composer-account-group"
+                    role="group"
+                    aria-label={`${provider.label} accounts`}
                     key={provider.id}
-                    type="button"
-                    role="option"
-                    aria-selected={provider.id === activeProvider?.id}
-                    onClick={() => {
-                      onSelectProvider(provider.id);
-                      setOpenMenu(null);
-                    }}
                   >
-                    <span>{provider.label}</span>
-                    <small>{providerSessionLabel(provider)}</small>
-                  </button>
+                    <div className="composer-account-group-label" aria-hidden="true">
+                      {provider.label}
+                    </div>
+                    {entries.map((entry) => {
+                      const selected = entry.providerId === activeProvider?.id
+                        && entry.accountId === selectedAccountId;
+                      return (
+                        <button
+                          className={"composer-model-option composer-provider-option composer-account-option"
+                            + (selected ? " active" : "")
+                            + (entry.disabled ? " disabled" : "")}
+                          key={`${entry.providerId}\u0000${entry.accountId}`}
+                          type="button"
+                          role="option"
+                          tabIndex={-1}
+                          data-provider-id={entry.providerId}
+                          data-account-id={entry.accountId}
+                          data-profile-status={entry.status}
+                          aria-label={`${entry.providerLabel} · ${entry.alias} · ${entry.statusLabel}${entry.isDefault ? " · Default" : ""}`}
+                          aria-selected={selected}
+                          aria-disabled={entry.disabled}
+                          onFocus={() => {
+                            providerMenuFocusedAccountRef.current =
+                              `${entry.providerId}\u0000${entry.accountId}`;
+                          }}
+                          onClick={() => selectAgentAccount(entry)}
+                        >
+                          <span
+                            className={"provider-mark " + entry.providerId}
+                            aria-hidden="true"
+                          >
+                            {provider.abbr}
+                          </span>
+                          <span className="composer-account-copy">
+                            <span className="composer-account-alias">{entry.alias}</span>
+                            <small className="composer-account-status">
+                              <span
+                                className={"composer-account-status-cue " + entry.status}
+                                aria-hidden="true"
+                              />
+                              {entry.statusLabel}
+                              {entry.isDefault && <span className="composer-account-default">Default</span>}
+                            </small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ))}
               </div>
             )}
@@ -3866,7 +4093,7 @@ function Composer({
           <button
             className={"send" + (busy ? " stopping" : "")}
             onClick={submit}
-            disabled={!busy && !val.trim()}
+            disabled={!busy && (!canSend || !val.trim())}
             title={busy ? "Stop response" : "Send"}
           >
             {busy ? <Icon.stop /> : <Icon.send />}
@@ -3881,7 +4108,7 @@ function AgentPanel({
   lang, messages, isTyping, agentActivity = [],
   agentJobs = [], onCancelAgentJob,
   onSend, providers, collapseAgent,
-  activeProviderId, onSelectProvider, onOpenSettings, project,
+  activeProviderId, profileSnapshot, onSelectAccount, onOpenSettings, project,
   providerCapabilities, selectedModelId, onSelectModel,
   reasoningLevel, fastMode, onSelectReasoningLevel, onSelectFastMode,
   agentWorkspace, activeAgentSessionId, onSelectAgentSession,
@@ -3889,6 +4116,10 @@ function AgentPanel({
   attachments, onPickAttachment, onRemoveAttachment,
   onChooseDecisionOption, onPermissionDecision, onStopAgentRequest,
   requestPhase, composerDraft, onComposerDraftChange,
+  canSend = false,
+  capabilityCacheSize = 0, capabilityGenerationSlots = 0, actionGenerationSlots = 0,
+  activeAccountId = null, activeProfileIncarnation = null,
+  activeCredentialRevision = null, activeProfileStatus = null,
 }) {
   const chatRef = React.useRef(null);
   const agentBusy = isTyping || messages.some((message) => message.progress?.status === "running");
@@ -3913,10 +4144,15 @@ function AgentPanel({
     return () => window.cancelAnimationFrame(frame);
   }, [messages, isTyping, agentActivity, pendingPermissionMessage?.id]);
 
-  const active = providers.find((p) => p.id === activeProviderId) || providers.find((p) => p.state === "connected") || providers[0];
+  const active = providers.find((p) => p.id === activeProviderId) || null;
   const activeAgentSession = agentWorkspace?.sessions?.find((session) => session.id === activeAgentSessionId)
     || agentWorkspace?.sessions?.[0]
     || null;
+  const activeProfile = exactAgentProfile(
+    profileSnapshot,
+    active?.id,
+    activeAccountId,
+  );
 
   return (
     <aside
@@ -3925,10 +4161,19 @@ function AgentPanel({
       data-agent-session-id={activeAgentSessionId || ""}
       data-agent-provider-id={active?.id || ""}
       data-request-state={requestPhase || "idle"}
+      data-capability-cache-size={capabilityCacheSize}
+      data-capability-generation-slots={capabilityGenerationSlots}
+      data-action-generation-slots={actionGenerationSlots}
+      data-agent-account-id={activeAccountId || ""}
+      data-agent-profile-incarnation={activeProfileIncarnation || ""}
+      data-agent-credential-revision={activeCredentialRevision || ""}
+      data-agent-profile-status={activeProfileStatus || "unresolved"}
     >
       <AgentHeader
         lang={lang}
         activeProvider={active}
+        activeProfile={activeProfile}
+        profileSnapshot={profileSnapshot}
         providerCapabilities={providerCapabilities}
         selectedModelId={selectedModelId}
         agentWorkspace={agentWorkspace}
@@ -3976,7 +4221,9 @@ function AgentPanel({
         lang={lang}
         providers={providers}
         activeProvider={active}
-        onSelectProvider={onSelectProvider}
+        profileSnapshot={profileSnapshot}
+        selectedAccountId={activeAccountId}
+        onSelectAccount={onSelectAccount}
         providerCapabilities={providerCapabilities}
         selectedModelId={selectedModelId}
         onSelectModel={onSelectModel}
@@ -3991,6 +4238,7 @@ function AgentPanel({
         draft={composerDraft}
         onDraftChange={onComposerDraftChange}
         busy={agentBusy}
+        canSend={canSend}
         onStop={onStopAgentRequest}
       />
     </aside>
@@ -4005,11 +4253,54 @@ Object.assign(window, { AgentPanel });
 
 // SettingsModal ??full settings page with tabs in a left rail.
 // Sections: Connections / Appearance / Execution / About.
+const settingsAccountOwnerKey = (provider, accountId) => `${provider}\u0000${accountId}`;
+const settingsAddOwnerKey = (provider) => `add\u0000${provider}`;
+const withoutSettingsKey = (values, key) => {
+  if (!Object.prototype.hasOwnProperty.call(values, key)) return values;
+  const next = { ...values };
+  delete next[key];
+  return next;
+};
+const settingsProfileStatusLabel = (status) => {
+  if (status === "connected") return "Connected";
+  if (status === "needs_verification") return "Needs verification";
+  if (status === "pending") return "Checking…";
+  if (status === "error") return "Needs attention";
+  return "Disconnected";
+};
+const settingsCredentialSourceLabel = (credentialSource) => {
+  if (credentialSource === "claude_cli_session") return "CLI session";
+  if (credentialSource === "anthropic_api_key" || credentialSource === "api_key_helper") {
+    return "API credential";
+  }
+  return null;
+};
+
 function SettingsModal({
-  lang, providers, onClose, onConnect, onDisconnect,
+  lang, providers, profileSnapshot, onClose,
+  onAddAccount, onRenameAccount, onSetDefaultAccount,
+  onCheckAccount, onDisconnectAccount, onForgetAccount, onReadSetupGuidance,
   accent, accentOptions, onSetAccent,
 }) {
   const [section, setSection] = React.useState("connections");
+  const [addDrafts, setAddDrafts] = React.useState({});
+  const [renameDrafts, setRenameDrafts] = React.useState({});
+  const [pendingOwners, setPendingOwners] = React.useState({});
+  const [accountErrors, setAccountErrors] = React.useState({});
+  const [setupGuidance, setSetupGuidance] = React.useState({});
+  const [copyStates, setCopyStates] = React.useState({});
+  const [forgetConfirmation, setForgetConfirmation] = React.useState(null);
+  const [accountAnnouncement, setAccountAnnouncement] = React.useState({
+    sequence: 0,
+    message: "",
+  });
+  const dialogRef = React.useRef(null);
+  const accountRowRefs = React.useRef(new Map());
+  const pendingOwnerKeysRef = React.useRef(new Set());
+
+  const profiles = profileSnapshot?.registryVersion === 2
+    ? profileSnapshot.profiles
+    : [];
 
   const sections = [
     { id: "connections", label: t(lang, "settingsConnections") },
@@ -4018,12 +4309,231 @@ function SettingsModal({
     { id: "about",       label: t(lang, "settingsAbout") },
   ];
 
+  const beginOwnerPending = (ownerKey) => {
+    if (pendingOwnerKeysRef.current.has(ownerKey)) return false;
+    pendingOwnerKeysRef.current.add(ownerKey);
+    setPendingOwners((current) => ({ ...current, [ownerKey]: true }));
+    return true;
+  };
+  const endOwnerPending = (ownerKey) => {
+    pendingOwnerKeysRef.current.delete(ownerKey);
+    setPendingOwners((current) => withoutSettingsKey(current, ownerKey));
+  };
+  const setOwnerError = (ownerKey, error) => {
+    setAccountErrors((current) => error
+      ? { ...current, [ownerKey]: error }
+      : withoutSettingsKey(current, ownerKey));
+  };
+  const actionErrorMessage = (error) => error instanceof Error ? error.message : String(error);
+  const announceAccountStatus = (message) => {
+    setAccountAnnouncement((current) => ({
+      sequence: current.sequence + 1,
+      message,
+    }));
+  };
+  const focusOwnerAction = (ownerKey, action) => {
+    const focus = (remainingAttempts) => {
+      const target = accountRowRefs.current
+        .get(ownerKey)
+        ?.querySelector(`[data-account-action="${action}"]`);
+      if (target instanceof HTMLElement) {
+        target.focus();
+      } else if (remainingAttempts > 0) {
+        window.requestAnimationFrame(() => focus(remainingAttempts - 1));
+      } else {
+        dialogRef.current?.focus();
+      }
+    };
+    window.requestAnimationFrame(() => focus(1));
+  };
+  const dialogFocusableElements = () => Array.from(dialogRef.current?.querySelectorAll([
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "a[href]",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",")) || []).filter((element) => (
+    element instanceof HTMLElement
+    && element.getClientRects().length > 0
+  ));
+  const handleDialogKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab") return;
+
+    const focusable = dialogFocusableElements();
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const activeElement = document.activeElement;
+    const focusOutsideDialog = !dialogRef.current?.contains(activeElement);
+    if (event.shiftKey && (
+      activeElement === first
+      || activeElement === dialogRef.current
+      || focusOutsideDialog
+    )) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (
+      activeElement === last
+      || activeElement === dialogRef.current
+      || focusOutsideDialog
+    )) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  React.useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
+  const handleAddAccount = async (provider) => {
+    const ownerKey = settingsAddOwnerKey(provider.id);
+    const alias = String(addDrafts[provider.id] || "").trim();
+    if (!alias || !beginOwnerPending(ownerKey)) return;
+    setOwnerError(ownerKey, null);
+    try {
+      const result = await onAddAccount(provider.id, alias);
+      const createdProfile = result?.profile;
+      const guidance = result?.guidance;
+      const guidanceError = result?.guidanceError;
+      if (createdProfile) {
+        const createdOwnerKey = settingsAccountOwnerKey(
+          createdProfile.provider,
+          createdProfile.accountId,
+        );
+        if (guidance) {
+          setSetupGuidance((current) => ({ ...current, [createdOwnerKey]: guidance }));
+        }
+        if (guidanceError) setOwnerError(createdOwnerKey, guidanceError);
+        announceAccountStatus(
+          `${provider.label} account ${createdProfile.alias} was added. ${
+            guidanceError ? "Setup guidance needs attention." : "Setup guidance is ready."
+          }`,
+        );
+        focusOwnerAction(createdOwnerKey, "setup");
+      }
+      setAddDrafts((current) => ({ ...current, [provider.id]: "" }));
+    } catch (error) {
+      setOwnerError(ownerKey, actionErrorMessage(error));
+    } finally {
+      endOwnerPending(ownerKey);
+    }
+  };
+
+  const handleRenameAccount = async (provider, profile) => {
+    const ownerKey = settingsAccountOwnerKey(profile.provider, profile.accountId);
+    const alias = String(renameDrafts[ownerKey] || "").trim();
+    if (!alias || !beginOwnerPending(ownerKey)) return;
+    setOwnerError(ownerKey, null);
+    try {
+      await onRenameAccount(profile.provider, profile.accountId, alias);
+      setRenameDrafts((current) => withoutSettingsKey(current, ownerKey));
+      announceAccountStatus(`${provider.label} account was renamed to ${alias}.`);
+      focusOwnerAction(ownerKey, "rename");
+    } catch (error) {
+      setOwnerError(ownerKey, actionErrorMessage(error));
+    } finally {
+      endOwnerPending(ownerKey);
+    }
+  };
+
+  const handleOwnerAction = async (profile, action, successMessage = null) => {
+    const ownerKey = settingsAccountOwnerKey(profile.provider, profile.accountId);
+    if (!beginOwnerPending(ownerKey)) return false;
+    setOwnerError(ownerKey, null);
+    try {
+      await action(profile.provider, profile.accountId);
+      if (successMessage) announceAccountStatus(successMessage);
+      return true;
+    } catch (error) {
+      setOwnerError(ownerKey, actionErrorMessage(error));
+      return false;
+    } finally {
+      endOwnerPending(ownerKey);
+    }
+  };
+
+  const handleForgetAccount = async (profile) => {
+    const ownerKey = settingsAccountOwnerKey(profile.provider, profile.accountId);
+    const ownerKeys = profiles.map((candidate) => settingsAccountOwnerKey(
+      candidate.provider,
+      candidate.accountId,
+    ));
+    const ownerIndex = ownerKeys.indexOf(ownerKey);
+    const focusOwnerKey = ownerKeys[ownerIndex + 1] || ownerKeys[ownerIndex - 1] || null;
+    const succeeded = await handleOwnerAction(profile, onForgetAccount);
+    if (!succeeded) return;
+    setForgetConfirmation((current) => current === ownerKey ? null : current);
+    setSetupGuidance((current) => withoutSettingsKey(current, ownerKey));
+    setCopyStates((current) => withoutSettingsKey(current, ownerKey));
+    setRenameDrafts((current) => withoutSettingsKey(current, ownerKey));
+    const providerLabel = providers.find((provider) => provider.id === profile.provider)?.label
+      || profile.provider;
+    announceAccountStatus(`${providerLabel} account ${profile.alias} was forgotten.`);
+    if (focusOwnerKey) focusOwnerAction(focusOwnerKey, "rename");
+    else window.requestAnimationFrame(() => dialogRef.current?.focus());
+  };
+
+  const handleReadSetupGuidance = async (profile) => {
+    const ownerKey = settingsAccountOwnerKey(profile.provider, profile.accountId);
+    if (!beginOwnerPending(ownerKey)) return;
+    setOwnerError(ownerKey, null);
+    setCopyStates((current) => withoutSettingsKey(current, ownerKey));
+    try {
+      const guidance = await onReadSetupGuidance(profile.provider, profile.accountId);
+      setSetupGuidance((current) => ({ ...current, [ownerKey]: guidance }));
+    } catch (error) {
+      setOwnerError(ownerKey, actionErrorMessage(error));
+    } finally {
+      endOwnerPending(ownerKey);
+    }
+  };
+
+  const handleCopySetupCommand = async (profile, command) => {
+    const ownerKey = settingsAccountOwnerKey(profile.provider, profile.accountId);
+    setCopyStates((current) => withoutSettingsKey(current, ownerKey));
+    setOwnerError(ownerKey, null);
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyStates((current) => ({ ...current, [ownerKey]: "Copied" }));
+    } catch (error) {
+      const message = actionErrorMessage(error);
+      setOwnerError(ownerKey, `Could not copy setup command: ${message}`);
+    }
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className="modal settings-modal"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t(lang, "settingsTitle")}
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
         onClick={(e) => e.stopPropagation()}
       >
+        <div
+          className="settings-account-announcement"
+          key={accountAnnouncement.sequence}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {accountAnnouncement.message}
+        </div>
         <div className="settings-rail">
           <div className="settings-rail-title">{t(lang, "settingsTitle")}</div>
           {sections.map((s) => (
@@ -4044,46 +4554,321 @@ function SettingsModal({
           {section === "connections" && (
             <div className="settings-pane">
               <h3 className="settings-h">{t(lang, "settingsConnections")}</h3>
-              <p className="settings-sub">{t(lang, "connectDetails")}</p>
+              <p className="settings-sub">Manage exact CLI account profiles for each Agent service.</p>
               <div className="settings-providers">
-                {providers.map((p) => (
-                  <div key={p.id} className={"settings-provider " + (p.state === "connected" ? "connected" : "")}>
-                    <div className={"provider-mark " + p.id} style={{ width: 36, height: 36, fontSize: 13 }}>
-                      {p.abbr}
-                    </div>
-                    <div className="settings-provider-info">
-                      <div className="settings-provider-name">{p.label}</div>
-                      <div className="settings-provider-sub">
-                        {p.availability === "deferred"
-                          ? <span className="provider-deferred">Coming later / {p.lastError || "Provider support is deferred."}</span>
-                          : p.state === "connected"
-                          ? <>
-                              <span className="dot-ok" /> {t(lang, "connected")}
-                              <span className="dot-sep">/</span>
-                              {p.expiresInDays == null
-                                ? providerSessionLabel(p)
-                                : <>{t(lang, "sessionExpiry")} {p.expiresInDays}{t(lang, "days")}</>}
-                              <span className="dot-sep">/</span>
-                              {p.scope.length > 0 ? p.scope.join(", ") : "no scopes"}
-                            </>
-                          : p.state === "error"
-                            ? <span style={{ color: "var(--warn)" }}>{p.lastError || ("Connection needs attention")}</span>
-                            : p.state === "pending"
-                              ? <span style={{ color: "var(--text-dim)" }}>{"Checking login"}</span>
-                              : <span style={{ color: "var(--text-dim)" }}>{"Not connected"}</span>}
+                {providers.map((provider) => {
+                  const providerProfiles = profiles.filter((profile) => profile.provider === provider.id);
+                  const addOwnerKey = settingsAddOwnerKey(provider.id);
+                  const addPending = Boolean(pendingOwners[addOwnerKey]);
+                  const addUnavailable = profileSnapshot?.registryVersion !== 2
+                    || provider.availability === "deferred";
+                  const addAliasMissing = !String(addDrafts[provider.id] || "").trim();
+                  const hasConnectedProfile = providerProfiles.some((profile) => (
+                    isAgentProfileAuthoritativelyConnected(profile)
+                  ));
+                  return (
+                    <section
+                      key={provider.id}
+                      className={"settings-provider settings-account-group" + (hasConnectedProfile ? " connected" : "")}
+                      data-provider-id={provider.id}
+                    >
+                      <div className="settings-account-group-header">
+                        <div className={"provider-mark " + provider.id} aria-hidden="true">
+                          {provider.abbr}
+                        </div>
+                        <div className="settings-provider-info">
+                          <div className="settings-provider-name">{provider.label}</div>
+                          <div className="settings-provider-sub">
+                            {profileSnapshot?.registryVersion === 2
+                              ? `${providerProfiles.length} account${providerProfiles.length === 1 ? "" : "s"}`
+                              : "Account profiles unavailable"}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    {p.availability === "deferred" ? (
-                      <span className="provider-coming-later">Coming later</span>
-                    ) : p.state === "connected" ? (
-                      <button className="btn btn-ghost" onClick={() => onDisconnect(p.id)}>{t(lang, "disconnect")}</button>
-                    ) : p.state === "pending" ? (
-                      <button className="btn btn-primary" type="button" disabled>{"Checking…"}</button>
-                    ) : (
-                      <button className="btn btn-primary" onClick={() => onConnect(p.id)}>{t(lang, "connect")}</button>
-                    )}
-                  </div>
-                ))}
+
+                      <form
+                        className="settings-account-add"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          handleAddAccount(provider);
+                        }}
+                      >
+                        <input
+                          className="settings-account-input"
+                          type="text"
+                          value={addDrafts[provider.id] || ""}
+                          aria-label={`${provider.label} account alias`}
+                          placeholder="Account alias"
+                          disabled={addUnavailable || addPending}
+                          onChange={(event) => setAddDrafts((current) => ({
+                            ...current,
+                            [provider.id]: event.target.value,
+                          }))}
+                        />
+                        <button
+                          className="btn btn-primary settings-account-add-button"
+                          type="submit"
+                          aria-label={`Add ${provider.label} account`}
+                          disabled={addUnavailable || addAliasMissing}
+                          aria-disabled={addUnavailable || addAliasMissing || addPending}
+                          aria-busy={addPending}
+                        >
+                          {addPending ? "Adding…" : "Add"}
+                        </button>
+                      </form>
+                      {accountErrors[addOwnerKey] && (
+                        <div className="settings-account-error" role="alert">
+                          {accountErrors[addOwnerKey]}
+                        </div>
+                      )}
+                      <div className="settings-account-warning">
+                        Forget does not log out or delete credentials.
+                      </div>
+
+                      <div className="settings-account-list">
+                        {providerProfiles.length === 0 && profileSnapshot?.registryVersion === 2 && (
+                          <div className="settings-account-empty">No account profiles.</div>
+                        )}
+                        {providerProfiles.map((profile) => {
+                          const ownerKey = settingsAccountOwnerKey(profile.provider, profile.accountId);
+                          const ownerLabel = `${provider.label} account ${profile.alias} (${profile.accountId})`;
+                          const pending = Boolean(pendingOwners[ownerKey]);
+                          const renaming = Object.prototype.hasOwnProperty.call(renameDrafts, ownerKey);
+                          const guidance = setupGuidance[ownerKey] || null;
+                          const forgetDisabled = profile.profileKind?.kind === "ambient" || profile.isDefault;
+                          const confirmingForget = forgetConfirmation === ownerKey;
+                          const status = agentProfileEffectiveStatus(profile);
+                          const credentialSourceLabel = settingsCredentialSourceLabel(
+                            profile.connection?.credentialSource,
+                          );
+                          return (
+                            <article
+                              className={"settings-account-row status-" + status}
+                              key={ownerKey}
+                              ref={(node) => {
+                                if (node) accountRowRefs.current.set(ownerKey, node);
+                                else accountRowRefs.current.delete(ownerKey);
+                              }}
+                              data-provider-id={profile.provider}
+                              data-account-id={profile.accountId}
+                              data-profile-status={status}
+                            >
+                              <div className="settings-account-summary">
+                                <div className="settings-account-identity">
+                                  <div className="settings-account-alias">
+                                    {profile.alias}
+                                    {profile.isDefault && <span className="settings-account-badge">Default</span>}
+                                    {profile.profileKind?.kind === "ambient" && (
+                                      <span className="settings-account-badge subtle">Ambient</span>
+                                    )}
+                                  </div>
+                                  <div className="settings-account-meta">
+                                    <span className={"settings-account-status status-" + status}>
+                                      {settingsProfileStatusLabel(status)}
+                                    </span>
+                                    <span aria-hidden="true">/</span>
+                                    <span>{profile.accountId}</span>
+                                    {credentialSourceLabel && (
+                                      <>
+                                        <span aria-hidden="true">/</span>
+                                        <span>{credentialSourceLabel}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="settings-account-actions">
+                                  <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    data-account-action="rename"
+                                    aria-label={`Rename ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => {
+                                      if (pending) return;
+                                      setRenameDrafts((current) => ({
+                                        ...current,
+                                        [ownerKey]: profile.alias,
+                                      }));
+                                    }}
+                                  >Rename</button>
+                                  <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    aria-label={`Set default ${ownerLabel}`}
+                                    disabled={profile.isDefault}
+                                    aria-disabled={pending || profile.isDefault}
+                                    aria-busy={pending}
+                                    onClick={() => handleOwnerAction(
+                                      profile,
+                                      onSetDefaultAccount,
+                                      `${ownerLabel} is now the default.`,
+                                    )}
+                                  >Default</button>
+                                  <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    aria-label={`Check ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => handleOwnerAction(
+                                      profile,
+                                      onCheckAccount,
+                                      `${provider.label} account ${profile.alias} check completed.`,
+                                    )}
+                                  >{pending ? "Working…" : "Check"}</button>
+                                  <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    data-account-action="setup"
+                                    aria-label={`Show setup command for ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => handleReadSetupGuidance(profile)}
+                                  >Setup</button>
+                                  <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    aria-label={`Disconnect ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => handleOwnerAction(
+                                      profile,
+                                      onDisconnectAccount,
+                                      `${ownerLabel} disconnected.`,
+                                    )}
+                                  >Disconnect</button>
+                                  <button
+                                    className="btn btn-ghost settings-account-forget"
+                                    type="button"
+                                    aria-label={`Forget ${ownerLabel}`}
+                                    disabled={forgetDisabled}
+                                    aria-disabled={pending || forgetDisabled}
+                                    aria-busy={pending}
+                                    title={forgetDisabled
+                                      ? "Ambient and current default accounts cannot be forgotten."
+                                      : "Forget does not log out or delete credentials."}
+                                    onClick={() => {
+                                      if (pending || forgetDisabled) return;
+                                      setForgetConfirmation(ownerKey);
+                                    }}
+                                  >Forget</button>
+                                </div>
+                              </div>
+
+                              {profile.connection?.lastError && (
+                                <div className="settings-account-error" role="alert">
+                                  {profile.connection.lastError}
+                                </div>
+                              )}
+
+                              {renaming && (
+                                <form
+                                  className="settings-account-rename"
+                                  onSubmit={(event) => {
+                                    event.preventDefault();
+                                    handleRenameAccount(provider, profile);
+                                  }}
+                                >
+                                  <input
+                                    className="settings-account-input"
+                                    type="text"
+                                    value={renameDrafts[ownerKey]}
+                                    aria-label={`New alias for ${ownerLabel}`}
+                                    disabled={pending}
+                                    onChange={(event) => setRenameDrafts((current) => ({
+                                      ...current,
+                                      [ownerKey]: event.target.value,
+                                    }))}
+                                  />
+                                  <button
+                                    className="btn btn-primary"
+                                    type="submit"
+                                    aria-label={`Save name for ${ownerLabel}`}
+                                    disabled={!String(renameDrafts[ownerKey] || "").trim()}
+                                    aria-disabled={pending || !String(renameDrafts[ownerKey] || "").trim()}
+                                    aria-busy={pending}
+                                  >Save</button>
+                                  <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    aria-label={`Cancel rename for ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => {
+                                      if (pending) return;
+                                      setRenameDrafts((current) => (
+                                        withoutSettingsKey(current, ownerKey)
+                                      ));
+                                    }}
+                                  >Cancel</button>
+                                </form>
+                              )}
+
+                              {guidance && (
+                                <div className="settings-account-guidance">
+                                  {guidance.supported && guidance.renderedCommand ? (
+                                    <>
+                                      <div className="settings-account-command">{guidance.renderedCommand}</div>
+                                      <div className="settings-account-guidance-footer">
+                                        <span>{guidance.warning}</span>
+                                        <button
+                                          className="btn btn-ghost"
+                                          type="button"
+                                          aria-label={`Copy setup command for ${ownerLabel}`}
+                                          onClick={() => handleCopySetupCommand(
+                                            profile,
+                                            guidance.renderedCommand,
+                                          )}
+                                        >{copyStates[ownerKey] || "Copy"}</button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="settings-account-error" role="alert">
+                                      {guidance.unsupportedReason || guidance.warning}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {confirmingForget && (
+                                <div className="settings-account-confirm">
+                                  <span>Forget does not log out or delete credentials.</span>
+                                  <div className="settings-account-confirm-actions">
+                                    <button
+                                    className="btn btn-ghost settings-account-forget"
+                                    type="button"
+                                    aria-label={`Confirm forget ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => handleForgetAccount(profile)}
+                                    >Confirm forget</button>
+                                    <button
+                                    className="btn btn-ghost"
+                                    type="button"
+                                    aria-label={`Cancel forget ${ownerLabel}`}
+                                    aria-disabled={pending}
+                                    aria-busy={pending}
+                                    onClick={() => {
+                                      if (pending) return;
+                                      setForgetConfirmation(null);
+                                    }}
+                                    >Cancel</button>
+                                  </div>
+                                </div>
+                              )}
+                              {accountErrors[ownerKey] && (
+                                <div className="settings-account-error" role="alert">
+                                  {accountErrors[ownerKey]}
+                                </div>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -4271,17 +5056,191 @@ function App() {
   const [providers, setProviders] = React.useState(PROVIDERS_INIT);
   const [tasks, setTasks] = React.useState(TASKS_INIT(lang));
   const [history, setHistory] = React.useState(COMMAND_HISTORY_INIT);
-  const [agentSessionStore, setAgentSessionStore] = React.useState(() =>
-    ensureAgentWorkspace(readAgentSessionDirectory(lang), PROJECT, lang)
-  );
+  const authoritativeAgentProfilesRef = React.useRef(undefined);
+  const [agentProfileSnapshot, setAgentProfileSnapshot] = React.useState(undefined);
+  const [providerCapabilities, setProviderCapabilities] = React.useState({});
+  const agentProfileSnapshotReadGenerationRef = React.useRef(0);
+  const agentSessionHydrationRef = React.useRef(null);
+  const [agentSessionDirectoryReady, setAgentSessionDirectoryReady] = React.useState(false);
+  const [agentSessionStore, setAgentSessionStore] = React.useState({});
   const agentContextCoordinatorRef = React.useRef(null);
   if (!agentContextCoordinatorRef.current) {
     agentContextCoordinatorRef.current = createAgentContextCoordinator();
   }
+  const agentCapabilityGenerationsRef = React.useRef(null);
+  if (!agentCapabilityGenerationsRef.current) {
+    agentCapabilityGenerationsRef.current = createAgentLeaseGenerationCoordinator();
+  }
+  const agentActionGenerationsRef = React.useRef(null);
+  if (!agentActionGenerationsRef.current) {
+    agentActionGenerationsRef.current = createAgentLeaseGenerationCoordinator();
+  }
   const sessionCloseInFlightRef = React.useRef(new Set());
   const providerConnectionGenerationsRef = React.useRef(new Map());
-  const providerCapabilityGenerationsRef = React.useRef(new Map());
   const committedAgentContextOwnersRef = React.useRef(null);
+  const inFlightAgentRequestsRef = React.useRef(new Map());
+  const reconcileInFlightAgentRequestsRef = React.useRef(() => undefined);
+  const installAgentProfileSnapshot = React.useCallback((snapshot) => {
+    const nextSnapshot = snapshot?.registryVersion === 2 ? snapshot : null;
+    const connectedLeases = connectedAgentProfileLeases(nextSnapshot);
+    const validLeaseKeys = new Set(connectedLeases.map(agentProfileLeaseKey));
+    authoritativeAgentProfilesRef.current = nextSnapshot;
+    reconcileInFlightAgentRequestsRef.current(nextSnapshot);
+    agentCapabilityGenerationsRef.current.reconcile(connectedLeases);
+    agentActionGenerationsRef.current.reconcile(connectedLeases);
+    setProviderCapabilities((current) => {
+      const retained = Object.fromEntries(
+        Object.entries(current).filter(([leaseKey]) => validLeaseKeys.has(leaseKey)),
+      );
+      return Object.keys(retained).length === Object.keys(current).length
+        ? current
+        : retained;
+    });
+    setAgentProfileSnapshot(nextSnapshot);
+    return nextSnapshot;
+  }, []);
+  const installAgentProfileUpdate = React.useCallback((profile) => {
+    const currentSnapshot = authoritativeAgentProfilesRef.current;
+    if (currentSnapshot?.registryVersion !== 2 || !profile) return currentSnapshot ?? null;
+    const matches = currentSnapshot.profiles.filter((candidate) =>
+      candidate.provider === profile.provider && candidate.accountId === profile.accountId
+    );
+    if (matches.length !== 1) return currentSnapshot;
+
+    return installAgentProfileSnapshot({
+      ...currentSnapshot,
+      profiles: currentSnapshot.profiles.map((candidate) =>
+        candidate.provider === profile.provider && candidate.accountId === profile.accountId
+          ? {
+              ...profile,
+              profileKind: { ...profile.profileKind },
+              connection: { ...profile.connection },
+            }
+          : candidate),
+    });
+  }, [installAgentProfileSnapshot]);
+  const installCreatedAgentProfile = React.useCallback((profile) => {
+    const currentSnapshot = authoritativeAgentProfilesRef.current;
+    if (currentSnapshot?.registryVersion !== 2 || !profile) {
+      return currentSnapshot ?? null;
+    }
+    const ownerMatches = currentSnapshot.profiles.filter((candidate) =>
+      candidate.provider === profile.provider && candidate.accountId === profile.accountId
+    );
+    if (ownerMatches.length > 0) return currentSnapshot;
+    const wasForgotten = currentSnapshot.tombstones.some((tombstone) =>
+      tombstone.provider === profile.provider && tombstone.accountId === profile.accountId
+    );
+    if (wasForgotten) return currentSnapshot;
+
+    return installAgentProfileSnapshot({
+      ...currentSnapshot,
+      profiles: [
+        ...currentSnapshot.profiles,
+        {
+          ...profile,
+          profileKind: { ...profile.profileKind },
+          connection: { ...profile.connection },
+        },
+      ],
+    });
+  }, [installAgentProfileSnapshot]);
+  const installAgentProfileTombstone = React.useCallback((tombstone) => {
+    const currentSnapshot = authoritativeAgentProfilesRef.current;
+    if (currentSnapshot?.registryVersion !== 2 || !tombstone) {
+      return currentSnapshot ?? null;
+    }
+    return installAgentProfileSnapshot({
+      ...currentSnapshot,
+      profiles: currentSnapshot.profiles.filter((profile) => !(
+        profile.provider === tombstone.provider && profile.accountId === tombstone.accountId
+      )),
+      tombstones: [
+        ...currentSnapshot.tombstones.filter((candidate) => !(
+          candidate.provider === tombstone.provider
+            && candidate.accountId === tombstone.accountId
+        )),
+        { ...tombstone },
+      ],
+    });
+  }, [installAgentProfileSnapshot]);
+  const refreshAgentProfileSnapshot = React.useCallback(async ({
+    preserveOnError = false,
+    throwOnError = false,
+  } = {}) => {
+    const generation = agentProfileSnapshotReadGenerationRef.current + 1;
+    agentProfileSnapshotReadGenerationRef.current = generation;
+    let snapshot = null;
+    if (agentAuthRuntimeService.hasRuntime()) {
+      try {
+        snapshot = await agentAuthRuntimeService.readProfileSnapshot();
+      } catch (error) {
+        if (throwOnError) throw error;
+        if (agentProfileSnapshotReadGenerationRef.current !== generation) {
+          return authoritativeAgentProfilesRef.current ?? null;
+        }
+        if (preserveOnError) return authoritativeAgentProfilesRef.current ?? null;
+        snapshot = null;
+      }
+    }
+    if (agentProfileSnapshotReadGenerationRef.current !== generation) {
+      return authoritativeAgentProfilesRef.current ?? null;
+    }
+    return installAgentProfileSnapshot(snapshot);
+  }, [installAgentProfileSnapshot]);
+  React.useEffect(() => {
+    let cancelled = false;
+    const bootstrapAgentAccounts = async () => {
+      if (agentAuthRuntimeService.hasRuntime()) {
+        const generationsAtStart = new Map(providerConnectionGenerationsRef.current);
+        try {
+          const connections = await agentAuthRuntimeService.listConnections();
+          if (cancelled) return;
+          const currentConnections = connections.filter((connection) =>
+            (providerConnectionGenerationsRef.current.get(connection.provider) || 0)
+              === (generationsAtStart.get(connection.provider) || 0));
+          setProviders((prev) => mergeRuntimeProviderConnections(prev, currentConnections));
+        } catch (error) {
+          if (cancelled) return;
+          const message = error instanceof Error ? error.message : String(error);
+          setProviders((prev) => prev.map((provider) => {
+            const generationAtStart = generationsAtStart.get(provider.id) || 0;
+            const currentGeneration = providerConnectionGenerationsRef.current.get(provider.id) || 0;
+            if (
+              currentGeneration !== generationAtStart
+              || provider.state === "connected"
+              || provider.state === "pending"
+            ) return provider;
+
+            return {
+              ...provider,
+              state: "error",
+              lastError: message,
+              expiresInDays: null,
+            };
+          }));
+        }
+      }
+      if (cancelled) return;
+
+      const profiles = await refreshAgentProfileSnapshot();
+      if (cancelled) return;
+      const restored = readAgentSessionDirectory(lang, profiles);
+      agentSessionHydrationRef.current = restored;
+      setAgentSessionStore(ensureAgentWorkspace(
+        restored.directory,
+        PROJECT,
+        lang,
+        profiles,
+        restored,
+      ));
+      setAgentSessionDirectoryReady(true);
+    };
+    bootstrapAgentAccounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshAgentProfileSnapshot]);
   const executing = null;
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [agentOpen, setAgentOpen] = React.useState(true);
@@ -4344,26 +5303,61 @@ function App() {
     window.addEventListener("pointerup", onUp);
   };
   const [settingsOpen, setSettingsOpen] = React.useState(false);
-  const [providerCapabilities, setProviderCapabilities] = React.useState({});
-  const [providerCapabilityRefreshRevisions, setProviderCapabilityRefreshRevisions] = React.useState({});
+  const settingsOpenerRef = React.useRef(null);
+  const openSettings = React.useCallback(() => {
+    settingsOpenerRef.current = typeof document !== "undefined"
+      && document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setSettingsOpen(true);
+  }, []);
+  const closeSettings = React.useCallback(() => {
+    const opener = settingsOpenerRef.current;
+    settingsOpenerRef.current = null;
+    setSettingsOpen(false);
+    window.requestAnimationFrame(() => {
+      if (opener?.isConnected) opener.focus();
+    });
+  }, []);
   const activeAgentWorkspaceKey = agentWorkspaceKey(activeProject);
   const activeAgentWorkspace = agentSessionStore[activeAgentWorkspaceKey] || null;
   const activeAgentSession = activeAgentWorkspace?.sessions?.find(
     (session) => session.id === activeAgentWorkspace.activeSessionId,
   ) || activeAgentWorkspace?.sessions?.[0] || null;
   const activeAgentSessionId = activeAgentSession?.id || null;
-  const activeProviderId = activeAgentSession?.providerId || "codex";
-  const activeProviderConnectionState =
-    providers.find((provider) => provider.id === activeProviderId)?.state || "disconnected";
-  const activeProviderCapabilityRefreshRevision =
-    providerCapabilityRefreshRevisions[activeProviderId] || 0;
+  const activeProviderId = activeAgentSession?.providerId || null;
+  const persistedAgentAccountId = selectedAgentAccountId(activeAgentSession, activeProviderId);
+  const activeAgentAccountId = agentProfileSnapshot?.registryVersion === 2
+    ? persistedAgentAccountId
+    : null;
+  const activeAgentProfile = exactAgentProfile(
+    agentProfileSnapshot,
+    activeProviderId,
+    activeAgentAccountId,
+  );
+  const activeConnectedAgentProfile = isAgentProfileAuthoritativelyConnected(activeAgentProfile)
+    ? activeAgentProfile
+    : null;
+  const activeAgentLeaseKey = activeConnectedAgentProfile
+    ? agentProfileLeaseKey(activeConnectedAgentProfile)
+    : null;
   const messages = activeAgentSession?.messages || [];
   const activeAgentRequest = activeAgentSession?.request || createAgentRequestState();
   const isTyping = activeAgentRequest.phase === "running";
   const agentActivity = activeAgentRequest.activity || [];
-  const activeProviderCapabilities = providerCapabilities[activeProviderId] || null;
-  const selectedAgentModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
-  const activeAgentAttachments = activeAgentSession?.attachments?.[activeProviderId] || [];
+  const activeProviderCapabilities = activeAgentLeaseKey
+    ? providerCapabilities[activeAgentLeaseKey] || null
+    : null;
+  const selectedAgentModelId = agentAccountPreference(
+    activeAgentSession?.selectedModels,
+    activeProviderId,
+    activeAgentAccountId,
+  );
+  const activeAgentAttachments = agentAccountPreference(
+    activeAgentSession?.attachments,
+    activeProviderId,
+    activeAgentAccountId,
+  ) || [];
   const activeAgentExecutionCapabilities = effectiveAgentExecutionCapabilities(
     activeProviderCapabilities,
     selectedAgentModelId,
@@ -4371,11 +5365,32 @@ function App() {
   );
   const agentReasoningLevel = normalizeAgentReasoningLevel(
     activeAgentExecutionCapabilities,
-    activeAgentSession?.selectedReasoningLevels?.[activeProviderId],
+    agentAccountPreference(
+      activeAgentSession?.selectedReasoningLevels,
+      activeProviderId,
+      activeAgentAccountId,
+    ),
   );
   const agentFastMode = Boolean(
-    activeAgentSession?.fastModes?.[activeProviderId]
+    agentAccountPreference(
+      activeAgentSession?.fastModes,
+      activeProviderId,
+      activeAgentAccountId,
+    )
     && activeAgentExecutionCapabilities?.supportsFastMode,
+  );
+  const activeAttachmentKinds = new Set(
+    (activeProviderCapabilities?.attachments || [])
+      .filter((attachment) => attachment?.enabled)
+      .map((attachment) => attachment.kind),
+  );
+  const activeAgentAttachmentsValid = activeAgentAttachments.every((attachment) => (
+    activeAttachmentKinds.has(attachment.kind)
+  ));
+  const canSendAgentRequest = Boolean(
+    activeConnectedAgentProfile
+    && activeProviderCapabilities
+    && activeAgentAttachmentsValid
   );
   const {
     jobs: agentJobs,
@@ -4431,8 +5446,13 @@ function App() {
   ]);
 
   React.useEffect(() => {
+    if (!agentSessionDirectoryReady) return;
+    // A failed storage read means persisted ownership may exist but is currently
+    // unknowable. Keep this mount memory-only; a later reload can hydrate and
+    // re-enable writes after storage access recovers.
+    if (agentSessionHydrationRef.current?.source === "unavailable") return;
     writeAgentSessionDirectory(agentSessionStore);
-  }, [agentSessionStore]);
+  }, [agentSessionDirectoryReady, agentSessionStore]);
 
   React.useEffect(() => {
     const nextOwners = new Map();
@@ -4447,6 +5467,7 @@ function App() {
     if (previousOwners) {
       for (const [contextKey, owner] of previousOwners) {
         if (!nextOwners.has(contextKey)) {
+          inFlightAgentRequestsRef.current.delete(contextKey);
           agentContextCoordinatorRef.current.clearContext(owner);
         }
       }
@@ -4455,8 +5476,15 @@ function App() {
   }, [agentSessionStore]);
 
   React.useEffect(() => {
-    setAgentSessionStore((prev) => ensureAgentWorkspace(prev, activeProject, lang));
-  }, [activeProject.name, activeProject.path, activeProject.runtimeBacked, lang]);
+    if (!agentSessionDirectoryReady) return;
+    setAgentSessionStore((prev) => ensureAgentWorkspace(
+      prev,
+      activeProject,
+      lang,
+      authoritativeAgentProfilesRef.current,
+      agentSessionHydrationRef.current,
+    ));
+  }, [activeProject.name, activeProject.path, activeProject.runtimeBacked, agentSessionDirectoryReady, lang]);
 
   const updateAgentSession = React.useCallback((project, sessionId, updater) => {
     setAgentSessionStore((prev) => {
@@ -4466,7 +5494,13 @@ function App() {
         !prev[key]?.sessions?.some((session) => session.id === sessionId)
       ) return prev;
 
-      const ensured = ensureAgentWorkspace(prev, project, lang);
+      const ensured = ensureAgentWorkspace(
+        prev,
+        project,
+        lang,
+        authoritativeAgentProfilesRef.current,
+        agentSessionHydrationRef.current,
+      );
       const workspaceEntry = ensured[key];
       const targetSessionId = sessionId
         || workspaceEntry.activeSessionId
@@ -4500,6 +5534,69 @@ function App() {
     }));
   }, [updateAgentSession]);
 
+  const reconcileInFlightAgentRequests = React.useCallback((snapshot) => {
+    for (const [contextKey, pending] of [...inFlightAgentRequestsRef.current]) {
+      const { requestTurn, requestToken } = pending;
+      const currentProfile = connectedAgentProfile(
+        snapshot,
+        requestTurn.owner.provider,
+        requestTurn.owner.accountId,
+      );
+      if (
+        currentProfile
+        && agentProfileLeaseKey(currentProfile) === agentProfileLeaseKey(requestTurn.owner)
+      ) continue;
+
+      inFlightAgentRequestsRef.current.delete(contextKey);
+      const requestOwner = {
+        projectPath: requestToken.projectPath,
+        sessionId: requestToken.sessionId,
+      };
+      const coordinator = agentContextCoordinatorRef.current;
+      if (
+        !coordinator.isRequestCurrent(requestToken)
+        || !coordinator.hasRequestInFlight(requestOwner)
+      ) continue;
+
+      const generation = coordinator.stopRequest(requestOwner);
+      const endedAtMs = Date.now();
+      const turnId = requestTurn.messageId + "-agent-turn";
+      updateAgentSession(requestTurn.project, requestTurn.sessionId, (session) => {
+        const request = session.request || createAgentRequestState();
+        const ownsRunningRequest = request.phase === "running"
+          && request.generation === requestToken.generation;
+        return {
+          ...session,
+          request: ownsRunningRequest
+            ? {
+                generation,
+                phase: "idle",
+                turnId: null,
+                activity: [],
+              }
+            : request,
+          messages: session.messages.map((message) =>
+            message.id === turnId && message.progress?.status === "running"
+              ? {
+                  ...message,
+                  at: nowHmAt(endedAtMs),
+                  progress: {
+                    status: "failed",
+                    steps: message.progress.steps || [],
+                  },
+                  answerMeta: {
+                    answeredAt: nowHmAt(endedAtMs),
+                    elapsedMs: endedAtMs - (message.progress.startedAtMs || endedAtMs),
+                  },
+                  content: "The captured Agent account credential changed before this response completed.",
+                }
+              : message),
+        };
+      });
+    }
+  }, [updateAgentSession]);
+  reconcileInFlightAgentRequestsRef.current = reconcileInFlightAgentRequests;
+
   const setMessages = React.useCallback((updater) => {
     const targetProject = activeProject;
     const targetSessionId = activeAgentSessionId;
@@ -4508,7 +5605,13 @@ function App() {
 
   const selectAgentSession = React.useCallback((sessionId) => {
     setAgentSessionStore((prev) => {
-      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const ensured = ensureAgentWorkspace(
+        prev,
+        activeProject,
+        lang,
+        authoritativeAgentProfilesRef.current,
+        agentSessionHydrationRef.current,
+      );
       const key = agentWorkspaceKey(activeProject);
       const workspaceEntry = ensured[key];
       if (!workspaceEntry.sessions.some((session) => session.id === sessionId)) return ensured;
@@ -4525,10 +5628,21 @@ function App() {
 
   const newAgentSession = React.useCallback(() => {
     setAgentSessionStore((prev) => {
-      const ensured = ensureAgentWorkspace(prev, activeProject, lang);
+      const ensured = ensureAgentWorkspace(
+        prev,
+        activeProject,
+        lang,
+        authoritativeAgentProfilesRef.current,
+        agentSessionHydrationRef.current,
+      );
       const key = agentWorkspaceKey(activeProject);
       const workspaceEntry = ensured[key];
-      const session = makeAgentSession(activeProject, lang, workspaceEntry.sessions.length + 1);
+      const session = makeAgentSession(
+        activeProject,
+        lang,
+        workspaceEntry.sessions.length + 1,
+        authoritativeAgentProfilesRef.current,
+      );
 
       return {
         ...ensured,
@@ -4624,7 +5738,13 @@ function App() {
       }
 
       setAgentSessionStore((prev) => {
-        const ensured = ensureAgentWorkspace(prev, originProject, lang);
+        const ensured = ensureAgentWorkspace(
+          prev,
+          originProject,
+          lang,
+          authoritativeAgentProfilesRef.current,
+          agentSessionHydrationRef.current,
+        );
         const key = agentWorkspaceKey(originProject);
         const workspaceEntry = ensured[key];
         if (workspaceEntry.sessions.length <= 1) return ensured;
@@ -4653,6 +5773,7 @@ function App() {
     const originSessionId = activeAgentSessionId;
     const owner = agentContextOwner(originProject, originSessionId);
     if (!owner) return;
+    inFlightAgentRequestsRef.current.delete(projectAgentContextKey(owner));
     const generation = agentContextCoordinatorRef.current.stopRequest(owner);
     const stoppedAtMs = Date.now();
     updateAgentSession(originProject, originSessionId, (session) => ({
@@ -4683,21 +5804,19 @@ function App() {
   }, [activeAgentSessionId, activeProject, updateAgentSession]);
 
   const selectAgentReasoningLevel = React.useCallback((reasoningLevel) => {
+    if (!activeAgentAccountId) return;
     if (
       reasoningLevel == null
       && activeAgentExecutionCapabilities?.usesModelExecutionOptions
     ) {
-      updateAgentSession(activeProject, activeAgentSessionId, (session) => {
-        const selectedReasoningLevels = sanitizeSelectedAgentReasoningLevels(
+      updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
+        ...session,
+        selectedReasoningLevels: withoutAgentAccountPreference(
           session.selectedReasoningLevels,
-        );
-        const nextSelectedReasoningLevels = { ...selectedReasoningLevels };
-        delete nextSelectedReasoningLevels[activeProviderId];
-        return {
-          ...session,
-          selectedReasoningLevels: nextSelectedReasoningLevels,
-        };
-      });
+          activeProviderId,
+          activeAgentAccountId,
+        ),
+      }));
       return;
     }
 
@@ -4709,30 +5828,41 @@ function App() {
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
-      selectedReasoningLevels: {
-        ...sanitizeSelectedAgentReasoningLevels(session.selectedReasoningLevels),
-        [activeProviderId]: capability.level,
-      },
+      selectedReasoningLevels: withAgentAccountPreference(
+        session.selectedReasoningLevels,
+        activeProviderId,
+        activeAgentAccountId,
+        capability.level,
+      ),
     }));
-  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
+  }, [activeAgentAccountId, activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
 
   const selectAgentFastMode = React.useCallback((fastMode) => {
-    if (!activeAgentExecutionCapabilities?.supportsFastMode) return;
+    if (!activeAgentAccountId || !activeAgentExecutionCapabilities?.supportsFastMode) return;
 
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
-      fastModes: {
-        ...sanitizeAgentFastModes(session.fastModes),
-        [activeProviderId]: Boolean(fastMode),
-      },
+      fastModes: withAgentAccountPreference(
+        session.fastModes,
+        activeProviderId,
+        activeAgentAccountId,
+        Boolean(fastMode),
+      ),
     }));
-  }, [activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
+  }, [activeAgentAccountId, activeAgentExecutionCapabilities, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
 
-  const selectAgentProvider = React.useCallback((providerId) => {
+  const selectAgentAccount = React.useCallback((providerId, accountId) => {
     if (!providers.some((provider) => provider.id === providerId)) return;
+    if (!connectedAgentProfile(authoritativeAgentProfilesRef.current, providerId, accountId)) {
+      return;
+    }
     updateAgentSession(activeProject, activeAgentSessionId, (session) => ({
       ...session,
       providerId,
+      selectedAccountIds: {
+        ...(session.selectedAccountIds || {}),
+        [providerId]: accountId,
+      },
     }));
   }, [activeAgentSessionId, activeProject, providers, updateAgentSession]);
 
@@ -4760,65 +5890,165 @@ function App() {
     }
   }, []);
 
-  const invalidateProviderCapabilities = React.useCallback((providerId) => {
-    const generation = (providerCapabilityGenerationsRef.current.get(providerId) || 0) + 1;
-    providerCapabilityGenerationsRef.current.set(providerId, generation);
-    setProviderCapabilities((prev) => {
-      if (!Object.prototype.hasOwnProperty.call(prev, providerId)) return prev;
-      const next = { ...prev };
-      delete next[providerId];
-      return next;
-    });
-    return generation;
+  const requireAgentAuthRuntime = React.useCallback(() => {
+    if (!agentAuthRuntimeService.hasRuntime()) {
+      throw new Error("Desktop runtime is not connected.");
+    }
   }, []);
-  const refreshProviderCapabilities = React.useCallback((providerId) => {
-    invalidateProviderCapabilities(providerId);
-    setProviderCapabilityRefreshRevisions((prev) => ({
-      ...prev,
-      [providerId]: (prev[providerId] || 0) + 1,
-    }));
-  }, [invalidateProviderCapabilities]);
-  const reconcileProviderCapabilities = React.useCallback((connection) => {
-    if (connection.status === "connected") {
-      refreshProviderCapabilities(connection.provider);
-    } else {
-      invalidateProviderCapabilities(connection.provider);
+  const refreshExactSettingsProfile = React.useCallback(async (
+    providerId,
+    accountId,
+    actionLabel,
+    accepts = () => true,
+  ) => {
+    const snapshot = await refreshAgentProfileSnapshot({
+      preserveOnError: true,
+      throwOnError: true,
+    });
+    const profile = exactAgentProfile(snapshot, providerId, accountId);
+    if (!profile || !accepts(profile)) {
+      throw new Error(`${actionLabel} completed, but the authoritative account snapshot did not confirm it.`);
     }
-  }, [invalidateProviderCapabilities, refreshProviderCapabilities]);
-  const applyProviderConnection = React.useCallback((connection) => {
-    setProviders((prev) => mergeRuntimeProviderConnections(prev, [connection]));
-    reconcileProviderCapabilities(connection);
-  }, [reconcileProviderCapabilities]);
-  const markProviderError = React.useCallback((providerId, message) => {
-    invalidateProviderCapabilities(providerId);
-    setProviders((prev) => prev.map((p) => p.id === providerId
-      ? { ...p, state: "error", lastError: message, expiresInDays: null }
-      : p));
-  }, [invalidateProviderCapabilities]);
-  const onDisconnect = async (providerId) => {
-    const generation = (providerConnectionGenerationsRef.current.get(providerId) || 0) + 1;
-    providerConnectionGenerationsRef.current.set(providerId, generation);
-    invalidateProviderCapabilities(providerId);
-    const isCurrent = () => providerConnectionGenerationsRef.current.get(providerId) === generation;
-    if (agentAuthRuntimeService.hasRuntime()) {
-      try {
-        const connection = await agentAuthRuntimeService.disconnect(providerId);
-        if (!isCurrent()) return;
-        applyProviderConnection(connection);
-        return;
-      } catch (error) {
-        if (!isCurrent()) return;
-        const message = error instanceof Error ? error.message : String(error);
-        markProviderError(providerId, message);
-        return;
+    return profile;
+  }, [refreshAgentProfileSnapshot]);
+  const addAgentAccount = React.useCallback(async (providerId, alias) => {
+    requireAgentAuthRuntime();
+    const createdProfile = await agentAuthRuntimeService.createProfile({
+      provider: providerId,
+      alias,
+    });
+    installCreatedAgentProfile(createdProfile);
+    let profile;
+    try {
+      profile = await refreshExactSettingsProfile(
+        createdProfile.provider,
+        createdProfile.accountId,
+        "Adding the Agent account",
+      );
+    } catch (error) {
+      installCreatedAgentProfile(createdProfile);
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        profile: createdProfile,
+        guidance: null,
+        guidanceError: `Account created, but its authoritative refresh failed: ${message} Use Setup to retry.`,
+      };
+    }
+    try {
+      const guidance = await agentAuthRuntimeService.readProfileSetupGuidance({
+        provider: profile.provider,
+        accountId: profile.accountId,
+        shell: os === "windows" ? "power_shell" : "zsh",
+      });
+      return { profile, guidance, guidanceError: null };
+    } catch (error) {
+      return {
+        profile,
+        guidance: null,
+        guidanceError: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }, [installCreatedAgentProfile, os, refreshExactSettingsProfile, requireAgentAuthRuntime]);
+  const renameAgentAccount = React.useCallback(async (providerId, accountId, alias) => {
+    requireAgentAuthRuntime();
+    await agentAuthRuntimeService.renameProfile({ provider: providerId, accountId, alias });
+    return refreshExactSettingsProfile(
+      providerId,
+      accountId,
+      "Renaming the Agent account",
+      (profile) => profile.alias === alias,
+    );
+  }, [refreshExactSettingsProfile, requireAgentAuthRuntime]);
+  const setDefaultAgentAccount = React.useCallback(async (providerId, accountId) => {
+    requireAgentAuthRuntime();
+    await agentAuthRuntimeService.setDefaultProfile({ provider: providerId, accountId });
+    return refreshExactSettingsProfile(
+      providerId,
+      accountId,
+      "Setting the default Agent account",
+      (profile) => profile.isDefault,
+    );
+  }, [refreshExactSettingsProfile, requireAgentAuthRuntime]);
+  const runExactCredentialProfileAction = React.useCallback(async (
+    providerId,
+    accountId,
+    action,
+  ) => {
+    requireAgentAuthRuntime();
+    const capturedProfile = exactAgentProfile(
+      authoritativeAgentProfilesRef.current,
+      providerId,
+      accountId,
+    );
+    if (!capturedProfile) throw new Error("The exact Agent account is no longer available.");
+    const actionToken = agentActionGenerationsRef.current.begin(capturedProfile);
+    try {
+      const profile = await action({ provider: providerId, accountId });
+      if (profile?.provider !== providerId || profile?.accountId !== accountId) {
+        throw new Error("The Agent account action returned a different account owner.");
       }
+      if (!agentActionGenerationsRef.current.isCurrent(actionToken)) {
+        throw new Error("The Agent account changed before this action completed.");
+      }
+      installAgentProfileUpdate(profile);
+      await refreshAgentProfileSnapshot({ preserveOnError: true });
+      return profile;
+    } catch (error) {
+      if (agentActionGenerationsRef.current.isCurrent(actionToken)) {
+        await refreshAgentProfileSnapshot({ preserveOnError: true });
+      }
+      throw error;
     }
-
-    setProviders((prev) => prev.map((p) =>
-      p.id === providerId
-        ? { ...p, state: "disconnected", scope: [], credentialSource: null, expiresInDays: null }
-        : p));
-  };
+  }, [installAgentProfileUpdate, refreshAgentProfileSnapshot, requireAgentAuthRuntime]);
+  const checkAgentAccount = React.useCallback((providerId, accountId) => (
+    runExactCredentialProfileAction(
+      providerId,
+      accountId,
+      (owner) => agentAuthRuntimeService.checkProfile(owner),
+    )
+  ), [runExactCredentialProfileAction]);
+  const disconnectAgentAccount = React.useCallback((providerId, accountId) => (
+    runExactCredentialProfileAction(
+      providerId,
+      accountId,
+      (owner) => agentAuthRuntimeService.disconnectProfile(owner),
+    )
+  ), [runExactCredentialProfileAction]);
+  const forgetAgentAccount = React.useCallback(async (providerId, accountId) => {
+    requireAgentAuthRuntime();
+    const capturedProfile = exactAgentProfile(
+      authoritativeAgentProfilesRef.current,
+      providerId,
+      accountId,
+    );
+    if (!capturedProfile) throw new Error("The exact Agent account is no longer available.");
+    const actionToken = agentActionGenerationsRef.current.begin(capturedProfile);
+    try {
+      const tombstone = await agentAuthRuntimeService.forgetProfile({ provider: providerId, accountId });
+      if (tombstone?.provider !== providerId || tombstone?.accountId !== accountId) {
+        throw new Error("The Agent account forget action returned a different account owner.");
+      }
+      if (!agentActionGenerationsRef.current.isCurrent(actionToken)) {
+        throw new Error("The Agent account changed before this action completed.");
+      }
+      installAgentProfileTombstone(tombstone);
+      await refreshAgentProfileSnapshot({ preserveOnError: true });
+      return tombstone;
+    } catch (error) {
+      if (agentActionGenerationsRef.current.isCurrent(actionToken)) {
+        await refreshAgentProfileSnapshot({ preserveOnError: true });
+      }
+      throw error;
+    }
+  }, [installAgentProfileTombstone, refreshAgentProfileSnapshot, requireAgentAuthRuntime]);
+  const readAgentAccountSetupGuidance = React.useCallback(async (providerId, accountId) => {
+    requireAgentAuthRuntime();
+    return agentAuthRuntimeService.readProfileSetupGuidance({
+      provider: providerId,
+      accountId,
+      shell: os === "windows" ? "power_shell" : "zsh",
+    });
+  }, [os, requireAgentAuthRuntime]);
 
   React.useEffect(() => {
     setTasks(TASKS_INIT(lang));
@@ -4830,89 +6060,69 @@ function App() {
     window.__GTUM_BACKEND_BRIDGE__ = projectRuntimeService.getBridgeState(activeProject);
   }, [activeProject]);
   React.useEffect(() => {
-    if (!agentAuthRuntimeService.hasRuntime()) return undefined;
-
-    let cancelled = false;
-    const generationsAtStart = new Map(providerConnectionGenerationsRef.current);
-    agentAuthRuntimeService.listConnections()
-      .then((connections) => {
-        if (cancelled) return;
-        const currentConnections = connections.filter((connection) =>
-          (providerConnectionGenerationsRef.current.get(connection.provider) || 0)
-            === (generationsAtStart.get(connection.provider) || 0));
-        currentConnections.forEach(reconcileProviderCapabilities);
-        setProviders((prev) => mergeRuntimeProviderConnections(prev, currentConnections));
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error);
-        setProviders((prev) => prev.map((provider) => {
-          const generationAtStart = generationsAtStart.get(provider.id) || 0;
-          const currentGeneration = providerConnectionGenerationsRef.current.get(provider.id) || 0;
-          if (
-            currentGeneration !== generationAtStart ||
-            provider.state === "connected" ||
-            provider.state === "pending"
-          ) return provider;
-
-          return {
-            ...provider,
-            state: "error",
-            lastError: message,
-            expiresInDays: null,
-          };
-        }));
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reconcileProviderCapabilities]);
-  React.useEffect(() => {
+    const selectedProfile = connectedAgentProfile(
+      authoritativeAgentProfilesRef.current,
+      activeProviderId,
+      activeAgentAccountId,
+    );
     if (
       !agentSuggestionRuntimeService.hasRuntime()
-      || activeProviderConnectionState !== "connected"
+      || !selectedProfile
+      || !activeAgentLeaseKey
+      || Object.prototype.hasOwnProperty.call(providerCapabilities, activeAgentLeaseKey)
     ) return undefined;
 
-    let cancelled = false;
-    const providerId = activeProviderId;
-    const capabilityGeneration =
-      (providerCapabilityGenerationsRef.current.get(providerId) || 0) + 1;
-    const connectionGeneration = providerConnectionGenerationsRef.current.get(providerId) || 0;
-    providerCapabilityGenerationsRef.current.set(providerId, capabilityGeneration);
-    const isCurrent = () => (
-      !cancelled
-      && providerCapabilityGenerationsRef.current.get(providerId) === capabilityGeneration
-      && (providerConnectionGenerationsRef.current.get(providerId) || 0) === connectionGeneration
-    );
-    agentSuggestionRuntimeService.readProviderCapabilities(providerId)
+    const profileLease = {
+      provider: selectedProfile.provider,
+      accountId: selectedProfile.accountId,
+      incarnation: selectedProfile.incarnation,
+      credentialRevision: selectedProfile.credentialRevision,
+    };
+    const capabilityToken = agentCapabilityGenerationsRef.current.begin(profileLease);
+    const isCurrent = () => {
+      if (!agentCapabilityGenerationsRef.current.isCurrent(capabilityToken)) return false;
+      const currentProfile = connectedAgentProfile(
+        authoritativeAgentProfilesRef.current,
+        profileLease.provider,
+        profileLease.accountId,
+      );
+      return Boolean(
+        currentProfile && agentProfileLeaseKey(currentProfile) === capabilityToken.leaseKey
+      );
+    };
+    agentSuggestionRuntimeService.readAccountCapabilities(profileLease)
       .then((capabilities) => {
         if (!isCurrent()) return;
         setProviderCapabilities((prev) => ({
           ...prev,
-          [capabilities.provider]: capabilities,
+          [capabilityToken.leaseKey]: capabilities,
         }));
       })
-      .catch((error) => {
+      .catch(() => {
         if (!isCurrent()) return;
-        const message = error instanceof Error ? error.message : String(error);
-        markProviderError(providerId, message);
+        setProviderCapabilities((prev) => {
+          if (!Object.prototype.hasOwnProperty.call(prev, capabilityToken.leaseKey)) return prev;
+          const next = { ...prev };
+          delete next[capabilityToken.leaseKey];
+          return next;
+        });
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [
-    activeProviderCapabilityRefreshRevision,
-    activeProviderConnectionState,
+    activeAgentAccountId,
+    activeAgentLeaseKey,
     activeProviderId,
-    markProviderError,
+    providerCapabilities,
   ]);
   React.useEffect(() => {
-    const capabilities = providerCapabilities[activeProviderId] || null;
-    const storedModelId = activeAgentSession?.selectedModels?.[activeProviderId] || null;
+    const capabilities = activeProviderCapabilities;
+    const storedModelId = agentAccountPreference(
+      activeAgentSession?.selectedModels,
+      activeProviderId,
+      activeAgentAccountId,
+    );
     if (
       !activeAgentSessionId ||
+      !activeAgentAccountId ||
       !capabilities?.supportsModelSelection ||
       !sanitizedAgentModelId(storedModelId) ||
       storedAgentModel(capabilities, storedModelId, activeProviderId)
@@ -4921,26 +6131,32 @@ function App() {
     const originProject = { ...activeProject };
     const originSessionId = activeAgentSessionId;
     updateAgentSession(originProject, originSessionId, (session) => {
-      const selectedModels = sanitizeSelectedAgentModels(session.selectedModels);
-      const currentStoredModelId = selectedModels[activeProviderId];
+      const currentStoredModelId = agentAccountPreference(
+        session.selectedModels,
+        activeProviderId,
+        activeAgentAccountId,
+      );
       if (
         !currentStoredModelId ||
         storedAgentModel(capabilities, currentStoredModelId, activeProviderId)
       ) return session;
 
-      const nextSelectedModels = { ...selectedModels };
-      delete nextSelectedModels[activeProviderId];
       return {
         ...session,
-        selectedModels: nextSelectedModels,
+        selectedModels: withoutAgentAccountPreference(
+          session.selectedModels,
+          activeProviderId,
+          activeAgentAccountId,
+        ),
       };
     });
   }, [
+    activeAgentAccountId,
     activeAgentSession?.selectedModels,
     activeAgentSessionId,
     activeProject,
     activeProviderId,
-    providerCapabilities,
+    activeProviderCapabilities,
     updateAgentSession,
   ]);
   React.useEffect(() => {
@@ -5190,28 +6406,48 @@ function App() {
   };
 
   const requestRuntimeAgentSuggestions = React.useCallback(async (
-    text,
-    messageId,
+    requestTurn,
     requestToken,
-    requestOwnerSnapshot,
-    requestOptionsSnapshot,
   ) => {
     const {
       project: originProject,
       sessionId: originSessionId,
       activeTab: originTab,
-    } = requestOwnerSnapshot;
+      messageId,
+      userText: text,
+      owner: accountOwner,
+      options: {
+        model: selectedModelId,
+        attachments,
+        reasoningLevel,
+        fastMode,
+      },
+    } = requestTurn;
     const {
       provider: originProviderId,
-      model: selectedModelId,
-      attachments,
-      reasoningLevel,
-      fastMode,
-    } = requestOptionsSnapshot;
+      accountId: originAccountId,
+    } = accountOwner;
     const originProviderLabel = providerDisplayName(originProviderId);
     const turnId = messageId + "-agent-turn";
+    inFlightAgentRequestsRef.current.set(requestToken.contextKey, {
+      requestTurn,
+      requestToken,
+    });
+    const isCredentialCurrent = () => {
+      const currentProfile = connectedAgentProfile(
+        authoritativeAgentProfilesRef.current,
+        originProviderId,
+        originAccountId,
+      );
+      return Boolean(
+        currentProfile
+        && currentProfile.incarnation === accountOwner.incarnation
+        && currentProfile.credentialRevision === accountOwner.credentialRevision
+      );
+    };
     const isCurrentRequest = () =>
-      agentContextCoordinatorRef.current.isRequestCurrent(requestToken);
+      agentContextCoordinatorRef.current.isRequestCurrent(requestToken)
+      && isCredentialCurrent();
     const startedAtMs = Date.now();
     const reasoningLabel = reasoningLevel
       ? formatReasoningLevelLabel(reasoningLevel)
@@ -5241,14 +6477,17 @@ function App() {
         turnId,
         ["activityPreparing"],
       ),
-      attachments: {
-        ...(session.attachments || {}),
-        [originProviderId]: [],
-      },
+      attachments: withAgentAccountPreference(
+        session.attachments,
+        originProviderId,
+        originAccountId,
+        [],
+      ),
       messages: [...session.messages, {
         id: turnId,
         role: "assistant",
         roleLabel: originProviderLabel,
+        accountOwner,
         at: nowHm(),
         progress: {
           status: "running",
@@ -5289,8 +6528,11 @@ function App() {
       if (!isCurrentRequest()) return;
       revealRunningSteps(runningSteps.slice(0, 2));
 
-      const suggestionsResultPromise = Promise.resolve(agentSuggestionRuntimeService.requestSuggestions({
+      const suggestionsResultPromise = Promise.resolve(agentSuggestionRuntimeService.requestAccountSuggestions({
           provider: originProviderId,
+          accountId: originAccountId,
+          incarnation: accountOwner.incarnation,
+          credentialRevision: accountOwner.credentialRevision,
           agentSessionId: originSessionId,
           project: originProject,
           activeTab: originTab,
@@ -5313,7 +6555,10 @@ function App() {
         throw suggestionsResult.error;
       }
 
-      const suggestions = suggestionsResult.suggestions;
+      const suggestions = suggestionsResult.suggestions.map((suggestion) => ({
+        ...suggestion,
+        accountOwner,
+      }));
       const actionableSuggestions = suggestions.filter((suggestion) => suggestion.commands.length > 0);
       const errorSuggestions = suggestions.filter((suggestion) => suggestion.error && suggestion.commands.length === 0);
       const replySuggestions = suggestions.filter((suggestion) => !suggestion.error && suggestion.commands.length === 0);
@@ -5397,6 +6642,7 @@ function App() {
             id: messageId + "-runtime-extra-" + index,
             role: "assistant",
             roleLabel: originProviderLabel,
+            accountOwner,
             at: answerMeta.answeredAt,
             progress: {
               status: "completed",
@@ -5411,22 +6657,9 @@ function App() {
     } catch (error) {
       if (!isCurrentRequest()) return;
       const message = error instanceof Error ? error.message : String(error);
-      let refreshedConnection = false;
       if (agentAuthRuntimeService.hasRuntime()) {
-        try {
-          const connections = await agentAuthRuntimeService.listConnections();
-          if (!isCurrentRequest()) return;
-          const connection = connections.find((candidate) => candidate.provider === originProviderId);
-          if (connection) {
-            applyProviderConnection(connection);
-            refreshedConnection = true;
-          }
-        } catch {
-          // Fall back to the runtime error text when the auth refresh itself is unavailable.
-        }
-      }
-      if (!refreshedConnection && isProviderConnectionFailure(message)) {
-        markProviderError(originProviderId, message);
+        await refreshAgentProfileSnapshot();
+        if (!isCurrentRequest()) return;
       }
       const answerMeta = makeAgentAnswerMeta(startedAtMs);
       updateOriginMessages((prev) => prev.map((entry) => entry.id === turnId
@@ -5442,6 +6675,28 @@ function App() {
           }
         : entry));
     } finally {
+      const pendingRequest = inFlightAgentRequestsRef.current.get(requestToken.contextKey);
+      if (pendingRequest?.requestToken?.generation === requestToken.generation) {
+        inFlightAgentRequestsRef.current.delete(requestToken.contextKey);
+      }
+      if (
+        agentContextCoordinatorRef.current.isRequestCurrent(requestToken)
+        && !isCredentialCurrent()
+      ) {
+        const answerMeta = makeAgentAnswerMeta(startedAtMs);
+        updateOriginMessages((prev) => prev.map((entry) => entry.id === turnId
+          ? {
+              ...entry,
+              at: answerMeta.answeredAt,
+              progress: {
+                status: "failed",
+                steps: completedSteps,
+              },
+              answerMeta,
+              content: "The captured Agent account credential changed before this response completed.",
+            }
+          : entry));
+      }
       if (agentContextCoordinatorRef.current.finishRequest(requestToken)) {
         updateAgentSession(originProject, originSessionId, (session) => ({
           ...session,
@@ -5453,29 +6708,60 @@ function App() {
       }
     }
   }, [
-    applyProviderConnection,
-    markProviderError,
+    refreshAgentProfileSnapshot,
     updateAgentSession,
     updateAgentSessionMessages,
   ]);
 
   const handlePickAgentAttachment = React.useCallback(async () => {
-    const originProject = { ...activeProject };
+    const originProject = cloneAndDeepFreezeAgentTurn(activeProject);
     const originSessionId = activeAgentSessionId;
     const originProviderId = activeProviderId;
-    if (!originSessionId) return;
+    const originAccountId = activeAgentAccountId;
+    if (!originSessionId || !originAccountId) return;
+    const originProfile = connectedAgentProfile(
+      authoritativeAgentProfilesRef.current,
+      originProviderId,
+      originAccountId,
+    );
+    if (!originProfile) return;
+    const originLeaseKey = agentProfileLeaseKey(originProfile);
+    const originCapabilities = providerCapabilities[originLeaseKey] || null;
+    if (!originCapabilities) return;
+    const attachmentOwner = cloneAndDeepFreezeAgentTurn({
+      provider: originProviderId,
+      accountId: originAccountId,
+      alias: originProfile.alias,
+      incarnation: originProfile.incarnation,
+      credentialRevision: originProfile.credentialRevision,
+      project: originProject,
+      projectPath: agentWorkspaceKey(originProject),
+      sessionId: originSessionId,
+    });
     try {
-      const attachments = await pickAgentAttachments(providerCapabilities[originProviderId] || null);
+      const attachments = await pickAgentAttachments(originCapabilities);
       if (attachments.length === 0) return;
+      const currentProfile = connectedAgentProfile(
+        authoritativeAgentProfilesRef.current,
+        originProviderId,
+        originAccountId,
+      );
+      if (!currentProfile || agentProfileLeaseKey(currentProfile) !== originLeaseKey) return;
       updateAgentSession(originProject, originSessionId, (session) => ({
         ...session,
-        attachments: {
-          ...(session.attachments || {}),
-          [originProviderId]: [
-            ...(session.attachments?.[originProviderId] || []),
+        attachments: withAgentAccountPreference(
+          session.attachments,
+          originProviderId,
+          originAccountId,
+          [
+            ...(agentAccountPreference(
+              session.attachments,
+              originProviderId,
+              originAccountId,
+            ) || []),
             ...attachments,
           ],
-        },
+        ),
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -5483,70 +6769,65 @@ function App() {
         id: "attach-error-" + Date.now(),
         role: "assistant",
         roleLabel: providerDisplayName(originProviderId),
+        accountOwner: attachmentOwner,
         at: nowHm(),
         content: `Could not attach the selected file: ${message}`,
       }]);
     }
-  }, [activeAgentSessionId, activeProject, activeProviderId, providerCapabilities, updateAgentSession, updateAgentSessionMessages]);
+  }, [activeAgentAccountId, activeAgentSessionId, activeProject, activeProviderId, providerCapabilities, updateAgentSession, updateAgentSessionMessages]);
 
   const handleRemoveAgentAttachment = React.useCallback((path) => {
     const originProject = { ...activeProject };
     const originSessionId = activeAgentSessionId;
-    if (!originSessionId) return;
+    const originAccountId = activeAgentAccountId;
+    if (!originSessionId || !originAccountId) return;
     updateAgentSession(originProject, originSessionId, (session) => ({
       ...session,
-      attachments: {
-        ...(session.attachments || {}),
-        [activeProviderId]: (session.attachments?.[activeProviderId] || [])
+      attachments: withAgentAccountPreference(
+        session.attachments,
+        activeProviderId,
+        originAccountId,
+        (agentAccountPreference(session.attachments, activeProviderId, originAccountId) || [])
           .filter((attachment) => attachment.path !== path),
-      },
+      ),
     }));
-  }, [activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
+  }, [activeAgentAccountId, activeAgentSessionId, activeProject, activeProviderId, updateAgentSession]);
 
-  const appendProviderUnavailableMessage = React.useCallback((providerId, messageId) => {
-    const provider = providers.find((p) => p.id === providerId);
-    const label = provider?.label || providerId;
-    setMessages((prev) => [...prev, {
-      id: messageId + "-provider-unavailable",
+  const appendProviderConnectionRequiredMessage = React.useCallback((requestTurn) => {
+    const label = providerDisplayName(requestTurn.owner.provider);
+    updateAgentSessionMessages(requestTurn.project, requestTurn.sessionId, (prev) => [...prev, {
+      id: requestTurn.messageId + "-provider-connection-required",
       role: "assistant",
       roleLabel: label,
-      at: nowHm(),
-      content: `${label} is unavailable in this desktop runtime. GTUM will not continue with a mock reply.`,
-    }]);
-  }, [lang, providers, setMessages]);
-
-  const appendProviderConnectionRequiredMessage = React.useCallback((providerId, messageId) => {
-    const label = providerDisplayName(providerId);
-    setMessages((prev) => [...prev, {
-      id: messageId + "-provider-connection-required",
-      role: "assistant",
-      roleLabel: label,
+      accountOwner: requestTurn.owner,
       at: nowHm(),
       content: `Connect or reconnect ${label} in Settings before sending a provider request.`,
     }]);
-  }, [setMessages]);
+  }, [updateAgentSessionMessages]);
 
-  const appendRuntimeProjectRequiredMessage = React.useCallback((providerId, messageId) => {
-    const label = providerDisplayName(providerId);
-    setMessages((prev) => [...prev, {
-      id: messageId + "-runtime-project-required",
+  const appendRuntimeProjectRequiredMessage = React.useCallback((requestTurn) => {
+    const label = providerDisplayName(requestTurn.owner.provider);
+    updateAgentSessionMessages(requestTurn.project, requestTurn.sessionId, (prev) => [...prev, {
+      id: requestTurn.messageId + "-runtime-project-required",
       role: "assistant",
       roleLabel: label,
+      accountOwner: requestTurn.owner,
       at: nowHm(),
       content: `Open a real local folder as a project in the desktop app before running a ${label} request.`,
     }]);
-  }, [setMessages]);
+  }, [updateAgentSessionMessages]);
 
-  const appendRuntimeUnavailableMessage = React.useCallback((providerId, messageId) => {
-    const label = providerDisplayName(providerId);
-    setMessages((prev) => [...prev, {
-      id: messageId + "-runtime-unavailable",
+  const appendRuntimeUnavailableMessage = React.useCallback((requestTurn) => {
+    const label = providerDisplayName(requestTurn.owner.provider);
+    updateAgentSessionMessages(requestTurn.project, requestTurn.sessionId, (prev) => [...prev, {
+      id: requestTurn.messageId + "-runtime-unavailable",
       role: "assistant",
       roleLabel: label,
+      accountOwner: requestTurn.owner,
       at: nowHm(),
       content: `Real ${label} requests only run in the desktop runtime. Open the desktop app, choose a real local project folder, and connect ${label}.`,
     }]);
-  }, [setMessages]);
+  }, [updateAgentSessionMessages]);
 
   // ???? workspace actions (thin wrappers around the pure store) ????????????????????
   const actions = React.useMemo(() => ({
@@ -5771,41 +7052,79 @@ function App() {
     const originSessionId = activeAgentSessionId;
     if (!originSessionId) return false;
     const originProviderId = activeAgentSession?.providerId || "codex";
+    const originAccountId = selectedAgentAccountId(activeAgentSession, originProviderId);
+    if (!originAccountId) return false;
+    const originProfile = connectedAgentProfile(
+      authoritativeAgentProfilesRef.current,
+      originProviderId,
+      originAccountId,
+    );
+    if (!originProfile) return false;
+    const originLeaseKey = agentProfileLeaseKey(originProfile);
+    const originCapabilities = providerCapabilities[originLeaseKey] || null;
+    if (!originCapabilities) return false;
     const originSelectedModelId = validatedStoredAgentModelId(
-      providerCapabilities[originProviderId] || null,
-      activeAgentSession?.selectedModels?.[originProviderId],
+      originCapabilities,
+      agentAccountPreference(
+        activeAgentSession?.selectedModels,
+        originProviderId,
+        originAccountId,
+      ),
       originProviderId,
     );
-    const originProject = Object.freeze({ ...activeProject });
-    const originTabLines = Array.isArray(activeTab?.lines)
-      ? Object.freeze(activeTab.lines.map((line) => (
-          line && typeof line === "object" ? Object.freeze({ ...line }) : line
-        )))
-      : activeTab?.lines;
-    const originTab = activeTab
-      ? Object.freeze({ ...activeTab, lines: originTabLines })
-      : null;
-    const attachments = Object.freeze(
-      (activeAgentSession?.attachments?.[originProviderId] || [])
-        .map((attachment) => Object.freeze({ ...attachment })),
-    );
-    const requestOptionsSnapshot = Object.freeze({
-      provider: originProviderId,
-      model: originSelectedModelId,
-      attachments,
-      reasoningLevel: agentReasoningLevel,
-      fastMode: agentFastMode,
-    });
-    const requestOwnerSnapshot = Object.freeze({
-      project: originProject,
-      sessionId: originSessionId,
-      activeTab: originTab,
-    });
+    const attachments = agentAccountPreference(
+      activeAgentSession?.attachments,
+      originProviderId,
+      originAccountId,
+    ) || [];
+    const enabledAttachmentKinds = new Set((originCapabilities.attachments || [])
+      .filter((attachment) => attachment?.enabled)
+      .map((attachment) => attachment.kind));
+    if (attachments.some((attachment) => !enabledAttachmentKinds.has(attachment.kind))) {
+      return false;
+    }
     const id = "u" + Date.now();
-    const originProvider = providers.find((provider) => provider.id === originProviderId);
+    const requestTurn = cloneAndDeepFreezeAgentTurn({
+      messageId: id,
+      userText: text,
+      project: activeProject,
+      session: {
+        id: originSessionId,
+        title: activeAgentSession?.title || "Agent session",
+      },
+      sessionId: originSessionId,
+      activeTab,
+      owner: {
+        provider: originProviderId,
+        accountId: originAccountId,
+        alias: originProfile.alias,
+        incarnation: originProfile.incarnation,
+        credentialRevision: originProfile.credentialRevision,
+        project: activeProject,
+        projectPath: agentWorkspaceKey(activeProject),
+        sessionId: originSessionId,
+      },
+      options: {
+        model: originSelectedModelId,
+        reasoningLevel: agentReasoningLevel,
+        fastMode: agentFastMode,
+        attachments,
+      },
+      catalog: originCapabilities,
+      envelope: {
+        provider: originProviderId,
+        accountId: originAccountId,
+        projectPath: agentWorkspaceKey(activeProject),
+        agentSessionId: originSessionId,
+        activeTabId: activeTab?.id || null,
+        userTask: text,
+      },
+    });
+    const originProject = requestTurn.project;
+    const originTab = requestTurn.activeTab;
+    const accountOwner = requestTurn.owner;
     const requestOwner = agentSuggestionRuntimeService.hasRuntime()
-      && originProvider?.availability !== "deferred"
-      && originProvider?.state === "connected"
+      && isAgentProfileAuthoritativelyConnected(originProfile)
       && originProject.runtimeBacked
       ? agentContextOwner(originProject, originSessionId)
       : null;
@@ -5818,35 +7137,26 @@ function App() {
       draft: "",
       messages: [...session.messages, {
         id, role: "user", at: nowHm(), content: text,
+        accountOwner,
         contextAttached: originTab?.id ? [originTab.id] : [],
       }],
     }));
 
     if (agentSuggestionRuntimeService.hasRuntime()) {
-      if (originProvider?.availability === "deferred") {
-        appendProviderUnavailableMessage(originProviderId, id);
-        return true;
-      }
-      if (originProvider?.state !== "connected") {
-        appendProviderConnectionRequiredMessage(originProviderId, id);
+      if (!isAgentProfileAuthoritativelyConnected(originProfile)) {
+        appendProviderConnectionRequiredMessage(requestTurn);
         return true;
       }
       if (!originProject.runtimeBacked) {
-        appendRuntimeProjectRequiredMessage(originProviderId, id);
+        appendRuntimeProjectRequiredMessage(requestTurn);
         return true;
       }
 
-      void requestRuntimeAgentSuggestions(
-        text,
-        id,
-        requestToken,
-        requestOwnerSnapshot,
-        requestOptionsSnapshot,
-      );
+      void requestRuntimeAgentSuggestions(requestTurn, requestToken);
       return true;
     }
 
-    appendRuntimeUnavailableMessage(originProviderId, id);
+    appendRuntimeUnavailableMessage(requestTurn);
     return true;
   };
 
@@ -5869,38 +7179,64 @@ function App() {
   }, [messages, onSend]);
 
   const recordPermissionDecision = React.useCallback(async (sugg, decision) => {
-    const originProject = { ...activeProject };
-    const originSessionId = activeAgentSessionId;
+    const capturedOwner = sugg.accountOwner || null;
+    const originProject = capturedOwner?.project || null;
+    const originSessionId = capturedOwner?.sessionId || null;
+    if (
+      !originProject?.runtimeBacked
+      || !originSessionId
+      || agentWorkspaceKey(originProject) !== capturedOwner?.projectPath
+      || !capturedOwner?.provider
+      || !capturedOwner?.accountId
+      || !capturedOwner?.incarnation
+      || !capturedOwner?.credentialRevision
+    ) return;
     const owner = agentContextOwner(originProject, originSessionId);
     if (!owner) return;
-    const originProviderLabel = providerDisplayName(sugg.provider);
+    const originProviderLabel = providerDisplayName(capturedOwner.provider);
+    const profileLease = {
+      provider: capturedOwner.provider,
+      accountId: capturedOwner.accountId,
+      incarnation: capturedOwner.incarnation,
+      credentialRevision: capturedOwner.credentialRevision,
+    };
     const suggestionIdentity = String(
-      sugg.id || sugg.commands.map((command) => command.cmd).join("\u0000"),
+      `${agentProfileLeaseKey(profileLease)}\u0000${
+        sugg.id || sugg.commands.map((command) => command.cmd).join("\u0000")
+      }`,
     );
     const coordinator = agentContextCoordinatorRef.current;
     if (!coordinator.beginPermission(owner, suggestionIdentity)) return;
 
     const at = nowHm();
-    const markDecision = (message) => message.suggestion?.id === sugg.id
-      ? {
+    const markDecision = (message) => {
+      const messageSuggestion = message.suggestion || null;
+      const messageOwner = messageSuggestion?.accountOwner || message.accountOwner || null;
+      const matchesCapturedSuggestion = messageSuggestion?.id === sugg.id
+        && messageOwner?.provider === capturedOwner.provider
+        && messageOwner?.accountId === capturedOwner.accountId
+        && messageOwner?.incarnation === capturedOwner.incarnation
+        && messageOwner?.credentialRevision === capturedOwner.credentialRevision;
+      return matchesCapturedSuggestion ? {
           ...message,
           permissionDecision: {
             status: decision,
             at,
           },
         }
-      : message;
+        : message;
+    };
 
     try {
-      updateAgentSessionMessages(originProject, originSessionId, (prev) => prev.map(markDecision));
-
       if (decision === "denied") {
+        updateAgentSessionMessages(originProject, originSessionId, (prev) => prev.map(markDecision));
         updateAgentSessionMessages(originProject, originSessionId, (prev) => [
           ...prev,
           {
             id: "permission-decision-" + Date.now(),
             role: "assistant",
             roleLabel: originProviderLabel,
+            accountOwner: capturedOwner,
             at,
             content: `${t(lang, "permissionDenied")} Suggested command: \`${sugg.commands[0]?.cmd || ""}\``,
           },
@@ -5908,18 +7244,22 @@ function App() {
         return;
       }
 
-      coordinator.noteJobCreate(owner);
-
       const jobResults = [];
+      let authorizationGranted = false;
       for (let index = 0; index < sugg.commands.length; index += 1) {
         const command = sugg.commands[index];
+        const jobName = `agent-${sugg.id || "command"}-${index + 1}`;
         try {
-          const job = await agentJobRuntimeService.createProjectJob(
+          const jobPromise = agentJobRuntimeService.createAuthorizedProjectJob(
             originProject,
+            profileLease,
             command.cmd,
-            `agent-${sugg.id || "command"}-${index + 1}`,
+            jobName,
             originSessionId,
           );
+          coordinator.noteJobCreate(owner);
+          const job = await jobPromise;
+          authorizationGranted = true;
           registerAgentJobs([job], {
             projectPath: originProject.path,
             sessionId: originSessionId,
@@ -5947,6 +7287,9 @@ function App() {
         }
       }
 
+      if (authorizationGranted) {
+        updateAgentSessionMessages(originProject, originSessionId, (prev) => prev.map(markDecision));
+      }
       const jobSummary = jobResults.map((result) => {
         if (result.job?.jobId != null && result.job.jobId >= 0) {
           return `\`${result.command}\` -> agent job #${result.job.jobId}`;
@@ -5961,70 +7304,23 @@ function App() {
           id: "permission-decision-" + Date.now(),
           role: "assistant",
           roleLabel: originProviderLabel,
+          accountOwner: capturedOwner,
           at,
-          content: `${t(lang, "decisionKept")}\n${jobSummary}`,
+          content: `${authorizationGranted
+            ? t(lang, "decisionKept")
+            : "Agent job authorization was blocked."}\n${jobSummary}`,
         },
       ]);
     } finally {
       coordinator.finishPermission(owner, suggestionIdentity);
     }
   }, [
-    activeAgentSessionId,
-    activeProject,
     lang,
     registerAgentJobs,
     registerFleetJobs,
     updateAgentSessionMessages,
   ]);
 
-  const handleProviderConnect = async (providerId) => {
-    const originProject = { ...activeProject };
-    const originSessionId = activeAgentSessionId;
-    const selectedProvider = providers.find((provider) => provider.id === providerId);
-    if (selectedProvider?.availability === "deferred" || selectedProvider?.state === "pending") return;
-    const generation = (providerConnectionGenerationsRef.current.get(providerId) || 0) + 1;
-    providerConnectionGenerationsRef.current.set(providerId, generation);
-    invalidateProviderCapabilities(providerId);
-    const isCurrent = () => providerConnectionGenerationsRef.current.get(providerId) === generation;
-
-    if (agentAuthRuntimeService.hasRuntime()) {
-      const label = selectedProvider?.label || providerDisplayName(providerId);
-      setProviders((prev) => prev.map((provider) => provider.id === providerId
-        ? { ...provider, state: "pending", lastError: null }
-        : provider));
-      try {
-        const requestedScopes = providerId === "codex"
-          ? CODEX_REQUIRED_SCOPES
-          : selectedProvider?.scope;
-        const connection = await agentAuthRuntimeService.beginLogin(providerId, requestedScopes);
-        if (!isCurrent()) return;
-        applyProviderConnection(connection);
-        if (connection.status === "connected") {
-          const connectionPath = providerConnectionPath(connection);
-          pushProjectMessage(`${connection.displayName} connected through ${connectionPath}.`, originProject, originSessionId);
-          setSettingsOpen(false);
-          return;
-        }
-
-        const connectionError = connection.lastError || (providerId === "claude"
-          ? "Run claude auth login in your terminal, then reconnect Claude."
-          : `${label} CLI session is not ready. Run codex login, then reconnect.`);
-        markProviderError(providerId, connectionError);
-        pushProjectMessage(connectionError, originProject, originSessionId);
-      } catch (error) {
-        if (!isCurrent()) return;
-        const message = error instanceof Error ? error.message : String(error);
-        markProviderError(providerId, message);
-        pushProjectMessage(`Could not validate ${label} credentials: ${message}`, originProject, originSessionId);
-      }
-      return;
-    }
-
-    const label = selectedProvider?.label || providerDisplayName(providerId);
-    const unavailableMessage = `Desktop runtime is not connected. Open the installed app and connect ${label} there.`;
-    markProviderError(providerId, unavailableMessage);
-    pushProjectMessage(unavailableMessage, originProject, originSessionId);
-  };
   return (
     <>
       <div className="gtum-stage" ref={stageRef}>
@@ -6045,7 +7341,7 @@ function App() {
               project={activeProject}
               icons={Icon}
               translate={t}
-              openSettings={() => setSettingsOpen(true)}
+              openSettings={openSettings}
               onMinimize={onMinimize}
               onToggleMax={onToggleMax}
               onClose={onClose}
@@ -6123,21 +7419,26 @@ function App() {
                   providers={providers}
                   collapseAgent={() => setAgentOpen(false)}
                   activeProviderId={activeProviderId}
-                  onSelectProvider={selectAgentProvider}
-                  onOpenSettings={() => setSettingsOpen(true)}
+                  profileSnapshot={agentProfileSnapshot}
+                  onSelectAccount={selectAgentAccount}
+                  onOpenSettings={openSettings}
                   project={activeProject}
                   providerCapabilities={activeProviderCapabilities}
                   selectedModelId={selectedAgentModelId}
                   onSelectModel={(modelId) => updateAgentSession(
                     activeProject,
                     activeAgentSessionId,
-                    (session) => ({
-                      ...session,
-                      selectedModels: {
-                        ...(session.selectedModels || {}),
-                        [activeProviderId]: modelId,
-                      },
-                    }),
+                    (session) => activeAgentAccountId
+                      ? {
+                        ...session,
+                        selectedModels: withAgentAccountPreference(
+                          session.selectedModels,
+                          activeProviderId,
+                          activeAgentAccountId,
+                          modelId,
+                        ),
+                      }
+                      : session,
                   )}
                   reasoningLevel={agentReasoningLevel}
                   fastMode={agentFastMode}
@@ -6155,6 +7456,16 @@ function App() {
                   onPermissionDecision={recordPermissionDecision}
                   onStopAgentRequest={stopAgentRequest}
                   requestPhase={activeAgentRequest.phase}
+                  canSend={canSendAgentRequest}
+                  capabilityCacheSize={Object.keys(providerCapabilities).length}
+                  capabilityGenerationSlots={agentCapabilityGenerationsRef.current.slotCount()}
+                  actionGenerationSlots={agentActionGenerationsRef.current.slotCount()}
+                  activeAccountId={activeAgentAccountId}
+                  activeProfileIncarnation={activeAgentProfile?.incarnation}
+                  activeCredentialRevision={activeAgentProfile?.credentialRevision}
+                  activeProfileStatus={agentProfileSnapshot === undefined
+                    ? "unresolved"
+                    : agentProfileEffectiveStatus(activeAgentProfile)}
                   composerDraft={activeAgentSession?.draft || ""}
                   onComposerDraftChange={(draft) => updateAgentSession(
                     activeProject,
@@ -6179,11 +7490,17 @@ function App() {
         <SettingsModal
           lang={lang}
           providers={providers}
+          profileSnapshot={agentProfileSnapshot}
           accent={t_.accent}
           accentOptions={ACCENT_OPTIONS}
-          onClose={() => setSettingsOpen(false)}
-          onConnect={handleProviderConnect}
-          onDisconnect={onDisconnect}
+          onClose={closeSettings}
+          onAddAccount={addAgentAccount}
+          onRenameAccount={renameAgentAccount}
+          onSetDefaultAccount={setDefaultAgentAccount}
+          onCheckAccount={checkAgentAccount}
+          onDisconnectAccount={disconnectAgentAccount}
+          onForgetAccount={forgetAgentAccount}
+          onReadSetupGuidance={readAgentAccountSetupGuidance}
           onSetAccent={(v) => setTweak("accent", v)}
         />
       )}

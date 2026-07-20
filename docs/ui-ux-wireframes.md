@@ -291,9 +291,51 @@ The default workflow should follow this order:
 - keep raw callback URLs out of the default card body
 - mark unimplemented providers explicitly as `Coming Soon` or `Prototype`
 - treat provider selection as Agent-session state: switching Codex/Claude in one session must not change another project or session, and the persisted workspace row must show that session's provider identity
-- show Claude as a real provider with distinct `API key` or sanitized helper readiness copy; never label it as a subscription/CLI session or expose a raw key, helper output, identity, organization, or subscription metadata
+- show Claude as a real provider with sanitized `API key`, helper, or `CLI session` readiness copy. `CLI session` is a non-secret source/status label and is also the supported additional-account path on Linux/Windows; never present subscription entitlement or expose a raw key, helper output, identity, organization, or subscription metadata
 - distinguish `available` from `connected`. An available provider without validated runtime credentials shows setup guidance and cannot request or silently fall back to another provider
 - write failures around the next action instead of raw technical strings
+
+### Multi-Account Control Wireframe
+
+The composer uses one compact owner control; exact names move into the opened surface so model/reasoning/Fast controls do not wrap:
+
+```text
+Closed:  [ Cx • ] [ model ] [ effort ] [ Fast ]                         [ Send ]
+          title/aria: Codex, Work account, Connected
+
+Opened grouped listbox:
+  CODEX
+    ✓ Work account                         Connected   Default
+      Personal                             Needs login
+  CLAUDE
+      Claude ambient                       Connected
+      Release account                      Unsupported on macOS
+```
+
+- The trigger and list describe a user-authored alias, never provider-derived identity. Long aliases wrap inside option rows, not in the closed toolbar.
+- A missing, forgotten, disconnected, stale, or unsupported selected account remains visible as the selected context and blocks Send. No default or alternate account is selected automatically.
+- A generated account restored after desktop restart remains selected as `Needs verification`; capability controls, Send, approval, and provider execution stay unavailable until Check succeeds for that exact row.
+- Account selection changes provider/account atomically for the current Agent session only. Arrow keys, Home/End, Enter/Space, Escape with focus restoration, and normal Tab exit are required.
+- Fast remains one direct on/off button. Account switching closes model/reasoning popups without creating another Fast selection menu.
+
+Settings uses provider groups with dense rows rather than separate cards:
+
+```text
+Accounts
+  Codex
+    Work account        Connected · Default     Rename  Check  Disconnect
+    Personal            Needs login             Copy setup command  Forget
+  Claude
+    Claude ambient      Connected               Rename  Check  Disconnect
+    + Add account       macOS: ambient only
+
+  Forget does not log out or delete credentials.
+```
+
+- Setup command expansion is transient and copy-only. It stays beneath the exact row and never appears in the center terminal, conversation, task history, storage, or logs.
+- Disconnect and Forget target only that row; reverse-order completion cannot update another account. The ambient row cannot be forgotten.
+- Accounts opens as a named modal dialog, traps Tab focus, closes on Escape, and returns focus to its exact opener. Pending row actions keep a meaningful focus target and announce scoped success/failure status.
+- The layout must remain usable at 720x640 and 640x600 with stacked actions and internal vertical scrolling, never horizontal overflow.
 
 ## 우선 적용 UX 개편 항목 / Immediate UX Improvement List
 

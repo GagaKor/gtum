@@ -1,12 +1,18 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import type {
+  AgentAccountLease,
+  AgentAccountSuggestionCard,
   AgentModelRef,
   AgentProviderId,
   AgentSuggestionCard,
   AgentSuggestionConfidence,
   AgentSuggestionTarget,
 } from '../../entities/agent/model/types'
+import {
+  EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR,
+  normalizeRuntimeAgentLease,
+} from './runtimeAgentAuth'
 import {
   hasTauriRuntime,
   type RuntimeInvoker,
@@ -26,6 +32,9 @@ export type RuntimeAgentSuggestionResponse = {
   error?: string | null
 }
 
+export type RuntimeAgentAccountSuggestionResponse = RuntimeAgentSuggestionResponse &
+  AgentAccountLease
+
 export type RuntimeAgentProviderRequirement = {
   name: string
   required: boolean
@@ -42,6 +51,9 @@ export type RuntimeAgentProviderDiagnostics = {
   model?: string | null
   requirements: RuntimeAgentProviderRequirement[]
 }
+
+export type RuntimeAgentAccountProviderDiagnostics = RuntimeAgentProviderDiagnostics &
+  AgentAccountLease
 
 export type RuntimeAgentAttachmentKind = 'image' | 'file' | 'directory' | 'active_tab'
 
@@ -86,6 +98,9 @@ export type RuntimeAgentProviderCapabilities = {
   attachments: RuntimeAgentAttachmentCapability[]
 }
 
+export type RuntimeAgentAccountProviderCapabilities = RuntimeAgentProviderCapabilities &
+  AgentAccountLease
+
 export type AgentSuggestionProjectInput = Pick<RuntimeProject, 'name' | 'path'>
 
 export type AgentSuggestionTabInput = {
@@ -114,6 +129,8 @@ export type RequestAgentSuggestionsInput = {
   attachments?: RuntimeAgentAttachmentRef[]
 }
 
+export type RequestAgentAccountSuggestionsInput = RequestAgentSuggestionsInput & AgentAccountLease
+
 export type AgentSuggestionRuntimeServiceOptions = {
   hasRuntime?: () => boolean
   invokeRuntime?: RuntimeInvoker
@@ -124,6 +141,15 @@ export type AgentSuggestionRuntimeService = {
   readProviderDiagnostics(provider: AgentProviderId): Promise<RuntimeAgentProviderDiagnostics>
   readProviderCapabilities(provider: AgentProviderId): Promise<RuntimeAgentProviderCapabilities>
   requestSuggestions(input: RequestAgentSuggestionsInput): Promise<AgentSuggestionCard[]>
+  readAccountDiagnostics(
+    lease: AgentAccountLease,
+  ): Promise<RuntimeAgentAccountProviderDiagnostics>
+  readAccountCapabilities(
+    lease: AgentAccountLease,
+  ): Promise<RuntimeAgentAccountProviderCapabilities>
+  requestAccountSuggestions(
+    input: RequestAgentAccountSuggestionsInput,
+  ): Promise<AgentAccountSuggestionCard[]>
 }
 
 type RuntimeAgentOverride = {
@@ -224,6 +250,15 @@ const requestPayloadFromInput = (input: RequestAgentSuggestionsInput): Record<st
   userTask: input.userTask,
 })
 
+const accountRequestPayloadFromInput = (
+  input: RequestAgentAccountSuggestionsInput,
+): Record<string, unknown> => ({
+  ...requestPayloadFromInput(input),
+  accountId: input.accountId,
+  incarnation: input.incarnation,
+  credentialRevision: input.credentialRevision,
+})
+
 const riskFromConfidence = (confidence: AgentSuggestionConfidence): 'low' | 'mid' | 'high' => {
   if (confidence === 'low') return 'mid'
 
@@ -284,16 +319,56 @@ export const suggestionCardFromRuntime = (
   }
 }
 
-const validateResponseProviders = (
-  responses: readonly RuntimeAgentSuggestionResponse[],
-  requestedProvider: AgentProviderId,
-): void => {
-  const mismatch = responses.find((response) => response.provider !== requestedProvider)
-  if (!mismatch) return
+export const accountSuggestionCardFromRuntime = (
+  suggestion: RuntimeAgentAccountSuggestionResponse,
+  activeTab?: AgentSuggestionTabInput | null,
+): AgentAccountSuggestionCard => ({
+  ...suggestionCardFromRuntime(suggestion, activeTab),
+  provider: suggestion.provider,
+  accountId: suggestion.accountId,
+})
 
-  throw new Error(
-    `Agent suggestion provider mismatch: requested ${providerLabel(requestedProvider)} but received ${providerLabel(mismatch.provider)}.`,
-  )
+const normalizeAccountSuggestionResponses = (
+  value: unknown,
+  requestedLease: AgentAccountLease,
+): RuntimeAgentAccountSuggestionResponse[] => {
+  if (!Array.isArray(value)) throw new Error('Agent suggestion response must be an array.')
+
+  return value.map((response, index) => {
+    if (typeof response !== 'object' || response == null || Array.isArray(response)) {
+      throw new Error(`Agent suggestion response[${index}] must be an object.`)
+    }
+    const rawResponse = response as Record<string, unknown>
+    const responseLease = normalizeRuntimeAgentLease(
+      {
+        provider: rawResponse.provider,
+        accountId: rawResponse.accountId,
+        incarnation: rawResponse.incarnation,
+        credentialRevision: rawResponse.credentialRevision,
+      },
+      `Agent suggestion response[${index}]`,
+    )
+    if (responseLease.provider !== requestedLease.provider) {
+      throw new Error(
+        `Agent suggestion provider mismatch: requested ${providerLabel(requestedLease.provider)} but received ${providerLabel(responseLease.provider)}.`,
+      )
+    }
+    if (responseLease.accountId !== requestedLease.accountId) {
+      throw new Error(
+        `Agent suggestion account mismatch: requested ${requestedLease.accountId} but received ${responseLease.accountId}.`,
+      )
+    }
+    if (
+      responseLease.incarnation !== requestedLease.incarnation ||
+      responseLease.credentialRevision !== requestedLease.credentialRevision
+    ) {
+      throw new Error(
+        `Agent suggestion lease mismatch: expected ${requestedLease.incarnation}/${requestedLease.credentialRevision} but received ${responseLease.incarnation}/${responseLease.credentialRevision}.`,
+      )
+    }
+
+    return { ...(response as RuntimeAgentSuggestionResponse), ...responseLease }
+  })
 }
 
 const normalizeCapabilityModelText = (value: unknown, field: string): string => {
@@ -414,18 +489,22 @@ const normalizeModelExecutionOptions = (
 }
 
 const normalizeCapabilityModel = (
-  model: RuntimeAgentModelCapability,
+  value: unknown,
   requestedProvider: AgentProviderId,
   field: string,
 ): RuntimeAgentModelCapability => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error(`Provider capability ${field} must be an object.`)
+  }
+  const model = value as Record<string, unknown>
   if (model.providerId !== requestedProvider) {
     throw new Error(
-      `Provider capability owner mismatch at ${field}: expected ${requestedProvider} but received ${model.providerId}.`,
+      `Provider capability owner mismatch at ${field}: expected ${requestedProvider} but received ${String(model.providerId)}.`,
     )
   }
 
   const normalized: RuntimeAgentModelCapability = {
-    ...model,
+    providerId: requestedProvider,
     modelId: normalizeCapabilityModelText(model.modelId, `${field}.modelId`),
     label: normalizeCapabilityModelText(model.label, `${field}.label`),
   }
@@ -439,14 +518,92 @@ const normalizeCapabilityModel = (
   return normalized
 }
 
+const projectProviderReasoningLevel = (
+  value: unknown,
+  field: string,
+): RuntimeAgentReasoningLevelCapability => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error(`Provider capability ${field} must be an object.`)
+  }
+  const reasoning = value as Record<string, unknown>
+  if (typeof reasoning.level !== 'string' || typeof reasoning.label !== 'string') {
+    throw new Error(`Provider capability ${field} level and label must be strings.`)
+  }
+
+  const projected: RuntimeAgentReasoningLevelCapability = {
+    level: reasoning.level,
+    label: reasoning.label,
+  }
+  if (reasoning.description === null || typeof reasoning.description === 'string') {
+    projected.description = reasoning.description
+  } else if (reasoning.description !== undefined) {
+    throw new Error(`Provider capability ${field}.description must be a string or null.`)
+  }
+  return projected
+}
+
+const projectProviderAttachment = (
+  value: unknown,
+  field: string,
+): RuntimeAgentAttachmentCapability => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error(`Provider capability ${field} must be an object.`)
+  }
+  const attachment = value as Record<string, unknown>
+  if (
+    attachment.kind !== 'image' &&
+    attachment.kind !== 'file' &&
+    attachment.kind !== 'directory' &&
+    attachment.kind !== 'active_tab'
+  ) {
+    throw new Error(`Provider capability ${field}.kind is invalid.`)
+  }
+  if (typeof attachment.label !== 'string' || typeof attachment.enabled !== 'boolean') {
+    throw new Error(`Provider capability ${field} label and enabled fields are invalid.`)
+  }
+
+  const projected: RuntimeAgentAttachmentCapability = {
+    kind: attachment.kind,
+    label: attachment.label,
+    enabled: attachment.enabled,
+  }
+  if (attachment.invocationFlag === null || typeof attachment.invocationFlag === 'string') {
+    projected.invocationFlag = attachment.invocationFlag
+  } else if (attachment.invocationFlag !== undefined) {
+    throw new Error(`Provider capability ${field}.invocationFlag must be a string or null.`)
+  }
+  return projected
+}
+
 const normalizeProviderCapabilities = (
-  capabilities: RuntimeAgentProviderCapabilities,
+  value: unknown,
   requestedProvider: AgentProviderId,
 ): RuntimeAgentProviderCapabilities => {
-  if (capabilities.provider !== requestedProvider) {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error('Provider capabilities must be an object.')
+  }
+  const rawCapabilities = value as Record<string, unknown>
+  if (rawCapabilities.provider !== requestedProvider) {
     throw new Error(
-      `Provider capability owner mismatch: requested ${requestedProvider} but received ${capabilities.provider}.`,
+      `Provider capability owner mismatch: requested ${requestedProvider} but received ${String(rawCapabilities.provider)}.`,
     )
+  }
+
+  const capabilities = value as RuntimeAgentProviderCapabilities
+  if (!Array.isArray(capabilities.availableModels)) {
+    throw new Error('Provider capability availableModels must be an array.')
+  }
+  if (!Array.isArray(capabilities.reasoningLevels)) {
+    throw new Error('Provider capability reasoningLevels must be an array.')
+  }
+  if (!Array.isArray(capabilities.attachments)) {
+    throw new Error('Provider capability attachments must be an array.')
+  }
+  if (
+    typeof capabilities.supportsModelSelection !== 'boolean' ||
+    typeof capabilities.supportsFastMode !== 'boolean'
+  ) {
+    throw new Error('Provider capability support flags must be booleans.')
   }
 
   const availableModelIds = new Set<string>()
@@ -465,17 +622,184 @@ const normalizeProviderCapabilities = (
     return normalized
   })
 
-  return {
-    ...capabilities,
+  const normalized: RuntimeAgentProviderCapabilities = {
+    provider: requestedProvider,
+    supportsModelSelection: capabilities.supportsModelSelection,
     currentModel:
-      capabilities.currentModel == null
-        ? capabilities.currentModel
+      rawCapabilities.currentModel === null
+        ? null
         : normalizeCapabilityModel(
-            capabilities.currentModel,
+            rawCapabilities.currentModel,
             requestedProvider,
             'currentModel',
           ),
     availableModels,
+    reasoningLevels: capabilities.reasoningLevels.map((reasoning, index) =>
+      projectProviderReasoningLevel(reasoning, `reasoningLevels[${index}]`),
+    ),
+    supportsFastMode: capabilities.supportsFastMode,
+    attachments: capabilities.attachments.map((attachment, index) =>
+      projectProviderAttachment(attachment, `attachments[${index}]`),
+    ),
+  }
+  if (Object.prototype.hasOwnProperty.call(rawCapabilities, 'defaultReasoningLevel')) {
+    const defaultReasoningLevel = rawCapabilities.defaultReasoningLevel
+    if (defaultReasoningLevel !== null && typeof defaultReasoningLevel !== 'string') {
+      throw new Error(
+        'Provider capability defaultReasoningLevel must be a string or null.',
+      )
+    }
+    normalized.defaultReasoningLevel = defaultReasoningLevel
+  }
+  return normalized
+}
+
+const normalizeAccountProviderCapabilities = (
+  value: unknown,
+  requestedLease: AgentAccountLease,
+): RuntimeAgentAccountProviderCapabilities => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error('Provider capabilities must be an object.')
+  }
+  const rawCapabilities = value as Record<string, unknown>
+  if (rawCapabilities.provider !== requestedLease.provider) {
+    throw new Error(
+      `Provider capability owner mismatch: requested ${requestedLease.provider}/${requestedLease.accountId} but received ${String(rawCapabilities.provider)}/${String(rawCapabilities.accountId)}.`,
+    )
+  }
+  const responseLease = normalizeRuntimeAgentLease(
+    {
+      provider: rawCapabilities.provider,
+      accountId: rawCapabilities.accountId,
+      incarnation: rawCapabilities.incarnation,
+      credentialRevision: rawCapabilities.credentialRevision,
+    },
+    'Provider capability response',
+  )
+  if (responseLease.accountId !== requestedLease.accountId) {
+    throw new Error(
+      `Provider capability owner mismatch: requested ${requestedLease.provider}/${requestedLease.accountId} but received ${responseLease.provider}/${responseLease.accountId}.`,
+    )
+  }
+  if (
+    responseLease.incarnation !== requestedLease.incarnation ||
+    responseLease.credentialRevision !== requestedLease.credentialRevision
+  ) {
+    throw new Error(
+      `Provider capability lease mismatch: expected ${requestedLease.incarnation}/${requestedLease.credentialRevision} but received ${responseLease.incarnation}/${responseLease.credentialRevision}.`,
+    )
+  }
+
+  return {
+    ...normalizeProviderCapabilities(value, requestedLease.provider),
+    ...responseLease,
+  }
+}
+
+const normalizeProviderDiagnostics = (
+  value: unknown,
+  requestedProvider: AgentProviderId,
+): RuntimeAgentProviderDiagnostics => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error('Provider diagnostics must be an object.')
+  }
+  const diagnostics = value as Record<string, unknown>
+  if (diagnostics.provider !== requestedProvider) {
+    throw new Error(
+      `Provider diagnostic owner mismatch: requested ${requestedProvider} but received ${String(diagnostics.provider)}.`,
+    )
+  }
+  if (
+    diagnostics.setupState !== 'ready' &&
+    diagnostics.setupState !== 'needs_setup' &&
+    diagnostics.setupState !== 'deferred'
+  ) {
+    throw new Error('Provider diagnostic setupState is invalid.')
+  }
+  for (const field of ['connectionPath', 'summary', 'guidance'] as const) {
+    if (typeof diagnostics[field] !== 'string') {
+      throw new Error(`Provider diagnostic ${field} must be a string.`)
+    }
+  }
+  if (!Array.isArray(diagnostics.requirements)) {
+    throw new Error('Provider diagnostic requirements must be an array.')
+  }
+
+  const requirements = diagnostics.requirements.map((requirement, index) => {
+    if (typeof requirement !== 'object' || requirement == null || Array.isArray(requirement)) {
+      throw new Error(`Provider diagnostic requirements[${index}] must be an object.`)
+    }
+    const item = requirement as Record<string, unknown>
+    if (
+      typeof item.name !== 'string' ||
+      typeof item.required !== 'boolean' ||
+      typeof item.present !== 'boolean'
+    ) {
+      throw new Error(
+        `Provider diagnostic requirements[${index}] must contain a string name and boolean flags.`,
+      )
+    }
+    return { name: item.name, required: item.required, present: item.present }
+  })
+  const optionalString = (field: 'baseUrl' | 'model'): string | null | undefined => {
+    const fieldValue = diagnostics[field]
+    if (fieldValue === undefined || fieldValue === null || typeof fieldValue === 'string') {
+      return fieldValue
+    }
+    throw new Error(`Provider diagnostic ${field} must be a string or null.`)
+  }
+
+  return {
+    provider: requestedProvider,
+    setupState: diagnostics.setupState,
+    connectionPath: diagnostics.connectionPath as string,
+    summary: diagnostics.summary as string,
+    guidance: diagnostics.guidance as string,
+    baseUrl: optionalString('baseUrl'),
+    model: optionalString('model'),
+    requirements,
+  }
+}
+
+const normalizeAccountProviderDiagnostics = (
+  value: unknown,
+  requestedLease: AgentAccountLease,
+): RuntimeAgentAccountProviderDiagnostics => {
+  if (typeof value !== 'object' || value == null || Array.isArray(value)) {
+    throw new Error('Provider diagnostics must be an object.')
+  }
+  const diagnostics = value as Record<string, unknown>
+  if (diagnostics.provider !== requestedLease.provider) {
+    throw new Error(
+      `Provider diagnostic owner mismatch: requested ${requestedLease.provider}/${requestedLease.accountId} but received ${String(diagnostics.provider)}/${String(diagnostics.accountId)}.`,
+    )
+  }
+  const responseLease = normalizeRuntimeAgentLease(
+    {
+      provider: diagnostics.provider,
+      accountId: diagnostics.accountId,
+      incarnation: diagnostics.incarnation,
+      credentialRevision: diagnostics.credentialRevision,
+    },
+    'Provider diagnostic response',
+  )
+  if (responseLease.accountId !== requestedLease.accountId) {
+    throw new Error(
+      `Provider diagnostic owner mismatch: requested ${requestedLease.provider}/${requestedLease.accountId} but received ${responseLease.provider}/${responseLease.accountId}.`,
+    )
+  }
+  if (
+    responseLease.incarnation !== requestedLease.incarnation ||
+    responseLease.credentialRevision !== requestedLease.credentialRevision
+  ) {
+    throw new Error(
+      `Provider diagnostic lease mismatch: expected ${requestedLease.incarnation}/${requestedLease.credentialRevision} but received ${responseLease.incarnation}/${responseLease.credentialRevision}.`,
+    )
+  }
+
+  return {
+    ...normalizeProviderDiagnostics(value, requestedLease.provider),
+    ...responseLease,
   }
 }
 
@@ -501,6 +825,20 @@ const fallbackCapabilities = (provider: AgentProviderId): RuntimeAgentProviderCa
   attachments: [],
 })
 
+const fallbackAccountDiagnostics = (
+  lease: AgentAccountLease,
+): RuntimeAgentAccountProviderDiagnostics => ({
+  ...fallbackDiagnostics(lease.provider),
+  ...lease,
+})
+
+const fallbackAccountCapabilities = (
+  lease: AgentAccountLease,
+): RuntimeAgentAccountProviderCapabilities => ({
+  ...fallbackCapabilities(lease.provider),
+  ...lease,
+})
+
 export const createAgentSuggestionRuntimeService = (
   options: AgentSuggestionRuntimeServiceOptions = {},
 ): AgentSuggestionRuntimeService => {
@@ -511,35 +849,51 @@ export const createAgentSuggestionRuntimeService = (
   return {
     hasRuntime,
     async readProviderDiagnostics(provider) {
-      if (!hasRuntime()) return fallbackDiagnostics(provider)
-
-      return invokeRuntime<RuntimeAgentProviderDiagnostics>('read_agent_provider_diagnostics', {
-        provider,
-      })
+      void provider
+      throw new Error(EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR)
     },
     async readProviderCapabilities(provider) {
-      if (!hasRuntime()) return fallbackCapabilities(provider)
-
-      const capabilities = await invokeRuntime<RuntimeAgentProviderCapabilities>(
-        'read_agent_provider_capabilities',
-        { provider },
-      )
-      return normalizeProviderCapabilities(capabilities, provider)
+      void provider
+      throw new Error(EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR)
     },
     async requestSuggestions(input) {
-      validateAgentSessionOwner(input)
-      if (!hasRuntime()) return []
-      validateActiveTabOwner(input)
+      void input
+      throw new Error(EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR)
+    },
+    async readAccountDiagnostics(requestedLease) {
+      const lease = normalizeRuntimeAgentLease(requestedLease, 'Account diagnostic request')
+      if (!hasRuntime()) return fallbackAccountDiagnostics(lease)
 
-      const responses = await invokeRuntime<RuntimeAgentSuggestionResponse[]>(
-        'request_agent_suggestions',
-        {
-          request: requestPayloadFromInput(input),
-        },
+      return normalizeAccountProviderDiagnostics(
+        await invokeRuntime<unknown>('read_agent_account_diagnostics', {
+          request: lease,
+        }),
+        lease,
       )
+    },
+    async readAccountCapabilities(requestedLease) {
+      const lease = normalizeRuntimeAgentLease(requestedLease, 'Account capability request')
+      if (!hasRuntime()) return fallbackAccountCapabilities(lease)
 
-      validateResponseProviders(responses, input.provider)
-      return responses.map((response) => suggestionCardFromRuntime(response, input.activeTab))
+      return normalizeAccountProviderCapabilities(
+        await invokeRuntime<unknown>('read_agent_account_capabilities', {
+          request: lease,
+        }),
+        lease,
+      )
+    },
+    async requestAccountSuggestions(input) {
+      const lease = normalizeRuntimeAgentLease(input, 'Agent account suggestion request')
+      validateAgentSessionOwner(input)
+      validateActiveTabOwner(input)
+      if (!hasRuntime()) return []
+
+      const response = await invokeRuntime<unknown>('request_agent_account_suggestions', {
+        request: accountRequestPayloadFromInput({ ...input, ...lease }),
+      })
+
+      const responses = normalizeAccountSuggestionResponses(response, lease)
+      return responses.map((response) => accountSuggestionCardFromRuntime(response, input.activeTab))
     },
   }
 }

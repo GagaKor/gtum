@@ -189,9 +189,10 @@ If a document exceeds 200 lines, do not read it end to end by default. Read only
 3. `docs/message-flow.md` if needed
 4. `docs/product-plan.md` if needed
 5. `docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md` for authoritative startup auth, recovery of a persisted real Claude error, explicit-disconnect preservation, and connected-only capability discovery
-6. `docs/superpowers/plans/2026-07-15-claude-cli-session-auth.md` for the active Claude CLI-session correction, safe-mode boundary, and public-distribution gate
-7. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` for model-specific effort/Fast capabilities, persistence, UI semantics, and request mapping
-8. `docs/superpowers/plans/2026-07-16-selected-provider-fast-toggle.md` for the current selected-provider marks and direct capability-gated Fast-button interaction
+6. `docs/superpowers/plans/2026-07-20-multi-account-agent-profiles.md` for the active account registry, exact account leases, isolated CLI roots, coordinated session migration, manual selection, and no-fallback boundary
+7. `docs/superpowers/plans/2026-07-15-claude-cli-session-auth.md` for the active Claude CLI-session correction, safe-mode boundary, and public-distribution gate
+8. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` for model-specific effort/Fast capabilities, persistence, UI semantics, and request mapping
+9. `docs/superpowers/plans/2026-07-16-selected-provider-fast-toggle.md` for the current selected-provider marks and direct capability-gated Fast-button interaction
 
 The 2026-07-15 plan supersedes `docs/superpowers/plans/2026-07-14-claude-api-provider.md` for current Claude authentication policy. Read the 2026-07-14 file only when historical API-only implementation context is needed.
 
@@ -201,11 +202,14 @@ For Claude execution options, the effort/Fast plan extends the account-catalog p
 
 The selected-provider/Fast-toggle plan changes only the active-mark and button interaction. Provider/project/Agent-session persistence, the frozen request payload, runtime validation, and center-terminal isolation remain governed by the existing contracts.
 
+The multi-account plan extends those provider-level contracts with an exact `provider + accountId + incarnation + credentialRevision` lease. Use it first when the task involves profile creation, account switching, account-scoped capability/request state, setup guidance, disconnect, Forget, or per-account Settings UI. It permits explicit user selection only and never authorizes quota rotation or automatic fallback.
+
 ### When the issue is current implementation structure or persistence boundaries
 
 1. `docs/architecture.md`
 2. `docs/technical-design.md`
 3. `docs/superpowers/plans/2026-07-16-claude-startup-capability-recovery.md` when tracing startup auth/capability ownership or persisted Claude error recovery
+4. `docs/superpowers/plans/2026-07-20-multi-account-agent-profiles.md` when tracing the v2 profile registry, migration, isolated roots, exact account leases, or profile lifecycle
 
 ### When the issue is request payloads, approval, restore, or data flow
 
@@ -213,6 +217,7 @@ The selected-provider/Fast-toggle plan changes only the active-mark and button i
 2. `docs/technical-design.md`
 3. `docs/architecture.md` if needed
 4. `docs/superpowers/plans/2026-07-15-claude-effort-fast-mode.md` when the request includes Claude reasoning or Fast mode
+5. `docs/superpowers/plans/2026-07-20-multi-account-agent-profiles.md` when the request, response, suggestion, approval, or restore path is account-owned
 
 ### When the issue is frontend UI/UX
 
@@ -222,6 +227,7 @@ The selected-provider/Fast-toggle plan changes only the active-mark and button i
 4. `docs/ui-ux-wireframes.md` if needed
 5. `docs/technical-design.md` if needed
 6. `docs/superpowers/plans/2026-07-16-selected-provider-fast-toggle.md` when reviewing explicit current-provider treatment or the direct Fast-button semantics
+7. `docs/superpowers/plans/2026-07-20-multi-account-agent-profiles.md` when reviewing the combined provider/account picker, missing-account behavior, or account Settings management
 
 ### When the issue is left-rail, side-panel, or settings UX
 
@@ -229,6 +235,7 @@ The selected-provider/Fast-toggle plan changes only the active-mark and button i
 2. `docs/frontend-design-benchmarks.md`
 3. `docs/ui-ux-wireframes.md` if needed
 4. `docs/design-concepts-sprint-15.md` if needed
+5. `docs/superpowers/plans/2026-07-20-multi-account-agent-profiles.md` when implementing provider-grouped account rows or transient setup guidance
 
 ### When the issue is implementation rules or doc-absorption policy
 

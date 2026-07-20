@@ -1498,6 +1498,8 @@ test('sends a B Agent request with null context while A editor and terminal tabs
   await page.addInitScript(({ projectA, projectB }) => {
     type TestWindow = Window & {
       __agentCalls: RuntimeCall[]
+      __agentAuthCalls: RuntimeCall[]
+      __terminalCalls: RuntimeCall[]
       __GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__: number
       __GTUM_WORKSPACE_RUNTIME__: unknown
       __GTUM_PROJECT_RUNTIME__: unknown
@@ -1514,11 +1516,93 @@ test('sends a B Agent request with null context while A editor and terminal tabs
       updatedAt: 380,
       storageVersion: 2,
     })
+    const codexLease = {
+      provider: 'codex',
+      accountId: 'codex-default',
+      incarnation: '1',
+      credentialRevision: '1',
+    }
+    const profileSnapshot = {
+      registryVersion: 2,
+      profiles: [
+        {
+          provider: 'codex',
+          accountId: 'codex-default',
+          alias: 'Codex ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '1',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'connected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: 100,
+            updatedAt: 120,
+            lastError: null,
+          },
+        },
+        {
+          provider: 'claude',
+          accountId: 'claude-default',
+          alias: 'Claude ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '2',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'disconnected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 120,
+            lastError: null,
+          },
+        },
+      ],
+      tombstones: [],
+    }
+    localStorage.setItem('gtum.agent-session-directory.v2', JSON.stringify({
+      [projectA]: {
+        workspaceTitle: 'project-a',
+        activeSessionId: 'multi-project-agent-a',
+        sessions: [{
+          id: 'multi-project-agent-a',
+          title: 'Project A Agent',
+          providerId: 'codex',
+          selectedAccountIds: { codex: 'codex-default' },
+          selectedModels: {},
+          selectedReasoningLevels: {},
+          fastModes: {},
+        }],
+      },
+      [projectB]: {
+        workspaceTitle: 'project-b',
+        activeSessionId: 'multi-project-agent-b',
+        sessions: [{
+          id: 'multi-project-agent-b',
+          title: 'Project B Agent',
+          providerId: 'codex',
+          selectedAccountIds: { codex: 'codex-default' },
+          selectedModels: {},
+          selectedReasoningLevels: {},
+          fastModes: {},
+        }],
+      },
+    }))
     bridgeWindow.__agentCalls = []
+    bridgeWindow.__agentAuthCalls = []
+    bridgeWindow.__terminalCalls = []
     bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = 1
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async (command: string) => {
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentAuthCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(profileSnapshot)
+        }
         if (command === 'list_agent_connections') {
           return [{
             provider: 'codex',
@@ -1586,6 +1670,7 @@ test('sends a B Agent request with null context while A editor and terminal tabs
     bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
         if (command === 'create_terminal_session') {
           return {
             projectPath: projectA,
@@ -1632,9 +1717,18 @@ test('sends a B Agent request with null context while A editor and terminal tabs
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
+          const request = args?.request as Record<string, unknown> | undefined
+          if (
+            request?.provider !== codexLease.provider
+            || request.accountId !== codexLease.accountId
+            || request.incarnation !== codexLease.incarnation
+            || request.credentialRevision !== codexLease.credentialRevision
+          ) {
+            throw new Error(`Project capability lease mismatch: ${JSON.stringify(request)}`)
+          }
           return {
-            provider: 'codex',
+            ...codexLease,
             supportsModelSelection: false,
             currentModel: null,
             availableModels: [],
@@ -1644,10 +1738,19 @@ test('sends a B Agent request with null context while A editor and terminal tabs
             attachments: [],
           }
         }
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
+          const request = args?.request as Record<string, unknown> | undefined
+          if (
+            request?.provider !== codexLease.provider
+            || request.accountId !== codexLease.accountId
+            || request.incarnation !== codexLease.incarnation
+            || request.credentialRevision !== codexLease.credentialRevision
+          ) {
+            throw new Error(`Project suggestion lease mismatch: ${JSON.stringify(request)}`)
+          }
           return [{
             id: 'b-reply',
-            provider: 'codex',
+            ...codexLease,
             summary: 'B has no attached workbench context',
             command: '',
             preferredTarget: 'new_tab',
@@ -1674,14 +1777,26 @@ test('sends a B Agent request with null context while A editor and terminal tabs
   await page.locator('.composer-input .send').click()
   await expect.poll(() => page.evaluate(() => (
     window as Window & { __agentCalls?: RuntimeCall[] }
-  ).__agentCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0)).toBe(1)
+  ).__agentCalls?.filter((call) =>
+    call.command === 'request_agent_account_suggestions',
+  ).length ?? 0)).toBe(1)
 
-  const request = await page.evaluate(() => (
-    window as Window & { __agentCalls?: RuntimeCall[] }
-  ).__agentCalls?.find((call) => call.command === 'request_agent_suggestions')?.args?.request)
+  const calls = await page.evaluate(() => ({
+    auth: (window as Window & { __agentAuthCalls?: RuntimeCall[] }).__agentAuthCalls ?? [],
+    agent: (window as Window & { __agentCalls?: RuntimeCall[] }).__agentCalls ?? [],
+    terminal: (window as Window & { __terminalCalls?: RuntimeCall[] }).__terminalCalls ?? [],
+  }))
+  const request = calls.agent.find(
+    (call) => call.command === 'request_agent_account_suggestions',
+  )?.args?.request
   expect(request).toMatchObject({
+    provider: 'codex',
+    accountId: 'codex-default',
+    incarnation: '1',
+    credentialRevision: '1',
     projectName: 'project-b',
     projectPath: projectB,
+    agentSessionId: 'multi-project-agent-b',
     activeTabId: null,
     activeTabTitle: null,
     activeFilePath: null,
@@ -1689,6 +1804,24 @@ test('sends a B Agent request with null context while A editor and terminal tabs
     lastNLogLines: [],
     userTask: 'inspect project B',
   })
+  expect(calls.auth.filter((call) =>
+    call.command === 'read_agent_profile_snapshot',
+  )).toHaveLength(1)
+  expect(calls.auth.filter((call) =>
+    call.command === 'authorize_agent_profile_lease',
+  )).toHaveLength(0)
+  expect(calls.agent.filter((call) =>
+    call.command === 'read_agent_provider_capabilities'
+    || call.command === 'request_agent_suggestions',
+  )).toHaveLength(0)
+  expect(calls.terminal.filter((call) =>
+    call.command === 'create_terminal_session',
+  )).toHaveLength(1)
+  expect(calls.terminal.filter((call) =>
+    call.command === 'execute_terminal_session_command'
+    || call.command === 'create_terminal_session_with_command'
+    || call.command === 'write_terminal_input',
+  )).toHaveLength(0)
 })
 
 test('resizes only the addressed nested split when sibling shapes are identical', async ({ page }) => {

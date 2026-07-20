@@ -258,6 +258,17 @@ Read this document when:
   - slightly roomier than navigation views because controls need breathing room
   - still avoid oversized card-dashboard styling
 
+### Multi-Account Settings Contract
+
+- Group account profiles under `Codex` and `Claude`; do not mix them into one flat connection list or duplicate the active-session picker inside every row.
+- Each row shows the user alias, default state, connection status, and supported/unsupported platform state. Provider marks do not substitute for explicit status.
+- Row actions are exact and disambiguated: Add, Rename, Set Default, Check Again, Disconnect, and Forget. The ambient row disables Forget, and another row cannot inherit a pending/error state.
+- Add accepts a user-authored alias, then may reveal transient copyable CLI setup guidance beneath that exact row. The command is never persisted, logged, executed, or sent to the center terminal, and the surface stays open while the user completes login externally.
+- Forget requires copy that it does not log out or delete credentials. The row disappears into retained tombstone state, while any Agent session that selected it keeps a visible missing-account state rather than switching accounts.
+- On macOS, additional Claude rows show the Keychain isolation limitation and ambient-only guidance. Linux/Windows expose the supported isolated `CLAUDE_CONFIG_DIR` setup path.
+- At 720x640 and 640x600, actions may stack under the row metadata, but controls must not overlap or introduce horizontal scrolling. Use bounded internal scrolling for a long account list.
+- Provider/account lifecycle controls must never create, focus, type into, or otherwise mutate the user-visible center terminal.
+
 ## 공통 규칙 / Shared Rules
 
 ### 한국어

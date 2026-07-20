@@ -1,11 +1,15 @@
 use std::{
     env,
     ffi::{OsStr, OsString},
-    fs,
+    fs::{self, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, TryRecvError},
+        Arc,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -14,7 +18,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::runtime::{
-    auth::AgentProvider,
+    auth::{
+        capture_ambient_claude_account_execution_context, AgentProvider, BoundedChildProcessTree,
+        ClaudeAccountProfileContext,
+    },
     codex::{
         AgentAttachmentCapability, AgentAttachmentKind, AgentExecutionTarget, AgentModelCapability,
         AgentModelExecutionOptions, AgentProviderCapabilities, AgentProviderDiagnostics,
@@ -91,12 +98,49 @@ const CLAUDE_ALWAYS_REMOVED_ENVIRONMENT: &[&str] = &[
     "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
     "ANTHROPIC_FOUNDRY_BASE_URL",
     "ANTHROPIC_BASE_URL",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_PROFILE",
+    "AWS_DEFAULT_PROFILE",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_WEB_IDENTITY_TOKEN_FILE",
+    "AWS_ROLE_ARN",
+    "AWS_ROLE_SESSION_NAME",
+    "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+    "AWS_EC2_METADATA_SERVICE_ENDPOINT",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_API_KEY",
+    "GOOGLE_CLOUD_PROJECT",
+    "GCLOUD_PROJECT",
+    "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE",
+    "CLOUDSDK_CONFIG",
+    "AZURE_CLIENT_ID",
+    "AZURE_CLIENT_SECRET",
+    "AZURE_TENANT_ID",
+    "AZURE_SUBSCRIPTION_ID",
+    "AZURE_FEDERATED_TOKEN_FILE",
+    "AZURE_CONFIG_DIR",
 ];
-const CLAUDE_REMOVED_ENVIRONMENT_PREFIXES: &[&str] = &["CLAUDE_CODE_OTEL_", "OTEL_"];
+const CLAUDE_REMOVED_ENVIRONMENT_PREFIXES: &[&str] = &[
+    "CLAUDE_CODE_",
+    "ANTHROPIC_",
+    "AWS_",
+    "GOOGLE_",
+    "GCLOUD_",
+    "CLOUDSDK_",
+    "AZURE_",
+    "OTEL_",
+];
 const CLAUDE_FORCED_ENVIRONMENT: &[(&str, &str)] = &[
     ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
     ("CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL", "1"),
 ];
+const CLAUDE_GIT_BASH_PATH_ENVIRONMENT: &str = "CLAUDE_CODE_GIT_BASH_PATH";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClaudeCredentialSource {
@@ -134,21 +178,200 @@ impl std::fmt::Debug for ClaudeCredentialSelection {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ClaudeInvocationContext {
+#[derive(Clone)]
+pub(crate) struct ClaudeAccountExecutionContext {
     credential: Option<ClaudeCredentialSelection>,
     approved_custom_config_dir: Option<PathBuf>,
+    pinned_config_root: Option<ClaudePinnedConfigDirectory>,
+    frozen_ambient_home: Option<PathBuf>,
+    pinned_ambient_home: Option<ClaudePinnedConfigDirectory>,
+    frozen_environment_api_key: Option<String>,
+    frozen_git_bash_bootstrap: Option<Arc<OpenedClaudeBootstrapExecutable>>,
+    account_profile: ClaudeAccountProfileContext,
 }
 
-impl ClaudeInvocationContext {
+type ClaudeInvocationContext = ClaudeAccountExecutionContext;
+
+#[derive(Clone)]
+enum ClaudePinnedConfigDirectory {
+    Captured(Arc<OpenedClaudeConfigDirectory>),
+    Absent(PathBuf),
+    #[cfg(test)]
+    Invalid,
+}
+
+struct OpenedClaudeConfigDirectory {
+    canonical_path: PathBuf,
+    directory: fs::File,
+    identity: ClaudeDirectoryIdentity,
+}
+
+struct OpenedClaudeBootstrapExecutable {
+    canonical_path: PathBuf,
+    executable: fs::File,
+    identity: ClaudeDirectoryIdentity,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct ClaudeDirectoryIdentity {
+    device: u64,
+    file: u64,
+}
+
+impl std::fmt::Debug for ClaudeAccountExecutionContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClaudeAccountExecutionContext")
+            .field(
+                "credential_source",
+                &self.credential.as_ref().map(|credential| credential.source),
+            )
+            .field(
+                "config_scope",
+                &if self.account_profile.is_owned() {
+                    "owned"
+                } else if self.approved_custom_config_dir.is_some() {
+                    "ambient_custom"
+                } else {
+                    "ambient_default"
+                },
+            )
+            .field(
+                "transient_api_key",
+                &self
+                    .frozen_environment_api_key
+                    .as_ref()
+                    .map(|_| "[REDACTED]"),
+            )
+            .field(
+                "windows_git_bash_bootstrap",
+                &self.frozen_git_bash_bootstrap.is_some(),
+            )
+            .finish()
+    }
+}
+
+#[cfg(test)]
+impl PartialEq for ClaudeAccountExecutionContext {
+    fn eq(&self, other: &Self) -> bool {
+        let same_profile = self.account_profile.lease() == other.account_profile.lease()
+            && self.account_profile.is_owned() == other.account_profile.is_owned();
+        self.credential == other.credential
+            && self.approved_custom_config_dir == other.approved_custom_config_dir
+            && self.frozen_ambient_home == other.frozen_ambient_home
+            && self.frozen_environment_api_key == other.frozen_environment_api_key
+            && self
+                .frozen_git_bash_bootstrap
+                .as_ref()
+                .map(|bootstrap| &bootstrap.canonical_path)
+                == other
+                    .frozen_git_bash_bootstrap
+                    .as_ref()
+                    .map(|bootstrap| &bootstrap.canonical_path)
+            && same_profile
+    }
+}
+
+#[cfg(test)]
+impl Eq for ClaudeAccountExecutionContext {}
+
+impl ClaudeAccountExecutionContext {
+    #[cfg(test)]
     fn new(
         credential: Option<ClaudeCredentialSelection>,
         approved_custom_config_dir: Option<PathBuf>,
     ) -> Self {
+        let pinned_config_root = approved_custom_config_dir.as_deref().map(|path| {
+            OpenedClaudeConfigDirectory::capture(path)
+                .map(Arc::new)
+                .map(ClaudePinnedConfigDirectory::Captured)
+                .unwrap_or(ClaudePinnedConfigDirectory::Invalid)
+        });
+        let frozen_environment_api_key = credential
+            .as_ref()
+            .filter(|selection| selection.source == ClaudeCredentialSource::EnvironmentApiKey)
+            .and_then(|_| env::var("ANTHROPIC_API_KEY").ok())
+            .filter(|value| !value.trim().is_empty());
         Self {
             credential,
             approved_custom_config_dir,
+            pinned_config_root,
+            frozen_ambient_home: None,
+            pinned_ambient_home: None,
+            frozen_environment_api_key,
+            frozen_git_bash_bootstrap: None,
+            account_profile: crate::runtime::auth::test_ambient_claude_account_profile_context(),
         }
+    }
+
+    pub(crate) fn capture(profile: ClaudeAccountProfileContext) -> Result<Self, String> {
+        if profile.lease().provider() != AgentProvider::Claude {
+            return Err("the selected account is not a Claude profile".to_string());
+        }
+        let frozen_git_bash_bootstrap = capture_claude_git_bash_bootstrap(
+            env::var_os(CLAUDE_GIT_BASH_PATH_ENVIRONMENT).as_deref(),
+            current_claude_platform(),
+        )?;
+        if profile.is_owned() {
+            let approved_custom_config_dir = profile
+                .revalidated_claude_config_dir()?
+                .ok_or_else(|| "the owned Claude account has no config root".to_string())?;
+            return Ok(Self {
+                credential: None,
+                approved_custom_config_dir: Some(approved_custom_config_dir),
+                pinned_config_root: None,
+                frozen_ambient_home: None,
+                pinned_ambient_home: None,
+                frozen_environment_api_key: None,
+                frozen_git_bash_bootstrap,
+                account_profile: profile,
+            });
+        }
+
+        let config_root = current_claude_config_root().ok_or_else(|| {
+            "Claude ambient HOME could not be frozen. Restore the user home directory and retry."
+                .to_string()
+        })?;
+        let frozen_ambient_home = Some(config_root.home.clone());
+        let pinned_ambient_home = Some(ClaudePinnedConfigDirectory::Captured(Arc::new(
+            OpenedClaudeConfigDirectory::capture(&config_root.home)?,
+        )));
+        let pinned_config_root = Some(capture_claude_config_directory_state(&config_root.root)?);
+        let environment_key = env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let credential = if environment_key.is_some() {
+            select_claude_credential(environment_key.as_deref(), None)?
+        } else {
+            let user_settings = read_user_claude_settings(Some(config_root.root.as_path()))?;
+            select_claude_credential(None, user_settings.as_deref())?
+        };
+        if credential.is_none()
+            && matches!(
+                pinned_config_root.as_ref(),
+                Some(ClaudePinnedConfigDirectory::Absent(_))
+            )
+        {
+            return Err(
+                "Claude CLI configuration is missing. Sign in with Claude Code and retry."
+                    .to_string(),
+            );
+        }
+        let approved_custom_config_dir = config_root.custom;
+        Ok(Self {
+            credential,
+            approved_custom_config_dir,
+            pinned_config_root,
+            frozen_ambient_home,
+            pinned_ambient_home,
+            frozen_environment_api_key: environment_key,
+            frozen_git_bash_bootstrap,
+            account_profile: profile,
+        })
+    }
+
+    pub(crate) fn lease(&self) -> &crate::runtime::auth::AgentAccountLease {
+        self.account_profile.lease()
     }
 
     fn credential(&self) -> Option<&ClaudeCredentialSelection> {
@@ -161,6 +384,334 @@ impl ClaudeInvocationContext {
         }
         self.approved_custom_config_dir.as_deref()
     }
+
+    fn revalidated_cli_session_config_dir(&self) -> Result<Option<PathBuf>, String> {
+        if self.account_profile.is_owned() {
+            let current = self
+                .account_profile
+                .revalidated_claude_config_dir()?
+                .ok_or_else(|| {
+                    "Claude CLI configuration changed. Reconnect Claude and retry.".to_string()
+                })?;
+            if self.approved_custom_config_dir.as_deref() != Some(current.as_path()) {
+                return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
+            }
+        }
+        if let Some(pinned) = &self.pinned_config_root {
+            pinned.revalidate()?;
+        }
+        if let Some(pinned) = &self.pinned_ambient_home {
+            pinned.revalidate()?;
+        }
+        Ok(self.cli_session_config_dir().map(Path::to_path_buf))
+    }
+
+    fn revalidated_git_bash_bootstrap(&self) -> Result<Option<PathBuf>, String> {
+        self.frozen_git_bash_bootstrap
+            .as_deref()
+            .map(OpenedClaudeBootstrapExecutable::revalidate)
+            .transpose()
+    }
+}
+
+impl ClaudePinnedConfigDirectory {
+    fn revalidate(&self) -> Result<(), String> {
+        match self {
+            Self::Captured(directory) => directory.revalidate(),
+            Self::Absent(path) => match fs::symlink_metadata(path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                _ => {
+                    Err("Claude CLI configuration changed. Reconnect Claude and retry.".to_string())
+                }
+            },
+            #[cfg(test)]
+            Self::Invalid => {
+                Err("Claude CLI configuration changed. Reconnect Claude and retry.".to_string())
+            }
+        }
+    }
+}
+
+fn capture_claude_config_directory_state(
+    path: &Path,
+) -> Result<ClaudePinnedConfigDirectory, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => OpenedClaudeConfigDirectory::capture(path)
+            .map(Arc::new)
+            .map(ClaudePinnedConfigDirectory::Captured),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(ClaudePinnedConfigDirectory::Absent(path.to_path_buf()))
+        }
+        Err(_) => Err("Claude CLI configuration changed. Reconnect Claude and retry.".to_string()),
+    }
+}
+
+impl OpenedClaudeConfigDirectory {
+    fn capture(path: &Path) -> Result<Self, String> {
+        let canonical_path = fs::canonicalize(path).map_err(|_| {
+            "Claude CLI configuration changed. Reconnect Claude and retry.".to_string()
+        })?;
+        if canonical_path != path {
+            return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
+        }
+        let directory = open_claude_config_directory(&canonical_path)?;
+        let identity = claude_config_directory_identity(&directory)?;
+        let opened = Self {
+            canonical_path,
+            directory,
+            identity,
+        };
+        opened.revalidate()?;
+        Ok(opened)
+    }
+
+    fn revalidate(&self) -> Result<(), String> {
+        let current = open_claude_config_directory(&self.canonical_path)?;
+        let current_identity = claude_config_directory_identity(&current)?;
+        let opened_identity = claude_config_directory_identity(&self.directory)?;
+        let canonical = fs::canonicalize(&self.canonical_path).map_err(|_| {
+            "Claude CLI configuration changed. Reconnect Claude and retry.".to_string()
+        })?;
+        if canonical != self.canonical_path
+            || current_identity != self.identity
+            || opened_identity != self.identity
+        {
+            return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
+        }
+        Ok(())
+    }
+}
+
+fn invalid_claude_git_bash_bootstrap() -> String {
+    concat!(
+        "Claude Code Git Bash bootstrap is invalid or changed. Configure ",
+        "CLAUDE_CODE_GIT_BASH_PATH as one absolute local Git Bash executable and retry."
+    )
+    .to_string()
+}
+
+fn capture_claude_git_bash_bootstrap(
+    raw_path: Option<&OsStr>,
+    platform: ClaudePlatform,
+) -> Result<Option<Arc<OpenedClaudeBootstrapExecutable>>, String> {
+    if platform != ClaudePlatform::Windows {
+        return Ok(None);
+    }
+    let Some(raw_path) = raw_path.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let candidate = Path::new(raw_path);
+    if !candidate.is_absolute() {
+        return Err(invalid_claude_git_bash_bootstrap());
+    }
+    let canonical = fs::canonicalize(candidate).map_err(|_| invalid_claude_git_bash_bootstrap())?;
+    if !canonical.is_absolute()
+        || !canonical
+            .extension()
+            .and_then(OsStr::to_str)
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
+    {
+        return Err(invalid_claude_git_bash_bootstrap());
+    }
+    OpenedClaudeBootstrapExecutable::capture(&canonical)
+        .map(Arc::new)
+        .map(Some)
+}
+
+impl OpenedClaudeBootstrapExecutable {
+    fn capture(path: &Path) -> Result<Self, String> {
+        let canonical_path =
+            fs::canonicalize(path).map_err(|_| invalid_claude_git_bash_bootstrap())?;
+        if canonical_path != path || !canonical_path.is_absolute() {
+            return Err(invalid_claude_git_bash_bootstrap());
+        }
+        let executable = open_claude_bootstrap_executable(&canonical_path)?;
+        let identity = claude_bootstrap_executable_identity(&executable)?;
+        let opened = Self {
+            canonical_path,
+            executable,
+            identity,
+        };
+        opened.revalidate()?;
+        Ok(opened)
+    }
+
+    fn revalidate(&self) -> Result<PathBuf, String> {
+        let canonical = fs::canonicalize(&self.canonical_path)
+            .map_err(|_| invalid_claude_git_bash_bootstrap())?;
+        if canonical != self.canonical_path {
+            return Err(invalid_claude_git_bash_bootstrap());
+        }
+        let current = open_claude_bootstrap_executable(&self.canonical_path)?;
+        if claude_bootstrap_executable_identity(&current)? != self.identity
+            || claude_bootstrap_executable_identity(&self.executable)? != self.identity
+        {
+            return Err(invalid_claude_git_bash_bootstrap());
+        }
+        Ok(self.canonical_path.clone())
+    }
+}
+
+#[cfg(unix)]
+fn open_claude_bootstrap_executable(path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|_| invalid_claude_git_bash_bootstrap())
+}
+
+#[cfg(target_os = "windows")]
+fn open_claude_bootstrap_executable(path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|_| invalid_claude_git_bash_bootstrap())?;
+    let information = windows_claude_config_directory_information(&file)
+        .map_err(|_| invalid_claude_git_bash_bootstrap())?;
+    if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0
+    {
+        return Err(invalid_claude_git_bash_bootstrap());
+    }
+    Ok(file)
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn open_claude_bootstrap_executable(_path: &Path) -> Result<fs::File, String> {
+    Err("unsupported_platform: Claude Code Git Bash bootstrap identity is unavailable".to_string())
+}
+
+#[cfg(unix)]
+fn claude_bootstrap_executable_identity(
+    file: &fs::File,
+) -> Result<ClaudeDirectoryIdentity, String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = file
+        .metadata()
+        .map_err(|_| invalid_claude_git_bash_bootstrap())?;
+    if !metadata.is_file() {
+        return Err(invalid_claude_git_bash_bootstrap());
+    }
+    Ok(ClaudeDirectoryIdentity {
+        device: metadata.dev(),
+        file: metadata.ino(),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn claude_bootstrap_executable_identity(
+    file: &fs::File,
+) -> Result<ClaudeDirectoryIdentity, String> {
+    let information = windows_claude_config_directory_information(file)
+        .map_err(|_| invalid_claude_git_bash_bootstrap())?;
+    Ok(ClaudeDirectoryIdentity {
+        device: u64::from(information.dwVolumeSerialNumber),
+        file: (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    })
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn claude_bootstrap_executable_identity(
+    _file: &fs::File,
+) -> Result<ClaudeDirectoryIdentity, String> {
+    Err("unsupported_platform: Claude Code Git Bash bootstrap identity is unavailable".to_string())
+}
+
+#[cfg(unix)]
+fn open_claude_config_directory(path: &Path) -> Result<fs::File, String> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)
+        .map_err(|_| "Claude CLI configuration changed. Reconnect Claude and retry.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn open_claude_config_directory(path: &Path) -> Result<fs::File, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+
+    let file = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|_| "Claude CLI configuration changed. Reconnect Claude and retry.".to_string())?;
+    let information = windows_claude_config_directory_information(&file)?;
+    if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0
+    {
+        return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
+    }
+    Ok(file)
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn open_claude_config_directory(_path: &Path) -> Result<fs::File, String> {
+    Err("unsupported_platform: Claude config-directory identity is unavailable".to_string())
+}
+
+#[cfg(unix)]
+fn claude_config_directory_identity(file: &fs::File) -> Result<ClaudeDirectoryIdentity, String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = file
+        .metadata()
+        .map_err(|_| "Claude CLI configuration changed. Reconnect Claude and retry.".to_string())?;
+    if !metadata.is_dir() {
+        return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
+    }
+    Ok(ClaudeDirectoryIdentity {
+        device: metadata.dev(),
+        file: metadata.ino(),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn claude_config_directory_identity(file: &fs::File) -> Result<ClaudeDirectoryIdentity, String> {
+    let information = windows_claude_config_directory_information(file)?;
+    Ok(ClaudeDirectoryIdentity {
+        device: u64::from(information.dwVolumeSerialNumber),
+        file: (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn windows_claude_config_directory_information(
+    file: &fs::File,
+) -> Result<windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION, String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), &mut information) } == 0 {
+        return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
+    }
+    Ok(information)
+}
+
+#[cfg(not(any(unix, target_os = "windows")))]
+fn claude_config_directory_identity(_file: &fs::File) -> Result<ClaudeDirectoryIdentity, String> {
+    Err("unsupported_platform: Claude config-directory identity is unavailable".to_string())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -216,7 +767,15 @@ fn claude_status_arguments(credential: Option<&ClaudeCredentialSelection>) -> Ve
     arguments
 }
 
-fn configure_claude_child_environment(command: &mut Command, context: &ClaudeInvocationContext) {
+pub(crate) fn configure_claude_child_environment(
+    command: &mut Command,
+    context: &ClaudeInvocationContext,
+) -> Result<(), String> {
+    if context.lease().provider() != AgentProvider::Claude {
+        return Err("the Claude execution context belongs to another provider".to_string());
+    }
+    let cli_session_config_dir = context.revalidated_cli_session_config_dir()?;
+    let git_bash_bootstrap = context.revalidated_git_bash_bootstrap()?;
     for variable in CLAUDE_ALWAYS_REMOVED_ENVIRONMENT {
         command.env_remove(variable);
     }
@@ -225,9 +784,12 @@ fn configure_claude_child_environment(command: &mut Command, context: &ClaudeInv
         .chain(command.get_envs().map(|(key, _)| key.to_os_string()))
         .filter(|key| {
             let normalized = key.to_string_lossy().to_ascii_uppercase();
-            CLAUDE_REMOVED_ENVIRONMENT_PREFIXES
+            CLAUDE_ALWAYS_REMOVED_ENVIRONMENT
                 .iter()
-                .any(|prefix| normalized.starts_with(prefix))
+                .any(|variable| normalized == *variable)
+                || CLAUDE_REMOVED_ENVIRONMENT_PREFIXES
+                    .iter()
+                    .any(|prefix| normalized.starts_with(prefix))
         })
         .collect::<Vec<_>>();
     for variable in prefixed_variables {
@@ -236,14 +798,27 @@ fn configure_claude_child_environment(command: &mut Command, context: &ClaudeInv
     for (variable, value) in CLAUDE_FORCED_ENVIRONMENT {
         command.env(variable, value);
     }
-    if !matches!(
+    if let Some(git_bash_bootstrap) = git_bash_bootstrap {
+        command.env(CLAUDE_GIT_BASH_PATH_ENVIRONMENT, git_bash_bootstrap);
+    }
+    if matches!(
         context.credential().map(|selection| selection.source),
         Some(ClaudeCredentialSource::EnvironmentApiKey)
     ) {
+        if let Some(api_key) = context.frozen_environment_api_key.as_deref() {
+            command.env("ANTHROPIC_API_KEY", api_key);
+        }
+    } else {
         command.env_remove("ANTHROPIC_API_KEY");
     }
-    if let Some(custom_config_dir) = context.cli_session_config_dir() {
+    if let Some(custom_config_dir) = cli_session_config_dir {
         command.env("CLAUDE_CONFIG_DIR", custom_config_dir);
+    }
+    if let Some(home) = context.frozen_ambient_home.as_deref() {
+        command.env("HOME", home);
+        command.env("USERPROFILE", home);
+        command.env_remove("HOMEDRIVE");
+        command.env_remove("HOMEPATH");
     }
     match sanitized_claude_path(env::var_os("PATH").as_deref()) {
         Some(path) => {
@@ -252,20 +827,6 @@ fn configure_claude_child_environment(command: &mut Command, context: &ClaudeInv
         None => {
             command.env_remove("PATH");
         }
-    }
-}
-
-fn revalidate_pinned_claude_config_dir(context: &ClaudeInvocationContext) -> Result<(), String> {
-    let Some(pinned_config_dir) = context.cli_session_config_dir() else {
-        return Ok(());
-    };
-    let is_same_directory = fs::canonicalize(pinned_config_dir)
-        .ok()
-        .filter(|canonical| canonical == pinned_config_dir)
-        .and_then(|canonical| fs::metadata(canonical).ok())
-        .is_some_and(|metadata| metadata.is_dir());
-    if !is_same_directory {
-        return Err("Claude CLI configuration changed. Reconnect Claude and retry.".into());
     }
     Ok(())
 }
@@ -288,6 +849,36 @@ fn sanitized_claude_path(raw_path: Option<&OsStr>) -> Option<OsString> {
     env::join_paths(absolute_directories).ok()
 }
 
+fn claude_invocation_for_program(
+    program: &Path,
+    arguments: &[OsString],
+) -> (PathBuf, Vec<OsString>) {
+    claude_invocation_for_program_on_platform(program, arguments, current_claude_platform())
+}
+
+fn claude_invocation_for_program_on_platform(
+    program: &Path,
+    arguments: &[OsString],
+    _platform: ClaudePlatform,
+) -> (PathBuf, Vec<OsString>) {
+    #[cfg(any(target_os = "windows", test))]
+    if _platform == ClaudePlatform::Windows {
+        if let Some((node_program, script_path)) =
+            crate::runtime::auth::windows_node_entrypoint_from_cmd_path(
+                program,
+                Path::new("node_modules/@anthropic-ai/claude-code/cli.js"),
+            )
+        {
+            let mut node_arguments = Vec::with_capacity(arguments.len() + 1);
+            node_arguments.push(script_path.into_os_string());
+            node_arguments.extend_from_slice(arguments);
+            return (node_program, node_arguments);
+        }
+    }
+
+    (program.to_path_buf(), arguments.to_vec())
+}
+
 fn run_bounded_process(
     program: &Path,
     arguments: &[OsString],
@@ -298,6 +889,7 @@ fn run_bounded_process(
     stdout_limit: usize,
     stderr_limit: usize,
 ) -> Result<ClaudeProcessOutput, String> {
+    let (program, arguments) = claude_invocation_for_program(program, arguments);
     let mut command = Command::new(program);
     command
         .args(arguments)
@@ -311,31 +903,34 @@ fn run_bounded_process(
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    configure_claude_child_environment(&mut command, context);
-    revalidate_pinned_claude_config_dir(context)?;
-    hide_windows_console(&mut command);
+    configure_claude_child_environment(&mut command, context)?;
+    let mut process_tree = BoundedChildProcessTree::prepare(&mut command)?;
 
     let mut child = command
         .spawn()
         .map_err(|_| "Failed to launch Claude Code CLI.".to_string())?;
+    if let Err(error) = process_tree.attach(&child) {
+        process_tree.terminate(&mut child);
+        return Err(error);
+    }
     let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        process_tree.terminate(&mut child);
         return Err("Failed to capture Claude Code CLI output.".into());
     };
     let Some(stderr) = child.stderr.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        process_tree.terminate(&mut child);
         return Err("Failed to capture Claude Code CLI diagnostics.".into());
     };
     let deadline = Instant::now() + timeout;
-    let stdout_reader = read_bounded_pipe(stdout, stdout_limit, "stdout");
-    let stderr_reader = read_bounded_pipe(stderr, stderr_limit, "stderr");
+    let output_exceeded = Arc::new(AtomicBool::new(false));
+    let stdout_reader =
+        read_bounded_pipe(stdout, stdout_limit, "stdout", Arc::clone(&output_exceeded));
+    let stderr_reader =
+        read_bounded_pipe(stderr, stderr_limit, "stderr", Arc::clone(&output_exceeded));
 
     let stdin_writer = if let Some(input) = stdin {
         let Some(mut child_stdin) = child.stdin.take() else {
-            let _ = child.kill();
-            let _ = child.wait();
+            process_tree.terminate(&mut child);
             return Err("Failed to open Claude Code CLI prompt input.".into());
         };
         let input = input.to_vec();
@@ -355,12 +950,15 @@ fn run_bounded_process(
         let status = match child.try_wait() {
             Ok(status) => status,
             Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                process_tree.terminate(&mut child);
                 return Err("Failed while waiting for Claude Code CLI.".into());
             }
         };
         if let Some(status) = status {
+            // The direct child is done, but grandchildren may still own inherited
+            // pipes or account credentials. End the entire isolated tree before
+            // joining any I/O workers.
+            process_tree.terminate(&mut child);
             if let Some(writer) = stdin_writer {
                 receive_process_io_until(writer, deadline, "prompt input", timeout)??;
             }
@@ -375,11 +973,26 @@ fn run_bounded_process(
                 stderr_truncated,
             });
         }
+        if output_exceeded.load(Ordering::Acquire) {
+            let status = process_tree
+                .terminate_with_status(&mut child)
+                .ok_or_else(|| {
+                    "Failed while stopping oversized Claude Code CLI output.".to_string()
+                })?;
+            drop(stdin_writer);
+            let (stdout, stdout_truncated) =
+                receive_process_io_until(stdout_reader, deadline, "stdout", timeout)??;
+            let (_discarded_stderr, stderr_truncated) =
+                receive_process_io_until(stderr_reader, deadline, "stderr", timeout)??;
+            return Ok(ClaudeProcessOutput {
+                status,
+                stdout,
+                stdout_truncated,
+                stderr_truncated,
+            });
+        }
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            // Descendants may retain inherited pipes. Dropping the channel
-            // receivers keeps timeout return bounded after the owned child exits.
+            process_tree.terminate(&mut child);
             drop(stdout_reader);
             drop(stderr_reader);
             drop(stdin_writer);
@@ -401,6 +1014,14 @@ fn validate_claude_connection_with(
         ClaudeProbeError::Status(issue) => status_issue_message(issue),
         ClaudeProbeError::Command(message) => message,
     })
+}
+
+pub(crate) fn validate_claude_connection_with_context(
+    program: &Path,
+    context: &ClaudeAccountExecutionContext,
+    timeout: Duration,
+) -> Result<ClaudeConnectionValidation, String> {
+    validate_claude_connection_with(program, context, timeout)
 }
 
 fn run_claude_status_probe(
@@ -496,6 +1117,7 @@ fn read_bounded_pipe<T>(
     mut pipe: T,
     limit: usize,
     label: &'static str,
+    output_exceeded: Arc<AtomicBool>,
 ) -> Receiver<Result<(Vec<u8>, bool), String>>
 where
     T: Read + Send + 'static,
@@ -510,6 +1132,9 @@ where
             .map_err(|_| format!("Failed to read Claude Code CLI {label}."))
             .map(|_| {
                 let truncated = output.len() > limit;
+                if truncated {
+                    output_exceeded.store(true, Ordering::Release);
+                }
                 output.truncate(limit);
                 (output, truncated)
             });
@@ -542,16 +1167,6 @@ fn receive_process_io_until<T>(
         }
     }
 }
-
-#[cfg(target_os = "windows")]
-fn hide_windows_console(command: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-    command.creation_flags(CREATE_NO_WINDOW);
-}
-
-#[cfg(not(target_os = "windows"))]
-fn hide_windows_console(_command: &mut Command) {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ClaudeProbeOutcome {
@@ -712,13 +1327,14 @@ fn canonical_api_key_helper(helper: &str) -> Result<String, String> {
         )
         .into());
     }
-    let canonical = select_claude_executable(&[path]).ok_or_else(|| {
-        concat!(
-            "Claude apiKeyHelper is unavailable or not executable. ",
-            "Configure a user-owned, cwd-independent wrapper executable."
-        )
-        .to_string()
-    })?;
+    let canonical =
+        select_claude_executable(&[path], current_claude_platform()).ok_or_else(|| {
+            concat!(
+                "Claude apiKeyHelper is unavailable or not executable. ",
+                "Configure a user-owned, cwd-independent wrapper executable."
+            )
+            .to_string()
+        })?;
     let canonical = canonical
         .to_str()
         .ok_or_else(|| "Claude apiKeyHelper path is not valid UTF-8.".to_string())?;
@@ -902,32 +1518,32 @@ fn claude_executable_candidates(
     local_app_data: Option<&Path>,
     platform: ClaudePlatform,
 ) -> Vec<PathBuf> {
-    let executable = match platform {
-        ClaudePlatform::Unix => "claude",
-        ClaudePlatform::Windows => "claude.exe",
+    let executable_names: &[&str] = match platform {
+        ClaudePlatform::Unix => &["claude"],
+        ClaudePlatform::Windows => &["claude.exe", "claude.cmd"],
     };
-    let mut candidates = path_dirs
-        .iter()
-        .map(|directory| directory.join(executable))
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for executable in executable_names {
+        candidates.extend(path_dirs.iter().map(|directory| directory.join(executable)));
 
-    if let Some(home) = home {
-        candidates.push(home.join(".local").join("bin").join(executable));
-    }
-
-    match platform {
-        ClaudePlatform::Unix => {
-            candidates.push(PathBuf::from("/opt/homebrew/bin/claude"));
-            candidates.push(PathBuf::from("/usr/local/bin/claude"));
+        if let Some(home) = home {
+            candidates.push(home.join(".local").join("bin").join(executable));
         }
-        ClaudePlatform::Windows => {
-            if let Some(local_app_data) = local_app_data {
-                candidates.push(
-                    local_app_data
-                        .join("Programs")
-                        .join("Claude")
-                        .join("claude.exe"),
-                );
+
+        match platform {
+            ClaudePlatform::Unix => {
+                candidates.push(PathBuf::from("/opt/homebrew/bin/claude"));
+                candidates.push(PathBuf::from("/usr/local/bin/claude"));
+            }
+            ClaudePlatform::Windows => {
+                if let Some(local_app_data) = local_app_data {
+                    candidates.push(
+                        local_app_data
+                            .join("Programs")
+                            .join("Claude")
+                            .join(executable),
+                    );
+                }
             }
         }
     }
@@ -941,7 +1557,7 @@ fn claude_executable_candidates(
     deduplicated
 }
 
-fn select_claude_executable(candidates: &[PathBuf]) -> Option<PathBuf> {
+fn select_claude_executable(candidates: &[PathBuf], _platform: ClaudePlatform) -> Option<PathBuf> {
     candidates.iter().find_map(|candidate| {
         if !candidate.is_absolute() {
             return None;
@@ -954,12 +1570,22 @@ fn select_claude_executable(candidates: &[PathBuf]) -> Option<PathBuf> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if metadata.permissions().mode() & 0o111 == 0 {
+            if _platform == ClaudePlatform::Unix && metadata.permissions().mode() & 0o111 == 0 {
                 return None;
             }
         }
         Some(canonical)
     })
+}
+
+fn discover_claude_cli_from_sources(
+    path_dirs: &[PathBuf],
+    home: Option<&Path>,
+    local_app_data: Option<&Path>,
+    platform: ClaudePlatform,
+) -> Option<PathBuf> {
+    let candidates = claude_executable_candidates(path_dirs, home, local_app_data, platform);
+    select_claude_executable(&candidates, platform)
 }
 
 fn current_claude_platform() -> ClaudePlatform {
@@ -982,6 +1608,7 @@ fn current_home_dir() -> Option<PathBuf> {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClaudeConfigRoot {
+    home: PathBuf,
     root: PathBuf,
     custom: Option<PathBuf>,
 }
@@ -1009,7 +1636,7 @@ fn current_claude_config_root() -> Option<ClaudeConfigRoot> {
     let custom =
         approved_custom_claude_config_dir(&home, env::var_os("CLAUDE_CONFIG_DIR").as_deref());
     let root = custom.clone().unwrap_or_else(|| home.join(".claude"));
-    Some(ClaudeConfigRoot { root, custom })
+    Some(ClaudeConfigRoot { home, root, custom })
 }
 
 fn discover_claude_cli() -> Option<PathBuf> {
@@ -1018,13 +1645,12 @@ fn discover_claude_cli() -> Option<PathBuf> {
         .unwrap_or_default();
     let home = current_home_dir();
     let local_app_data = env::var_os("LOCALAPPDATA").map(PathBuf::from);
-    let candidates = claude_executable_candidates(
+    discover_claude_cli_from_sources(
         &path_dirs,
         home.as_deref(),
         local_app_data.as_deref(),
         current_claude_platform(),
-    );
-    select_claude_executable(&candidates)
+    )
 }
 
 #[cfg(test)]
@@ -1088,22 +1714,7 @@ fn read_user_claude_settings(config_root: Option<&Path>) -> Result<Option<Vec<u8
 }
 
 fn current_claude_invocation_context() -> Result<ClaudeInvocationContext, String> {
-    let config_root = current_claude_config_root();
-    let environment_key = env::var("ANTHROPIC_API_KEY").ok();
-    let credential = if environment_key
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-    {
-        select_claude_credential(environment_key.as_deref(), None)?
-    } else {
-        let user_settings =
-            read_user_claude_settings(config_root.as_ref().map(|config| config.root.as_path()))?;
-        select_claude_credential(None, user_settings.as_deref())?
-    };
-    Ok(ClaudeInvocationContext::new(
-        credential,
-        config_root.and_then(|config| config.custom),
-    ))
+    capture_ambient_claude_account_execution_context()
 }
 
 #[cfg(test)]
@@ -1111,18 +1722,31 @@ fn current_claude_credential() -> Result<Option<ClaudeCredentialSelection>, Stri
     Ok(current_claude_invocation_context()?.credential)
 }
 
-pub fn validate_claude_connection() -> Result<ClaudeConnectionValidation, String> {
-    let program = discover_claude_cli().ok_or_else(|| {
+pub(crate) fn validate_claude_connection_for_context(
+    context: &ClaudeAccountExecutionContext,
+) -> Result<ClaudeConnectionValidation, String> {
+    validate_claude_connection_for_context_with_discovery(
+        context,
+        discover_claude_cli,
+        CLAUDE_STATUS_TIMEOUT,
+    )
+}
+
+fn validate_claude_connection_for_context_with_discovery<F>(
+    context: &ClaudeAccountExecutionContext,
+    discover: F,
+    timeout: Duration,
+) -> Result<ClaudeConnectionValidation, String>
+where
+    F: FnOnce() -> Option<PathBuf>,
+{
+    let program = discover().ok_or_else(|| {
         "Claude Code CLI is not installed. Install it before connecting Claude.".to_string()
     })?;
-    let context = current_claude_invocation_context()?;
-    validate_claude_connection_with(&program, &context, CLAUDE_STATUS_TIMEOUT)
+    validate_claude_connection_with_context(&program, context, timeout)
 }
 
 pub fn read_claude_diagnostics() -> AgentProviderDiagnostics {
-    let Some(program) = discover_claude_cli() else {
-        return diagnostics_from_probe(ClaudeProbeOutcome::MissingCli);
-    };
     let context = match current_claude_invocation_context() {
         Ok(context) => context,
         Err(_) => {
@@ -1131,12 +1755,31 @@ pub fn read_claude_diagnostics() -> AgentProviderDiagnostics {
             )))
         }
     };
-    let outcome = match run_claude_status_probe(&program, &context, CLAUDE_STATUS_TIMEOUT) {
+    read_claude_diagnostics_for_context(&context).unwrap_or_else(|_| {
+        diagnostics_from_probe(ClaudeProbeOutcome::Status(Err(ClaudeStatusIssue::Unknown)))
+    })
+}
+
+pub(crate) fn read_claude_diagnostics_for_context(
+    context: &ClaudeAccountExecutionContext,
+) -> Result<AgentProviderDiagnostics, String> {
+    let Some(program) = discover_claude_cli() else {
+        return Ok(diagnostics_from_probe(ClaudeProbeOutcome::MissingCli));
+    };
+    read_claude_diagnostics_with_context(&program, context, CLAUDE_STATUS_TIMEOUT)
+}
+
+pub(crate) fn read_claude_diagnostics_with_context(
+    program: &Path,
+    context: &ClaudeAccountExecutionContext,
+    timeout: Duration,
+) -> Result<AgentProviderDiagnostics, String> {
+    let outcome = match run_claude_status_probe(program, context, timeout) {
         Ok(validation) => Ok(validation),
         Err(ClaudeProbeError::Status(issue)) => Err(issue),
-        Err(ClaudeProbeError::Command(_)) => Err(ClaudeStatusIssue::Unknown),
+        Err(ClaudeProbeError::Command(error)) => return Err(error),
     };
-    diagnostics_from_probe(ClaudeProbeOutcome::Status(outcome))
+    Ok(diagnostics_from_probe(ClaudeProbeOutcome::Status(outcome)))
 }
 
 fn claude_suggestion_schema() -> Result<String, String> {
@@ -1671,14 +2314,6 @@ pub struct ClaudeSuggestionAttempt {
 pub fn request_claude_suggestion_attempt(
     request: RequestAgentSuggestionsRequest,
 ) -> ClaudeSuggestionAttempt {
-    let Some(program) = discover_claude_cli() else {
-        return ClaudeSuggestionAttempt {
-            validation: Err(
-                "Claude Code CLI is not installed. Install it before connecting Claude.".into(),
-            ),
-            suggestions: None,
-        };
-    };
     let context = match current_claude_invocation_context() {
         Ok(context) => context,
         Err(error) => {
@@ -1688,7 +2323,38 @@ pub fn request_claude_suggestion_attempt(
             }
         }
     };
-    let validation = validate_claude_connection_with(&program, &context, CLAUDE_STATUS_TIMEOUT);
+    request_claude_suggestion_attempt_for_context(&context, request)
+}
+
+pub(crate) fn request_claude_suggestion_attempt_for_context(
+    context: &ClaudeAccountExecutionContext,
+    request: RequestAgentSuggestionsRequest,
+) -> ClaudeSuggestionAttempt {
+    let Some(program) = discover_claude_cli() else {
+        return ClaudeSuggestionAttempt {
+            validation: Err(
+                "Claude Code CLI is not installed. Install it before connecting Claude.".into(),
+            ),
+            suggestions: None,
+        };
+    };
+    request_claude_suggestion_attempt_with_context(
+        &program,
+        context,
+        request,
+        CLAUDE_STATUS_TIMEOUT,
+        CLAUDE_REQUEST_TIMEOUT,
+    )
+}
+
+pub(crate) fn request_claude_suggestion_attempt_with_context(
+    program: &Path,
+    context: &ClaudeAccountExecutionContext,
+    request: RequestAgentSuggestionsRequest,
+    preflight_timeout: Duration,
+    execution_timeout: Duration,
+) -> ClaudeSuggestionAttempt {
+    let validation = validate_claude_connection_with_context(program, context, preflight_timeout);
     if validation.is_err() {
         return ClaudeSuggestionAttempt {
             validation,
@@ -1696,10 +2362,10 @@ pub fn request_claude_suggestion_attempt(
         };
     }
     let suggestions = Some(request_claude_suggestions_with(
-        &program,
-        &context,
+        program,
+        context,
         request,
-        CLAUDE_REQUEST_TIMEOUT,
+        execution_timeout,
     ));
     ClaudeSuggestionAttempt {
         validation,
@@ -1929,11 +2595,28 @@ fn discover_claude_model_catalog_with(
 }
 
 pub fn read_claude_capabilities() -> AgentProviderCapabilities {
-    let models = discover_claude_cli().and_then(|program| {
-        let context = current_claude_invocation_context().ok()?;
-        discover_claude_model_catalog_with(&program, &context, CLAUDE_MODEL_CATALOG_TIMEOUT).ok()
-    });
-    claude_capabilities(models)
+    current_claude_invocation_context()
+        .and_then(|context| read_claude_capabilities_for_context(&context))
+        .unwrap_or_else(|_| claude_capabilities(None))
+}
+
+pub(crate) fn read_claude_capabilities_for_context(
+    context: &ClaudeAccountExecutionContext,
+) -> Result<AgentProviderCapabilities, String> {
+    let program = discover_claude_cli().ok_or_else(|| {
+        "Claude Code CLI is not installed. Install it before reading Claude capabilities."
+            .to_string()
+    })?;
+    read_claude_capabilities_with_context(&program, context, CLAUDE_MODEL_CATALOG_TIMEOUT)
+}
+
+pub(crate) fn read_claude_capabilities_with_context(
+    program: &Path,
+    context: &ClaudeAccountExecutionContext,
+    timeout: Duration,
+) -> Result<AgentProviderCapabilities, String> {
+    discover_claude_model_catalog_with(program, context, timeout)
+        .map(|models| claude_capabilities(Some(models)))
 }
 
 fn claude_capabilities(models: Option<Vec<AgentModelCapability>>) -> AgentProviderCapabilities {
@@ -4278,7 +4961,7 @@ fn main() {
         let helper_context =
             ClaudeInvocationContext::new(Some(helper), Some(approved_config.clone()));
         assert_eq!(helper_context.cli_session_config_dir(), None);
-        configure_claude_child_environment(&mut helper_command, &helper_context);
+        configure_claude_child_environment(&mut helper_command, &helper_context).unwrap();
         let helper_environment = helper_command
             .get_envs()
             .map(|(key, value)| (key.to_string_lossy().into_owned(), value.is_some()))
@@ -4296,10 +4979,12 @@ fn main() {
         for key in removed {
             environment_command.env(key, format!("secret-{key}"));
         }
-        let environment_context =
+        let mut environment_context =
             ClaudeInvocationContext::new(Some(environment), Some(approved_config));
+        environment_context.frozen_environment_api_key =
+            Some("approved-first-party-key".to_string());
         assert_eq!(environment_context.cli_session_config_dir(), None);
-        configure_claude_child_environment(&mut environment_command, &environment_context);
+        configure_claude_child_environment(&mut environment_command, &environment_context).unwrap();
         let environment_entries = environment_command
             .get_envs()
             .map(|(key, value)| {
@@ -4387,7 +5072,7 @@ fn main() {
         for (key, _) in forced_controls {
             command.env(key, "0");
         }
-        configure_claude_child_environment(&mut command, &invocation_context(None));
+        configure_claude_child_environment(&mut command, &invocation_context(None)).unwrap();
         let environment = command
             .get_envs()
             .map(|(key, value)| {
@@ -4411,14 +5096,15 @@ fn main() {
 
         let mut fast_policy_command = Command::new("claude");
         fast_policy_command.env("CLAUDE_CODE_DISABLE_FAST_MODE", "1");
-        configure_claude_child_environment(&mut fast_policy_command, &invocation_context(None));
+        configure_claude_child_environment(&mut fast_policy_command, &invocation_context(None))
+            .unwrap();
         assert_eq!(
             fast_policy_command
                 .get_envs()
                 .find(|(key, _)| *key == OsStr::new("CLAUDE_CODE_DISABLE_FAST_MODE"))
                 .and_then(|(_, value)| value),
-            Some(OsStr::new("1")),
-            "Fast-disable policy must remain visible to the child"
+            None,
+            "Fast-disable policy is enforced before launch and must not bypass the child allowlist"
         );
     }
 
@@ -4480,7 +5166,7 @@ fn main() {
         }
 
         let context = invocation_context(None);
-        configure_claude_child_environment(&mut command, &context);
+        configure_claude_child_environment(&mut command, &context).unwrap();
 
         let environment = command
             .get_envs()
@@ -4732,7 +5418,7 @@ fn main() {
     }
 
     #[test]
-    fn discovers_path_user_local_homebrew_and_windows_user_local_candidates() {
+    fn claude_account_context_discovers_path_user_local_homebrew_and_windows_candidates() {
         let path_dirs = vec![PathBuf::from("/custom/bin"), PathBuf::from("/second/bin")];
         let home = Path::new("/users/dev");
 
@@ -4760,7 +5446,262 @@ fn main() {
                 PathBuf::from(r"C:\tools").join("claude.exe"),
                 PathBuf::from(r"C:\Users\dev").join(".local/bin/claude.exe"),
                 PathBuf::from(r"C:\Users\dev\AppData\Local").join("Programs/Claude/claude.exe"),
+                PathBuf::from(r"C:\tools").join("claude.cmd"),
+                PathBuf::from(r"C:\Users\dev").join(".local/bin/claude.cmd"),
+                PathBuf::from(r"C:\Users\dev\AppData\Local").join("Programs/Claude/claude.cmd"),
             ]
+        );
+    }
+
+    #[test]
+    fn claude_account_context_windows_discovery_keeps_exe_priority_then_reaches_cmd_node_adapter() {
+        let root = TestRoot::new("windows-discovery-node-adapter");
+        let cmd_directory = root.path().join("cmd-first-on-path");
+        let exe_directory = root.path().join("exe-second-on-path");
+        fs::create_dir_all(&cmd_directory).unwrap();
+        fs::create_dir_all(&exe_directory).unwrap();
+
+        let command_path = cmd_directory.join("claude.cmd");
+        let script_path = cmd_directory
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        fs::create_dir_all(script_path.parent().unwrap()).unwrap();
+        fs::write(&command_path, "@echo off\r\nexit /b 99\r\n").unwrap();
+        fs::write(&script_path, "").unwrap();
+        fs::write(cmd_directory.join("node.exe"), "").unwrap();
+
+        let native_executable = exe_directory.join("claude.exe");
+        fs::write(&native_executable, "").unwrap();
+        let path_dirs = vec![cmd_directory.clone(), exe_directory];
+
+        let selected_native =
+            discover_claude_cli_from_sources(&path_dirs, None, None, ClaudePlatform::Windows)
+                .expect("a later native executable must outrank an earlier cmd shim");
+        assert_eq!(
+            selected_native,
+            fs::canonicalize(&native_executable).unwrap()
+        );
+
+        fs::remove_file(&native_executable).unwrap();
+        let selected_cmd =
+            discover_claude_cli_from_sources(&path_dirs, None, None, ClaudePlatform::Windows)
+                .expect(
+                    "the actual cmd shim must be discovered after native candidates are exhausted",
+                );
+        assert!(selected_cmd.is_absolute());
+        assert_eq!(selected_cmd, fs::canonicalize(&command_path).unwrap());
+
+        let arguments = vec![OsString::from("auth"), OsString::from("status")];
+        let (node_program, node_arguments) = claude_invocation_for_program_on_platform(
+            &selected_cmd,
+            &arguments,
+            ClaudePlatform::Windows,
+        );
+        assert_eq!(
+            node_program,
+            fs::canonicalize(cmd_directory.join("node.exe")).unwrap(),
+        );
+        assert_eq!(
+            PathBuf::from(&node_arguments[0]),
+            fs::canonicalize(&script_path).unwrap(),
+        );
+        assert_eq!(&node_arguments[1..], arguments.as_slice());
+
+        assert_eq!(
+            select_claude_executable(
+                &[PathBuf::from("relative/claude.cmd")],
+                ClaudePlatform::Windows,
+            ),
+            None,
+        );
+        let directory_candidate = root.path().join("not-a-file.cmd");
+        fs::create_dir(&directory_candidate).unwrap();
+        assert_eq!(
+            select_claude_executable(&[directory_candidate], ClaudePlatform::Windows),
+            None,
+        );
+    }
+
+    #[test]
+    fn claude_account_context_freezes_windows_git_bash_bootstrap_after_scrubbing() {
+        let root = TestRoot::new("windows-git-bash-bootstrap");
+        let bootstrap = root.path().join("git-bash.exe");
+        fs::write(&bootstrap, "frozen-bootstrap").unwrap();
+        let canonical = fs::canonicalize(&bootstrap).unwrap();
+        let frozen =
+            capture_claude_git_bash_bootstrap(Some(bootstrap.as_os_str()), ClaudePlatform::Windows)
+                .unwrap()
+                .expect("an absolute regular Windows bootstrap executable must be captured");
+        let process_value_before = env::var_os("CLAUDE_CODE_GIT_BASH_PATH");
+        let mut context = invocation_context(None);
+        context.frozen_git_bash_bootstrap = Some(frozen);
+        let mut command = Command::new("claude");
+        command.env("CLAUDE_CODE_GIT_BASH_PATH", "competing-bootstrap-secret");
+        command.env("CLAUDE_CODE_FUTURE_CREDENTIAL", "competing-secret");
+
+        configure_claude_child_environment(&mut command, &context).unwrap();
+
+        let child_environment = command
+            .get_envs()
+            .map(|(key, value)| (key.to_os_string(), value.map(OsStr::to_os_string)))
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            child_environment
+                .get(OsStr::new("CLAUDE_CODE_GIT_BASH_PATH"))
+                .and_then(Option::as_deref),
+            Some(canonical.as_os_str()),
+        );
+        assert_eq!(
+            child_environment.get(OsStr::new("CLAUDE_CODE_FUTURE_CREDENTIAL")),
+            Some(&None),
+        );
+        assert_eq!(
+            env::var_os("CLAUDE_CODE_GIT_BASH_PATH"),
+            process_value_before,
+            "child configuration mutated the process-global bootstrap value",
+        );
+        let debug = format!("{context:?}");
+        assert!(!debug.contains(&canonical.to_string_lossy().to_string()));
+        assert!(!debug.contains("competing-bootstrap-secret"));
+    }
+
+    #[test]
+    fn claude_account_context_rejects_invalid_windows_git_bash_bootstrap_without_path_echo() {
+        let root = TestRoot::new("invalid-windows-git-bash-bootstrap");
+        let missing = root.path().join("missing-git-bash.exe");
+        let directory = root.path().join("git-bash-directory.exe");
+        fs::create_dir(&directory).unwrap();
+
+        for raw in [
+            OsStr::new("relative-git-bash-secret.exe"),
+            missing.as_os_str(),
+            directory.as_os_str(),
+        ] {
+            let error = capture_claude_git_bash_bootstrap(Some(raw), ClaudePlatform::Windows)
+                .err()
+                .expect("invalid configured bootstrap paths must fail closed");
+            assert!(error.to_ascii_lowercase().contains("git bash"), "{error}");
+            assert!(
+                !error.contains(&raw.to_string_lossy().to_string()),
+                "{error}"
+            );
+            assert!(!error.contains("secret"), "{error}");
+        }
+
+        assert!(
+            capture_claude_git_bash_bootstrap(None, ClaudePlatform::Windows)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            capture_claude_git_bash_bootstrap(Some(OsStr::new("")), ClaudePlatform::Windows)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_rejects_replaced_windows_git_bash_bootstrap_before_spawn() {
+        let root = TestRoot::new("replaced-windows-git-bash-bootstrap");
+        let bootstrap = root.path().join("git-bash.exe");
+        let displaced = root.path().join("displaced-git-bash.exe");
+        let marker = root.path().join("unexpected-child");
+        fs::write(&bootstrap, "captured-bootstrap").unwrap();
+        let frozen =
+            capture_claude_git_bash_bootstrap(Some(bootstrap.as_os_str()), ClaudePlatform::Windows)
+                .unwrap()
+                .unwrap();
+        let mut context = invocation_context(None);
+        context.frozen_git_bash_bootstrap = Some(frozen);
+
+        fs::rename(&bootstrap, &displaced).unwrap();
+        fs::write(&bootstrap, "replacement-bootstrap-secret").unwrap();
+        let error = run_bounded_process(
+            Path::new("/bin/sh"),
+            &[
+                OsString::from("-c"),
+                OsString::from(format!("touch '{}'", marker.to_string_lossy())),
+            ],
+            None,
+            None,
+            &context,
+            Duration::from_secs(1),
+            128,
+            128,
+        )
+        .unwrap_err();
+
+        assert!(error.to_ascii_lowercase().contains("git bash"), "{error}");
+        assert!(!error.contains(&bootstrap.to_string_lossy().to_string()));
+        assert!(!error.contains("replacement-bootstrap-secret"));
+        assert!(
+            !marker.exists(),
+            "bootstrap replacement must fail before child spawn"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn claude_account_context_windows_top_level_connection_discovers_cmd_and_uses_node_adapter() {
+        let root = TestRoot::new("windows-top-level-discovery");
+        let config = root.path().join("config");
+        fs::create_dir(&config).unwrap();
+        let command_path = root.path().join("claude.cmd");
+        let git_bash_path = root.path().join("git-bash.exe");
+        let script_path = root
+            .path()
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        fs::create_dir_all(script_path.parent().unwrap()).unwrap();
+        fs::write(&command_path, "@echo off\r\nexit /b 99\r\n").unwrap();
+        fs::write(&git_bash_path, "frozen-bootstrap").unwrap();
+        fs::write(
+            &script_path,
+            r#"const fs = require('fs');
+const path = require('path');
+fs.writeFileSync(path.resolve(__dirname, '../../../node-adapter-used'), '1');
+fs.writeFileSync(path.resolve(__dirname, '../../../git-bash-bootstrap'), process.env.CLAUDE_CODE_GIT_BASH_PATH || 'missing');
+process.stdout.write(JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty' }));
+"#,
+        )
+        .unwrap();
+        let mut context = ClaudeInvocationContext::new(None, Some(config));
+        context.frozen_git_bash_bootstrap = capture_claude_git_bash_bootstrap(
+            Some(git_bash_path.as_os_str()),
+            ClaudePlatform::Windows,
+        )
+        .unwrap();
+
+        let validation = validate_claude_connection_for_context_with_discovery(
+            &context,
+            || {
+                discover_claude_cli_from_sources(
+                    &[root.path().to_path_buf()],
+                    None,
+                    None,
+                    ClaudePlatform::Windows,
+                )
+            },
+            Duration::from_secs(5),
+        )
+        .expect("the top-level context wrapper must execute the packaged Node entrypoint");
+
+        assert_eq!(
+            validation.credential_source,
+            ClaudeCredentialSource::CliSession,
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join("node-adapter-used")).unwrap(),
+            "1",
+        );
+        assert_eq!(
+            PathBuf::from(fs::read_to_string(root.path().join("git-bash-bootstrap")).unwrap()),
+            fs::canonicalize(&git_bash_path).unwrap(),
         );
     }
 
@@ -4813,6 +5754,30 @@ fn main() {
         );
     }
 
+    #[test]
+    fn claude_account_context_windows_node_entrypoint_uses_packaged_cli_script() {
+        let root = TestRoot::new("windows-node-entrypoint");
+        let script_path = root
+            .path()
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join("claude-code")
+            .join("cli.js");
+        fs::create_dir_all(script_path.parent().unwrap()).unwrap();
+        fs::write(root.path().join("claude.cmd"), "@echo off").unwrap();
+        fs::write(root.path().join("node.exe"), "").unwrap();
+        fs::write(&script_path, "").unwrap();
+
+        let (program, script) = crate::runtime::auth::windows_node_entrypoint_from_cmd_path(
+            &root.path().join("claude.cmd"),
+            Path::new("node_modules/@anthropic-ai/claude-code/cli.js"),
+        )
+        .unwrap();
+
+        assert_eq!(PathBuf::from(program), root.path().join("node.exe"));
+        assert_eq!(script, script_path);
+    }
+
     #[cfg(unix)]
     #[test]
     fn discovery_rejects_relative_or_non_executable_candidates_and_pins_absolute_binary() {
@@ -4841,12 +5806,14 @@ fn main() {
         fs::write(&safe_binary, "#!/bin/sh\nprintf safe").unwrap();
         fs::set_permissions(&safe_binary, executable_permissions).unwrap();
 
-        assert_eq!(select_claude_executable(&[PathBuf::from("claude")]), None);
-        let selected = select_claude_executable(&[
-            PathBuf::from("claude"),
-            non_executable,
-            safe_binary.clone(),
-        ])
+        assert_eq!(
+            select_claude_executable(&[PathBuf::from("claude")], ClaudePlatform::Unix),
+            None,
+        );
+        let selected = select_claude_executable(
+            &[PathBuf::from("claude"), non_executable, safe_binary.clone()],
+            ClaudePlatform::Unix,
+        )
         .expect("absolute executable candidate should be selected");
         assert!(selected.is_absolute());
         assert_eq!(selected, fs::canonicalize(&safe_binary).unwrap());
@@ -5479,7 +6446,7 @@ fn main() {
         let mut command = Command::new("claude");
         command.env(home_key, home);
         command.env("CLAUDE_CONFIG_DIR", config);
-        configure_claude_child_environment(&mut command, &context);
+        configure_claude_child_environment(&mut command, &context).unwrap();
         let environment = command
             .get_envs()
             .map(|(key, value)| {
@@ -5539,6 +6506,7 @@ fn main() {
         let home = root.path().join("user home");
         let valid_config = home.join("approved config");
         let relative_config = home.join("relative config");
+        fs::create_dir_all(home.join(".claude")).unwrap();
         fs::create_dir_all(&valid_config).unwrap();
         fs::create_dir_all(&relative_config).unwrap();
         let home = fs::canonicalize(home).unwrap();
@@ -5695,7 +6663,7 @@ fn main() {
             let mut command = Command::new("claude");
             command.env("HOME", &home);
             command.env("CLAUDE_CONFIG_DIR", &config);
-            configure_claude_child_environment(&mut command, &context);
+            configure_claude_child_environment(&mut command, &context).unwrap();
             let config_entry = command
                 .get_envs()
                 .find(|(key, _)| *key == OsStr::new("CLAUDE_CONFIG_DIR"))
@@ -5724,7 +6692,7 @@ fn main() {
 
         let root = TestRoot::new("config-symlink-policy");
         let home = root.path().join("home");
-        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(home.join(".claude")).unwrap();
         let home = fs::canonicalize(home).unwrap();
 
         let outside_config = root.path().join("outside-config");
@@ -5819,7 +6787,10 @@ fn main() {
         .expect_err("inherited stdin pipe should remain deadline-bounded");
 
         assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(error.to_lowercase().contains("timed out"));
+        assert!(
+            error.contains("Failed to write the Claude Code CLI prompt"),
+            "{error}"
+        );
     }
 
     #[cfg(unix)]
@@ -5949,8 +6920,10 @@ fn main() {
         assert_eq!(request_config, config_a);
         assert_ne!(status_config, config_b);
         assert_ne!(request_config, config_b);
-        assert_eq!(status_home, home_b);
-        assert_eq!(request_home, home_b);
+        assert_eq!(status_home, home_a);
+        assert_eq!(request_home, home_a);
+        assert_ne!(status_home, home_b);
+        assert_ne!(request_home, home_b);
     }
 
     #[cfg(unix)]
@@ -5972,7 +6945,7 @@ fn main() {
         let root = TestRoot::new("cli-session-success");
         let home = root.path().join("home");
         let project = root.path().join("project");
-        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(home.join(".claude")).unwrap();
         fs::create_dir_all(&project).unwrap();
         let program = root.path().join("claude");
         write_test_executable(
@@ -6133,7 +7106,7 @@ fn main() {
         let root = TestRoot::new("missing-login");
         let home = root.path().join("home");
         let project = root.path().join("project");
-        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(home.join(".claude")).unwrap();
         fs::create_dir_all(&project).unwrap();
         let program = root.path().join("claude");
         write_test_executable(
@@ -6260,5 +7233,541 @@ fn main() {
         for path in [success, cli_session, failed] {
             let _ = fs::remove_file(path);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_rejects_same_path_root_replacement_before_spawn() {
+        let root = TestRoot::new("account-context-root-replacement");
+        let config = root.path().join("claude-account");
+        let displaced = root.path().join("displaced-account");
+        let marker = root.path().join("spawned");
+        fs::create_dir(&config).unwrap();
+        let config = fs::canonicalize(config).unwrap();
+        let context = ClaudeInvocationContext::new(None, Some(config.clone()));
+
+        fs::rename(&config, &displaced).unwrap();
+        fs::create_dir(&config).unwrap();
+        let arguments = vec![
+            OsString::from("-c"),
+            OsString::from(format!("touch '{}'", marker.to_string_lossy())),
+        ];
+        let error = run_bounded_process(
+            Path::new("/bin/sh"),
+            &arguments,
+            None,
+            None,
+            &context,
+            Duration::from_secs(1),
+            128,
+            128,
+        )
+        .unwrap_err();
+
+        assert!(error.to_ascii_lowercase().contains("changed"), "{error}");
+        assert!(!marker.exists(), "replacement must fail before child spawn");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_terminates_descendants_after_parent_success() {
+        let root = TestRoot::new("account-context-parent-success");
+        let marker = root.path().join("escaped-descendant");
+        let arguments = vec![
+            OsString::from("-c"),
+            OsString::from(format!(
+                "(sleep 0.2; touch '{}') >/dev/null 2>&1 & exit 0",
+                marker.to_string_lossy()
+            )),
+        ];
+
+        let output = run_bounded_process(
+            Path::new("/bin/sh"),
+            &arguments,
+            None,
+            None,
+            &invocation_context(None),
+            Duration::from_secs(1),
+            128,
+            128,
+        )
+        .unwrap();
+        assert!(output.status.success());
+        thread::sleep(Duration::from_millis(350));
+        assert!(
+            !marker.exists(),
+            "a descendant escaped after parent success"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_terminates_descendants_on_timeout() {
+        let root = TestRoot::new("account-context-timeout");
+        let marker = root.path().join("escaped-descendant");
+        let arguments = vec![
+            OsString::from("-c"),
+            OsString::from(format!(
+                "(sleep 0.2; touch '{}') >/dev/null 2>&1 & sleep 5",
+                marker.to_string_lossy()
+            )),
+        ];
+
+        let error = run_bounded_process(
+            Path::new("/bin/sh"),
+            &arguments,
+            None,
+            None,
+            &invocation_context(None),
+            Duration::from_millis(50),
+            128,
+            128,
+        )
+        .unwrap_err();
+        thread::sleep(Duration::from_millis(350));
+        assert!(error.contains("timed out"), "{error}");
+        assert!(
+            !marker.exists(),
+            "a timed-out descendant escaped containment"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_terminates_descendants_after_output_overflow() {
+        let root = TestRoot::new("account-context-output-overflow");
+        let marker = root.path().join("escaped-descendant");
+        let arguments = vec![
+            OsString::from("-c"),
+            OsString::from(format!(
+                "(sleep 0.2; touch '{}') >/dev/null 2>&1 & printf '0123456789abcdef0123456789abcdef'; exit 0",
+                marker.to_string_lossy()
+            )),
+        ];
+
+        let output = run_bounded_process(
+            Path::new("/bin/sh"),
+            &arguments,
+            None,
+            None,
+            &invocation_context(None),
+            Duration::from_secs(1),
+            8,
+            128,
+        )
+        .unwrap();
+        assert!(output.stdout_truncated);
+        thread::sleep(Duration::from_millis(350));
+        assert!(
+            !marker.exists(),
+            "an overflow descendant escaped containment"
+        );
+    }
+
+    #[test]
+    fn claude_account_context_scrubs_competing_cloud_credentials_without_global_mutation() {
+        let variables = [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "GOOGLE_API_KEY",
+            "AZURE_CLIENT_ID",
+            "AZURE_CLIENT_SECRET",
+            "AZURE_TENANT_ID",
+        ];
+        let before = variables
+            .iter()
+            .map(|name| (*name, env::var_os(name)))
+            .collect::<Vec<_>>();
+        let mut command = Command::new("claude");
+        for variable in variables {
+            command.env(variable, "competing-secret");
+        }
+
+        configure_claude_child_environment(&mut command, &invocation_context(None)).unwrap();
+
+        for variable in variables {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(name, value)| name == OsStr::new(variable) && value.is_none()),
+                "{variable} was not scrubbed"
+            );
+        }
+        for (variable, value) in before {
+            assert_eq!(
+                env::var_os(variable),
+                value,
+                "mutated process-global {variable}"
+            );
+        }
+    }
+
+    #[test]
+    fn claude_account_context_scrubs_all_competing_prefixes_case_insensitively() {
+        let competing = [
+            "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
+            "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+            "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
+            "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+            "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+            "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
+            "CLAUDE_CODE_USE_GATEWAY",
+            "CLAUDE_CODE_IDENTITY_TOKEN",
+            "CLAUDE_CODE_PROFILE",
+            "CLAUDE_CODE_CONFIG_FILE",
+            "CLAUDE_CODE_BASE_URL",
+            "CLAUDE_CODE_GIT_BASH_PATH",
+            "claude_code_future_auth_override",
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_OAUTH_FILE_DESCRIPTOR",
+            "ANTHROPIC_SESSION_ACCESS_TOKEN",
+            "ANTHROPIC_PROFILE",
+            "ANTHROPIC_CONFIG_FILE",
+            "ANTHROPIC_BASE_URL_EXPERIMENTAL",
+            "anthropic_future_credential",
+            "AWS_SDK_LOAD_CONFIG",
+            "aws_future_identity",
+            "GOOGLE_CLOUD_QUOTA_PROJECT",
+            "google_future_identity",
+            "GCLOUD_ACCOUNT",
+            "gcloud_future_profile",
+            "CLOUDSDK_CORE_ACCOUNT",
+            "cloudsdk_future_config",
+            "AZURE_AUTHORITY_HOST",
+            "azure_future_identity",
+            "OTEL_SERVICE_NAME",
+            "otel_future_exporter",
+            "CLAUDE_CODE_DISABLE_FAST_MODE",
+        ];
+        let retained = [
+            ("HTTPS_PROXY", "http://127.0.0.1:8080"),
+            ("NO_PROXY", "127.0.0.1,localhost"),
+            ("SSL_CERT_FILE", "/trusted/certificates.pem"),
+        ];
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let expected_path = sanitized_claude_path(env::var_os("PATH").as_deref());
+        let mut command = Command::new("claude");
+        command.env(home_key, "/deliberate-home");
+        for variable in competing {
+            command.env(variable, "competing-secret");
+        }
+        for (variable, value) in retained {
+            command.env(variable, value);
+        }
+        for (variable, _) in CLAUDE_FORCED_ENVIRONMENT {
+            command.env(variable, "0");
+        }
+
+        configure_claude_child_environment(&mut command, &invocation_context(None)).unwrap();
+
+        let child_environment = command
+            .get_envs()
+            .map(|(name, value)| {
+                (
+                    name.to_string_lossy().into_owned(),
+                    value.map(OsStr::to_os_string),
+                )
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        for variable in competing {
+            assert_eq!(
+                child_environment.get(variable),
+                Some(&None),
+                "kept competing selector {variable}"
+            );
+        }
+        for (variable, value) in retained {
+            assert_eq!(
+                child_environment.get(variable).and_then(Option::as_deref),
+                Some(OsStr::new(value)),
+                "removed legitimate child input {variable}"
+            );
+        }
+        assert_eq!(
+            child_environment.get(home_key).and_then(Option::as_deref),
+            Some(OsStr::new("/deliberate-home"))
+        );
+        assert_eq!(
+            child_environment.get("PATH").and_then(Option::as_deref),
+            expected_path.as_deref(),
+            "PATH must retain only the existing deliberate absolute-directory policy"
+        );
+        for (variable, expected) in CLAUDE_FORCED_ENVIRONMENT {
+            assert_eq!(
+                child_environment.get(*variable).and_then(Option::as_deref),
+                Some(OsStr::new(*expected)),
+                "did not restore safe forced control {variable}"
+            );
+        }
+    }
+
+    #[test]
+    fn claude_account_context_debug_omits_paths_and_transient_secret_material() {
+        let sensitive_path = PathBuf::from("/private/claude-accounts/user@example.com-secret");
+        let context = ClaudeInvocationContext::new(
+            Some(ClaudeCredentialSelection {
+                source: ClaudeCredentialSource::ApiKeyHelper,
+                sanitized_settings: Some(
+                    r#"{"apiKeyHelper":"printf arbitrary-helper-secret"}"#.into(),
+                ),
+            }),
+            Some(sensitive_path.clone()),
+        );
+
+        let debug = format!("{context:?}");
+        for forbidden in [
+            sensitive_path.to_string_lossy().as_ref(),
+            "user@example.com",
+            "arbitrary-helper-secret",
+            "apiKeyHelper",
+        ] {
+            assert!(
+                !debug.contains(forbidden),
+                "debug leaked {forbidden}: {debug}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_freezes_ambient_api_key_without_global_mutation() {
+        const CHILD: &str = "GTUM_CLAUDE_ACCOUNT_FROZEN_KEY_CHILD";
+        const TEST_NAME: &str = concat!(
+            "runtime::claude::tests::",
+            "claude_account_context_freezes_ambient_api_key_without_global_mutation"
+        );
+        if std::env::var_os(CHILD).is_none() {
+            assert_isolated_test_succeeded(
+                run_isolated_test(TEST_NAME, [(OsString::from(CHILD), OsString::from("1"))]),
+                "frozen ambient API key",
+            );
+            return;
+        }
+
+        let root = TestRoot::new("account-context-frozen-api-key");
+        let home = root.path().join("home");
+        fs::create_dir(&home).unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::set_var("USERPROFILE", &home);
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::set_var("ANTHROPIC_API_KEY", "captured-api-key-secret");
+        let context = current_claude_invocation_context().unwrap();
+
+        std::env::set_var("ANTHROPIC_API_KEY", "later-api-key-secret");
+        let mut command = Command::new("claude");
+        configure_claude_child_environment(&mut command, &context).unwrap();
+        let child_key = command
+            .get_envs()
+            .find(|(name, _)| *name == OsStr::new("ANTHROPIC_API_KEY"))
+            .and_then(|(_, value)| value)
+            .map(OsStr::to_owned);
+
+        assert_eq!(
+            child_key.as_deref(),
+            Some(OsStr::new("captured-api-key-secret"))
+        );
+        assert_eq!(
+            std::env::var("ANTHROPIC_API_KEY").unwrap(),
+            "later-api-key-secret"
+        );
+        for secret in ["captured-api-key-secret", "later-api-key-secret"] {
+            assert!(!format!("{context:?}").contains(secret));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_freezes_default_root_without_synthesizing_config_dir() {
+        const CHILD: &str = "GTUM_CLAUDE_ACCOUNT_DEFAULT_ROOT_CHILD";
+        const TEST_NAME: &str = concat!(
+            "runtime::claude::tests::",
+            "claude_account_context_freezes_default_root_without_synthesizing_config_dir"
+        );
+        if std::env::var_os(CHILD).is_none() {
+            assert_isolated_test_succeeded(
+                run_isolated_test(TEST_NAME, [(OsString::from(CHILD), OsString::from("1"))]),
+                "frozen ambient default root",
+            );
+            return;
+        }
+
+        let root = TestRoot::new("account-context-default-root");
+        let home_a = root.path().join("home-a");
+        let home_b = root.path().join("home-b");
+        let marker = root.path().join("child-environment");
+        fs::create_dir_all(home_a.join(".claude")).unwrap();
+        fs::create_dir_all(&home_b).unwrap();
+        let home_a = fs::canonicalize(home_a).unwrap();
+        let home_b = fs::canonicalize(home_b).unwrap();
+        std::env::set_var("HOME", &home_a);
+        std::env::set_var("USERPROFILE", &home_a);
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        let context = current_claude_invocation_context().unwrap();
+
+        std::env::set_var("HOME", &home_b);
+        std::env::set_var("USERPROFILE", &home_b);
+        let output = run_bounded_process(
+            Path::new("/bin/sh"),
+            &[
+                OsString::from("-c"),
+                OsString::from(format!(
+                    "printf '%s|%s' \"$HOME\" \"${{CLAUDE_CONFIG_DIR-unset}}\" > '{}'",
+                    marker.to_string_lossy()
+                )),
+            ],
+            None,
+            None,
+            &context,
+            Duration::from_secs(1),
+            128,
+            128,
+        )
+        .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(
+            fs::read_to_string(marker).unwrap(),
+            format!("{}|unset", home_a.to_string_lossy())
+        );
+
+        let default_root = home_a.join(".claude");
+        let displaced = home_a.join(".claude-displaced");
+        fs::rename(&default_root, &displaced).unwrap();
+        fs::create_dir(&default_root).unwrap();
+        let second_marker = root.path().join("replacement-child-ran");
+        let error = run_bounded_process(
+            Path::new("/bin/sh"),
+            &[
+                OsString::from("-c"),
+                OsString::from(format!("touch '{}'", second_marker.to_string_lossy())),
+            ],
+            None,
+            None,
+            &context,
+            Duration::from_secs(1),
+            128,
+            128,
+        )
+        .unwrap_err();
+        assert!(error.contains("configuration changed"), "{error}");
+        assert!(
+            !second_marker.exists(),
+            "default-root replacement spawned a child"
+        );
+    }
+
+    #[test]
+    fn claude_account_context_rejects_missing_ambient_home_during_capture() {
+        const CHILD: &str = "GTUM_CLAUDE_ACCOUNT_MISSING_HOME_CHILD";
+        const TEST_NAME: &str = concat!(
+            "runtime::claude::tests::",
+            "claude_account_context_rejects_missing_ambient_home_during_capture"
+        );
+        if std::env::var_os(CHILD).is_none() {
+            assert_isolated_test_succeeded(
+                run_isolated_test(TEST_NAME, [(OsString::from(CHILD), OsString::from("1"))]),
+                "missing ambient HOME",
+            );
+            return;
+        }
+
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        std::env::remove_var(home_key);
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::set_var("ANTHROPIC_API_KEY", "missing-home-secret");
+
+        let error = current_claude_invocation_context().unwrap_err();
+
+        assert!(error.to_ascii_lowercase().contains("home"), "{error}");
+        assert!(!error.contains("missing-home-secret"), "{error}");
+    }
+
+    #[test]
+    fn claude_account_context_rejects_missing_cli_session_root_during_capture() {
+        const CHILD: &str = "GTUM_CLAUDE_ACCOUNT_MISSING_CLI_ROOT_CHILD";
+        const TEST_NAME: &str = concat!(
+            "runtime::claude::tests::",
+            "claude_account_context_rejects_missing_cli_session_root_during_capture"
+        );
+        if std::env::var_os(CHILD).is_none() {
+            assert_isolated_test_succeeded(
+                run_isolated_test(TEST_NAME, [(OsString::from(CHILD), OsString::from("1"))]),
+                "missing ambient CLI-session root",
+            );
+            return;
+        }
+
+        let root = TestRoot::new("account-context-missing-cli-root");
+        let home = root.path().join("home");
+        fs::create_dir(&home).unwrap();
+        let home = fs::canonicalize(home).unwrap();
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        std::env::set_var(home_key, &home);
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+
+        let error = current_claude_invocation_context().unwrap_err();
+
+        assert!(error.to_ascii_lowercase().contains("config"), "{error}");
+        assert!(!home.join(".claude").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_account_context_freezes_absent_bare_root_against_symlink_before_spawn() {
+        use std::os::unix::fs::symlink;
+
+        const CHILD: &str = "GTUM_CLAUDE_ACCOUNT_ABSENT_ROOT_SYMLINK_CHILD";
+        const TEST_NAME: &str = concat!(
+            "runtime::claude::tests::",
+            "claude_account_context_freezes_absent_bare_root_against_symlink_before_spawn"
+        );
+        if std::env::var_os(CHILD).is_none() {
+            assert_isolated_test_succeeded(
+                run_isolated_test(TEST_NAME, [(OsString::from(CHILD), OsString::from("1"))]),
+                "absent ambient bare root",
+            );
+            return;
+        }
+
+        let root = TestRoot::new("account-context-absent-bare-root");
+        let home = root.path().join("home");
+        let replacement = root.path().join("replacement");
+        let marker = root.path().join("unexpected-child");
+        fs::create_dir(&home).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        let home = fs::canonicalize(home).unwrap();
+        std::env::set_var("HOME", &home);
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::set_var("ANTHROPIC_API_KEY", "captured-bare-key");
+        let context = current_claude_invocation_context().unwrap();
+        let default_root = home.join(".claude");
+        assert!(!default_root.exists());
+
+        symlink(&replacement, &default_root).unwrap();
+        let error = run_bounded_process(
+            Path::new("/bin/sh"),
+            &[
+                OsString::from("-c"),
+                OsString::from(format!("touch '{}'", marker.to_string_lossy())),
+            ],
+            None,
+            None,
+            &context,
+            Duration::from_secs(1),
+            128,
+            128,
+        )
+        .unwrap_err();
+
+        assert!(error.to_ascii_lowercase().contains("changed"), "{error}");
+        assert!(
+            !marker.exists(),
+            "a missing-root replacement spawned a child"
+        );
     }
 }

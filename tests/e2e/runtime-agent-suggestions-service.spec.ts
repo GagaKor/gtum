@@ -2,13 +2,29 @@ import { expect, test } from '@playwright/test'
 
 import {
   createAgentSuggestionRuntimeService,
-  type RuntimeAgentProviderCapabilities,
-  type RuntimeAgentSuggestionResponse,
+  type RuntimeAgentAccountProviderCapabilities,
+  type RuntimeAgentAccountProviderDiagnostics,
+  type RuntimeAgentAccountSuggestionResponse,
 } from '../../src/shared/api/runtimeAgentSuggestions'
 
-const runtimeSuggestion: RuntimeAgentSuggestionResponse = {
+const CODEX_ACCOUNT_ID = 'codex-default'
+const CLAUDE_ACCOUNT_ID = 'claude-default'
+const CODEX_LEASE = {
+  provider: 'codex' as const,
+  accountId: CODEX_ACCOUNT_ID,
+  incarnation: '11',
+  credentialRevision: '17',
+}
+const CLAUDE_LEASE = {
+  provider: 'claude' as const,
+  accountId: CLAUDE_ACCOUNT_ID,
+  incarnation: '13',
+  credentialRevision: '19',
+}
+
+const runtimeSuggestion: RuntimeAgentAccountSuggestionResponse = {
+  ...CODEX_LEASE,
   id: 'codex-1',
-  provider: 'codex',
   summary: 'Run the focused test suite',
   command: 'pnpm test:funnel --reporter=verbose',
   preferredTarget: 'current_tab',
@@ -16,8 +32,8 @@ const runtimeSuggestion: RuntimeAgentSuggestionResponse = {
   error: null,
 }
 
-const validClaudeAccountCapabilities: RuntimeAgentProviderCapabilities = {
-  provider: 'claude',
+const validClaudeAccountCapabilities: RuntimeAgentAccountProviderCapabilities = {
+  ...CLAUDE_LEASE,
   supportsModelSelection: true,
   currentModel: {
     providerId: 'claude',
@@ -70,7 +86,7 @@ const validClaudeAccountCapabilities: RuntimeAgentProviderCapabilities = {
   ],
 }
 
-const createCapabilityService = (capabilities: RuntimeAgentProviderCapabilities) =>
+const createCapabilityService = (capabilities: RuntimeAgentAccountProviderCapabilities) =>
   createAgentSuggestionRuntimeService({
     hasRuntime: () => true,
     invokeRuntime: async () => capabilities,
@@ -79,18 +95,19 @@ const createCapabilityService = (capabilities: RuntimeAgentProviderCapabilities)
 const claudeCapabilitiesWithModelExecutionOptions = (
   executionOptions: unknown,
   overrides: Record<string, unknown> = {},
-): RuntimeAgentProviderCapabilities => ({
-  ...validClaudeAccountCapabilities,
-  availableModels: [
-    {
-      providerId: 'claude',
-      modelId: 'metadata-model',
-      label: 'Metadata model',
-      executionOptions,
-      ...overrides,
-    },
-  ],
-} as RuntimeAgentProviderCapabilities)
+): RuntimeAgentAccountProviderCapabilities =>
+  ({
+    ...validClaudeAccountCapabilities,
+    availableModels: [
+      {
+        providerId: 'claude',
+        modelId: 'metadata-model',
+        label: 'Metadata model',
+        executionOptions,
+        ...overrides,
+      },
+    ],
+  }) as RuntimeAgentAccountProviderCapabilities
 
 test.describe('model execution options', () => {
   test('normalizes valid nested fields and preserves returned reasoning order', async () => {
@@ -133,7 +150,7 @@ test.describe('model execution options', () => {
           },
         },
       ],
-    } as RuntimeAgentProviderCapabilities).readProviderCapabilities('claude')
+    } as RuntimeAgentAccountProviderCapabilities).readAccountCapabilities(CLAUDE_LEASE)
 
     expect(capabilities.availableModels).toEqual([
       {
@@ -177,7 +194,7 @@ test.describe('model execution options', () => {
       await expect(
         createCapabilityService(
           claudeCapabilitiesWithModelExecutionOptions(invalid),
-        ).readProviderCapabilities('claude'),
+        ).readAccountCapabilities(CLAUDE_LEASE),
       ).rejects.toThrow(/executionOptions/)
     }
   })
@@ -193,30 +210,30 @@ test.describe('model execution options', () => {
       })),
     ]) {
       await expect(
-        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
-          reasoningLevels,
-          supportsFastMode: false,
-        })).readProviderCapabilities('claude'),
+        createCapabilityService(
+          claudeCapabilitiesWithModelExecutionOptions({
+            reasoningLevels,
+            supportsFastMode: false,
+          }),
+        ).readAccountCapabilities(CLAUDE_LEASE),
       ).rejects.toThrow(/executionOptions\.reasoningLevels/)
     }
   })
 
   test('rejects blank, oversized, duplicate, unknown, and nonexact reasoning levels', async () => {
-    const invalidLevels = [
-      [''],
-      [' '.repeat(17)],
-      ['low', 'low'],
-      ['ultra'],
-      [' high '],
-      ['HIGH'],
-    ]
+    const invalidLevels = [[''], [' '.repeat(17)], ['low', 'low'], ['ultra'], [' high '], ['HIGH']]
 
     for (const levels of invalidLevels) {
       await expect(
-        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
-          reasoningLevels: levels.map((level) => ({ level, label: 'Valid label' })),
-          supportsFastMode: false,
-        })).readProviderCapabilities('claude'),
+        createCapabilityService(
+          claudeCapabilitiesWithModelExecutionOptions({
+            reasoningLevels: levels.map((level) => ({
+              level,
+              label: 'Valid label',
+            })),
+            supportsFastMode: false,
+          }),
+        ).readAccountCapabilities(CLAUDE_LEASE),
       ).rejects.toThrow(/executionOptions\.reasoningLevels/)
     }
   })
@@ -232,10 +249,12 @@ test.describe('model execution options', () => {
 
     for (const capability of invalidCapabilities) {
       await expect(
-        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
-          reasoningLevels: [capability],
-          supportsFastMode: false,
-        })).readProviderCapabilities('claude'),
+        createCapabilityService(
+          claudeCapabilitiesWithModelExecutionOptions({
+            reasoningLevels: [capability],
+            supportsFastMode: false,
+          }),
+        ).readAccountCapabilities(CLAUDE_LEASE),
       ).rejects.toThrow(/executionOptions\.reasoningLevels\[0\]/)
     }
   })
@@ -243,40 +262,45 @@ test.describe('model execution options', () => {
   test('rejects missing and nonboolean Fast support', async () => {
     for (const supportsFastMode of [undefined, null, 0, 1, 'false']) {
       await expect(
-        createCapabilityService(claudeCapabilitiesWithModelExecutionOptions({
-          reasoningLevels: [],
-          ...(supportsFastMode === undefined ? {} : { supportsFastMode }),
-        })).readProviderCapabilities('claude'),
+        createCapabilityService(
+          claudeCapabilitiesWithModelExecutionOptions({
+            reasoningLevels: [],
+            ...(supportsFastMode === undefined ? {} : { supportsFastMode }),
+          }),
+        ).readAccountCapabilities(CLAUDE_LEASE),
       ).rejects.toThrow(/executionOptions\.supportsFastMode/)
     }
   })
 
   test('rejects provider and model ownership drift before publishing metadata', async () => {
-    await expect(createCapabilityService({
-      ...claudeCapabilitiesWithModelExecutionOptions({
-        reasoningLevels: [],
-        supportsFastMode: false,
-      }),
-      provider: 'codex',
-    }).readProviderCapabilities('claude')).rejects.toThrow(
-      /Provider capability owner mismatch.*claude.*codex/,
-    )
+    await expect(
+      createCapabilityService({
+        ...claudeCapabilitiesWithModelExecutionOptions({
+          reasoningLevels: [],
+          supportsFastMode: false,
+        }),
+        provider: 'codex',
+      }).readAccountCapabilities(CLAUDE_LEASE),
+    ).rejects.toThrow(/Provider capability owner mismatch.*claude.*codex/)
 
-    await expect(createCapabilityService(
-      claudeCapabilitiesWithModelExecutionOptions({
-        reasoningLevels: [],
-        supportsFastMode: false,
-      }, { providerId: 'codex' }),
-    ).readProviderCapabilities('claude')).rejects.toThrow(
-      /Provider capability owner mismatch.*availableModels\[0\].*claude.*codex/,
-    )
+    await expect(
+      createCapabilityService(
+        claudeCapabilitiesWithModelExecutionOptions(
+          {
+            reasoningLevels: [],
+            supportsFastMode: false,
+          },
+          { providerId: 'codex' },
+        ),
+      ).readAccountCapabilities(CLAUDE_LEASE),
+    ).rejects.toThrow(/Provider capability owner mismatch.*availableModels\[0\].*claude.*codex/)
   })
 })
 
 test('accepts Claude account catalog values and normalizes only model identifiers and labels', async () => {
   const capabilities = await createCapabilityService(
     validClaudeAccountCapabilities,
-  ).readProviderCapabilities('claude')
+  ).readAccountCapabilities(CLAUDE_LEASE)
 
   expect(capabilities).toEqual({
     ...validClaudeAccountCapabilities,
@@ -304,9 +328,35 @@ test('accepts a requested-provider current model outside the available account c
       modelId: 'configured-current',
       label: 'Configured current model',
     },
-  }).readProviderCapabilities('claude')
+  }).readAccountCapabilities(CLAUDE_LEASE)
 
   expect(capabilities.currentModel?.modelId).toBe('configured-current')
+})
+
+test('rejects non-object current models with a field-specific schema error', async () => {
+  for (const currentModel of [undefined, false, 7, 'claude', []]) {
+    const service = createCapabilityService({
+      ...validClaudeAccountCapabilities,
+      currentModel,
+    } as unknown as RuntimeAgentAccountProviderCapabilities)
+
+    await expect(service.readAccountCapabilities(CLAUDE_LEASE)).rejects.toThrow(
+      /Provider capability currentModel must be an object/,
+    )
+  }
+})
+
+test('rejects null and primitive available models with an indexed schema error', async () => {
+  for (const model of [null, false, 7, 'claude', []]) {
+    const service = createCapabilityService({
+      ...validClaudeAccountCapabilities,
+      availableModels: [model],
+    } as unknown as RuntimeAgentAccountProviderCapabilities)
+
+    await expect(service.readAccountCapabilities(CLAUDE_LEASE)).rejects.toThrow(
+      /Provider capability availableModels\[0\] must be an object/,
+    )
+  }
 })
 
 test('rejects a top-level provider owner mismatch in Claude capabilities', async () => {
@@ -315,9 +365,20 @@ test('rejects a top-level provider owner mismatch in Claude capabilities', async
     provider: 'codex',
   })
 
-  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
-    /Provider capability owner mismatch.*claude.*codex/,
-  )
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/Provider capability owner mismatch.*claude.*codex/)
+})
+
+test('rejects a top-level account owner mismatch in Claude capabilities', async () => {
+  const service = createCapabilityService({
+    ...validClaudeAccountCapabilities,
+    accountId: 'claude-profile-1',
+  } as RuntimeAgentAccountProviderCapabilities)
+
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/capability owner mismatch.*claude-default.*claude-profile-1/i)
 })
 
 test('rejects a current model owned by another provider in Claude capabilities', async () => {
@@ -330,9 +391,9 @@ test('rejects a current model owned by another provider in Claude capabilities',
     },
   })
 
-  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
-    /Provider capability owner mismatch.*currentModel.*claude.*codex/,
-  )
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/Provider capability owner mismatch.*currentModel.*claude.*codex/)
 })
 
 test('rejects an available model owned by another provider in Claude capabilities', async () => {
@@ -348,9 +409,9 @@ test('rejects an available model owned by another provider in Claude capabilitie
     ],
   })
 
-  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
-    /Provider capability owner mismatch.*availableModels\[5\].*claude.*codex/,
-  )
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/Provider capability owner mismatch.*availableModels\[5\].*claude.*codex/)
 })
 
 test('rejects a blank model identifier in Claude capabilities', async () => {
@@ -365,9 +426,9 @@ test('rejects a blank model identifier in Claude capabilities', async () => {
     ],
   })
 
-  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
-    /availableModels\[0\]\.modelId.*non-empty/,
-  )
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/availableModels\[0\]\.modelId.*non-empty/)
 })
 
 test('rejects a blank model label in Claude capabilities', async () => {
@@ -382,9 +443,9 @@ test('rejects a blank model label in Claude capabilities', async () => {
     ],
   })
 
-  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
-    /availableModels\[0\]\.label.*non-empty/,
-  )
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/availableModels\[0\]\.label.*non-empty/)
 })
 
 test('rejects duplicate Claude model identifiers after trimming', async () => {
@@ -404,9 +465,401 @@ test('rejects duplicate Claude model identifiers after trimming', async () => {
     ],
   })
 
-  await expect(service.readProviderCapabilities('claude')).rejects.toThrow(
-    /duplicate available model ID.*sonnet/i,
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).rejects.toThrow(/duplicate available model ID.*sonnet/i)
+})
+
+test('uses the exact account capability command path and full lease', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const accountCapabilities: RuntimeAgentAccountProviderCapabilities = {
+    ...CODEX_LEASE,
+    supportsModelSelection: false,
+    currentModel: null,
+    availableModels: [],
+    reasoningLevels: [],
+    defaultReasoningLevel: null,
+    supportsFastMode: false,
+    attachments: [],
+  }
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+      return accountCapabilities
+    },
+  })
+
+  await expect(service.readAccountCapabilities(CODEX_LEASE)).resolves.toEqual(
+    accountCapabilities,
   )
+  expect(invoked).toEqual([
+    {
+      command: 'read_agent_account_capabilities',
+      args: { request: CODEX_LEASE },
+    },
+  ])
+})
+
+test('projects account capability responses to declared fields and exact lease only', async () => {
+  const runtimeCapabilities = {
+    ...CODEX_LEASE,
+    supportsModelSelection: true,
+    currentModel: {
+      providerId: 'codex',
+      modelId: ' current ',
+      label: ' Current ',
+      accountId: CODEX_ACCOUNT_ID,
+      credentialRevision: '9',
+      unknownModelField: 'must not cross',
+    },
+    availableModels: [
+      {
+        providerId: 'codex',
+        modelId: ' available ',
+        label: ' Available ',
+        incarnation: '8',
+        unknownModelField: 'must not cross',
+      },
+    ],
+    reasoningLevels: [
+      {
+        level: 'high',
+        label: 'High',
+        description: 'Greater depth',
+        credentialRevision: '7',
+      },
+    ],
+    defaultReasoningLevel: 'high',
+    supportsFastMode: true,
+    attachments: [
+      {
+        kind: 'file',
+        label: 'File',
+        enabled: true,
+        invocationFlag: '--file',
+        accountId: CODEX_ACCOUNT_ID,
+      },
+    ],
+    metadataRevision: '5',
+    unknownTopLevelField: 'must not cross',
+  }
+  const expectedCapabilities: RuntimeAgentAccountProviderCapabilities = {
+    ...CODEX_LEASE,
+    supportsModelSelection: true,
+    currentModel: {
+      providerId: 'codex',
+      modelId: 'current',
+      label: 'Current',
+    },
+    availableModels: [
+      {
+        providerId: 'codex',
+        modelId: 'available',
+        label: 'Available',
+      },
+    ],
+    reasoningLevels: [
+      {
+        level: 'high',
+        label: 'High',
+        description: 'Greater depth',
+      },
+    ],
+    defaultReasoningLevel: 'high',
+    supportsFastMode: true,
+    attachments: [
+      {
+        kind: 'file',
+        label: 'File',
+        enabled: true,
+        invocationFlag: '--file',
+      },
+    ],
+  }
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => runtimeCapabilities,
+  })
+
+  await expect(service.readAccountCapabilities(CODEX_LEASE)).resolves.toEqual(
+    expectedCapabilities,
+  )
+})
+
+test('rejects non-string and non-null default reasoning levels', async () => {
+  for (const defaultReasoningLevel of [undefined, false, 1, {}, []]) {
+    const service = createAgentSuggestionRuntimeService({
+      hasRuntime: () => true,
+      invokeRuntime: async () => ({
+        ...CODEX_LEASE,
+        supportsModelSelection: false,
+        currentModel: null,
+        availableModels: [],
+        reasoningLevels: [],
+        defaultReasoningLevel,
+        supportsFastMode: false,
+        attachments: [],
+      }),
+    })
+
+    await expect(service.readAccountCapabilities(CODEX_LEASE)).rejects.toThrow(
+      'Provider capability defaultReasoningLevel must be a string or null.',
+    )
+  }
+})
+
+test('uses the exact account diagnostic command path and full lease', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const accountDiagnostics = {
+    ...CODEX_LEASE,
+    setupState: 'ready',
+    connectionPath: 'Codex CLI',
+    summary: 'Ready',
+    guidance: '',
+    baseUrl: null,
+    model: null,
+    requirements: [],
+  } satisfies RuntimeAgentAccountProviderDiagnostics
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+      return accountDiagnostics
+    },
+  })
+
+  await expect(service.readAccountDiagnostics(CODEX_LEASE)).resolves.toEqual(
+    accountDiagnostics,
+  )
+  expect(invoked).toEqual([
+    {
+      command: 'read_agent_account_diagnostics',
+      args: { request: CODEX_LEASE },
+    },
+  ])
+})
+
+test('uses the exact account suggestion path and keeps card ownership', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const accountSuggestion = {
+    ...runtimeSuggestion,
+    id: 'account-codex-1',
+  } satisfies RuntimeAgentAccountSuggestionResponse
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+      return [accountSuggestion]
+    },
+  })
+  const sharedInput = {
+    provider: 'codex' as const,
+    agentSessionId: 'agent-session-1',
+    project: { name: 'gtum', path: '/workspace/gtum' },
+    activeTab: null,
+    userTask: 'run tests',
+  }
+
+  const accountCards = await service.requestAccountSuggestions({
+    ...sharedInput,
+    ...CODEX_LEASE,
+  })
+
+  expect(accountCards[0]).toMatchObject({
+    provider: 'codex',
+    accountId: CODEX_ACCOUNT_ID,
+  })
+  expect(invoked).toEqual([
+    {
+      command: 'request_agent_account_suggestions',
+      args: {
+        request: {
+          provider: 'codex',
+          accountId: CODEX_ACCOUNT_ID,
+          incarnation: CODEX_LEASE.incarnation,
+          credentialRevision: CODEX_LEASE.credentialRevision,
+          agentSessionId: 'agent-session-1',
+          model: null,
+          reasoningLevel: null,
+          fastMode: false,
+          attachments: [],
+          projectName: 'gtum',
+          projectPath: '/workspace/gtum',
+          activeTabId: null,
+          activeTabTitle: null,
+          activeFilePath: null,
+          activeFileLine: null,
+          activeFileSnippet: null,
+          lastNLogLines: [],
+          userTask: 'run tests',
+        },
+      },
+    },
+  ])
+})
+
+test('requires and echoes the exact account lease for capability and paid suggestion IPC', async () => {
+  const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
+  const lease = {
+    provider: 'codex' as const,
+    accountId: CODEX_ACCOUNT_ID,
+    incarnation: '11',
+    credentialRevision: '17',
+  }
+  const capabilities = {
+    ...lease,
+    supportsModelSelection: false,
+    currentModel: null,
+    availableModels: [],
+    reasoningLevels: [],
+    defaultReasoningLevel: null,
+    supportsFastMode: false,
+    attachments: [],
+  }
+  const suggestion = {
+    ...runtimeSuggestion,
+    ...lease,
+  }
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async (command, args) => {
+      invoked.push({ command, args })
+      return command === 'read_agent_account_capabilities' ? capabilities : [suggestion]
+    },
+  })
+
+  await expect(service.readAccountCapabilities(lease)).resolves.toMatchObject(lease)
+  await expect(service.requestAccountSuggestions({
+    ...lease,
+    agentSessionId: 'agent-session-lease',
+    project: { name: 'gtum', path: '/workspace/gtum' },
+    activeTab: null,
+    userTask: 'use only the captured credential',
+  })).resolves.toHaveLength(1)
+
+  expect(invoked[0]).toEqual({
+    command: 'read_agent_account_capabilities',
+    args: { request: lease },
+  })
+  expect(invoked[1]?.args?.request).toMatchObject(lease)
+})
+
+test('rejects missing, malformed, and mismatched account leases before accepting runtime data', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return {
+        provider: 'codex',
+        accountId: CODEX_ACCOUNT_ID,
+        incarnation: '12',
+        credentialRevision: '17',
+        supportsModelSelection: false,
+        currentModel: null,
+        availableModels: [],
+        reasoningLevels: [],
+        defaultReasoningLevel: null,
+        supportsFastMode: false,
+        attachments: [],
+      }
+    },
+  })
+
+  await expect(service.readAccountCapabilities({
+    provider: 'codex',
+    accountId: CODEX_ACCOUNT_ID,
+  } as never)).rejects.toThrow(/incarnation/i)
+  await expect(service.readAccountCapabilities({
+    provider: 'codex',
+    accountId: CODEX_ACCOUNT_ID,
+    incarnation: '01',
+    credentialRevision: '17',
+  })).rejects.toThrow(/incarnation/i)
+  expect(invocationCount).toBe(0)
+
+  await expect(service.readAccountCapabilities({
+    provider: 'codex',
+    accountId: CODEX_ACCOUNT_ID,
+    incarnation: '11',
+    credentialRevision: '17',
+  })).rejects.toThrow(/revision mismatch|lease mismatch/i)
+  expect(invocationCount).toBe(1)
+})
+
+test('legacy provider-only suggestion APIs fail closed before invoking runtime children', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return []
+    },
+  })
+
+  await expect(service.readProviderDiagnostics('codex')).rejects.toThrow(/account/i)
+  await expect(service.readProviderCapabilities('codex')).rejects.toThrow(/account/i)
+  await expect(service.requestSuggestions({
+    provider: 'codex',
+    agentSessionId: 'legacy-session',
+    project: { name: 'gtum', path: '/workspace/gtum' },
+    activeTab: null,
+    userTask: 'must not infer ambient',
+  })).rejects.toThrow(/account/i)
+  expect(invocationCount).toBe(0)
+})
+
+test('never defaults a missing account owner on v2 suggestion APIs', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return []
+    },
+  })
+
+  await expect(
+    service.readAccountCapabilities({ provider: 'codex' } as never),
+  ).rejects.toThrow(/account/i)
+  await expect(
+    service.readAccountDiagnostics({ provider: 'codex' } as never),
+  ).rejects.toThrow(/account/i)
+  await expect(
+    service.requestAccountSuggestions({
+      provider: 'codex',
+      agentSessionId: 'agent-session-1',
+      project: { name: 'gtum', path: '/workspace/gtum' },
+      activeTab: null,
+      userTask: 'run tests',
+    } as never),
+  ).rejects.toThrow(/account/i)
+  expect(invocationCount).toBe(0)
+})
+
+test('rejects a valid and wrong-provider mixed account batch before publishing cards', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      runtimeSuggestion,
+      {
+        ...runtimeSuggestion,
+        ...CLAUDE_LEASE,
+        id: 'claude-wrong-owner',
+      },
+    ],
+  })
+
+  await expect(
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
+      agentSessionId: 'agent-session-1',
+      project: { name: 'gtum', path: '/workspace/gtum' },
+      activeTab: null,
+      userTask: 'run tests',
+    }),
+  ).rejects.toThrow(/provider mismatch.*codex.*claude/i)
 })
 
 test('requests Codex suggestions with the documented agent envelope', async () => {
@@ -420,8 +873,8 @@ test('requests Codex suggestions with the documented agent envelope', async () =
     },
   })
 
-  const suggestions = await service.requestSuggestions({
-    provider: 'codex',
+  const suggestions = await service.requestAccountSuggestions({
+    ...CODEX_LEASE,
     agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
@@ -443,10 +896,13 @@ test('requests Codex suggestions with the documented agent envelope', async () =
 
   expect(invoked).toEqual([
     {
-      command: 'request_agent_suggestions',
+      command: 'request_agent_account_suggestions',
       args: {
         request: {
           provider: 'codex',
+          accountId: CODEX_ACCOUNT_ID,
+          incarnation: CODEX_LEASE.incarnation,
+          credentialRevision: CODEX_LEASE.credentialRevision,
           agentSessionId: 'agent-session-1',
           model: null,
           reasoningLevel: null,
@@ -470,6 +926,7 @@ test('requests Codex suggestions with the documented agent envelope', async () =
     {
       id: 'codex-1',
       provider: 'codex',
+      accountId: CODEX_ACCOUNT_ID,
       title: 'Run the focused test suite',
       commands: [
         {
@@ -484,16 +941,16 @@ test('requests Codex suggestions with the documented agent envelope', async () =
   ])
 })
 
-test('reads provider capabilities and forwards the selected model in suggestion requests', async () => {
+test('reads account capabilities and forwards the selected model with its exact lease', async () => {
   const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
   const service = createAgentSuggestionRuntimeService({
     hasRuntime: () => true,
     invokeRuntime: async (command, args) => {
       invoked.push({ command, args })
 
-      if (command === 'read_agent_provider_capabilities') {
+      if (command === 'read_agent_account_capabilities') {
         return {
-          provider: 'codex',
+          ...CODEX_LEASE,
           supportsModelSelection: true,
           currentModel: {
             providerId: 'codex',
@@ -551,9 +1008,9 @@ test('reads provider capabilities and forwards the selected model in suggestion 
     },
   })
 
-  const capabilities = await service.readProviderCapabilities('codex')
-  await service.requestSuggestions({
-    provider: 'codex',
+  const capabilities = await service.readAccountCapabilities(CODEX_LEASE)
+  await service.requestAccountSuggestions({
+    ...CODEX_LEASE,
     agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
@@ -587,14 +1044,17 @@ test('reads provider capabilities and forwards the selected model in suggestion 
   expect(capabilities.supportsFastMode).toBe(true)
   expect(invoked).toEqual([
     {
-      command: 'read_agent_provider_capabilities',
-      args: { provider: 'codex' },
+      command: 'read_agent_account_capabilities',
+      args: { request: CODEX_LEASE },
     },
     {
-      command: 'request_agent_suggestions',
+      command: 'request_agent_account_suggestions',
       args: {
         request: {
           provider: 'codex',
+          accountId: CODEX_ACCOUNT_ID,
+          incarnation: CODEX_LEASE.incarnation,
+          credentialRevision: CODEX_LEASE.credentialRevision,
           agentSessionId: 'agent-session-1',
           model: 'gpt-5-codex',
           reasoningLevel: 'medium',
@@ -632,8 +1092,8 @@ test('attaches selected editor context instead of terminal logs', async () => {
     },
   })
 
-  const suggestions = await service.requestSuggestions({
-    provider: 'codex',
+  const suggestions = await service.requestAccountSuggestions({
+    ...CODEX_LEASE,
     agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
@@ -653,7 +1113,7 @@ test('attaches selected editor context instead of terminal logs', async () => {
   })
 
   expect(invoked[0]).toMatchObject({
-    command: 'request_agent_suggestions',
+    command: 'request_agent_account_suggestions',
     args: {
       request: {
         activeFilePath: 'src/shared/api/runtimeAgentSuggestions.ts',
@@ -671,8 +1131,8 @@ test('routes current-tab suggestions to a new tab when the active tab is not run
     invokeRuntime: async () => [runtimeSuggestion],
   })
 
-  const suggestions = await service.requestSuggestions({
-    provider: 'codex',
+  const suggestions = await service.requestAccountSuggestions({
+    ...CODEX_LEASE,
     agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
@@ -702,8 +1162,8 @@ test('rejects an exact active-tab project owner mismatch before provider invocat
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'codex',
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
       agentSessionId: 'agent-session-1',
       project: {
         name: 'project-a',
@@ -734,8 +1194,8 @@ test('rejects a blank agent session owner before provider invocation', async () 
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'codex',
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
       agentSessionId: '   ',
       project: {
         name: 'gtum',
@@ -763,8 +1223,8 @@ test('rejects a returned provider mismatch before rendering a suggestion', async
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'claude',
+    service.requestAccountSuggestions({
+      ...CLAUDE_LEASE,
       agentSessionId: 'claude-session-1',
       project: {
         name: 'gtum',
@@ -774,6 +1234,59 @@ test('rejects a returned provider mismatch before rendering a suggestion', async
       userTask: 'review the project',
     }),
   ).rejects.toThrow(/provider mismatch.*claude.*codex/i)
+})
+
+test('rejects one mixed account suggestion before publishing any cards', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => [
+      runtimeSuggestion,
+      {
+        ...runtimeSuggestion,
+        id: 'codex-wrong-account',
+        accountId: 'codex-profile-1',
+      },
+    ],
+  })
+
+  await expect(
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
+      agentSessionId: 'agent-session-1',
+      project: { name: 'gtum', path: '/workspace/gtum' },
+      activeTab: null,
+      userTask: 'review the project',
+    }),
+  ).rejects.toThrow(/suggestion account mismatch.*codex-default.*codex-profile-1/i)
+})
+
+test('rejects malformed account owners before provider invocation', async () => {
+  let invocationCount = 0
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => {
+      invocationCount += 1
+      return [runtimeSuggestion]
+    },
+  })
+
+  await expect(
+    service.readAccountCapabilities({
+      ...CODEX_LEASE,
+      accountId: 'claude-default',
+    }),
+  ).rejects.toThrow(/account.*provider|provider.*account/i)
+  await expect(
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
+      accountId: 'codex-profile-01',
+      agentSessionId: 'agent-session-1',
+      project: { name: 'gtum', path: '/workspace/gtum' },
+      activeTab: null,
+      userTask: 'review the project',
+    }),
+  ).rejects.toThrow(/account/i)
+  expect(invocationCount).toBe(0)
 })
 
 test('rejects missing owners for runtime-backed terminal and editor context before invocation', async () => {
@@ -788,8 +1301,8 @@ test('rejects missing owners for runtime-backed terminal and editor context befo
   const project = { name: 'gtum', path: '/workspace/gtum' }
 
   await expect(
-    service.requestSuggestions({
-      provider: 'codex',
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
       agentSessionId: 'agent-session-1',
       project,
       activeTab: {
@@ -803,8 +1316,8 @@ test('rejects missing owners for runtime-backed terminal and editor context befo
   ).rejects.toThrow(/active tab project owner is missing/i)
 
   await expect(
-    service.requestSuggestions({
-      provider: 'codex',
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
       agentSessionId: 'agent-session-1',
       project,
       activeTab: {
@@ -828,8 +1341,8 @@ test('surfaces Codex CLI invocation failures', async () => {
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'codex',
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
       agentSessionId: 'agent-session-1',
       project: {
         name: 'gtum',
@@ -855,8 +1368,8 @@ test('normalizes Codex error-only responses without approval commands', async ()
     ],
   })
 
-  const suggestions = await service.requestSuggestions({
-    provider: 'codex',
+  const suggestions = await service.requestAccountSuggestions({
+    ...CODEX_LEASE,
     agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
@@ -870,6 +1383,7 @@ test('normalizes Codex error-only responses without approval commands', async ()
     {
       id: 'codex-1',
       provider: 'codex',
+      accountId: CODEX_ACCOUNT_ID,
       title: 'No safe command',
       commands: [],
       note: 'No safe read-only command is available.',
@@ -892,8 +1406,8 @@ test('normalizes Codex reply-only responses without approval commands', async ()
     ],
   })
 
-  const suggestions = await service.requestSuggestions({
-    provider: 'codex',
+  const suggestions = await service.requestAccountSuggestions({
+    ...CODEX_LEASE,
     agentSessionId: 'agent-session-1',
     project: {
       name: 'gtum',
@@ -907,6 +1421,7 @@ test('normalizes Codex reply-only responses without approval commands', async ()
     {
       id: 'codex-1',
       provider: 'codex',
+      accountId: CODEX_ACCOUNT_ID,
       title: 'I reviewed the current state and no command is needed.',
       commands: [],
       note: '',
@@ -921,16 +1436,16 @@ test('derives fallback card metadata from the Claude provider', async () => {
     invokeRuntime: async () => [
       {
         ...runtimeSuggestion,
+        ...CLAUDE_LEASE,
         id: '   ',
-        provider: 'claude',
         summary: '',
         confidence: 'medium',
       },
     ],
   })
 
-  const suggestions = await service.requestSuggestions({
-    provider: 'claude',
+  const suggestions = await service.requestAccountSuggestions({
+    ...CLAUDE_LEASE,
     agentSessionId: 'claude-session-1',
     project: {
       name: 'gtum',
@@ -943,6 +1458,7 @@ test('derives fallback card metadata from the Claude provider', async () => {
   expect(suggestions).toHaveLength(1)
   expect(suggestions[0]).toMatchObject({
     provider: 'claude',
+    accountId: CLAUDE_ACCOUNT_ID,
     title: 'Claude response',
     note: 'Claude confidence: medium',
     error: null,
@@ -956,7 +1472,7 @@ test('uses the actual provider label in empty-response errors', async () => {
     invokeRuntime: async () => [
       {
         ...runtimeSuggestion,
-        provider: 'claude',
+        ...CLAUDE_LEASE,
         summary: ' ',
         command: '',
         error: null,
@@ -965,8 +1481,8 @@ test('uses the actual provider label in empty-response errors', async () => {
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'claude',
+    service.requestAccountSuggestions({
+      ...CLAUDE_LEASE,
       agentSessionId: 'claude-session-1',
       project: {
         name: 'gtum',
@@ -992,8 +1508,8 @@ test('rejects empty Codex responses without an error reason', async () => {
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'codex',
+    service.requestAccountSuggestions({
+      ...CODEX_LEASE,
       agentSessionId: 'agent-session-1',
       project: {
         name: 'gtum',
@@ -1005,7 +1521,7 @@ test('rejects empty Codex responses without an error reason', async () => {
   ).rejects.toThrow('Codex CLI returned an empty response without a command or error reason.')
 })
 
-test('reads provider diagnostics through the runtime command', async () => {
+test('reads exact account diagnostics through the runtime command', async () => {
   const invoked: Array<{ command: string; args?: Record<string, unknown> }> = []
   const service = createAgentSuggestionRuntimeService({
     hasRuntime: () => true,
@@ -1013,7 +1529,7 @@ test('reads provider diagnostics through the runtime command', async () => {
       invoked.push({ command, args })
 
       return {
-        provider: 'codex',
+        ...CODEX_LEASE,
         setupState: 'ready',
         connectionPath: 'Codex CLI ChatGPT session',
         summary: 'Codex is ready',
@@ -1025,18 +1541,43 @@ test('reads provider diagnostics through the runtime command', async () => {
     },
   })
 
-  const diagnostics = await service.readProviderDiagnostics('codex')
+  const diagnostics = await service.readAccountDiagnostics(CODEX_LEASE)
 
   expect(invoked).toEqual([
     {
-      command: 'read_agent_provider_diagnostics',
-      args: { provider: 'codex' },
+      command: 'read_agent_account_diagnostics',
+      args: { request: CODEX_LEASE },
     },
   ])
   expect(diagnostics.setupState).toBe('ready')
+  expect(diagnostics).toMatchObject({
+    provider: 'codex',
+    accountId: CODEX_ACCOUNT_ID,
+  })
 })
 
-test('keeps browser preview inert without fabricating provider suggestions', async () => {
+test('rejects a diagnostic account owner mismatch', async () => {
+  const service = createAgentSuggestionRuntimeService({
+    hasRuntime: () => true,
+    invokeRuntime: async () => ({
+      ...CODEX_LEASE,
+      accountId: 'codex-profile-1',
+      setupState: 'ready',
+      connectionPath: 'Codex CLI',
+      summary: 'Ready',
+      guidance: '',
+      baseUrl: null,
+      model: null,
+      requirements: [],
+    }),
+  })
+
+  await expect(
+    service.readAccountDiagnostics(CODEX_LEASE),
+  ).rejects.toThrow(/diagnostic owner mismatch.*codex-default.*codex-profile-1/i)
+})
+
+test('keeps browser preview inert without fabricating exact account suggestions', async () => {
   let invocationCount = 0
   const service = createAgentSuggestionRuntimeService({
     hasRuntime: () => false,
@@ -1047,13 +1588,46 @@ test('keeps browser preview inert without fabricating provider suggestions', asy
   })
 
   await expect(
-    service.requestSuggestions({
-      provider: 'claude',
+    service.requestAccountSuggestions({
+      ...CLAUDE_LEASE,
       agentSessionId: 'claude-session-1',
       project: {
         name: 'gtum',
         path: '/workspace/gtum',
       },
+      activeTab: null,
+      userTask: 'suggest a next command',
+    }),
+  ).resolves.toEqual([])
+  await expect(
+    service.readAccountDiagnostics(CLAUDE_LEASE),
+  ).resolves.toEqual({
+    ...CLAUDE_LEASE,
+    setupState: 'deferred',
+    connectionPath: 'Browser preview',
+    summary: 'Desktop runtime is not connected.',
+    guidance: 'Open gtum through the Tauri desktop runtime to request real provider diagnostics.',
+    baseUrl: null,
+    model: null,
+    requirements: [],
+  })
+  await expect(
+    service.readAccountCapabilities(CLAUDE_LEASE),
+  ).resolves.toEqual({
+    ...CLAUDE_LEASE,
+    supportsModelSelection: false,
+    currentModel: null,
+    availableModels: [],
+    reasoningLevels: [],
+    defaultReasoningLevel: null,
+    supportsFastMode: false,
+    attachments: [],
+  })
+  await expect(
+    service.requestAccountSuggestions({
+      ...CLAUDE_LEASE,
+      agentSessionId: 'claude-session-1',
+      project: { name: 'gtum', path: '/workspace/gtum' },
       activeTab: null,
       userTask: 'suggest a next command',
     }),

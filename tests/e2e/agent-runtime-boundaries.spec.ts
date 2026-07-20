@@ -106,6 +106,48 @@ const installHarness = async (
       updatedAt: 1,
       lastError: null,
     }
+    const codexProfileSnapshot = () => ({
+      registryVersion: 2,
+      profiles: [
+        {
+          provider: 'codex',
+          accountId: 'codex-default',
+          alias: 'Codex ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '1',
+          metadataRevision: '1',
+          credentialRevision: authRejected ? '2' : '1',
+          connection: {
+            status: authRejected ? 'error' : 'connected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: authRejected ? null : 1,
+            updatedAt: authRejected ? 2 : 1,
+            lastError: authRejected ? authFailureMessage : null,
+          },
+        },
+        {
+          provider: 'claude',
+          accountId: 'claude-default',
+          alias: 'Claude ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '2',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'disconnected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 1,
+            lastError: null,
+          },
+        },
+      ],
+      tombstones: [],
+    })
 
     bridgeWindow.__agentJobCalls = []
     bridgeWindow.__agentSuggestionCalls = []
@@ -174,6 +216,12 @@ const installHarness = async (
       bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
         hasRuntime: () => true,
         invokeRuntime: async (command: string) => {
+          if (command === 'read_agent_profile_snapshot') {
+            return codexProfileSnapshot()
+          }
+          if (command === 'authorize_agent_profile_lease') {
+            throw new Error('boundary approval must use the atomic authorized job command')
+          }
           if (command === 'list_agent_connections') {
             return authRejected
               ? [
@@ -197,9 +245,30 @@ const installHarness = async (
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentSuggestionCalls.push({ command, args })
-        if (command === 'read_agent_provider_capabilities') {
+        if (
+          command === 'read_agent_account_capabilities'
+          || command === 'read_agent_provider_capabilities'
+        ) {
+          const request = args?.request as {
+            accountId?: string
+            incarnation?: string
+            credentialRevision?: string
+          } | undefined
+          if (
+            command === 'read_agent_account_capabilities'
+            && (
+              request?.accountId !== 'codex-default'
+              || request?.incarnation !== '1'
+              || request?.credentialRevision !== '1'
+            )
+          ) {
+            throw new Error(`Boundary capability lease mismatch: ${JSON.stringify(request)}`)
+          }
           return {
             provider: 'codex',
+            accountId: request?.accountId ?? 'codex-default',
+            incarnation: request?.incarnation ?? '1',
+            credentialRevision: request?.credentialRevision ?? '1',
             supportsModelSelection: false,
             currentModel: null,
             availableModels: [],
@@ -209,7 +278,25 @@ const installHarness = async (
             attachments: [],
           }
         }
-        if (command === 'request_agent_suggestions') {
+        if (
+          command === 'request_agent_account_suggestions'
+          || command === 'request_agent_suggestions'
+        ) {
+          const request = args?.request as {
+            accountId?: string
+            incarnation?: string
+            credentialRevision?: string
+          } | undefined
+          if (
+            command === 'request_agent_account_suggestions'
+            && (
+              request?.accountId !== 'codex-default'
+              || request?.incarnation !== '1'
+              || request?.credentialRevision !== '1'
+            )
+          ) {
+            throw new Error(`Boundary suggestion lease mismatch: ${JSON.stringify(request)}`)
+          }
           if (selectedMode === 'expired-auth') {
             authRejected = true
             throw new Error(authFailureMessage)
@@ -218,6 +305,9 @@ const installHarness = async (
             {
               id: 'boundary',
               provider: 'codex',
+              accountId: request?.accountId ?? 'codex-default',
+              incarnation: request?.incarnation ?? '1',
+              credentialRevision: request?.credentialRevision ?? '1',
               summary: 'Run the boundary command',
               command: 'node boundary-job',
               preferredTarget: 'current_tab',
@@ -268,7 +358,26 @@ const installHarness = async (
           return []
         }
         if (command === 'create_agent_job') {
-          const request = args?.request as { sessionId?: string } | undefined
+          throw new Error('boundary approval must not use legacy generic job creation')
+        }
+        if (command === 'create_authorized_agent_job') {
+          const request = args?.request as {
+            provider?: string
+            accountId?: string
+            incarnation?: string
+            credentialRevision?: string
+            sessionId?: string
+          } | undefined
+          if (
+            authRejected
+            || request?.provider !== 'codex'
+            || request?.accountId !== 'codex-default'
+            || request?.incarnation !== '1'
+            || request?.credentialRevision !== '1'
+            || !request.sessionId
+          ) {
+            throw new Error(`Boundary authorized job lease mismatch: ${JSON.stringify(request)}`)
+          }
           createdSessionIds.push(String(request?.sessionId || activeSessionId))
           if (
             selectedMode === 'delayed-create' ||
@@ -374,7 +483,7 @@ test('creates one isolated job when Allow once is clicked twice during IPC', asy
         () =>
           (
             window as Window & { __agentJobCalls: Array<{ command: string }> }
-          ).__agentJobCalls.filter((call) => call.command === 'create_agent_job').length,
+          ).__agentJobCalls.filter((call) => call.command === 'create_authorized_agent_job').length,
       ),
     )
     .toBe(1)
@@ -444,7 +553,7 @@ test('keeps a session when job creation starts during its close check', async ({
         () =>
           (
             window as Window & { __agentJobCalls: Array<{ command: string }> }
-          ).__agentJobCalls.filter((call) => call.command === 'create_agent_job').length,
+          ).__agentJobCalls.filter((call) => call.command === 'create_authorized_agent_job').length,
       ),
     )
     .toBe(1)
@@ -583,18 +692,17 @@ test('blocks Codex when suggestion runtime exists without an auth connection sea
   await installHarness(page, 'no-auth')
   await openHarness(page)
 
-  await page.getByPlaceholder('Ask Codex').fill('do not bypass auth')
-  await page.locator('.composer-input .send').click()
-
-  await expect(page.locator('.msg.assistant').last()).toContainText(/connect|reconnect/i)
+  const draft = page.getByPlaceholder('Ask Codex')
+  await draft.fill('do not bypass auth')
+  await expect(page.locator('.composer-input .send')).toBeDisabled()
+  await draft.press('Enter')
+  await expect(draft).toHaveValue('do not bypass auth')
   expect(
     await page.evaluate(
       () =>
         (
           window as Window & { __agentSuggestionCalls: Array<{ command: string }> }
-        ).__agentSuggestionCalls.filter(
-          (call) => call.command === 'request_agent_suggestions',
-        ),
+        ).__agentSuggestionCalls.filter((call) => call.command.includes('suggestions')),
     ),
   ).toEqual([])
 })
@@ -613,23 +721,322 @@ for (const [index, authFailure] of codexAuthFailures.entries()) {
 
     await page.getByPlaceholder('Ask Codex').fill('first rejected request')
     await page.locator('.composer-input .send').click()
-    await expect(page.locator('.msg.assistant').last()).toContainText(
-      authFailure.replaceAll('`', ''),
+    const rejectedTurn = page.locator('.msg.assistant').last()
+    await expect(rejectedTurn).toContainText(
+      'The captured Agent account credential changed before this response completed.',
     )
+    await expect(rejectedTurn).not.toContainText(authFailure.replaceAll('`', ''))
+    await expect(page.locator('.agent')).toHaveAttribute('data-agent-profile-status', 'error')
 
-    await page.getByPlaceholder('Ask Codex').fill('second rejected request')
-    await page.locator('.composer-input .send').click()
-    await expect(page.locator('.msg.assistant').last()).toContainText(/connect|reconnect/i)
+    const secondDraft = page.getByPlaceholder('Ask Codex')
+    await secondDraft.fill('second rejected request')
+    await expect(page.locator('.composer-input .send')).toBeDisabled()
+    await secondDraft.press('Enter')
+    await expect(secondDraft).toHaveValue('second rejected request')
 
     expect(
       await page.evaluate(
         () =>
           (
             window as Window & { __agentSuggestionCalls: Array<{ command: string }> }
-          ).__agentSuggestionCalls.filter(
-            (call) => call.command === 'request_agent_suggestions',
-          ).length,
+          ).__agentSuggestionCalls.filter((call) =>
+            call.command.includes('request_agent_')
+            && call.command.includes('suggestions')).length,
       ),
     ).toBe(1)
   })
 }
+
+const accountBoundaryProject = '/workspace/multi-account-boundary'
+const accountBoundarySession = 'multi-account-boundary-session'
+const disconnectedBoundaryAccount = 'codex-profile-3'
+const missingBoundaryAccount = 'codex-profile-4'
+
+const installMultiAccountBoundaryHarness = async (page: Page) => {
+  await page.addInitScript(({
+    projectPath,
+    sessionId,
+    disconnectedAccount,
+  }) => {
+    type RuntimeCall = { command: string; args?: Record<string, unknown> }
+    type TestWindow = Window & {
+      __accountBoundaryAgentCalls: RuntimeCall[]
+      __accountBoundaryTerminalCalls: RuntimeCall[]
+      __GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__: number
+      __GTUM_AGENT_JOB_POLL_INTERVAL_MS__: number
+      __GTUM_WORKSPACE_RUNTIME__: unknown
+      __GTUM_PROJECT_RUNTIME__: unknown
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+      __GTUM_AGENT_JOB_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
+    }
+
+    const bridgeWindow = window as TestWindow
+    const directoryKey = 'gtum.agent-session-directory.v2'
+    const terminalCountKey = 'gtum.test.multi-account-boundary.terminal-count'
+    const connection = (status: 'connected' | 'disconnected') => ({
+      status,
+      requiresValidation: false,
+      credentialSource: null,
+      connectedAt: status === 'connected' ? 100 : null,
+      updatedAt: 120,
+      lastError: null,
+    })
+    const profile = (
+      accountId: string,
+      alias: string,
+      isDefault: boolean,
+      incarnation: string,
+      status: 'connected' | 'disconnected',
+    ) => ({
+      provider: 'codex',
+      accountId,
+      alias,
+      profileKind: { kind: accountId === 'codex-default' ? 'ambient' : 'codex_home' },
+      isDefault,
+      incarnation,
+      metadataRevision: '1',
+      credentialRevision: '1',
+      connection: connection(status),
+    })
+    const profileSnapshot = {
+      registryVersion: 2,
+      profiles: [
+        profile('codex-default', 'Codex connected fallback candidate', true, '1', 'connected'),
+        profile(
+          disconnectedAccount,
+          'Disconnected exact owner',
+          false,
+          '11',
+          'disconnected',
+        ),
+        {
+          provider: 'claude',
+          accountId: 'claude-default',
+          alias: 'Claude ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '2',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'disconnected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 120,
+            lastError: null,
+          },
+        },
+      ],
+      tombstones: [],
+    }
+
+    if (!localStorage.getItem(directoryKey)) {
+      localStorage.setItem(directoryKey, JSON.stringify({
+        [projectPath]: {
+          workspaceTitle: 'multi-account-boundary',
+          activeSessionId: sessionId,
+          sessions: [{
+            id: sessionId,
+            title: 'Fail closed account owner',
+            providerId: 'codex',
+            selectedAccountIds: { codex: disconnectedAccount },
+            selectedModels: {
+              codex: { [disconnectedAccount]: 'must-not-fallback-model' },
+            },
+            selectedReasoningLevels: {
+              codex: { [disconnectedAccount]: 'high' },
+            },
+            fastModes: {
+              codex: { [disconnectedAccount]: true },
+            },
+          }],
+        },
+      }))
+    }
+
+    bridgeWindow.__accountBoundaryAgentCalls = []
+    bridgeWindow.__accountBoundaryTerminalCalls = []
+    bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = 0
+    bridgeWindow.__GTUM_AGENT_JOB_POLL_INTERVAL_MS__ = 10_000
+    bridgeWindow.__GTUM_WORKSPACE_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        if (command !== 'read_workspace_runtime_snapshot') {
+          throw new Error(`Unexpected boundary workspace command: ${command}`)
+        }
+        return {
+          restoredAt: 1,
+          snapshot: {
+            recentProjects: [projectPath],
+            openProjectPaths: [projectPath],
+            activeProjectPath: projectPath,
+            lastOpenedProjectPath: projectPath,
+            updatedAt: 1,
+            storageVersion: 2,
+          },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_PROJECT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        if (command !== 'read_project_overview') {
+          throw new Error(`Unexpected boundary project command: ${command}`)
+        }
+        return {
+          metadata: { name: 'multi-account-boundary', path: projectPath },
+          tree: {
+            name: 'multi-account-boundary',
+            path: projectPath,
+            kind: 'directory',
+            children: [],
+          },
+          git: { isRepository: true, branch: 'dev', changedFilesCount: 0 },
+        }
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        if (command === 'read_agent_profile_snapshot') return structuredClone(profileSnapshot)
+        if (command === 'list_agent_connections') {
+          return [{
+            provider: 'codex',
+            displayName: 'Codex',
+            availability: 'available',
+            status: 'connected',
+            connectionKind: 'real',
+            accountLabel: 'Codex connected fallback candidate',
+            accountEmail: null,
+            requiredScopes: ['project:read', 'terminal:read'],
+            expiresAt: null,
+            callbackUrl: null,
+            authUrl: null,
+            activeLoginId: null,
+            activeLoginState: null,
+            connectedAt: 100,
+            lastLoginAttemptAt: 95,
+            updatedAt: 120,
+            lastError: null,
+          }]
+        }
+        throw new Error(`Unexpected boundary auth command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__accountBoundaryAgentCalls.push({ command, args })
+        throw new Error(`Fail-closed account must not call Agent runtime: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_JOB_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string) => {
+        if (command === 'list_agent_jobs') return []
+        throw new Error(`Unexpected boundary job command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__accountBoundaryTerminalCalls.push({ command, args })
+        const count = Number(sessionStorage.getItem(terminalCountKey) || '0') + 1
+        sessionStorage.setItem(terminalCountKey, String(count))
+        throw new Error(`Account boundary must not use the center terminal: ${command}`)
+      },
+    }
+  }, {
+    projectPath: accountBoundaryProject,
+    sessionId: accountBoundarySession,
+    disconnectedAccount: disconnectedBoundaryAccount,
+  })
+}
+
+test('multi-account account terminal boundary keeps disconnected and missing owners fail closed without fallback', async ({ page }) => {
+  await installMultiAccountBoundaryHarness(page)
+  await page.goto('/')
+
+  const agent = page.locator('.agent')
+  const accountTrigger = page.locator('.composer-provider-chip')
+  const draft = page.getByPlaceholder('Ask Codex')
+  const send = page.locator('.composer-input .send')
+  await expect(agent).toHaveAttribute('data-agent-account-id', disconnectedBoundaryAccount)
+  await expect(agent).toHaveAttribute('data-agent-profile-status', 'disconnected')
+  await expect(agent).toHaveAttribute('data-capability-cache-size', '0')
+  await expect(agent).toHaveAttribute('data-capability-generation-slots', '0')
+  const disconnectedCenter = await page.locator('.center').innerHTML()
+
+  await accountTrigger.click()
+  const disconnectedOption = page.locator(
+    `[role="option"][data-account-id="${disconnectedBoundaryAccount}"]`,
+  )
+  await expect(disconnectedOption).toHaveAttribute('aria-selected', 'true')
+  await expect(disconnectedOption).toHaveAttribute('aria-disabled', 'true')
+  await expect(disconnectedOption).toContainText('Disconnected')
+  await expect(page.locator('[role="option"][data-account-id="codex-default"]'))
+    .toHaveAttribute('aria-selected', 'false')
+  await page.keyboard.press('Escape')
+
+  await draft.fill('disconnected owner must not fall back')
+  await expect(send).toBeDisabled()
+  await draft.press('Enter')
+  await expect(draft).toHaveValue('disconnected owner must not fall back')
+  expect(await page.locator('.center').innerHTML()).toBe(disconnectedCenter)
+  expect(await page.evaluate(() => (
+    window as Window & { __accountBoundaryAgentCalls?: unknown[] }
+  ).__accountBoundaryAgentCalls ?? [])).toEqual([])
+
+  await page.evaluate(({ projectPath, sessionId, missingAccount }) => {
+    const key = 'gtum.agent-session-directory.v2'
+    const directory = JSON.parse(localStorage.getItem(key) || '{}')
+    const session = directory[projectPath]?.sessions?.find(
+      (candidate: { id?: string }) => candidate.id === sessionId,
+    )
+    if (!session) throw new Error('Missing exact boundary session')
+    session.selectedAccountIds.codex = missingAccount
+    session.selectedModels.codex[missingAccount] = 'missing-owner-model'
+    session.selectedReasoningLevels.codex[missingAccount] = 'low'
+    session.fastModes.codex[missingAccount] = false
+    localStorage.setItem(key, JSON.stringify(directory))
+  }, {
+    projectPath: accountBoundaryProject,
+    sessionId: accountBoundarySession,
+    missingAccount: missingBoundaryAccount,
+  })
+  await page.reload()
+
+  await expect(agent).toHaveAttribute('data-agent-account-id', missingBoundaryAccount)
+  await expect(agent).toHaveAttribute('data-agent-profile-status', 'missing')
+  await expect(agent).toHaveAttribute('data-capability-cache-size', '0')
+  await expect(agent).toHaveAttribute('data-capability-generation-slots', '0')
+  await accountTrigger.click()
+  const missingOption = page.locator(
+    `[role="option"][data-account-id="${missingBoundaryAccount}"]`,
+  )
+  await expect(missingOption).toHaveAttribute('aria-selected', 'true')
+  await expect(missingOption).toHaveAttribute('aria-disabled', 'true')
+  await expect(missingOption).toContainText(`Missing account (${missingBoundaryAccount})`)
+  await page.keyboard.press('Escape')
+
+  await draft.fill('missing owner must not fall back')
+  await expect(send).toBeDisabled()
+  await draft.press('Enter')
+  await expect(draft).toHaveValue('missing owner must not fall back')
+  expect(await page.evaluate(() => (
+    window as Window & { __accountBoundaryAgentCalls?: unknown[] }
+  ).__accountBoundaryAgentCalls ?? [])).toEqual([])
+  expect(await page.evaluate(({ projectPath, sessionId }) => {
+    const directory = JSON.parse(localStorage.getItem('gtum.agent-session-directory.v2') || '{}')
+    return directory[projectPath]?.sessions?.find(
+      (candidate: { id?: string }) => candidate.id === sessionId,
+    )?.selectedAccountIds?.codex
+  }, { projectPath: accountBoundaryProject, sessionId: accountBoundarySession }))
+    .toBe(missingBoundaryAccount)
+  expect(await page.evaluate(() => Number(
+    sessionStorage.getItem('gtum.test.multi-account-boundary.terminal-count') || '0',
+  ))).toBe(0)
+})

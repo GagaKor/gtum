@@ -140,6 +140,21 @@ Recent `Figma` and `Canva` signals should be interpreted like this:
 
 ## 현재 구현 슬라이스 기준 / Current Delivery Slice
 
+### Multi-Account Account-Profile Slice
+
+- Treat the exact account as part of the Agent session's work context, not as a global login switch. The UI must make fast manual switching easy while never rotating accounts or failing over silently.
+- Prefer one compact combined provider/account control over separate wide provider and account selectors. The closed control uses recognizable marks/status cues; the opened grouped list carries the full exact provider, alias, and status.
+- Account identity styling and connection status are different signals. A Codex/Claude mark must not imply selected, connected, default, or request-ready state without the matching explicit cue.
+- Preserve missing/disconnected/forgotten selections as visible context. Quietly replacing them with a default account destroys provenance and can send work through the wrong credential.
+- Follow desktop listbox interaction and focus behavior: arrows and Home/End move active focus, Enter/Space selects, Escape closes and restores the trigger, Tab closes without trapping focus, and reopening reveals the selected row.
+- Keep the combined trigger, model, reasoning, and direct Fast control on one row at default, 260 px, and 240 px widths. Put exact long labels in contained, wrapping option rows instead of widening or wrapping the toolbar.
+- Make Settings a dense provider-grouped account manager, not a card dashboard. Account rows should scan as alias/status/default first and actions second; transient login guidance expands under only the targeted row.
+- Never render provider-derived email, organization, subscription, raw diagnostics, credentials, or helper output as an alias. Aliases are user-authored content and should receive the same privacy and truncation care as project names.
+- Copyable setup guidance is an ephemeral bridge to the user's external terminal. Do not create a center-terminal tab, focus a terminal, auto-run the command, save it to local storage, or echo it into chat/task history.
+- Use explicit copy for platform gates and lifecycle semantics: additional Claude profiles are unsupported on macOS because of Keychain isolation, and Disconnect/Forget do not log out or delete credentials.
+- Reverse-order connection, capability, request, and Settings actions must update only the exact account row/turn that started them. A global spinner, provider-wide last error, or account-agnostic cache is a regression.
+- Permission cards retain the originating alias/account attribution and become unavailable when that credential lease is stale. Rename/default changes may update current metadata without moving the historical turn to another account.
+
 ### 한국어
 
 현재 시각 토큰과 컴포넌트 상태 표현의 source of truth는 [design-system.md](/Users/kwon/projects/gtum/docs/design-system.md)다. 이 문서는 UI 구조, 정보 계층, 레퍼런스, 금지 패턴을 담당한다.
@@ -229,8 +244,8 @@ For the current active slice, the frontend should follow these rules:
 - the Claude reasoning menu may add one UI-only `Default` row that means `reasoningLevel: null`; do not invent a provider label or effort value for the CLI/model default
 - closed provider, model, and reasoning menu controls in the composer should use compact icons or provider/model marks with no long visible names or wrapped text; exact full names and current state belong inside their opened lists, while exact accessible labels and expanded/selected semantics remain available to assistive technology
 - the active provider mark in both the Agent header and closed composer control must use an explicit selected/current treatment for Codex and Claude alike; provider identity styling must remain neutral and must not imply that a provider is selected or ready
-- Fast must be a capability-gated direct boolean button rather than a menu: one native pointer, Enter, or Space activation inverts it exactly once, closes another open composer popup, and exposes exact `Fast mode: Enabled` or `Fast mode: Disabled` through `aria-label`, `title`, and matching `aria-pressed`; unsupported models hide it without erasing the saved provider preference
-- the top of the right agent workspace should expose the current provider and session/readiness state through a compact row; composer-level model picking and reasoning labels must come from `read_agent_provider_capabilities`, and execution modes must not appear as fixed values without runtime policy
+- Fast must be a capability-gated direct boolean button rather than a menu: one native pointer, Enter, or Space activation inverts it exactly once, closes another open composer popup, and exposes exact `Fast mode: Enabled` or `Fast mode: Disabled` through `aria-label`, `title`, and matching `aria-pressed`; unsupported models hide it without erasing the exact account's saved preference
+- the top of the right agent workspace should expose the current provider/account and session/readiness state through a compact row; composer-level model picking and reasoning labels must come from `read_agent_account_capabilities` for the exact owner, and execution modes must not appear as fixed values without runtime policy
 - provider-backed model popups must remain inside the Agent panel and viewport at the default desktop size, use internal vertical scrolling, and scroll the selected row into view on reopen
 - model options must show the complete provider-supplied human label: current account labels remain on one visual line at the default desktop width, while longer valid labels wrap inside the option without clipping or horizontal overflow; keep the exact provider value in accessible metadata and the request payload instead of rendering a raw-ID subtitle
 - the terminal should be a workbench-tab type opened from `+` rather than a permanently fixed mode strip, without dominating the default screen
@@ -441,7 +456,7 @@ For the current active slice, the frontend should follow these rules:
 - provider/model popups that are clipped by the Agent shell, hide the selected final row, or add a raw model-ID line that reduces label readability
 - composer provider/model/reasoning menu triggers that repeat long current names, wrap onto another line, or hide their exact accessible names behind icon-only rendering
 - Fast controls that open a popup or listbox, require an intermediate option choice, omit exact `Fast mode: Enabled` / `Fast mode: Disabled` accessible state, or override native one-activation button behavior
-- reasoning/Fast controls that remain visible after switching to a model that does not return support, or that erase a saved provider preference merely because the current model cannot use it
+- reasoning/Fast controls that remain visible after switching to a model that does not return support, or that erase an exact account's saved preference merely because the current model cannot use it
 
 ## 프론트엔드 작업 체크리스트 / Frontend Review Checklist
 

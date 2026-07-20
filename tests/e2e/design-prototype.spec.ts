@@ -7,6 +7,9 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 const nonSelectableCodexCapabilities = {
   provider: 'codex',
+  accountId: 'codex-default',
+  incarnation: '1',
+  credentialRevision: '1',
   supportsModelSelection: false,
   currentModel: null,
   availableModels: [],
@@ -16,11 +19,43 @@ const nonSelectableCodexCapabilities = {
   attachments: [],
 }
 
+const agentProfileSnapshotFixture = (
+  codexStatus: 'connected' | 'disconnected' | 'error',
+  claudeStatus: 'connected' | 'disconnected' | 'error',
+) => ({
+  registryVersion: 2,
+  profiles: ([
+    ['codex', codexStatus, '1'],
+    ['claude', claudeStatus, '2'],
+  ] as const).map(([provider, status, incarnation]) => ({
+    provider,
+    accountId: `${provider}-default`,
+    alias: provider === 'codex' ? 'Codex CLI' : 'Claude CLI',
+    profileKind: { kind: 'ambient' },
+    isDefault: true,
+    incarnation,
+    metadataRevision: '1',
+    credentialRevision: '1',
+    connection: {
+      status,
+      requiresValidation: false,
+      credentialSource: provider === 'claude' && status === 'connected'
+        ? 'claude_cli_session'
+        : null,
+      connectedAt: status === 'connected' ? 100 : null,
+      updatedAt: 100,
+      lastError: null,
+    },
+  })),
+  tombstones: [],
+})
+
 const installConnectedCodexAuth = async (page: Page) => {
   await page.addInitScript(() => {
     const bridgeWindow = window as Window & {
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
     }
+    const codexAccountId = 'codex-default'
     const codexConnected = {
       provider: 'codex',
       displayName: 'Codex',
@@ -40,10 +75,61 @@ const installConnectedCodexAuth = async (page: Page) => {
       updatedAt: 1,
       lastError: null,
     }
-
+    const codexProfile = {
+      provider: 'codex',
+      accountId: codexAccountId,
+      alias: 'Codex CLI',
+      profileKind: { kind: 'ambient' },
+      isDefault: true,
+      incarnation: '1',
+      metadataRevision: '1',
+      credentialRevision: '1',
+      connection: {
+        status: 'connected',
+        requiresValidation: false,
+        credentialSource: null,
+        connectedAt: 1,
+        updatedAt: 1,
+        lastError: null,
+      },
+    }
+    const claudeProfile = {
+      provider: 'claude',
+      accountId: 'claude-default',
+      alias: 'Claude CLI',
+      profileKind: { kind: 'ambient' },
+      isDefault: true,
+      incarnation: '2',
+      metadataRevision: '1',
+      credentialRevision: '1',
+      connection: {
+        status: 'disconnected',
+        requiresValidation: false,
+        credentialSource: null,
+        connectedAt: null,
+        updatedAt: 1,
+        lastError: null,
+      },
+    }
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async () => [codexConnected],
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        if (command === 'read_agent_profile_snapshot') {
+          return {
+            registryVersion: 2,
+            profiles: [codexProfile, claudeProfile],
+            tombstones: [],
+          }
+        }
+        if (command === 'authorize_agent_profile_lease') {
+          return {
+            ...(args?.request as Record<string, unknown> | undefined),
+            authorized: true,
+          }
+        }
+        if (command === 'list_agent_connections') return [codexConnected]
+        return codexConnected
+      },
     }
   })
 }
@@ -290,9 +376,12 @@ test('uses runtime provider capabilities for the composer model picker', async (
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return {
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             supportsModelSelection: true,
             currentModel: {
               providerId: 'codex',
@@ -346,11 +435,14 @@ test('uses runtime provider capabilities for the composer model picker', async (
           }
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           return [
             {
               id: 'codex-runtime-model',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary: 'Run selected model smoke',
               command: 'pnpm test:model-picker',
               preferredTarget: 'new_tab',
@@ -419,7 +511,7 @@ test('uses runtime provider capabilities for the composer model picker', async (
         window as Window & {
           __agentCalls?: Array<{ command: string; args?: { request?: Record<string, unknown> } }>
         }
-      ).__agentCalls?.find((call) => call.command === 'request_agent_suggestions') ?? null,
+      ).__agentCalls?.find((call) => call.command === 'request_agent_account_suggestions') ?? null,
   )
 
   expect(requestCall?.args?.request?.model).toBe('gpt-5-codex')
@@ -523,16 +615,19 @@ test('lets users stop a running agent request from the composer', async ({ page 
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           await new Promise((resolve) => window.setTimeout(resolve, 5000))
           return [
             {
               id: 'late-suggestion',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary: 'This should not appear after stop',
               command: 'pnpm test:late',
               preferredTarget: 'new_tab',
@@ -644,13 +739,12 @@ test('does not create canned agent replies when desktop runtime is unavailable',
 
   await expect(page.locator('.sugg')).toHaveCount(0)
   const initialSuggestionCount = 0
+  const initialAssistantCount = await page.locator('.msg.assistant').count()
 
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
-  await page.locator('.composer-input .send').click()
+  await expect(page.locator('.composer-input .send')).toBeDisabled()
 
-  await expect(page.locator('.msg.assistant').last()).toContainText('Codex')
-  await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
-  await expect(page.locator('.msg.assistant').last()).not.toContainText('pnpm test:funnel')
+  await expect(page.locator('.msg.assistant')).toHaveCount(initialAssistantCount)
   await expect(page.locator('.sugg')).toHaveCount(initialSuggestionCount)
 })
 
@@ -1655,15 +1749,18 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           return [
             {
               id: 'codex-runtime-1',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary: 'Run the failing funnel test',
               command: 'pnpm test:funnel --reporter=verbose',
               preferredTarget: 'current_tab',
@@ -1730,7 +1827,7 @@ test('routes agent requests through the Codex suggestion runtime bridge', async 
         }
       ).__agentCalls ?? [],
   )
-  const requestCall = calls.find((call) => call.command === 'request_agent_suggestions')
+  const requestCall = calls.find((call) => call.command === 'request_agent_account_suggestions')
 
   expect(requestCall?.args?.request).toMatchObject({
     provider: 'codex',
@@ -1791,11 +1888,11 @@ test('shows live Codex activity while waiting for runtime suggestions', async ({
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           await new Promise<void>((resolve) => {
             bridgeWindow.__resolveCodexRequest = resolve
           })
@@ -1804,6 +1901,9 @@ test('shows live Codex activity while waiting for runtime suggestions', async ({
             {
               id: 'codex-runtime-1',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary: 'Run focused tests',
               command: 'npm run test:e2e -- --grep agent',
               preferredTarget: 'new_tab',
@@ -1919,11 +2019,11 @@ test('surfaces Codex runtime failures without canned replies or approval cards',
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           throw new Error('Codex CLI exited with status 1.')
         }
 
@@ -2010,15 +2110,18 @@ test('renders Codex error-only suggestions as messages without approval', async 
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           return [
             {
               id: 'codex-runtime-error',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary: 'No safe command',
               command: '',
               preferredTarget: 'new_tab',
@@ -2111,15 +2214,18 @@ test('renders Codex reply-only responses without review cards', async ({ page })
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           return [
             {
               id: 'codex-runtime-reply',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary: 'I checked the current context. No approval is needed for this answer.',
               command: '',
               preferredTarget: 'new_tab',
@@ -2212,11 +2318,11 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           const request = args?.request as { userTask?: string } | undefined
 
           if (request?.userTask?.startsWith('2.')) {
@@ -2224,6 +2330,9 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
               {
                 id: 'codex-choice-followup',
                 provider: 'codex',
+                accountId: 'codex-default',
+                incarnation: '1',
+                credentialRevision: '1',
                 summary: '선택지 2로 계속 진행하겠습니다.',
                 command: '',
                 preferredTarget: 'new_tab',
@@ -2237,6 +2346,9 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
             {
               id: 'codex-choice-reply',
               provider: 'codex',
+              accountId: 'codex-default',
+              incarnation: '1',
+              credentialRevision: '1',
               summary:
                 '테스트 질문입니다. 어떤 방식으로 진행할까요? 1. 간단히 답변만 받기 2. 선택지에 따라 다음 질문 이어가기 3. 실제 작업 계획처럼 분기 테스트하기',
               command: '',
@@ -2306,7 +2418,7 @@ test('renders numbered Codex choices as selectable event cards', async ({ page }
             window as Window & {
               __agentCalls?: Array<{ command: string }>
             }
-          ).__agentCalls?.filter((call) => call.command === 'request_agent_suggestions').length ?? 0,
+          ).__agentCalls?.filter((call) => call.command === 'request_agent_account_suggestions').length ?? 0,
       ),
     )
     .toBe(2)
@@ -2327,7 +2439,7 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
@@ -2384,7 +2496,7 @@ test('requires a runtime-backed project before desktop Codex requests', async ({
       ).__agentCalls ?? [],
   )
 
-  expect(calls.map((call) => call.command)).not.toContain('request_agent_suggestions')
+  expect(calls.map((call) => call.command)).not.toContain('request_agent_account_suggestions')
 })
 
 test('keeps a legacy session on Codex when Claude is connected globally', async ({ page }) => {
@@ -2426,6 +2538,41 @@ test('keeps a legacy session on Codex when Claude is connected globally', async 
           return [claudeConnection]
         }
 
+        if (command === 'read_agent_profile_snapshot') {
+          const profile = (
+            provider: 'codex' | 'claude',
+            status: 'connected' | 'disconnected',
+            incarnation: string,
+          ) => ({
+            provider,
+            accountId: `${provider}-default`,
+            alias: provider === 'codex' ? 'Codex CLI' : 'Claude CLI',
+            profileKind: { kind: 'ambient' },
+            isDefault: true,
+            incarnation,
+            metadataRevision: '1',
+            credentialRevision: '1',
+            connection: {
+              status,
+              requiresValidation: false,
+              credentialSource: provider === 'claude' && status === 'connected'
+                ? 'claude_cli_session'
+                : null,
+              connectedAt: status === 'connected' ? 100 : null,
+              updatedAt: 100,
+              lastError: null,
+            },
+          })
+          return {
+            registryVersion: 2,
+            profiles: [
+              profile('codex', 'disconnected', '1'),
+              profile('claude', 'connected', '2'),
+            ],
+            tombstones: [],
+          }
+        }
+
         if (command === 'agent_auth_runtime_snapshot') {
           return {
             storagePath: '/tmp/gtum-auth-state.json',
@@ -2443,7 +2590,7 @@ test('keeps a legacy session on Codex when Claude is connected globally', async 
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
         bridgeWindow.__agentCalls.push(command)
-        if (command === 'request_agent_suggestions') {
+        if (command === 'request_agent_account_suggestions') {
           throw new Error('default Codex session should not issue a Claude request')
         }
         return {
@@ -2463,18 +2610,19 @@ test('keeps a legacy session on Codex when Claude is connected globally', async 
 
   await page.goto('/')
   await expect(page.locator('.composer-provider-chip'))
-    .toHaveAttribute('aria-label', 'Provider: Codex · Connect provider')
+    .toHaveAttribute('aria-label', 'Agent account: Codex · Codex CLI · Disconnected')
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-provider-id', 'codex')
+  await expect(page.locator('.agent')).toHaveAttribute('data-agent-account-id', 'codex-default')
   await page.locator('.titlebar .pill.icon-only').click()
   await expect(page.locator('.settings-provider').filter({ hasText: 'Claude' })).toContainText(
     'Connected',
   )
   await page.locator('.settings-close').click()
+  const initialAssistantCount = await page.locator('.msg.assistant').count()
   await page.getByPlaceholder('Ask Codex').fill('test prompt')
-  await page.locator('.composer-input .send').click()
+  await expect(page.locator('.composer-input .send')).toBeDisabled()
 
-  await expect(page.locator('.msg.assistant').last()).toContainText(/connect|reconnect/i)
-  await expect(page.locator('.msg.assistant').last()).toContainText('Codex')
-  await expect(page.locator('.msg.assistant').last()).not.toContainText('useFunnelState')
+  await expect(page.locator('.msg.assistant')).toHaveCount(initialAssistantCount)
   expect(
     await page.evaluate(
       () =>
@@ -2487,7 +2635,7 @@ test('keeps a legacy session on Codex when Claude is connected globally', async 
     await page.evaluate(
       () =>
         (window as Window & { __agentCalls: string[] }).__agentCalls.filter(
-          (command) => command === 'request_agent_suggestions',
+          (command) => command === 'request_agent_account_suggestions',
         ),
     ),
   ).toEqual([])
@@ -2543,7 +2691,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__agentCalls.push({ command, args })
 
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
@@ -2551,6 +2699,9 @@ test('keeps approved Codex command decisions in the agent panel without terminal
           {
             id: 'codex-runtime-current-tab',
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             summary: 'Run the current tab test command',
             command: 'pnpm test:funnel --reporter=verbose',
             preferredTarget: 'current_tab',
@@ -2716,7 +2867,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
   await expect(page.locator('.agent-log-item.suggestion')).toHaveCount(0)
   await expect(page.locator('.sugg')).toHaveCount(0)
   await expect(page.locator('.composer-provider-chip'))
-    .toHaveAttribute('aria-label', 'Provider: Codex · CLI session')
+    .toHaveAttribute('aria-label', 'Agent account: Codex · Codex CLI · Connected')
   await expect(page.locator('.composer-provider-chip')).toHaveText('Cx')
   await expect(page.locator('.composer-reasoning-chip')).toHaveCount(0)
   await expect(page.locator('.fast-toggle')).toHaveCount(0)
@@ -2769,14 +2920,20 @@ test('keeps approved Codex command decisions in the agent panel without terminal
             window as Window & {
               __agentJobCalls?: Array<{ command: string; args?: Record<string, unknown> }>
             }
-          ).__agentJobCalls?.filter((call) => call.command === 'create_agent_job') ?? [],
+          ).__agentJobCalls?.filter((call) => (
+            call.command === 'create_authorized_agent_job'
+          )) ?? [],
       ),
     )
     .toEqual([
       {
-        command: 'create_agent_job',
+        command: 'create_authorized_agent_job',
         args: {
           request: {
+            provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             projectPath: '~/code/aurora-monorepo',
             command: 'pnpm test:funnel --reporter=verbose',
             name: 'agent-codex-runtime-current-tab-1',
@@ -2788,7 +2945,7 @@ test('keeps approved Codex command decisions in the agent panel without terminal
 })
 
 test('blocks a disconnected Codex request before invoking the provider runtime', async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript((profileSnapshot) => {
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2822,6 +2979,7 @@ test('blocks a disconnected Codex request before invoking the provider runtime',
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') return structuredClone(profileSnapshot)
         if (command === 'list_agent_connections') return [codexDisconnected]
         return codexDisconnected
       },
@@ -2851,7 +3009,7 @@ test('blocks a disconnected Codex request before invoking the provider runtime',
         return []
       },
     }
-  })
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.getByText('Open project folder').click()
@@ -2866,23 +3024,181 @@ test('blocks a disconnected Codex request before invoking the provider runtime',
     )
     .toContain('list_agent_connections')
 
+  const initialAssistantCount = await page.locator('.msg.assistant').count()
   await page.getByPlaceholder('Ask Codex').fill('run a disconnected request')
-  await page.locator('.composer-input .send').click()
+  await expect(page.locator('.composer-input .send')).toBeDisabled()
 
-  await expect(page.locator('.msg.assistant').last()).toContainText(/connect|reconnect/i)
-  await expect(page.locator('.msg.assistant').last()).toContainText('Codex')
+  await expect(page.locator('.msg.assistant')).toHaveCount(initialAssistantCount)
   expect(
     await page.evaluate(
       () =>
         (
           window as Window & { __agentCalls: Array<{ command: string }> }
-        ).__agentCalls.filter((call) => call.command === 'request_agent_suggestions'),
+        ).__agentCalls.filter((call) => call.command === 'request_agent_account_suggestions'),
     ),
   ).toEqual([])
 })
 
+test('waits for startup validation before installing the exact verified lease', async ({ page }) => {
+  await page.addInitScript((initialSnapshot) => {
+    const bridgeWindow = window as Window & {
+      __releaseAgentConnections?: () => void
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+    }
+    const stale = structuredClone(initialSnapshot)
+    const codexStale = stale.profiles.find((profile) => profile.provider === 'codex')
+    if (!codexStale) throw new Error('Missing Codex fixture profile')
+    codexStale.connection.requiresValidation = true
+    const verified = structuredClone(stale)
+    const codexVerified = verified.profiles.find((profile) => profile.provider === 'codex')
+    if (!codexVerified) throw new Error('Missing Codex fixture profile')
+    codexVerified.credentialRevision = '2'
+    codexVerified.connection.requiresValidation = false
+
+    let releaseConnections: (() => void) | null = null
+    const connectionGate = new Promise<void>((resolve) => {
+      releaseConnections = resolve
+    })
+    bridgeWindow.__releaseAgentConnections = () => releaseConnections?.()
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(verified)
+        }
+        if (command === 'list_agent_connections') {
+          await connectionGate
+          return [{
+            provider: 'codex',
+            displayName: 'Codex',
+            availability: 'available',
+            status: 'connected',
+            connectionKind: 'real',
+            accountLabel: 'Codex CLI',
+            accountEmail: null,
+            credentialSource: null,
+            requiredScopes: ['project:read', 'terminal:read'],
+            expiresAt: null,
+            callbackUrl: null,
+            authUrl: null,
+            activeLoginId: null,
+            activeLoginState: null,
+            connectedAt: 100,
+            lastLoginAttemptAt: 100,
+            updatedAt: 120,
+            lastError: null,
+          }]
+        }
+        throw new Error(`Unexpected auth command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+        if (command === 'read_agent_account_capabilities') {
+          return {
+            ...nonSelectableCodexCapabilities,
+            ...(args?.request as Record<string, unknown> | undefined),
+          }
+        }
+        return []
+      },
+    }
+  }, agentProfileSnapshotFixture('connected', 'disconnected'))
+
+  await page.goto('/')
+  const agentPanel = page.locator('.agent')
+  await expect(agentPanel).toHaveAttribute('data-agent-profile-status', 'unresolved')
+  await expect(page.locator('.composer-input .send')).toBeDisabled()
+  await expect.poll(async () => page.evaluate(() => (
+    window as Window & { __agentCalls: Array<{ command: string }> }
+  ).__agentCalls.filter((call) => call.command === 'read_agent_account_capabilities').length)).toBe(0)
+  expect(await page.evaluate(() => (
+    window as Window & { __authCalls: Array<{ command: string }> }
+  ).__authCalls.map((call) => call.command))).toEqual(['list_agent_connections'])
+
+  await page.evaluate(() => (
+    window as Window & { __releaseAgentConnections?: () => void }
+  ).__releaseAgentConnections?.())
+  await expect(agentPanel).toHaveAttribute('data-agent-profile-status', 'connected')
+  await expect.poll(async () => page.evaluate(() => (
+    window as Window & { __authCalls: Array<{ command: string }> }
+  ).__authCalls.map((call) => call.command))).toEqual([
+    'list_agent_connections',
+    'read_agent_profile_snapshot',
+  ])
+  await expect.poll(async () => page.evaluate(() => (
+    window as Window & { __agentCalls: Array<{ command: string; args?: Record<string, unknown> }> }
+  ).__agentCalls.find((call) => call.command === 'read_agent_account_capabilities')?.args?.request ?? null))
+    .toEqual({
+      provider: 'codex',
+      accountId: 'codex-default',
+      incarnation: '1',
+      credentialRevision: '2',
+    })
+})
+
+test('preserves a migrated verification marker and spawns no capability work when startup validation fails', async ({ page }) => {
+  await page.addInitScript((initialSnapshot) => {
+    const bridgeWindow = window as Window & {
+      __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __agentCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_AGENT_RUNTIME__: unknown
+    }
+    const stale = structuredClone(initialSnapshot)
+    const codex = stale.profiles.find((profile) => profile.provider === 'codex')
+    if (!codex) throw new Error('Missing Codex fixture profile')
+    codex.connection.requiresValidation = true
+    bridgeWindow.__authCalls = []
+    bridgeWindow.__agentCalls = []
+    bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') return structuredClone(stale)
+        if (command === 'list_agent_connections') throw new Error('validation unavailable')
+        throw new Error(`Unexpected auth command: ${command}`)
+      },
+    }
+    bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__agentCalls.push({ command, args })
+        return []
+      },
+    }
+  }, agentProfileSnapshotFixture('connected', 'disconnected'))
+
+  await page.goto('/')
+  await expect(page.locator('.agent')).toHaveAttribute(
+    'data-agent-profile-status',
+    'needs_verification',
+  )
+  await expect(page.locator('.composer-input .send')).toBeDisabled()
+  await expect.poll(async () => page.evaluate(() => (
+    window as Window & { __authCalls: Array<{ command: string }> }
+  ).__authCalls.filter((call) => call.command === 'list_agent_connections').length)).toBe(1)
+  expect(await page.evaluate(() => (
+    window as Window & { __authCalls: Array<{ command: string }> }
+  ).__authCalls.map((call) => call.command))).toEqual([
+    'list_agent_connections',
+    'read_agent_profile_snapshot',
+  ])
+  expect(await page.evaluate(() => (
+    window as Window & { __agentCalls: Array<{ command: string }> }
+  ).__agentCalls.filter((call) => call.command === 'read_agent_account_capabilities'))).toEqual([])
+})
+
 test('connects an existing Claude CLI session without opening a login terminal', async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript((initialProfileSnapshot) => {
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -2916,15 +3232,28 @@ test('connects an existing Claude CLI session without opening a login terminal',
       credentialSource: null,
       requiredScopes: ['project:read', 'terminal:read'],
     }
-    const claudeConnected = {
-      ...claudeDisconnected,
-      status: 'connected',
-      credentialSource: 'claude_cli_session',
-      requiredScopes: ['provider:request', 'credential:cli_session'],
-      connectedAt: 125,
-      lastLoginAttemptAt: 120,
-      updatedAt: 130,
-    }
+    const profileSnapshot = structuredClone(initialProfileSnapshot)
+
+    localStorage.setItem('gtum.agent-session-directory.v2', JSON.stringify({
+      'no-project': {
+        workspaceTitle: 'No workspace',
+        activeSessionId: 'claude-connect-session',
+        sessions: [{
+          id: 'claude-connect-session',
+          title: 'Claude connect',
+          providerId: 'codex',
+          selectedAccountIds: {
+            codex: 'codex-default',
+            claude: 'claude-default',
+          },
+          selectedModels: {},
+          selectedReasoningLevels: {},
+          fastModes: {},
+          createdAt: '10:00',
+          updatedAt: '10:00',
+        }],
+      },
+    }))
 
     bridgeWindow.__authCalls = []
     bridgeWindow.__terminalCalls = []
@@ -2932,10 +3261,26 @@ test('connects an existing Claude CLI session without opening a login terminal',
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(profileSnapshot)
+        }
         if (command === 'list_agent_connections') {
           return [claudeDisconnected, codexDisconnected]
         }
-        if (command === 'begin_agent_login') return claudeConnected
+        if (command === 'check_agent_profile') {
+          const profile = profileSnapshot.profiles.find((entry) => entry.provider === 'claude')
+          if (!profile) throw new Error('Missing Claude ambient profile')
+          profile.credentialRevision = '2'
+          profile.connection = {
+            status: 'connected',
+            requiresValidation: false,
+            credentialSource: 'claude_cli_session',
+            connectedAt: 125,
+            updatedAt: 130,
+            lastError: null,
+          }
+          return structuredClone(profile)
+        }
         throw new Error(`Unexpected auth command: ${command}`)
       },
     }
@@ -2946,26 +3291,25 @@ test('connects an existing Claude CLI session without opening a login terminal',
         throw new Error(`Claude connect must not touch the center terminal: ${command}`)
       },
     }
-  })
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.locator('.titlebar .pill.icon-only').click()
-  const claude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
-  await expect(claude.getByRole('button', { name: 'Connect' })).toHaveCount(1)
-  await claude.getByRole('button', { name: 'Connect' }).click()
-  await expect(page.locator('.settings-overlay')).toHaveCount(0)
-  await expect(page.locator('.msg.assistant').last()).toContainText(
-    'Claude connected through the local Claude CLI session.',
+  const claude = page.locator(
+    '.settings-account-row[data-provider-id="claude"][data-account-id="claude-default"]',
   )
-
-  await page.locator('.titlebar .pill.icon-only').click()
-  const connectedClaude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
-  await expect(connectedClaude).toContainText('Connected')
-  await expect(connectedClaude).toContainText('CLI session')
-  await expect(connectedClaude).toContainText('credential:cli_session')
-  await expect(connectedClaude).not.toContainText('credential:api_key')
-  await expect(connectedClaude).not.toContainText('API credential')
-  await expect(connectedClaude.getByRole('button', { name: 'Disconnect' })).toHaveCount(1)
+  await claude.getByRole('button', {
+    name: 'Check Claude account Claude CLI (claude-default)',
+    exact: true,
+  }).click()
+  await expect(page.locator('.settings-modal')).toBeVisible()
+  await expect(claude).toContainText('Connected')
+  await expect(claude).toContainText('CLI session')
+  await expect(claude).not.toContainText('API credential')
+  await expect(claude.getByRole('button', {
+    name: 'Disconnect Claude account Claude CLI (claude-default)',
+    exact: true,
+  })).toHaveCount(1)
   await expect(page.locator('.group-tabbar').getByText('Claude Login')).toHaveCount(0)
 
   expect(
@@ -2973,9 +3317,12 @@ test('connects an existing Claude CLI session without opening a login terminal',
       () =>
         (
           window as Window & { __authCalls: Array<{ command: string }> }
-        ).__authCalls.filter((call) => call.command === 'begin_agent_login'),
+        ).__authCalls.filter((call) => call.command === 'check_agent_profile'),
     ),
-  ).toEqual([{ command: 'begin_agent_login', args: expect.objectContaining({ provider: 'claude' }) }])
+  ).toEqual([{
+    command: 'check_agent_profile',
+    args: { request: { provider: 'claude', accountId: 'claude-default' } },
+  }])
   expect(
     await page.evaluate(
       () =>
@@ -2987,7 +3334,7 @@ test('connects an existing Claude CLI session without opening a login terminal',
 })
 
 test('shows external Claude auth login guidance without opening a terminal', async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript((initialProfileSnapshot) => {
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -3014,13 +3361,7 @@ test('shows external Claude auth login guidance without opening a terminal', asy
       updatedAt: 100,
       lastError: null,
     }
-    const claudeMissingLogin = {
-      ...claudeDisconnected,
-      status: 'error',
-      lastLoginAttemptAt: 125,
-      updatedAt: 130,
-      lastError: null,
-    }
+    const profileSnapshot = structuredClone(initialProfileSnapshot)
 
     bridgeWindow.__authCalls = []
     bridgeWindow.__terminalCalls = []
@@ -3028,8 +3369,22 @@ test('shows external Claude auth login guidance without opening a terminal', asy
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') return structuredClone(profileSnapshot)
         if (command === 'list_agent_connections') return [claudeDisconnected]
-        if (command === 'begin_agent_login') return claudeMissingLogin
+        if (command === 'check_agent_profile') {
+          const profile = profileSnapshot.profiles.find((entry) => entry.provider === 'claude')
+          if (!profile) throw new Error('Missing Claude ambient profile')
+          profile.credentialRevision = '2'
+          profile.connection = {
+            status: 'error',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 130,
+            lastError: 'Run claude auth login in your terminal, then reconnect Claude.',
+          }
+          return structuredClone(profile)
+        }
         throw new Error(`Unexpected auth command: ${command}`)
       },
     }
@@ -3040,19 +3395,22 @@ test('shows external Claude auth login guidance without opening a terminal', asy
         throw new Error(`Claude setup must stay outside the center terminal: ${command}`)
       },
     }
-  })
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.locator('.titlebar .pill.icon-only').click()
-  const claude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
-  await claude.getByRole('button', { name: 'Connect' }).click()
+  const claude = page.locator(
+    '.settings-account-row[data-provider-id="claude"][data-account-id="claude-default"]',
+  )
+  await claude.getByRole('button', {
+    name: 'Check Claude account Claude CLI (claude-default)',
+    exact: true,
+  }).click()
 
   await expect(claude).toContainText(
     'Run claude auth login in your terminal, then reconnect Claude.',
   )
-  await expect(page.locator('.msg.assistant').last()).toContainText(
-    'Run claude auth login in your terminal, then reconnect Claude.',
-  )
+  await expect(page.locator('.msg.assistant')).toHaveCount(0)
   await expect(page.locator('.group-tabbar').getByText('Claude Login')).toHaveCount(0)
   expect(await page.evaluate(() => (
     window as Window & { __terminalCalls: Array<{ command: string }> }
@@ -3061,7 +3419,7 @@ test('shows external Claude auth login guidance without opening a terminal', asy
 
 for (const credentialSource of ['anthropic_api_key', 'api_key_helper'] as const) {
   test(`renders ${credentialSource} Claude snapshots as an API credential`, async ({ page }) => {
-    await page.addInitScript((source) => {
+    await page.addInitScript(({ source, initialProfileSnapshot }) => {
       const claudeConnected = {
         provider: 'claude',
         displayName: 'Claude',
@@ -3082,20 +3440,29 @@ for (const credentialSource of ['anthropic_api_key', 'api_key_helper'] as const)
         updatedAt: 130,
         lastError: null,
       }
+      const profileSnapshot = structuredClone(initialProfileSnapshot)
+      const profile = profileSnapshot.profiles.find((entry) => entry.provider === 'claude')
+      if (!profile) throw new Error('Missing Claude ambient profile')
+      profile.connection.credentialSource = source
       ;(window as Window & { __GTUM_AGENT_AUTH_RUNTIME__: unknown })
         .__GTUM_AGENT_AUTH_RUNTIME__ = {
           hasRuntime: () => true,
-          invokeRuntime: async () => [claudeConnected],
+          invokeRuntime: async (command: string) => {
+            if (command === 'read_agent_profile_snapshot') return structuredClone(profileSnapshot)
+            if (command === 'list_agent_connections') return [claudeConnected]
+            throw new Error(`Unexpected auth command: ${command}`)
+          },
         }
-    }, credentialSource)
+    }, {
+      source: credentialSource,
+      initialProfileSnapshot: agentProfileSnapshotFixture('disconnected', 'connected'),
+    })
 
     await page.goto('/')
     await page.locator('.titlebar .pill.icon-only').click()
     const claude = page.locator('.settings-provider').filter({ hasText: 'Claude' })
     await expect(claude).toContainText('Connected')
     await expect(claude).toContainText('API credential')
-    await expect(claude).toContainText('credential:api_key')
-    await expect(claude).not.toContainText('credential:cli_session')
     await expect(claude).not.toContainText('CLI session')
   })
 }
@@ -3172,7 +3539,7 @@ test('shows cancellable agent job output without mutating the center workbench',
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
@@ -3180,6 +3547,9 @@ test('shows cancellable agent job output without mutating the center workbench',
           {
             id: 'cancellable-job',
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             summary: 'Run a cancellable job',
             command: 'pnpm test:funnel',
             preferredTarget: 'current_tab',
@@ -3197,7 +3567,7 @@ test('shows cancellable agent job output without mutating the center workbench',
           sessionId = String(args?.sessionId || '')
           return []
         }
-        if (command === 'create_agent_job') {
+        if (command === 'create_authorized_agent_job') {
           sessionId = String(
             (args?.request as { sessionId?: string } | undefined)?.sessionId || sessionId,
           )
@@ -3676,7 +4046,7 @@ test('renders completed and failed agent job outcomes and stops after final logs
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
@@ -3684,6 +4054,9 @@ test('renders completed and failed agent job outcomes and stops after final logs
           {
             id: 'completed-job',
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             summary: 'Run the completion probe',
             command: 'npm run completion-probe',
             preferredTarget: 'current_tab',
@@ -3701,7 +4074,7 @@ test('renders completed and failed agent job outcomes and stops after final logs
           sessionId = String(args?.sessionId || '')
           return [snapshot(40, 'restored-failure', 'npm test', 'failed', 2, true)]
         }
-        if (command === 'create_agent_job') {
+        if (command === 'create_authorized_agent_job') {
           sessionId = String(
             (args?.request as { sessionId?: string } | undefined)?.sessionId || sessionId,
           )
@@ -3951,7 +4324,7 @@ test('restores interrupted agent job history after a real page reload', async ({
             lastEvent: 'agent job interrupted by runtime restart',
           }
         }
-        if (command === 'create_agent_job') increment('restored-create-count')
+        if (command === 'create_authorized_agent_job') increment('restored-create-count')
         throw new Error(`unexpected agent job command: ${command}`)
       },
     }
@@ -4018,7 +4391,7 @@ test('keeps a newly created agent job when delayed hydration returns an empty hi
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string) => {
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
           return codexCapabilities
         }
 
@@ -4026,6 +4399,9 @@ test('keeps a newly created agent job when delayed hydration returns an empty hi
           {
             id: 'create-race',
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             summary: 'Create while hydration is pending',
             command: 'npm run race',
             preferredTarget: 'current_tab',
@@ -4042,7 +4418,7 @@ test('keeps a newly created agent job when delayed hydration returns an empty hi
           sessionId = String(args?.sessionId || '')
           return new Promise<unknown[]>((resolve) => historyResolvers.push(resolve))
         }
-        if (command === 'create_agent_job') {
+        if (command === 'create_authorized_agent_job') {
           sessionId = String(
             (args?.request as { sessionId?: string } | undefined)?.sessionId || sessionId,
           )
@@ -4269,118 +4645,66 @@ test('hydrates interrupted agent job history and ignores stale project responses
   await expect(page.locator('.agent-job-row')).not.toContainText('stale-project-a')
 })
 
-test('keeps Codex setup guidance in the agent panel without opening a login terminal', async ({ page }) => {
-  await page.addInitScript(() => {
-    const codexDisconnected = {
-      provider: 'codex',
-      displayName: 'Codex',
-      status: 'disconnected',
-      connectionKind: 'real',
-      accountLabel: null,
-      accountEmail: null,
-      requiredScopes: ['project:read', 'terminal:read'],
-      expiresAt: null,
-      callbackUrl: null,
-      authUrl: null,
-      activeLoginId: null,
-      activeLoginState: null,
-      connectedAt: null,
-      lastLoginAttemptAt: null,
-      updatedAt: 100,
-      lastError: null,
-    }
-    const codexError = {
-      ...codexDisconnected,
-      status: 'error',
-      lastLoginAttemptAt: 125,
-      updatedAt: 130,
-      lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
-    }
-    const claudeDeferred = {
-      provider: 'claude',
-      displayName: 'Claude',
-      status: 'error',
-      connectionKind: 'prototype',
-      accountLabel: null,
-      accountEmail: null,
-      requiredScopes: ['provider:deferred'],
-      expiresAt: null,
-      callbackUrl: null,
-      authUrl: null,
-      activeLoginId: null,
-      activeLoginState: null,
-      connectedAt: null,
-      lastLoginAttemptAt: null,
-      updatedAt: 100,
-      lastError: 'Claude real-provider support is deferred.',
-    }
+test('keeps Codex setup guidance in Settings without opening a login terminal', async ({ page }) => {
+  await page.addInitScript((initialProfileSnapshot) => {
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __terminalCalls: Array<{ command: string; args?: Record<string, unknown> }>
+      __GTUM_OS__?: string
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
+      __GTUM_TERMINAL_RUNTIME__: unknown
     }
 
     bridgeWindow.__authCalls = []
+    bridgeWindow.__terminalCalls = []
+    bridgeWindow.__GTUM_OS__ = 'mac'
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
-
-        if (command === 'list_agent_connections') return [claudeDeferred, codexDisconnected]
-        if (command === 'begin_agent_login') return codexError
-        if (command === 'create_terminal_session_with_command') {
-          throw new Error('Codex setup guidance must stay in the agent panel')
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(initialProfileSnapshot)
         }
-        if (command === 'read_agent_provider_diagnostics') {
+        if (command === 'list_agent_connections') return []
+        if (command === 'read_agent_profile_setup_guidance') {
           return {
             provider: 'codex',
-            setupState: 'ready',
-            connectionPath: 'Codex CLI ChatGPT session',
-            summary: 'Codex CLI is ready',
-            guidance: 'Run codex login, then reconnect.',
-            baseUrl: null,
-            model: 'Codex CLI default',
-            requirements: [],
+            accountId: 'codex-default',
+            supported: true,
+            program: 'codex',
+            environment: [],
+            arguments: ['login'],
+            renderedCommand: 'codex login',
+            warning: 'Run this command in your own terminal.',
+            unsupportedReason: null,
           }
         }
-
-        return codexDisconnected
+        throw new Error(`Unexpected auth command: ${command}`)
       },
     }
-  })
+    bridgeWindow.__GTUM_TERMINAL_RUNTIME__ = {
+      hasRuntime: () => true,
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__terminalCalls.push({ command, args })
+        throw new Error('Codex setup guidance must not touch the center terminal')
+      },
+    }
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.locator('.titlebar .pill.icon-only').click()
-  await page
-    .locator('.settings-provider')
-    .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: 'Connect' })
-    .click()
+  const codexRow = page.locator(
+    '.settings-account-row[data-provider-id="codex"][data-account-id="codex-default"]',
+  )
+  await codexRow.getByRole('button', {
+    name: 'Show setup command for Codex account Codex CLI (codex-default)',
+    exact: true,
+  }).click()
 
-  await expect
-    .poll(async () =>
-      page.evaluate(
-        () =>
-          (
-            window as Window & {
-              __authCalls?: Array<{ command: string }>
-            }
-          ).__authCalls?.map((call) => call.command) ?? [],
-      ),
-    )
-    .toEqual(
-      expect.arrayContaining([
-        'list_agent_connections',
-        'begin_agent_login',
-      ]),
-    )
-
+  await expect(codexRow.locator('.settings-account-command')).toHaveText('codex login')
+  await expect(codexRow).toContainText('Run this command in your own terminal.')
   await expect(page.locator('.group-tabbar').getByText('Codex Login')).toHaveCount(0)
-  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    'Codex CLI session is missing or expired. Run codex login, then reconnect.',
-  )
-  await expect(page.locator('.msg.assistant').last()).toContainText(
-    'Codex CLI session is missing or expired. Run codex login, then reconnect.',
-  )
+  await expect(page.locator('.msg.assistant')).toHaveCount(0)
 
   const calls = await page.evaluate(
     () =>
@@ -4390,12 +4714,18 @@ test('keeps Codex setup guidance in the agent panel without opening a login term
         }
       ).__authCalls ?? [],
   )
-
-  expect(calls.map((call) => call.command)).not.toContain('create_terminal_session_with_command')
+  expect(calls.filter((call) => call.command === 'read_agent_profile_setup_guidance'))
+    .toEqual([{
+      command: 'read_agent_profile_setup_guidance',
+      args: { request: { provider: 'codex', accountId: 'codex-default', shell: 'zsh' } },
+    }])
+  expect(await page.evaluate(() => (
+    window as Window & { __terminalCalls: Array<{ command: string }> }
+  ).__terminalCalls)).toEqual([])
 })
 
 test('connects an existing Codex session without opening a login terminal', async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript((initialProfileSnapshot) => {
     const codexDisconnected = {
       provider: 'codex',
       displayName: 'Codex',
@@ -4414,18 +4744,11 @@ test('connects an existing Codex session without opening a login terminal', asyn
       updatedAt: 100,
       lastError: null,
     }
-    const codexConnected = {
-      ...codexDisconnected,
-      status: 'connected',
-      accountLabel: 'Codex ChatGPT Session',
-      connectedAt: 130,
-      lastLoginAttemptAt: 125,
-      updatedAt: 140,
-    }
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
     }
+    const profileSnapshot = structuredClone(initialProfileSnapshot)
 
     bridgeWindow.__authCalls = []
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
@@ -4433,8 +4756,24 @@ test('connects an existing Codex session without opening a login terminal', asyn
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
 
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(profileSnapshot)
+        }
         if (command === 'list_agent_connections') return [codexDisconnected]
-        if (command === 'begin_agent_login') return codexConnected
+        if (command === 'check_agent_profile') {
+          const profile = profileSnapshot.profiles.find((entry) => entry.provider === 'codex')
+          if (!profile) throw new Error('Missing Codex ambient profile')
+          profile.credentialRevision = '2'
+          profile.connection = {
+            status: 'connected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: 130,
+            updatedAt: 140,
+            lastError: null,
+          }
+          return structuredClone(profile)
+        }
         if (command === 'create_terminal_session_with_command') {
           throw new Error('login terminal should not open for an existing session')
         }
@@ -4442,21 +4781,20 @@ test('connects an existing Codex session without opening a login terminal', asyn
         return codexDisconnected
       },
     }
-  })
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.locator('.titlebar .pill.icon-only').click()
-  await page
-    .locator('.settings-provider')
-    .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: 'Connect' })
-    .click()
-
-  await expect(page.locator('.settings-modal')).toBeHidden()
-  await page.locator('.titlebar .pill.icon-only').click()
-  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    'Connected',
+  const codexRow = page.locator(
+    '.settings-account-row[data-provider-id="codex"][data-account-id="codex-default"]',
   )
+  await codexRow.getByRole('button', {
+    name: 'Check Codex account Codex CLI (codex-default)',
+    exact: true,
+  }).click()
+
+  await expect(page.locator('.settings-modal')).toBeVisible()
+  await expect(codexRow).toContainText('Connected')
   await expect(page.locator('.group-tabbar').getByText('Codex Login')).toHaveCount(0)
 
   const calls = await page.evaluate(
@@ -4468,7 +4806,7 @@ test('connects an existing Codex session without opening a login terminal', asyn
       ).__authCalls?.map((call) => call.command) ?? [],
   )
 
-  expect(calls).toContain('begin_agent_login')
+  expect(calls).toContain('check_agent_profile')
   expect(calls).not.toContain('create_terminal_session_with_command')
 })
 
@@ -4484,7 +4822,7 @@ test('does not render corrupted placeholder markers in visible settings copy', a
 })
 
 test('keeps exact Codex login failure visible in settings', async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript((initialProfileSnapshot) => {
     const codexDisconnected = {
       provider: 'codex',
       displayName: 'Codex',
@@ -4510,6 +4848,7 @@ test('keeps exact Codex login failure visible in settings', async ({ page }) => 
       updatedAt: 130,
       lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
     }
+    const profileSnapshot = structuredClone(initialProfileSnapshot)
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
       __GTUM_AGENT_AUTH_RUNTIME__: unknown
@@ -4521,33 +4860,45 @@ test('keeps exact Codex login failure visible in settings', async ({ page }) => 
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
 
+        if (command === 'read_agent_profile_snapshot') return structuredClone(profileSnapshot)
         if (command === 'list_agent_connections') return [codexDisconnected]
-        if (command === 'create_terminal_session_with_command') {
-          throw new Error('Codex setup guidance must stay in the agent panel')
+        if (command === 'check_agent_profile') {
+          const profile = profileSnapshot.profiles.find((entry) => entry.provider === 'codex')
+          if (!profile) throw new Error('Missing Codex ambient profile')
+          profile.credentialRevision = '2'
+          profile.connection = {
+            status: 'error',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 130,
+            lastError: codexError.lastError,
+          }
+          return structuredClone(profile)
         }
-        if (command === 'begin_agent_login') return codexError
-
-        return codexDisconnected
+        throw new Error(`Unexpected auth command: ${command}`)
       },
     }
-  })
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.locator('.titlebar .pill.icon-only').click()
-  await page
-    .locator('.settings-provider')
-    .filter({ hasText: 'Codex' })
-    .getByRole('button', { name: 'Connect' })
-    .click()
+  const codexRow = page.locator(
+    '.settings-account-row[data-provider-id="codex"][data-account-id="codex-default"]',
+  )
+  await codexRow.getByRole('button', {
+    name: 'Check Codex account Codex CLI (codex-default)',
+    exact: true,
+  }).click()
 
   await expect(page.locator('.settings-modal')).toBeVisible()
-  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
+  await expect(codexRow).toContainText(
     'Codex CLI session is missing or expired. Run codex login, then reconnect.',
   )
 })
 
 test('reconnects Codex after the CLI session is completed', async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.addInitScript((initialProfileSnapshot) => {
     const codexDisconnected = {
       provider: 'codex',
       displayName: 'Codex',
@@ -4572,15 +4923,6 @@ test('reconnects Codex after the CLI session is completed', async ({ page }) => 
       lastLoginAttemptAt: 125,
       updatedAt: 130,
       lastError: 'Codex CLI session is missing or expired. Run codex login, then reconnect.',
-    }
-    const codexConnected = {
-      ...codexDisconnected,
-      status: 'connected',
-      accountLabel: 'Codex ChatGPT Session',
-      connectedAt: 150,
-      lastLoginAttemptAt: 145,
-      updatedAt: 155,
-      lastError: null,
     }
     const bridgeWindow = window as Window & {
       __authCalls: Array<{ command: string; args?: Record<string, unknown> }>
@@ -4590,43 +4932,71 @@ test('reconnects Codex after the CLI session is completed', async ({ page }) => 
 
     bridgeWindow.__authCalls = []
     bridgeWindow.__beginAttempts = 0
+    const profileSnapshot = structuredClone(initialProfileSnapshot)
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__authCalls.push({ command, args })
 
+        if (command === 'read_agent_profile_snapshot') {
+          return structuredClone(profileSnapshot)
+        }
         if (command === 'list_agent_connections') return [codexDisconnected]
         if (command === 'create_terminal_session_with_command') {
           throw new Error('reconnect must not open a Codex login terminal')
         }
-        if (command === 'begin_agent_login') {
+        if (command === 'check_agent_profile') {
           bridgeWindow.__beginAttempts += 1
-          return bridgeWindow.__beginAttempts === 1 ? codexError : codexConnected
+          const profile = profileSnapshot.profiles.find((entry) => entry.provider === 'codex')
+          if (!profile) throw new Error('Missing Codex ambient profile')
+          profile.credentialRevision = '2'
+          if (bridgeWindow.__beginAttempts === 1) {
+            profile.connection = {
+              status: 'error',
+              requiresValidation: false,
+              credentialSource: null,
+              connectedAt: null,
+              updatedAt: 130,
+              lastError: codexError.lastError,
+            }
+            return structuredClone(profile)
+          }
+          profile.credentialRevision = '3'
+          profile.connection = {
+            status: 'connected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: 150,
+            updatedAt: 155,
+            lastError: null,
+          }
+          return structuredClone(profile)
         }
 
         return codexDisconnected
       },
     }
-  })
+  }, agentProfileSnapshotFixture('disconnected', 'disconnected'))
 
   await page.goto('/')
   await page.locator('.titlebar .pill.icon-only').click()
-  const codexRow = page.locator('.settings-provider').filter({ hasText: 'Codex' })
+  const codexRow = page.locator(
+    '.settings-account-row[data-provider-id="codex"][data-account-id="codex-default"]',
+  )
+  const check = codexRow.getByRole('button', {
+    name: 'Check Codex account Codex CLI (codex-default)',
+    exact: true,
+  })
 
-  await codexRow.getByRole('button', { name: 'Connect' }).click()
+  await check.click()
   await expect(codexRow).toContainText(
     'Codex CLI session is missing or expired. Run codex login, then reconnect.',
   )
-  await codexRow.getByRole('button', { name: 'Connect' }).click()
+  await check.click()
 
-  await expect(page.locator('.settings-modal')).toBeHidden()
-  await page.locator('.titlebar .pill.icon-only').click()
-  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    'Connected',
-  )
-  await expect(page.locator('.settings-provider').filter({ hasText: 'Codex' })).toContainText(
-    'CLI session',
-  )
+  await expect(page.locator('.settings-modal')).toBeVisible()
+  await expect(codexRow).toContainText('Connected')
+  await expect(codexRow).toContainText('Codex CLI')
 
   const calls = await page.evaluate(
     () =>

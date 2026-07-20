@@ -73,7 +73,6 @@ The default `gtum` UI is a dark desktop developer tool.
   - 각 pane은 자신의 tab strip을 가진다.
 - `Right agent workspace`
   - provider, context, thread, activity log, composer approval, composer가 하나의 작업 흐름으로 이어져야 한다.
-  - 활성 provider와 session/readiness 상태를 agent workspace 상단의 compact row로 먼저 읽을 수 있어야 한다. 모델 선택은 `read_agent_provider_capabilities`가 실제 모델 목록을 제공할 때 composer에서만 노출하고, 실행 모드는 런타임 정책이 없으면 노출하지 않는다.
 - `Status/pill strip`
   - 하단 고정 패널보다 workbench 안의 작은 상태 pill을 우선한다.
 
@@ -103,6 +102,25 @@ The default screen is composed of five areas:
   - The frameless shell must fill the entire viewport at every restored, resized, and maximized desktop size.
   - Do not preserve the `1320x824` aspect ratio through fixed-canvas scaling when the window is larger; top, bottom, left, or right letterboxing is a regression.
   - Smaller windows should reflow through compact shell states and panel collapse rather than centered transform scaling.
+
+## Multi-Account Agent Controls
+
+The active multi-account slice extends the compact composer and Settings surfaces with these required states:
+
+- The closed provider/account trigger stays on one row and may show only a provider mark plus compact status/account cue. Its `aria-label` and `title` expose the exact provider, user alias, and current connection status.
+- The opened picker is one grouped listbox with Codex and Claude sections. Each row shows the full user-authored alias, provider, and live status, and exactly one row is selected. Long aliases wrap inside rows without horizontal scrolling; they are never replaced with provider-derived email, organization, or subscription identity.
+- Arrow Up/Down, Home/End, Enter/Space, Escape, Tab, selected-row visibility, and trigger focus restoration follow desktop listbox conventions. Account selection updates provider and account atomically, preserves the other provider's saved account, and closes model/reasoning popups. Fast remains a direct `aria-pressed` boolean button.
+- A selected profile that becomes missing, forgotten, disconnected, stale, or unsupported remains visible as a non-actionable selected state. Send is blocked and the UI offers exact setup/status guidance; the control never selects a default or another account on the user's behalf.
+- After restart, a persisted Connected profile is presented as `Needs verification` under its existing selection. Generated profiles block capability controls, Send, approval, and provider work until the exact row's Check succeeds; the UI must not recover by selecting a different or default account.
+- At default width and at 260 px and 240 px Agent widths, provider/account, model, reasoning, and Fast controls remain one compact row. Their popups stay within the Agent panel/viewport and use internal vertical scrolling rather than page or horizontal overflow.
+- Settings groups account rows by provider and shows alias, default marker, status, and platform support before actions. Add, Rename, Set Default, Check Again, Disconnect, and Forget each target one exact account and expose an exact accessible name.
+- The reserved ambient account cannot be forgotten. Forget uses an explicit warning that it does not log out or delete credentials. A forgotten selected account remains visible as missing in the Agent session rather than redirecting.
+- Setup commands appear only in a transient copy surface after creation/request. They are never retained in local storage, conversation, task history, diagnostics, or console output. Settings remains open after Add and Check so the user can finish external CLI login and revalidate.
+- Additional Claude account creation on macOS shows a concise ambient-only/Keychain limitation. Linux/Windows show the isolated CLI-profile flow. Unsupported state is visually distinct from a disconnected supported account.
+- Per-row pending state disables duplicate actions only for the exact account. Reverse-order completion must not move status or errors to another row.
+- The Settings account surface is a named modal dialog. Opening it moves focus into the dialog, Tab and Shift+Tab remain inside, Escape closes it, and closing returns focus to the exact opener. Pending actions preserve a meaningful focus target and expose success/failure through a scoped live status instead of dropping focus to the document body.
+- At 720x640 and 640x600 Settings geometry, actions stack without clipping, overlap, or horizontal scrolling; account rows keep the hierarchy `provider -> alias/status -> actions -> transient guidance`.
+- Account operations, setup guidance, requests, approvals, and Agent jobs have no visual or behavioral coupling to the user-owned center terminal.
 
 ## 토큰 / Tokens
 
@@ -205,29 +223,29 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - `titlebar`
   - The app uses custom frameless desktop chrome. macOS renders traffic lights on the left; Windows renders caption buttons on the right. Titlebar dragging and edge/corner resizing must call the native window API, while browser preview keeps safe no-op fallbacks.
 - `agent-header`
-  - Compactly shows the selected runtime model, provider readiness, active workspace, and active agent session. It must not include a generic `Agent / provider` title or a detached provider tab row.
+  - Compactly shows the selected runtime model, exact provider/account readiness, active workspace, and active Agent session. It must not include a generic `Agent / provider` title or a detached provider tab row.
 - `agent-provider-selector`
-  - Belongs to the active Agent session rather than global app state. It lists Codex and Claude as real providers, distinguishes availability from connection readiness, and persists the selected `providerId` with that session. Switching one session must not change another session or project.
+  - Is the combined provider/account selector and belongs to the active Agent session rather than global app state. It groups exact Codex/Claude profiles, distinguishes availability from connection readiness, and persists `providerId + selectedAccountIds[provider]`. Switching one session must not change another session or project.
   - The provider mark in the active header and closed composer trigger must expose the same explicit selected/current treatment for either real provider. Keep global provider-identity styling independent so a provider mark never implies selection or readiness by itself.
-  - Claude connection copy must say `API key` or use the runtime's sanitized non-secret credential label. It must never describe Claude as a subscription or generic CLI session, expose a raw-key input, or render helper output, identity, organization, token, or subscription metadata.
+  - Claude rows use the user alias, connection status, and sanitized non-secret source/platform guidance only. They never expose a raw-key input, helper output, provider-derived identity, organization, token, or subscription metadata.
 - `agent-session-strip`
-  - Manages Agent conversation tabs per workspace. Switching projects restores the active Agent workspace session set and each session's provider, so Agent history, provider choice, and request state do not bleed across projects.
+  - Manages Agent conversation tabs per workspace. Switching projects restores the active Agent workspace session set plus each session's provider and exact account selection, so history, owner choice, and request state do not bleed across projects or accounts.
 - `project-group`, `ws-item`
   - Mirror the active project's agent workspace sessions in the left `Projects` tree. A workspace row must expose provider identity, branch context, changed-file count, and one of `Waiting`, `Working`, `Review needed`, or `Done` so parallel agent work is visible before the right panel is opened.
 - `composer-reasoning-chip`
-  - Live in the composer toolbar beside attachment/model controls only when `read_agent_provider_capabilities` reports supported values. Claude uses the effective selected model's `executionOptions`, which overrides provider compatibility fields even when effort is empty or Fast is false; Codex falls back to its provider-level capability contract when model options are absent.
-  - Claude's effort list begins with a UI-only `Default` row. It is selected when no explicit model effort is effective and forwards `reasoningLevel: null`; it must not be presented as a CLI effort value. Switching models immediately recomputes visibility, and unsupported options become effective `null`/`false` without erasing the saved provider preference.
+  - Live in the composer toolbar beside attachment/model controls only when `read_agent_account_capabilities` reports supported values for the exact selected account. Claude uses the effective selected model's `executionOptions`, which overrides compatibility fields even when effort is empty or Fast is false; Codex falls back to its provider-level capability contract inside that account context when model options are absent.
+  - Claude's effort list begins with a UI-only `Default` row. It is selected when no explicit model effort is effective and forwards `reasoningLevel: null`; it must not be presented as a CLI effort value. Switching models immediately recomputes visibility, and unsupported options become effective `null`/`false` without erasing the saved exact-account preference.
   - The persistent toolbar trigger is a compact icon or provider-defined mark, never a long reasoning label and never wrapped text. Exact reasoning names and the current selection belong inside the opened list; the compact trigger still retains an exact accessible name and expanded/selected semantics.
 - `fast-toggle`
   - Renders only when the effective provider/model capability reports Fast support. It is a compact native boolean button, not a menu: it has no popup or listbox, and one pointer, Enter, or Space activation directly writes the inverse Fast value exactly once.
-  - Its `aria-label` and `title` expose the exact `Fast mode: Enabled` or `Fast mode: Disabled` state, and `aria-pressed` exposes the matching boolean. Activating it closes any open provider, model, or reasoning popup. Switching to an unsupported model hides the control while preserving the saved provider preference and making the effective request value `false`.
+  - Its `aria-label` and `title` expose the exact `Fast mode: Enabled` or `Fast mode: Disabled` state, and `aria-pressed` exposes the matching boolean. Activating it closes any open provider, model, or reasoning popup. Switching to an unsupported model hides the control while preserving the saved exact-account preference and making the effective request value `false`.
 - `composer-provider-picker`
-  - Uses a compact provider mark/icon trigger in the closed composer toolbar. Provider name, connection/readiness state, and the current selection are visible in the opened list, not repeated as long closed-trigger text. Preserve exact accessible naming, listbox/option ownership, and the selected indicator.
+  - Is the combined provider/account picker. It uses a compact provider/status cue in the closed toolbar; exact provider, user alias, readiness, and the current selection are visible in the opened provider-grouped list. Preserve exact accessible naming, one selected indicator, missing-account visibility, and no-fallback behavior.
 - `composer-model-picker`
-  - Renders only a validated runtime capability catalog for the active provider. A model row shows its human label on one visual line; the exact provider value stays in `data-model-id`, `title`, selection state, and the request payload rather than appearing as a second raw-ID line.
+  - Renders only a validated runtime capability catalog for the exact active provider/account. A model row shows its human label on one visual line; the exact provider value stays in `data-model-id`, `title`, selection state, and the request payload rather than appearing as a second raw-ID line.
   - The closed composer trigger is a compact model mark/icon with a chevron or equivalent affordance. It must not render or wrap the full current model name. The opened list owns the exact model names and visible current selection, while the trigger's `aria-label` retains the provider and current model name for assistive technology.
-  - The model popup is right-aligned to its composer anchor, bounded by the Agent panel and viewport, and internally scrollable at its maximum height. Opening or reopening it scrolls the one `aria-selected` row into view, including a selected final row. The provider popup keeps its independent left-aligned geometry.
-  - Preserve listbox/option semantics, exact accessible names, one truthful selected check, Escape close with trigger-focus restoration, and provider-change close behavior. Catalog failure hides selection without deleting the session's stored value.
+  - The model popup is right-aligned to its composer anchor, bounded by the Agent panel and viewport, and internally scrollable at its maximum height. Opening or reopening it scrolls the one `aria-selected` row into view, including a selected final row. The provider/account popup keeps its independent left-aligned geometry.
+  - Preserve listbox/option semantics, exact accessible names, one truthful selected check, Escape close with trigger-focus restoration, and account-change close behavior. Catalog failure hides selection without deleting the exact account's stored value.
 - `composer-reference-menu`
   - Opens inline from the composer for `@`, `#`, and `/` triggers. `+` remains the attachment control for provider-supported images/files, while textual references start from the input itself.
 - `agent-turn`
@@ -253,7 +271,7 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 ### English
 
 - Panel collapse, tab switching, provider selection, and line-anchor navigation must respond immediately.
-- Provider selection updates only the active Agent session. Provider connection state remains canonical runtime state shared by that provider, while request ownership remains `projectPath + agentSessionId + providerId`.
+- Provider/account selection updates only the active Agent session. Connection state remains canonical per profile, while request ownership remains `projectPath + agentSessionId + providerId + accountId` and permission turns retain the captured account lease.
 - An available but disconnected provider shows setup guidance instead of a fabricated response. Browser preview must not fabricate provider connection or suggestion state.
 - Dragging the titlebar background should move the native window; clicks on titlebar buttons or settings controls must not start window dragging.
 - Dragging the outer frameless window edges and corners should start native window resize dragging; these hit zones must not be confused with the inner side-panel resize handles.
@@ -263,4 +281,4 @@ Radius tokens are `--radius-sm: 6px`, `--radius-md: 9px`, `--radius-lg: 13px`, a
 - Code lines prefer horizontal scrolling inside the pane over forced wrapping.
 - Pending suggestions in the agent workspace should stay inside conversational agent turns with live progress while running and normal conversational results after completion, not large fixed cards or detached activity rows. The selected review opens as a composer-level approval panel directly above the composer.
 - Composer popups must remain readable inside the clipped desktop shell: they may scroll internally, but their horizontal bounds, selected option, and complete label must remain visible at the default desktop viewport and at 240 px or 260 px Agent widths. Closed provider, model, and reasoning menu triggers stay compact and non-wrapping; their opened lists carry exact full names and current state. The Fast button stays compact and contained but never opens a list. Current account labels should remain on one visual line at the default width, while a longer valid label wraps inside its option instead of clipping or adding horizontal overflow. A provider-supplied model ID may be available as metadata or a tooltip, never as a layout-breaking second text row.
-- Reasoning and Fast state belongs to the active project Agent session and provider. Project, session, provider, or model switching must restore only that owner's preference, while request submission freezes the currently effective options before asynchronous work begins.
+- Reasoning and Fast state belongs to the active project Agent session and exact provider/account. Project, session, provider, account, or model switching must restore only that owner's preference, while request submission freezes the currently effective options before asynchronous work begins.

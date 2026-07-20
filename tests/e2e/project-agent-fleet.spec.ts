@@ -236,6 +236,7 @@ const installProjectAgentFleetHarness = async (page: Page) => {
     type RuntimeCall = { command: string; args?: Record<string, unknown> }
     type CreateResolver = (snapshot: unknown) => void
     type TestWindow = Window & {
+      __fleetAuthCalls: RuntimeCall[]
       __fleetJobCalls: RuntimeCall[]
       __fleetTerminalCalls: RuntimeCall[]
       __resolveFleetCreate(projectPath: string, sessionId: string): void
@@ -282,6 +283,48 @@ const installProjectAgentFleetHarness = async (page: Page) => {
       lastLoginAttemptAt: 95,
       updatedAt: 120,
       lastError: null,
+    }
+    const profileSnapshot = {
+      registryVersion: 2,
+      profiles: [
+        {
+          provider: 'codex',
+          accountId: 'codex-default',
+          alias: 'Codex ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '1',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'connected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: 100,
+            updatedAt: 120,
+            lastError: null,
+          },
+        },
+        {
+          provider: 'claude',
+          accountId: 'claude-default',
+          alias: 'Claude ambient',
+          profileKind: { kind: 'ambient' },
+          isDefault: true,
+          incarnation: '2',
+          metadataRevision: '1',
+          credentialRevision: '1',
+          connection: {
+            status: 'disconnected',
+            requiresValidation: false,
+            credentialSource: null,
+            connectedAt: null,
+            updatedAt: 120,
+            lastError: null,
+          },
+        },
+      ],
+      tombstones: [],
     }
     const snapshot = (projectPath: string, status = 'running') => {
       updatedAt += 1
@@ -333,6 +376,7 @@ const installProjectAgentFleetHarness = async (page: Page) => {
         }],
       },
     }))
+    bridgeWindow.__fleetAuthCalls = []
     bridgeWindow.__fleetJobCalls = []
     bridgeWindow.__fleetTerminalCalls = []
     bridgeWindow.__GTUM_AGENT_PROGRESS_STAGE_DELAY_MS__ = 1
@@ -378,17 +422,39 @@ const installProjectAgentFleetHarness = async (page: Page) => {
     }
     bridgeWindow.__GTUM_AGENT_AUTH_RUNTIME__ = {
       hasRuntime: () => true,
-      invokeRuntime: async (command: string) => {
+      invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
+        bridgeWindow.__fleetAuthCalls.push({ command, args })
+        if (command === 'read_agent_profile_snapshot') return profileSnapshot
         if (command === 'list_agent_connections') return [connection]
-        return connection
+        if (command === 'authorize_agent_profile_lease') {
+          throw new Error('fleet approval must use atomic authorized job creation')
+        }
+        throw new Error(`Unexpected Agent auth command: ${command}`)
       },
     }
     bridgeWindow.__GTUM_AGENT_RUNTIME__ = {
       hasRuntime: () => true,
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
-        if (command === 'read_agent_provider_capabilities') {
+        if (command === 'read_agent_account_capabilities') {
+          const request = args?.request as {
+            provider?: string
+            accountId?: string
+            incarnation?: string
+            credentialRevision?: string
+          } | undefined
+          if (
+            request?.provider !== 'codex'
+            || request.accountId !== 'codex-default'
+            || request.incarnation !== '1'
+            || request.credentialRevision !== '1'
+          ) {
+            throw new Error(`Fleet capability lease mismatch: ${JSON.stringify(request)}`)
+          }
           return {
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             supportsModelSelection: false,
             currentModel: { providerId: 'codex', modelId: 'gpt-default', label: 'GPT Default' },
             availableModels: [],
@@ -398,12 +464,29 @@ const installProjectAgentFleetHarness = async (page: Page) => {
             attachments: [],
           }
         }
-        if (command === 'request_agent_suggestions') {
-          const request = args?.request as { projectPath?: string }
+        if (command === 'request_agent_account_suggestions') {
+          const request = args?.request as {
+            provider?: string
+            accountId?: string
+            incarnation?: string
+            credentialRevision?: string
+            projectPath?: string
+          }
+          if (
+            request?.provider !== 'codex'
+            || request.accountId !== 'codex-default'
+            || request.incarnation !== '1'
+            || request.credentialRevision !== '1'
+          ) {
+            throw new Error(`Fleet request lease mismatch: ${JSON.stringify(request)}`)
+          }
           const path = String(request?.projectPath)
           return [{
             id: 'same-fleet-suggestion',
             provider: 'codex',
+            accountId: 'codex-default',
+            incarnation: '1',
+            credentialRevision: '1',
             summary: `Run ${path === projectA ? 'A' : 'B'} fleet job`,
             command: path === projectA ? 'node fleet-a' : 'node fleet-b',
             preferredTarget: 'new_tab',
@@ -419,9 +502,35 @@ const installProjectAgentFleetHarness = async (page: Page) => {
       invokeRuntime: async (command: string, args?: Record<string, unknown>) => {
         bridgeWindow.__fleetJobCalls.push({ command, args })
         if (command === 'create_agent_job') {
-          const request = args?.request as { projectPath?: string; sessionId?: string }
+          throw new Error('fleet approval must not use legacy generic job creation')
+        }
+        if (command === 'create_authorized_agent_job') {
+          const request = args?.request as {
+            provider?: string
+            accountId?: string
+            incarnation?: string
+            credentialRevision?: string
+            projectPath?: string
+            command?: string
+            sessionId?: string
+          }
           const path = String(request?.projectPath)
           const sessionId = String(request?.sessionId)
+          const expectedCommand = path === projectA
+            ? 'node fleet-a'
+            : path === projectB
+              ? 'node fleet-b'
+              : null
+          if (
+            request?.provider !== 'codex'
+            || request.accountId !== 'codex-default'
+            || request.incarnation !== '1'
+            || request.credentialRevision !== '1'
+            || sessionId !== sharedFleetSessionId
+            || request.command !== expectedCommand
+          ) {
+            throw new Error(`Fleet authorized job lease mismatch: ${JSON.stringify(request)}`)
+          }
           return new Promise((resolve) => {
             createResolvers.set(contextKey(path, sessionId), resolve)
           })
@@ -480,6 +589,12 @@ const fleetJobCalls = (page: Page) => page.evaluate(() => (
   }
 ).__fleetJobCalls ?? [])
 
+const fleetAuthCalls = (page: Page) => page.evaluate(() => (
+  window as Window & {
+    __fleetAuthCalls?: Array<{ command: string; args?: Record<string, unknown> }>
+  }
+).__fleetAuthCalls ?? [])
+
 test('keeps an inactive A job observable through fleet lists without reading its logs', async ({ page }) => {
   await installProjectAgentFleetHarness(page)
   await page.goto('/')
@@ -488,8 +603,29 @@ test('keeps an inactive A job observable through fleet lists without reading its
   await page.locator('.composer-input .send').click()
   await page.locator('.composer-approval').getByRole('button', { name: 'Allow once' }).click()
   await expect.poll(() => fleetJobCalls(page).then((calls) => calls.filter(
-    (call) => call.command === 'create_agent_job',
+    (call) => call.command === 'create_authorized_agent_job',
   ).length)).toBe(1)
+  const atomicCreate = (await fleetJobCalls(page)).find(
+    (call) => call.command === 'create_authorized_agent_job',
+  )
+  expect(atomicCreate?.args).toEqual({
+    request: {
+      provider: 'codex',
+      accountId: 'codex-default',
+      incarnation: '1',
+      credentialRevision: '1',
+      projectPath: projectA,
+      sessionId: sharedFleetSessionId,
+      command: 'node fleet-a',
+      name: 'agent-same-fleet-suggestion-1',
+    },
+  })
+  expect((await fleetJobCalls(page)).filter(
+    (call) => call.command === 'create_agent_job',
+  )).toEqual([])
+  expect((await fleetAuthCalls(page)).filter(
+    (call) => call.command === 'authorize_agent_profile_lease',
+  )).toEqual([])
 
   await fleetProjectRow(page, projectB).click()
   await expect(page.locator('.agent')).toHaveAttribute('data-agent-project-path', projectB)

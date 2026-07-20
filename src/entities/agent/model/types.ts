@@ -1,5 +1,17 @@
 export type AgentProviderId = 'codex' | 'claude' | 'local' | (string & {})
 
+export type AgentRuntimeProviderId = 'codex' | 'claude'
+
+export interface AgentAccountOwner {
+  readonly provider: AgentRuntimeProviderId
+  readonly accountId: string
+}
+
+export interface AgentAccountLease extends AgentAccountOwner {
+  readonly incarnation: string
+  readonly credentialRevision: string
+}
+
 export type AgentSuggestionTarget = 'current_tab' | 'new_tab'
 
 export type AgentSuggestionConfidence = 'low' | 'medium' | 'high'
@@ -26,8 +38,14 @@ export interface AgentSuggestionCommand {
 export interface AgentSuggestionCard {
   readonly id: string
   readonly provider: AgentProviderId
+  readonly accountId?: string
   readonly title: string
   readonly commands: readonly AgentSuggestionCommand[]
   readonly note: string
   readonly error?: string | null
+}
+
+export interface AgentAccountSuggestionCard extends AgentSuggestionCard {
+  readonly provider: AgentRuntimeProviderId
+  readonly accountId: string
 }

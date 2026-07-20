@@ -170,6 +170,8 @@ Current workflows:
   - runs the main Ubuntu validation job for PRs and `dev`/`master` pushes
   - runs `windows-install-smoke` on `windows-latest` with `npm run tauri:build`
   - runs `macos-install-smoke` on `macos-latest` with `npm run tauri:build`
+  - runs a fixed, non-empty, serial set of deterministic multi-account Rust tests on Ubuntu, Windows, and macOS, covering registry migration/lifecycle, restart revalidation, exact account leases, atomic account-authorized Agent-job creation, Codex/Claude A/B context isolation, owner-only auth-store permissions, and decimal-string IPC revisions
+  - keeps broad timeout/process-tree stress probes outside this cross-platform matrix; those remain focused local or platform-specific diagnostics so the native matrix does not become a flaky wildcard test run
 - [`.github/workflows/release.yml`](../.github/workflows/release.yml)
   - creates cross-platform Tauri bundles and publishes GitHub Release assets on `master` pushes and manual dispatches
   - verifies that the Windows runner produced at least one `.exe` or `.msi` artifact under `src-tauri/target/*/bundle`
@@ -300,9 +302,9 @@ Done (verified against code/config):
 Partial:
 
 - Provider auth: Codex validates a local CLI session. Claude now supports an explicit API key, strict helper, and already authenticated local CLI session without in-app OAuth/token capture, but live inference, native Windows validation, and the public-distribution compliance gate remain open.
-- Agent suggestions/approval: approval-policy logic is duplicated between `src/prototype.jsx` and the FSD helper and is not wired to real command execution.
+- Agent suggestions/approval: `Allow once` is wired to isolated real command execution through the atomic `create_authorized_agent_job` boundary. The command carries the full account lease and project/session owner, and never uses the center terminal. Remaining release risks are native Windows sign-off, public Claude authentication/compliance policy, signing, packaging, and update delivery rather than a missing execution connection.
 - Frontend architecture: `src/prototype.jsx` is still ~4462 lines; only `Titlebar`/`StatusBar` are extracted to TSX.
-- Testing: browser/Vite E2E now covers the active design shell and typed service seams, and local macOS DMG smoke has been recorded. Windows real-device validation remains the first release-readiness gate; there are still no Rust unit tests around persistence.
+- Testing: browser/Vite E2E covers the active design shell and typed service seams, while Rust unit tests cover workspace, Agent-job, auth/profile registry, migration, permission-hardening, and restart persistence. Deterministic multi-account fake-child tests are selected explicitly on Ubuntu, Windows, and macOS CI. Local macOS DMG smoke has been recorded; Windows real-device validation remains the first release-readiness gate.
 
 Missing for production deployment:
 

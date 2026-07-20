@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import type { AgentAccountLease } from '../../entities/agent/model/types'
+import {
+  EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR,
+  normalizeRuntimeAgentLease,
+} from './runtimeAgentAuth'
 import {
   hasTauriRuntime,
   type RuntimeInvoker,
@@ -86,6 +91,13 @@ export type AgentJobRuntimeService = {
     command: string,
     name?: string,
     sessionId?: string | null,
+  ): Promise<AgentJobSnapshot>
+  createAuthorizedProjectJob(
+    project: Pick<RuntimeProject, 'path' | 'runtimeBacked'> | null | undefined,
+    lease: AgentAccountLease,
+    command: string,
+    name: string | undefined,
+    sessionId: string,
   ): Promise<AgentJobSnapshot>
   listProjectJobs(
     project: Pick<RuntimeProject, 'path' | 'runtimeBacked'> | null | undefined,
@@ -268,6 +280,24 @@ const requireAgentJobSnapshot = (value: unknown): AgentJobSnapshot => {
   return value
 }
 
+const requireAuthorizedAgentJobSnapshot = (
+  value: unknown,
+  sessionId: string,
+): AgentJobSnapshot => {
+  const snapshot = requireAgentJobSnapshot(value)
+  if (snapshot.sessionId !== sessionId) {
+    throw new Error('Authorized agent job snapshot session owner mismatch')
+  }
+  return snapshot
+}
+
+const normalizeAuthorizedAgentSessionId = (value: unknown): string => {
+  if (typeof value !== 'string' || value.trim().length === 0 || value !== value.trim()) {
+    throw new Error('Authorized agent job sessionId must be a canonical non-empty string')
+  }
+  return value
+}
+
 const requireAgentJobList = (value: unknown): AgentJobSnapshot[] => {
   if (!Array.isArray(value) || !value.every(isAgentJobSnapshot)) {
     throw new Error('Invalid agent job list from runtime')
@@ -291,12 +321,9 @@ export const createAgentJobRuntimeService = (
     hasRuntime,
     async createJob(request) {
       if (!hasRuntime()) return fallbackSnapshot(request.command)
-
-      return requireAgentJobSnapshot(
-        await invokeRuntime<unknown>('create_agent_job', { request }),
-      )
+      throw new Error(EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR)
     },
-    async createProjectJob(project, command, name, sessionId) {
+    async createProjectJob(project, command, _name, sessionId) {
       if (!isRuntimeProject(project)) {
         return fallbackSnapshot(
           command,
@@ -314,16 +341,40 @@ export const createAgentJobRuntimeService = (
           sessionId ?? null,
         )
       }
+      throw new Error(EXACT_AGENT_ACCOUNT_LEASE_REQUIRED_ERROR)
+    },
+    async createAuthorizedProjectJob(project, leaseValue, command, name, sessionIdValue) {
+      const lease = normalizeRuntimeAgentLease(leaseValue, 'Authorized agent job lease')
+      const sessionId = normalizeAuthorizedAgentSessionId(sessionIdValue)
+      if (!isRuntimeProject(project)) {
+        return fallbackSnapshot(
+          command,
+          'open a real project before running agent jobs',
+          -1,
+          sessionId,
+        )
+      }
 
-      return requireAgentJobSnapshot(
-        await invokeRuntime<unknown>('create_agent_job', {
+      if (!hasRuntime()) {
+        return fallbackSnapshot(
+          command,
+          'desktop runtime is not connected',
+          -1,
+          sessionId,
+        )
+      }
+
+      return requireAuthorizedAgentJobSnapshot(
+        await invokeRuntime<unknown>('create_authorized_agent_job', {
           request: {
+            ...lease,
             projectPath: project.path,
             command,
             name,
-            sessionId: sessionId || undefined,
+            sessionId,
           },
         }),
+        sessionId,
       )
     },
     async listProjectJobs(project, limit = 25, sessionId) {
