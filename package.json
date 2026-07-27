@@ -2,6 +2,17 @@
   "name": "gtum",
   "private": true,
   "version": "0.1.0",
+  "description": "Desktop workspace for running Codex and Claude CLI coding agents against local projects",
+  "license": "MIT",
+  "author": "GagaKor",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GagaKor/gtum.git"
+  },
+  "homepage": "https://github.com/GagaKor/gtum",
+  "bugs": {
+    "url": "https://github.com/GagaKor/gtum/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
