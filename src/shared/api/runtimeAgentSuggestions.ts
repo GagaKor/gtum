@@ -259,11 +259,90 @@ const accountRequestPayloadFromInput = (
   credentialRevision: input.credentialRevision,
 })
 
-const riskFromConfidence = (confidence: AgentSuggestionConfidence): 'low' | 'mid' | 'high' => {
-  if (confidence === 'low') return 'mid'
+type SuggestionRisk = 'low' | 'mid' | 'high'
+
+const RISK_RANK: Record<SuggestionRisk, number> = { low: 0, mid: 1, high: 2 }
+
+const maxRisk = (left: SuggestionRisk, right: SuggestionRisk): SuggestionRisk =>
+  RISK_RANK[left] >= RISK_RANK[right] ? left : right
+
+// Shapes that stay dangerous regardless of how the line is split, so they are
+// matched against the whole command before it is broken into segments.
+const HIGH_RISK_COMMAND = [
+  /\|\s*(sudo\s+)?(sh|bash|zsh|python3?|node)\b/i, // curl ... | sh
+  /:\s*\(\s*\)\s*\{.*\}\s*;?\s*:/, // fork bomb
+]
+
+// "Destructive commands and production deploys" — the taxonomy the approval card
+// already advertises to the user.
+const HIGH_RISK_SEGMENT = [
+  /\brm\b(?=[^\n]*\s-[a-z]*[rf])/i,
+  /\bdd\b[^\n]*\bof=/i,
+  /\bmkfs(\.[a-z0-9]+)?\b/i,
+  /\bfdisk\b/i,
+  /\bgit\b[^\n]*\bpush\b[^\n]*(--force\b|\s-f\b)/i,
+  /\bgit\b[^\n]*\breset\b[^\n]*--hard\b/i,
+  /\bgit\b[^\n]*\bclean\b[^\n]*\s-[a-z]*f/i,
+  /\b(drop\s+(table|database|schema)|truncate\s+table)\b/i,
+  /\bkubectl\b[^\n]*\bdelete\b/i,
+  /\bterraform\b[^\n]*\bdestroy\b/i,
+  /\bhelm\b[^\n]*\b(delete|uninstall)\b/i,
+  /\b(shutdown|reboot|halt|poweroff)\b/i,
+  /\bchmod\b[^\n]*\b777\b/i,
+  /\bchown\b[^\n]*\s-[a-z]*R/,
+  /\b(npm|cargo|gem)\b[^\n]*\bpublish\b/i,
+  /\bdocker\b[^\n]*\bsystem\s+prune\b/i,
+  /\baws\b[^\n]*\bs3\b[^\n]*\brm\b/i,
+]
+
+// "Killing processes, installing packages, clearing caches".
+const MID_RISK_SEGMENT = [
+  /\b(kill|pkill|killall)\b/i,
+  /\b(npm|pnpm|yarn|bun)\b[^\n]*\b(install|add|i)\b/i,
+  /\b(pip3?|apt|apt-get|brew|cargo|gem|go)\b[^\n]*\binstall\b/i,
+  /\bcache\b[^\n]*\b(clean|clear|prune)\b/i,
+  /\bdocker\b[^\n]*\b(stop|rm|restart|kill)\b/i,
+  /\bsystemctl\b[^\n]*\b(stop|restart)\b/i,
+  /\bgit\b[^\n]*\b(checkout|switch|restore|stash)\b/i,
+  /\brm\b/i,
+  /\bsudo\b/i,
+]
+
+const segmentRisk = (segment: string): SuggestionRisk => {
+  if (HIGH_RISK_SEGMENT.some((pattern) => pattern.test(segment))) return 'high'
+  if (MID_RISK_SEGMENT.some((pattern) => pattern.test(segment))) return 'mid'
 
   return 'low'
 }
+
+/**
+ * Rates a suggested command by what it actually does.
+ *
+ * The rating must not be derived from the model's self-reported confidence: that
+ * value is authored by the same (possibly prompt-injected) response that supplies
+ * the command, so a confidently-stated `rm -rf ~` would be presented as safe. A
+ * command is also rated by its most dangerous segment, because the approval card
+ * renders multi-line and chained commands as a single string — otherwise a
+ * trailing `&& rm -rf ~` would inherit the leading segment's rating.
+ *
+ * This is decision support for a human reviewer, not a sandbox. It fails toward
+ * over-reporting risk and must never be treated as an execution boundary.
+ */
+const riskFromCommand = (command: string): SuggestionRisk => {
+  if (!command) return 'low'
+  if (HIGH_RISK_COMMAND.some((pattern) => pattern.test(command))) return 'high'
+
+  return command
+    .split(/\r?\n|&&|\|\||[;|&]/)
+    .reduce<SuggestionRisk>((risk, segment) => maxRisk(risk, segmentRisk(segment)), 'low')
+}
+
+const riskFromSuggestion = (
+  command: string,
+  confidence: AgentSuggestionConfidence,
+): SuggestionRisk =>
+  // Low model confidence raises the floor but can never lower what the command earns.
+  maxRisk(riskFromCommand(command), confidence === 'low' ? 'mid' : 'low')
 
 const normalizeText = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : ''
@@ -309,7 +388,7 @@ export const suggestionCardFromRuntime = (
       ? [
           {
             cmd: command,
-            risk: riskFromConfidence(confidence),
+            risk: riskFromSuggestion(command, confidence),
             target: targetFromRuntime(preferredTarget, activeTab),
           },
         ]
