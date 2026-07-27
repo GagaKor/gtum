@@ -1,10 +1,10 @@
 [package]
 name = "gtum"
 version = "0.1.0"
-description = "gtum desktop workspace"
+description = "Desktop workspace for running Codex and Claude CLI coding agents against local projects"
 authors = ["GagaKor"]
-license = ""
-repository = ""
+license = "MIT"
+repository = "https://github.com/GagaKor/gtum"
 edition = "2021"
 rust-version = "1.77.2"
 

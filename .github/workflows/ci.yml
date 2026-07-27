@@ -226,6 +226,71 @@ jobs:
             cargo test --manifest-path src-tauri/Cargo.toml --lib "$test_name" -- --exact --test-threads=1
           done <<< "$selected_tests"
 
+      # The lib test binary has been dying at load time with
+      # 0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND, which means it imports a symbol
+      # that the target DLL does not export. windows-sys links via
+      # `kind = "raw-dylib"`, so such a mismatch links cleanly and only fails
+      # when the process starts. Diff the import table against the real exports
+      # to name the offending symbol instead of guessing.
+      - name: Diagnose Windows loader failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          $exe = Get-ChildItem -Path "src-tauri/target/debug/deps" -Filter "gtum_lib-*.exe" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $exe) { Write-Host "No gtum_lib test binary found; nothing to diagnose."; exit 0 }
+          Write-Host "Test binary: $($exe.FullName)"
+
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList '--list' -PassThru -Wait -NoNewWindow
+          Write-Host ("Loader exit code: 0x{0:X8}" -f $proc.ExitCode)
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { Write-Host "vswhere not found; cannot locate dumpbin."; exit 0 }
+          $vsPath = & $vswhere -latest -property installationPath
+          $dumpbin = Get-ChildItem -Path (Join-Path $vsPath 'VC\Tools\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          if (-not $dumpbin) { Write-Host "dumpbin not found; cannot inspect imports."; exit 0 }
+
+          # Parse `dumpbin /imports` into a dll -> [function] map.
+          $imports = @{}
+          $currentDll = $null
+          & $dumpbin.FullName /nologo /imports $exe.FullName | ForEach-Object {
+            $line = $_
+            if ($line -match '^\s{4}(\S+\.dll)\s*$') {
+              $currentDll = $Matches[1]
+              $imports[$currentDll] = New-Object System.Collections.Generic.List[string]
+            }
+            elseif ($currentDll -and $line -match '^\s+[0-9A-Fa-f]+\s+([A-Za-z_][A-Za-z0-9_@?$]*)\s*$') {
+              $imports[$currentDll].Add($Matches[1])
+            }
+          }
+
+          Write-Host "`n=== Imported DLLs ==="
+          $imports.Keys | Sort-Object | ForEach-Object { Write-Host ("  {0,-40} {1} symbols" -f $_, $imports[$_].Count) }
+
+          Write-Host "`n=== Unresolvable imports ==="
+          $found = $false
+          foreach ($dll in ($imports.Keys | Sort-Object)) {
+            $dllPath = Join-Path $env:SystemRoot "System32\$dll"
+            if (-not (Test-Path $dllPath)) {
+              Write-Host "  MISSING DLL: $dll (not in System32; may resolve beside the exe)"
+              $found = $true
+              continue
+            }
+            $exports = & $dumpbin.FullName /nologo /exports $dllPath |
+              ForEach-Object { if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $Matches[1] } }
+            $exportSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$exports)
+            foreach ($fn in $imports[$dll]) {
+              if (-not $exportSet.Contains($fn)) {
+                Write-Host "  MISSING ENTRYPOINT: $dll -> $fn"
+                $found = $true
+              }
+            }
+          }
+          if (-not $found) { Write-Host "  none (all static imports resolve; the failure is likely in a delay-loaded or dependent DLL)" }
+
   macos-install-smoke:
     name: macOS install smoke
     runs-on: macos-latest

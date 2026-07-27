@@ -736,21 +736,27 @@ fn validate_project_file_write(
         ));
     }
 
+    if !canonical_file.exists() {
+        return Ok(());
+    }
+
+    let current_bytes = fs::read(canonical_file).map_err(|error| {
+        format!(
+            "failed to read {} before writing: {error}",
+            canonical_file.display()
+        )
+    })?;
+
+    // Checked before the hash comparison, and independently of it: the concurrency
+    // hash is an optional field, so guarding binaries inside that branch let any
+    // caller that simply omitted the field overwrite arbitrary binary files.
+    if looks_like_binary(&current_bytes) {
+        return Err("cannot overwrite binary files through the text editor".into());
+    }
+
     if let Some(expected_hash) = expected_content_hash.filter(|value| !value.trim().is_empty()) {
-        if canonical_file.exists() {
-            let current_bytes = fs::read(&canonical_file).map_err(|error| {
-                format!(
-                    "failed to read {} before writing: {error}",
-                    canonical_file.display()
-                )
-            })?;
-            if looks_like_binary(&current_bytes) {
-                return Err("cannot overwrite binary files through the text editor".into());
-            }
-            let current_hash = content_hash_hex(&current_bytes);
-            if current_hash != expected_hash {
-                return Err("file changed on disk; reload before saving".into());
-            }
+        if content_hash_hex(&current_bytes) != expected_hash {
+            return Err("file changed on disk; reload before saving".into());
         }
     }
 
@@ -972,6 +978,68 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
         let _ = fs::remove_dir_all(outside);
+    }
+
+    #[test]
+    fn write_project_file_refuses_to_overwrite_a_binary_file_without_an_expected_hash() {
+        // The binary guard used to live inside the `expected_content_hash` branch,
+        // so omitting that optional field skipped it entirely and let the text
+        // editor path clobber arbitrary binaries.
+        let root = temp_project_dir("binary-guard");
+        fs::create_dir_all(&root).unwrap();
+        let binary_file = root.join("payload.bin");
+        fs::write(&binary_file, [0x00_u8, 0x01, 0x02, 0x00, 0xff, 0xfe]).unwrap();
+
+        let error = write_project_file(WriteProjectFileRequest {
+            project_path: root.to_string_lossy().into_owned(),
+            file_path: "payload.bin".into(),
+            content: "clobbered".into(),
+            expected_content_hash: None,
+        })
+        .err()
+        .expect("binary overwrites must fail even without an expected hash");
+
+        assert_eq!(
+            error,
+            "cannot overwrite binary files through the text editor"
+        );
+        assert_eq!(
+            fs::read(&binary_file).unwrap(),
+            vec![0x00_u8, 0x01, 0x02, 0x00, 0xff, 0xfe],
+            "the binary file must be left untouched"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn write_project_file_still_creates_and_updates_text_files_without_a_hash() {
+        let root = temp_project_dir("text-write");
+        fs::create_dir_all(&root).unwrap();
+
+        let created = write_project_file(WriteProjectFileRequest {
+            project_path: root.to_string_lossy().into_owned(),
+            file_path: "notes.txt".into(),
+            content: "first\n".into(),
+            expected_content_hash: None,
+        })
+        .expect("creating a new text file without a hash must stay allowed");
+        assert!(created.exists);
+
+        write_project_file(WriteProjectFileRequest {
+            project_path: root.to_string_lossy().into_owned(),
+            file_path: "notes.txt".into(),
+            content: "second\n".into(),
+            expected_content_hash: None,
+        })
+        .expect("overwriting an existing text file without a hash must stay allowed");
+
+        assert_eq!(
+            fs::read_to_string(root.join("notes.txt")).unwrap(),
+            "second\n"
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
