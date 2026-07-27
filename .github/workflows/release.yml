@@ -1,7 +1,11 @@
 name: Release
 
 on:
-  push:
+  # Release only after `ci` has finished successfully on master. Triggering on a
+  # raw `push` would publish binaries from a commit whose tests never ran.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches:
       - master
   workflow_dispatch:
@@ -18,15 +22,36 @@ permissions:
 jobs:
   guard:
     name: Guard release tag
+    # `workflow_run` fires for failed runs too, so gate on the conclusion.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-22.04
 
+    outputs:
+      release_ref: ${{ steps.resolve.outputs.release_ref }}
+      tag: ${{ steps.version.outputs.tag }}
+
     steps:
+      - name: Resolve release ref
+        id: resolve
+        shell: bash
+        env:
+          # On `workflow_run` the default GITHUB_REF points at the default branch,
+          # not the commit that was tested, so pin to the tested SHA explicitly.
+          RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$RELEASE_REF" ]; then
+            echo "Could not resolve a ref to release." >&2
+            exit 1
+          fi
+          echo "release_ref=${RELEASE_REF}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref }}
+          ref: ${{ steps.resolve.outputs.release_ref }}
 
       - name: Fail if release tag already exists
+        id: version
         shell: bash
         run: |
           version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
@@ -44,6 +69,7 @@ jobs:
           fi
 
           echo "Release tag ${tag} is available."
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
   publish-tauri:
     name: Build and Publish (${{ matrix.platform }})
@@ -65,7 +91,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref }}
+          ref: ${{ needs.guard.outputs.release_ref }}
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -115,7 +141,10 @@ jobs:
             - Ubuntu: AppImage / deb / rpm where available
             - Windows: installer artifacts
             - macOS: unsigned app bundle / dmg artifacts
-          releaseDraft: false
+          # Stay a draft until every platform has built AND passed artifact
+          # verification. The `publish-release` job flips this at the very end,
+          # so a partial or unverified release is never publicly visible.
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
@@ -195,4 +224,33 @@ jobs:
             echo
             echo "#### .dmg"
             printf '%s\n' "$dmg_artifacts"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-release:
+    name: Publish release
+    # Runs only when every matrix leg built and verified its artifacts, so the
+    # release goes public as a complete set or not at all.
+    needs: [guard, publish-tauri]
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Promote draft release to published
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "Guard job did not produce a release tag." >&2
+            exit 1
+          fi
+
+          echo "Publishing draft release ${TAG}"
+          gh release edit "$TAG" --draft=false
+
+          {
+            echo "### Published release"
+            echo
+            echo "[$TAG](https://github.com/${GH_REPO}/releases/tag/${TAG})"
           } >> "$GITHUB_STEP_SUMMARY"
