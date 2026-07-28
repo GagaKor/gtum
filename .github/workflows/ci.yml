@@ -196,6 +196,11 @@ jobs:
       - name: Native multi-account Rust tests
         shell: bash
         env:
+          # Embeds the Common-Controls v6 manifest into the test harness. Without it
+          # the binary cannot resolve comctl32's TaskDialogIndirect (pulled in through
+          # tauri-plugin-dialog -> rfd) and dies at load with STATUS_ENTRYPOINT_NOT_FOUND.
+          # Scoped to this step so the application build keeps tauri-build's own manifest.
+          GTUM_WINDOWS_TEST_MANIFEST: "1"
           MULTI_ACCOUNT_PLATFORM_RUST_TESTS: |
             runtime::auth::tests::multi_account_profile_lifecycle_windows_applies_and_verifies_owner_only_acl
             runtime::auth::tests::codex_account_context_windows_root_revalidation_blocks_cmd_launch

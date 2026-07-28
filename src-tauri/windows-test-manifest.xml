@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Activation context for cargo-built test binaries on Windows.
+
+  `tauri-plugin-dialog` pulls in `rfd`, which imports `TaskDialogIndirect` from
+  comctl32.dll. That symbol only exists in Common-Controls v6, which is a
+  side-by-side assembly: without a manifest declaring the dependency, the loader
+  binds comctl32 to the v5.82 copy in System32, the import cannot be resolved,
+  and the process dies at load with 0xc0000139 STATUS_ENTRYPOINT_NOT_FOUND.
+
+  tauri-build embeds an equivalent manifest into the application binary, but not
+  into the test harnesses cargo builds, so they need their own copy. Keep this in
+  sync with tauri-build's `windows-app-manifest.xml`.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+</assembly>
